@@ -1,0 +1,78 @@
+version: "3.8"
+
+services:
+  database:
+    image: postgres:15-alpine
+    container_name: myortho-db
+    environment:
+      POSTGRES_USER: myortho_admin
+      POSTGRES_PASSWORD: secret_password
+      POSTGRES_DB: myortho_tech
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./database/schema.sql:/docker-entrypoint-initdb.d/schema.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U myortho_admin -d myortho_tech"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: myortho-cache
+    ports:
+      - "6379:6379"
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: myortho-backend
+    ports:
+      - "4000:4000"
+    environment:
+      - PORT=4000
+      - DATABASE_URL=postgresql://myortho_admin:secret_password@database:5432/myortho_tech
+      - REDIS_URL=redis://redis:6379
+      - SUPABASE_URL=https://placeholder.supabase.co
+      - SUPABASE_ANON_KEY=placeholder
+    depends_on:
+      database:
+        condition: service_healthy
+      redis:
+        condition: service_started
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: myortho-frontend
+    ports:
+      - "3000:3000"
+    environment:
+      - NEXT_PUBLIC_API_URL=http://localhost:4000
+    depends_on:
+      - backend
+
+  ai-engine:
+    build:
+      context: ./ai-engine
+      dockerfile: Dockerfile
+    container_name: myortho-ai
+    ports:
+      - "8000:8000"
+    volumes:
+      - shared_storage:/app/storage
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+volumes:
+  postgres_data:
+  shared_storage:

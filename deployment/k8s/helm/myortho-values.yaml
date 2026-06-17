@@ -1,0 +1,102 @@
+# MyOrtho.tech Production Helm Release values
+# Enforces high-availability, multi-region load balancing, and autoscaling thresholds
+
+global:
+  environment: production
+  region: us-west-2
+
+image:
+  repository: gcr.io/myorthotech-prod
+  pullPolicy: IfNotPresent
+  # Overridden in CI/CD pipeline
+  tag: "1.0.0-release"
+
+# Backend microservice configuration
+backend:
+  replicaCount: 3
+  pdb:
+    minAvailable: 2
+  resources:
+    limits:
+      cpu: 1000m
+      memory: 1Gi
+    requests:
+      cpu: 250m
+      memory: 256Mi
+
+# Frontend microservice configuration
+frontend:
+  replicaCount: 3
+  pdb:
+    minAvailable: 2
+  resources:
+    limits:
+      cpu: 1000m
+      memory: 1Gi
+    requests:
+      cpu: 250m
+      memory: 256Mi
+
+# AI compute engine configuration (CPU/RAM-heavy tooth segmentations & hollowing)
+aiEngine:
+  replicaCount: 2
+  pdb:
+    minAvailable: 1
+  resources:
+    limits:
+      cpu: 4000m
+      memory: 8Gi
+    requests:
+      cpu: 1000m
+      memory: 2Gi
+  autoscaling:
+    minReplicas: 2
+    maxReplicas: 8
+    targetCPUUtilizationPercentage: 70
+    targetMemoryUtilizationPercentage: 75
+
+autoscaling:
+  enabled: true
+  minReplicas: 3
+  maxReplicas: 15
+  targetCPUUtilizationPercentage: 75
+  targetMemoryUtilizationPercentage: 80
+
+ingress:
+  enabled: true
+  className: nginx
+  annotations:
+    kubernetes.io/ingress.class: nginx
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/backend-protocol: "HTTP"
+    nginx.ingress.kubernetes.io/proxy-body-size: "100m" # Supports high-poly STL models upload
+  hosts:
+    - host: app.myortho.tech
+      paths:
+        - path: /
+          pathType: Prefix
+          serviceName: frontend
+          servicePort: 3000
+    - host: api.myortho.tech
+      paths:
+        - path: /
+          pathType: Prefix
+          serviceName: backend
+          servicePort: 4000
+  tls:
+    - secretName: myorthotech-tls-cert
+      hosts:
+        - app.myortho.tech
+        - api.myortho.tech
+
+database:
+  connectionPoolSize: 20
+  timeoutMs: 5000
+
+observability:
+  prometheus:
+    enabled: true
+    path: /metrics
+    port: 4000
+  otelCollectorEndpoint: otel-collector.observability.svc.cluster.local:4317

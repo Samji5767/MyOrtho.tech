@@ -1,0 +1,108 @@
+{
+  "../node_modules/@react-three/drei/core/VideoTexture.js -> hls.js": {
+    "id": null,
+    "files": []
+  },
+  "../node_modules/@react-three/drei/web/FaceLandmarker.js -> @mediapipe/tasks-vision": {
+    "id": null,
+    "files": []
+  },
+  "app/page.tsx -> @/components/AlignerStaging": {
+    "id": 1745,
+    "files": [
+      "static/chunks/44530001.e658c44b02517d7f.js",
+      "static/chunks/659.0d8730f58d7c6397.js",
+      "static/chunks/891.ab6a177c739c57d1.js",
+      "static/chunks/745.494939f21759def6.js"
+    ]
+  },
+  "app/page.tsx -> @/components/BillingManager": {
+    "id": 236,
+    "files": [
+      "static/chunks/44530001.e658c44b02517d7f.js",
+      "static/chunks/659.0d8730f58d7c6397.js",
+      "static/chunks/891.ab6a177c739c57d1.js",
+      "static/chunks/236.fb640bbf486dd078.js"
+    ]
+  },
+  "app/page.tsx -> @/components/CommandPalette": {
+    "id": 2824,
+    "files": [
+      "static/chunks/824.072e3fc5fe34a6c4.js"
+    ]
+  },
+  "app/page.tsx -> @/components/EnterpriseDashboard": {
+    "id": 4450,
+    "files": [
+      "static/chunks/44530001.e658c44b02517d7f.js",
+      "static/chunks/659.0d8730f58d7c6397.js",
+      "static/chunks/891.ab6a177c739c57d1.js",
+      "static/chunks/450.c7a15196ea18d435.js"
+    ]
+  },
+  "app/page.tsx -> @/components/ManufacturingCenter": {
+    "id": 6153,
+    "files": [
+      "static/chunks/44530001.e658c44b02517d7f.js",
+      "static/chunks/659.0d8730f58d7c6397.js",
+      "static/chunks/891.ab6a177c739c57d1.js",
+      "static/chunks/153.a32e6bc117d5b9b1.js"
+    ]
+  },
+  "app/page.tsx -> @/components/ObservabilityConsole": {
+    "id": 2112,
+    "files": [
+      "static/chunks/112.76d0587297ae4686.js"
+    ]
+  },
+  "app/page.tsx -> @/components/PatientManagement": {
+    "id": 5941,
+    "files": [
+      "static/chunks/44530001.e658c44b02517d7f.js",
+      "static/chunks/659.0d8730f58d7c6397.js",
+      "static/chunks/891.ab6a177c739c57d1.js",
+      "static/chunks/941.4a41cb283d0fde58.js"
+    ]
+  },
+  "app/page.tsx -> @/components/PortalsView": {
+    "id": 9596,
+    "files": [
+      "static/chunks/44530001.e658c44b02517d7f.js",
+      "static/chunks/659.0d8730f58d7c6397.js",
+      "static/chunks/891.ab6a177c739c57d1.js",
+      "static/chunks/596.89f06126f25ec7c9.js"
+    ]
+  },
+  "app/page.tsx -> @/components/ScanImportSystem": {
+    "id": 119,
+    "files": [
+      "static/chunks/119.70139a78fde7e274.js"
+    ]
+  },
+  "app/page.tsx -> @/components/SegmentationWorkspace": {
+    "id": 8135,
+    "files": [
+      "static/chunks/135.c94f88b117531438.js"
+    ]
+  },
+  "app/page.tsx -> @/components/SupplyChain": {
+    "id": 1698,
+    "files": [
+      "static/chunks/698.683c9d93fb0ad059.js"
+    ]
+  },
+  "app/page.tsx -> @/components/Viewer3D": {
+    "id": 1076,
+    "files": [
+      "static/chunks/b536a0f1.b8c7485058b305ee.js",
+      "static/chunks/422.268e7ece5c40e2b8.js",
+      "static/chunks/76.561a03c2634b0228.js"
+    ]
+  },
+  "app/page.tsx -> @/components/WhiteLabelSettings": {
+    "id": 5276,
+    "files": [
+      "static/chunks/276.3ad3c241f2e9e843.js"
+    ]
+  }
+}

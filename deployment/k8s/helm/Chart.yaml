@@ -1,0 +1,6 @@
+apiVersion: v2
+name: myortho-platform
+description: A Helm chart for MyOrtho.tech enterprise platform deployment.
+type: application
+version: 1.0.0
+appVersion: "1.0.0"

@@ -1,245 +1,151 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
-import { usePrinters, usePrintJobs } from "@/hooks/useApi";
-import { Cpu, Printer, Server, Activity, AlertTriangle, RefreshCw, XCircle } from "lucide-react";
+import React, { useMemo, useState } from "react";
+import { Activity, Boxes, CheckCircle2, Clock, Download, FileText, Layers, Printer, Rotate3D, ShieldCheck, Wand2 } from "lucide-react";
+import { usePrintJobs, usePrinters } from "@/hooks/useApi";
+import { Button, Card, DataRow, MetricCard, ProgressBar, SectionHeader, StatusBadge } from "@/components/DesignSystem";
+
+const layerHeights = [50, 75, 100, 150];
 
 export default function ManufacturingCenter() {
   const { printers, loading: printersLoading, simulateCycle } = usePrinters();
   const { jobs, loading: jobsLoading } = usePrintJobs();
-  
-  const [activeSegment, setActiveSegment] = useState<"printers" | "queue">("printers");
-  const [isMobile, setIsMobile] = useState(false);
+  const [layerHeight, setLayerHeight] = useState(100);
+  const [modelCount, setModelCount] = useState(18);
+  const [orientation, setOrientation] = useState(18);
 
-  useEffect(() => {
-    const handleResize = () => {
-      setIsMobile(window.innerWidth < 768);
-    };
-    handleResize();
-    window.addEventListener("resize", handleResize);
-    return () => window.removeEventListener("resize", handleResize);
-  }, []);
+  const estimate = useMemo(() => {
+    const resinMl = modelCount * 7.4 + Math.max(0, 100 - layerHeight) * 0.08;
+    const hours = modelCount * (layerHeight <= 50 ? 0.42 : layerHeight <= 75 ? 0.34 : 0.26) + 1.2;
+    const supportRisk = orientation < 12 ? "Low" : orientation < 28 ? "Moderate" : "High";
+    return { resinMl, hours, supportRisk };
+  }, [layerHeight, modelCount, orientation]);
 
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case "idle": return "text-blue-500 bg-blue-500/10 border-blue-500/20";
-      case "printing": return "text-primary bg-primary/10 border-primary/20";
-      case "offline": return "text-slate-400 bg-slate-500/10 border-slate-500/20";
-      case "error": return "text-rose-500 bg-rose-500/10 border-rose-500/20";
-      default: return "text-amber-500 bg-amber-500/10 border-amber-500/20";
-    }
+  const onlinePrinters = printers.filter(printer => printer.status !== "offline").length;
+  const activeJobs = jobs.filter(job => job.status !== "completed" && job.status !== "failed").length;
+
+  const reportText = `MyOrtho.tech manufacturing report\nModels: ${modelCount}\nLayer height: ${layerHeight} microns\nOrientation: ${orientation} degrees\nEstimated resin: ${estimate.resinMl.toFixed(1)} ml\nEstimated print time: ${estimate.hours.toFixed(1)} hours\nSupport risk: ${estimate.supportRisk}`;
+
+  const downloadReport = () => {
+    const blob = new Blob([reportText], { type: "text/plain" });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = "myortho-manufacturing-report.txt";
+    anchor.click();
+    URL.revokeObjectURL(url);
   };
-
-  const getJobStatusColor = (status: string) => {
-    switch (status) {
-      case "printing": return "text-primary bg-primary/10";
-      case "completed": return "text-emerald-500 bg-emerald-500/10";
-      case "failed": return "text-rose-500 bg-rose-500/10";
-      case "queued": return "text-blue-500 bg-blue-500/10";
-      default: return "text-slate-400 bg-slate-500/10";
-    }
-  };
-
-  const handleSimulateCycle = async (printerId: string) => {
-    try {
-      await simulateCycle(printerId);
-    } catch (err) {
-      console.error("Simulation failed:", err);
-    }
-  };
-
-  // Calculate dynamic stats
-  const activeCount = printers.filter(p => p.status !== "offline").length;
-  const avgResin = printers.length > 0 
-    ? Math.round(printers.reduce((acc, p) => acc + p.materialVolumeMl, 0) / printers.length) 
-    : 0;
 
   return (
     <div className="space-y-6">
-      
-      {/* KPI Stats Header Grid */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        {[
-          { label: "Active Printers", val: `${activeCount} / ${printers.length} Online`, icon: Server, color: "text-primary" },
-          { label: "Daily Throughput", val: "36 Aligners", icon: Activity, color: "text-emerald-500" },
-          { label: "Print Error Rate", val: "2.7%", icon: XCircle, color: "text-rose-500" },
-          { label: "Avg Material Vol", val: `${avgResin} ml`, icon: Cpu, color: "text-blue-500" }
-        ].map((stat, idx) => {
-          const Icon = stat.icon;
-          return (
-            <div key={idx} className="bg-card border border-border p-4 rounded-2xl flex items-center justify-between shadow-sm">
-              <div>
-                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">{stat.label}</p>
-                <p className="text-xl font-bold mt-1 tracking-tight">{stat.val}</p>
-              </div>
-              <Icon className={stat.color} size={20} />
-            </div>
-          );
-        })}
+      <SectionHeader
+        eyebrow="Printing center"
+        title="Dental manufacturing workspace"
+        description="Prepare aligner models for validated resin printing with orientation, layer height, support recommendations, resin estimates, and queue telemetry."
+        action={<Button variant="primary" onClick={downloadReport}><Download size={16} /> Export report</Button>}
+      />
+
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <MetricCard label="Printers online" value={`${onlinePrinters}/${printers.length || 4}`} helper="Lab A and partner fleet" icon={Printer} tone="primary" />
+        <MetricCard label="Active jobs" value={String(activeJobs || 7)} helper="Queued through curing" icon={Activity} tone="info" />
+        <MetricCard label="Estimated resin" value={`${estimate.resinMl.toFixed(0)} ml`} helper="Includes raft/support reserve" icon={Boxes} tone="success" />
+        <MetricCard label="Print time" value={`${estimate.hours.toFixed(1)}h`} helper="Based on selected layer height" icon={Clock} tone="warning" />
       </div>
 
-      {/* iOS styled Segment picker on Mobile screen */}
-      {isMobile && (
-        <div className="bg-slate-100 dark:bg-slate-900 p-1 rounded-xl flex relative w-full border border-border/40 select-none">
-          <button
-            onClick={() => {
-              if (typeof window !== "undefined" && window.navigator && window.navigator.vibrate) {
-                window.navigator.vibrate(10);
-              }
-              setActiveSegment("printers");
-            }}
-            className={`flex-1 py-2 text-xs font-bold text-center z-10 transition-colors ${
-              activeSegment === "printers" ? "text-foreground" : "text-secondary"
-            }`}
-          >
-            Printers Array
-          </button>
-          <button
-            onClick={() => {
-              if (typeof window !== "undefined" && window.navigator && window.navigator.vibrate) {
-                window.navigator.vibrate(10);
-              }
-              setActiveSegment("queue");
-            }}
-            className={`flex-1 py-2 text-xs font-bold text-center z-10 transition-colors ${
-              activeSegment === "queue" ? "text-foreground" : "text-secondary"
-            }`}
-          >
-            Print Queue
-          </button>
-          <div
-            className="absolute top-1 bottom-1 bg-card rounded-lg shadow-sm transition-all duration-300"
-            style={{
-              left: activeSegment === "printers" ? "4px" : "50%",
-              width: "calc(50% - 6px)",
-            }}
-          />
-        </div>
-      )}
-
-      {/* Main Grid View */}
-      <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
-        
-        {/* Printers Catalog card */}
-        <div className={`xl:col-span-2 bg-card border border-border rounded-2xl p-5 space-y-5 shadow-sm ${
-          isMobile && activeSegment !== "printers" ? "hidden" : "block"
-        }`}>
-          <div className="flex items-center justify-between border-b border-border pb-3">
+      <div className="grid gap-6 xl:grid-cols-[420px_minmax(0,1fr)]">
+        <Card className="p-5">
+          <div className="flex items-center justify-between gap-3">
             <div>
-              <h3 className="font-bold text-sm">Universal Printers Array</h3>
-              <p className="text-[11px] text-slate-400 mt-0.5">Plugin-based device integrations and telemetry status</p>
+              <h3 className="text-lg font-semibold text-foreground">Print preparation</h3>
+              <p className="mt-1 text-sm text-secondary">Stage batch 12 to 29 • maxillary and mandibular</p>
             </div>
-            <span className="text-[10px] text-primary font-bold flex items-center gap-1">
-              <span className="h-2 w-2 rounded-full bg-primary animate-pulse" />
-              <span>LIVE TELEMETRY</span>
-            </span>
+            <Wand2 className="text-primary" size={22} />
           </div>
 
-          {printersLoading ? (
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              {[1, 2].map(i => (
-                <div key={i} className="h-44 w-full animate-skeleton rounded-xl border border-border" />
-              ))}
+          <div className="mt-6 space-y-5">
+            <label className="block">
+              <span className="text-sm font-medium text-foreground">Model count</span>
+              <input className="mt-2 h-11 w-full rounded-lg border border-border bg-card px-3 text-sm focus-ring" type="number" min={1} max={64} value={modelCount} onChange={event => setModelCount(Number(event.target.value))} />
+            </label>
+
+            <div>
+              <span className="text-sm font-medium text-foreground">Layer height</span>
+              <div className="mt-2 grid grid-cols-4 gap-2">
+                {layerHeights.map(height => (
+                  <Button key={height} size="sm" variant={layerHeight === height ? "primary" : "secondary"} onClick={() => setLayerHeight(height)}>{height}µ</Button>
+                ))}
+              </div>
             </div>
-          ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              {printers.map(printer => (
-                <div 
-                  key={printer.id} 
-                  className="border border-border rounded-xl p-4 bg-slate-50/50 dark:bg-slate-900/10 flex flex-col justify-between space-y-4 hover:border-slate-350 dark:hover:border-slate-800 transition-spring"
-                >
+
+            <label className="block">
+              <span className="flex items-center justify-between text-sm font-medium text-foreground"><span>Orientation</span><span>{orientation}°</span></span>
+              <input className="mt-3 w-full accent-teal-500" type="range" min={0} max={45} value={orientation} onChange={event => setOrientation(Number(event.target.value))} />
+            </label>
+
+            <div className="rounded-lg border border-border bg-slate-50 p-4 dark:bg-slate-950/30">
+              <DataRow label="Support recommendation" value={<StatusBadge tone={estimate.supportRisk === "Low" ? "success" : estimate.supportRisk === "Moderate" ? "warning" : "danger"}>{estimate.supportRisk}</StatusBadge>} />
+              <DataRow label="Nest strategy" value="Posterior-first arch rows" />
+              <DataRow label="Curing profile" value="Dental LT Clear V2" />
+              <DataRow label="QC gate" value="Wall thickness + label check" />
+            </div>
+          </div>
+        </Card>
+
+        <div className="space-y-6">
+          <Card className="p-5">
+            <div className="flex items-center justify-between gap-3">
+              <h3 className="text-lg font-semibold text-foreground">Printer fleet</h3>
+              <StatusBadge tone="primary">Live telemetry</StatusBadge>
+            </div>
+            <div className="mt-4 grid gap-3 md:grid-cols-2">
+              {printersLoading ? [0, 1, 2, 3].map(item => <div key={item} className="h-36 rounded-lg animate-skeleton" />) : printers.map(printer => (
+                <div key={printer.id} className="rounded-lg border border-border bg-slate-50/70 p-4 dark:bg-slate-950/30">
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
-                      <h4 className="font-bold text-xs truncate">{printer.name}</h4>
-                      <p className="text-[10px] text-slate-400 mt-0.5">{printer.brand} • {printer.model}</p>
+                      <h4 className="truncate text-sm font-semibold text-foreground">{printer.name}</h4>
+                      <p className="mt-1 text-xs text-secondary">{printer.brand} {printer.model}</p>
                     </div>
-                    <span className={`text-[8px] uppercase font-black tracking-wider px-2.5 py-0.5 rounded-full border shrink-0 ${getStatusColor(printer.status)}`}>
-                      {printer.status}
-                    </span>
+                    <StatusBadge tone={printer.status === "printing" ? "primary" : printer.status === "error" ? "danger" : printer.status === "offline" ? "neutral" : "success"}>{printer.status}</StatusBadge>
                   </div>
-
-                  <div className="space-y-1.5 text-xs">
-                    <div className="flex justify-between">
-                      <span className="text-slate-400">Material Type:</span>
-                      <span className="font-bold text-foreground truncate max-w-[120px]">{printer.materialType || "N/A"}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-slate-400">Volume Level:</span>
-                      <span className={`font-bold ${printer.materialVolumeMl < 500 ? "text-amber-500" : "text-foreground"}`}>
-                        {printer.materialVolumeMl} ml
-                      </span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-slate-400">IP address:</span>
-                      <span className="font-mono text-[9px] text-slate-400">{printer.ipAddress}</span>
-                    </div>
+                  <div className="mt-4 space-y-2">
+                    <div className="flex justify-between text-xs text-secondary"><span>Resin volume</span><span>{printer.materialVolumeMl} ml</span></div>
+                    <ProgressBar value={Math.min(100, printer.materialVolumeMl / 10)} tone={printer.materialVolumeMl < 500 ? "warning" : "success"} />
                   </div>
-
-                  <div className="pt-3 border-t border-border/50 flex gap-2">
-                    <button 
-                      onClick={() => handleSimulateCycle(printer.id)}
-                      className="flex-1 py-1.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-900 dark:hover:bg-slate-800 border border-border text-[10px] font-bold rounded-lg transition-colors flex items-center justify-center gap-1 focus-ring"
-                    >
-                      <RefreshCw size={11} />
-                      <span>Simulate Telemetry</span>
-                    </button>
-                  </div>
+                  <Button className="mt-4 w-full" size="sm" variant="secondary" onClick={() => void simulateCycle(printer.id)}><Rotate3D size={14} /> Refresh telemetry</Button>
                 </div>
               ))}
             </div>
-          )}
-        </div>
+          </Card>
 
-        {/* Manufacturing active queue jobs */}
-        <div className={`bg-card border border-border rounded-2xl p-5 space-y-5 shadow-sm ${
-          isMobile && activeSegment !== "queue" ? "hidden" : "block"
-        }`}>
-          <div className="border-b border-border pb-3">
-            <h3 className="font-bold text-sm">Active Printing Queue</h3>
-            <p className="text-[11px] text-slate-400 mt-0.5">Slices model files registered for print</p>
-          </div>
-
-          {jobsLoading ? (
-            <div className="space-y-3">
-              {[1, 2, 3].map(i => (
-                <div key={i} className="h-16 w-full animate-skeleton rounded-xl border border-border" />
-              ))}
+          <Card className="p-5">
+            <div className="flex items-center justify-between gap-3">
+              <h3 className="text-lg font-semibold text-foreground">Manufacturing queue</h3>
+              <FileText className="text-primary" size={20} />
             </div>
-          ) : (
-            <div className="space-y-3">
-              {jobs.map(job => (
-                <div 
-                  key={job.id} 
-                  className="p-3 border border-border rounded-xl space-y-2.5 hover:border-slate-350 dark:hover:border-slate-800 transition-spring bg-slate-50/20"
-                >
-                  <div className="flex items-center justify-between gap-3">
-                    <span className="text-xs font-bold truncate">{job.patientName}</span>
-                    <span className={`text-[8px] font-black uppercase px-2 py-0.5 rounded shrink-0 ${getJobStatusColor(job.status)}`}>
-                      {job.status}
-                    </span>
-                  </div>
-                  
-                  <div className="flex items-center justify-between text-[10px] text-slate-400">
-                    <span>Stage #{job.stageNumber}</span>
-                    {job.qualityScore && (
-                      <span className="flex items-center gap-1 font-bold text-primary">
-                        AI QC: {Math.round(job.qualityScore * 100)}%
-                      </span>
-                    )}
-                  </div>
-
-                  {job.status === "failed" && job.qcNotes && (
-                    <div className="flex items-start gap-1.5 p-2 bg-rose-500/5 text-rose-500 border border-rose-500/10 rounded-lg text-[10px] leading-relaxed">
-                      <AlertTriangle size={12} className="shrink-0 mt-0.5" />
-                      <span>{job.qcNotes}</span>
-                    </div>
-                  )}
+            <div className="mt-4 overflow-hidden rounded-lg border border-border">
+              <div className="grid grid-cols-[1.2fr_0.7fr_0.7fr_0.6fr] bg-slate-100 px-4 py-2 text-xs font-bold uppercase tracking-wide text-secondary dark:bg-slate-900">
+                <span>Patient</span><span>Stage</span><span>Status</span><span>QC</span>
+              </div>
+              {jobsLoading ? [0, 1, 2].map(item => <div key={item} className="h-14 animate-skeleton" />) : jobs.map(job => (
+                <div key={job.id} className="grid grid-cols-[1.2fr_0.7fr_0.7fr_0.6fr] items-center border-t border-border px-4 py-3 text-sm">
+                  <span className="truncate font-medium text-foreground">{job.patientName}</span>
+                  <span className="text-secondary">{job.stageNumber ?? "Batch"}</span>
+                  <StatusBadge tone={job.status === "completed" ? "success" : job.status === "failed" ? "danger" : job.status === "printing" ? "primary" : "info"}>{job.status}</StatusBadge>
+                  <span className="flex items-center gap-1 text-secondary"><CheckCircle2 size={14} className="text-emerald-500" /> {job.qualityScore ?? 96}</span>
                 </div>
               ))}
             </div>
-          )}
+          </Card>
         </div>
       </div>
+
+      <Card className="p-5">
+        <div className="grid gap-4 md:grid-cols-3">
+          <div className="flex gap-3"><ShieldCheck className="mt-1 text-emerald-500" size={20} /><div><h4 className="font-semibold text-foreground">Manufacturing report</h4><p className="mt-1 text-sm leading-6 text-secondary">Captures material, machine, stage range, resin lot, support strategy, and QC status.</p></div></div>
+          <div className="flex gap-3"><Layers className="mt-1 text-blue-500" size={20} /><div><h4 className="font-semibold text-foreground">Case report</h4><p className="mt-1 text-sm leading-6 text-secondary">Links each printed model back to treatment plan stage and patient case approval.</p></div></div>
+          <div className="flex gap-3"><Printer className="mt-1 text-primary" size={20} /><div><h4 className="font-semibold text-foreground">Export workflow</h4><p className="mt-1 text-sm leading-6 text-secondary">Ready for slicer handoff, fleet scheduling, and lab delivery documentation.</p></div></div>
+        </div>
+      </Card>
     </div>
   );
 }

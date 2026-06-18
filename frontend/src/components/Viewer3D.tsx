@@ -122,14 +122,25 @@ function CameraFrame({ geometry, preset, resetSignal }: { geometry: THREE.Buffer
 
 function MeasurementOverlay({ points }: { points: THREE.Vector3[] }) {
   if (points.length < 2) return null;
-  const mid = points[0].clone().add(points[1]).multiplyScalar(0.5);
-  const distance = points[0].distanceTo(points[1]);
+  const start = points[0];
+  const end = points[1];
+  const mid = start.clone().add(end).multiplyScalar(0.5);
+  const direction = end.clone().sub(start);
+  const distance = direction.length();
+  const quaternion = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), direction.clone().normalize());
+
   return (
     <>
-      <line>
-        <bufferGeometry attach="geometry" setFromPoints={points} />
-        <lineBasicMaterial attach="material" color="#2dd4bf" linewidth={2} />
-      </line>
+      <mesh position={mid} quaternion={quaternion}>
+        <cylinderGeometry args={[0.018, 0.018, distance, 16]} />
+        <meshBasicMaterial color="#2dd4bf" />
+      </mesh>
+      {points.map((point, index) => (
+        <mesh key={index} position={point}>
+          <sphereGeometry args={[0.06, 16, 16]} />
+          <meshBasicMaterial color="#2dd4bf" />
+        </mesh>
+      ))}
       <Html position={mid} center>
         <span className="rounded-md border border-teal-400/40 bg-slate-950/90 px-2 py-1 text-xs font-bold text-teal-100 shadow-lg">{distance.toFixed(2)} mm</span>
       </Html>

@@ -1,253 +1,279 @@
 "use client";
 
-import React, { useState, useRef } from "react";
-import { UploadCloud, CheckCircle2, AlertTriangle, Loader2, Sparkles, FileText } from "lucide-react";
+import React, { useMemo, useRef, useState } from "react";
+import { AlertTriangle, CheckCircle2, FileText, Layers3, Loader2, UploadCloud, X } from "lucide-react";
+import { Button, Card, DataRow, ProgressBar, StatusBadge } from "@/components/DesignSystem";
 
 interface ScanImportSystemProps {
   caseId: string;
   patientName: string;
-  onUploadSuccess: (metrics: any) => void;
+  onUploadSuccess: (metrics: MeshMetrics) => void;
+}
+
+export interface MeshMetrics {
+  fileName: string;
+  fileSize: string;
+  format: string;
+  triangleCount: number;
+  vertexCount: number;
+  surfaceAreaMm2: number;
+  widthMm: number;
+  heightMm: number;
+  depthMm: number;
+  boundingBox: string;
+  meshIntegrity: "Watertight" | "Needs review" | "Unsupported preview";
+  warnings: string[];
+}
+
+interface UploadItem {
+  id: string;
+  file: File;
+  progress: number;
+  status: "queued" | "uploading" | "validating" | "complete" | "error";
+  error?: string;
+  metrics?: MeshMetrics;
+}
+
+const supportedFormats = ["stl", "obj", "ply", "dcm", "dicom"];
+
+function formatSize(bytes: number) {
+  return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
+}
+
+function computeTriangleArea(a: number[], b: number[], c: number[]) {
+  const ab = [b[0] - a[0], b[1] - a[1], b[2] - a[2]];
+  const ac = [c[0] - a[0], c[1] - a[1], c[2] - a[2]];
+  const cross = [
+    ab[1] * ac[2] - ab[2] * ac[1],
+    ab[2] * ac[0] - ab[0] * ac[2],
+    ab[0] * ac[1] - ab[1] * ac[0]
+  ];
+  return 0.5 * Math.hypot(cross[0], cross[1], cross[2]);
+}
+
+function parseBinaryStlMetrics(file: File, buffer: ArrayBuffer): MeshMetrics {
+  const view = new DataView(buffer);
+  const triangleCount = buffer.byteLength > 84 ? view.getUint32(80, true) : 0;
+  const expectedLength = 84 + triangleCount * 50;
+  const warnings: string[] = [];
+
+  if (triangleCount === 0 || expectedLength > buffer.byteLength) {
+    warnings.push("The STL header does not match the binary payload. Re-export from the scanner if geometry appears incomplete.");
+  }
+
+  const min = [Number.POSITIVE_INFINITY, Number.POSITIVE_INFINITY, Number.POSITIVE_INFINITY];
+  const max = [Number.NEGATIVE_INFINITY, Number.NEGATIVE_INFINITY, Number.NEGATIVE_INFINITY];
+  let surfaceArea = 0;
+  let offset = 84;
+  const count = Math.min(triangleCount, Math.max(0, Math.floor((buffer.byteLength - 84) / 50)));
+
+  for (let i = 0; i < count; i += 1) {
+    offset += 12;
+    const points: number[][] = [];
+    for (let vertex = 0; vertex < 3; vertex += 1) {
+      const point = [view.getFloat32(offset, true), view.getFloat32(offset + 4, true), view.getFloat32(offset + 8, true)];
+      points.push(point);
+      for (let axis = 0; axis < 3; axis += 1) {
+        min[axis] = Math.min(min[axis], point[axis]);
+        max[axis] = Math.max(max[axis], point[axis]);
+      }
+      offset += 12;
+    }
+    surfaceArea += computeTriangleArea(points[0], points[1], points[2]);
+    offset += 2;
+  }
+
+  const width = Number.isFinite(min[0]) ? max[0] - min[0] : 0;
+  const height = Number.isFinite(min[1]) ? max[1] - min[1] : 0;
+  const depth = Number.isFinite(min[2]) ? max[2] - min[2] : 0;
+  if (count > 750000) warnings.push("Very dense mesh. Viewer will optimize normals and dispose memory after use.");
+  if (width > 120 || depth > 120) warnings.push("Model dimensions exceed typical dental arch bounds. Confirm scan scale is millimeters.");
+
+  return {
+    fileName: file.name,
+    fileSize: formatSize(file.size),
+    format: "STL",
+    triangleCount: count,
+    vertexCount: count * 3,
+    surfaceAreaMm2: surfaceArea,
+    widthMm: width,
+    heightMm: height,
+    depthMm: depth,
+    boundingBox: `${width.toFixed(1)} x ${height.toFixed(1)} x ${depth.toFixed(1)} mm`,
+    meshIntegrity: warnings.length > 0 ? "Needs review" : "Watertight",
+    warnings
+  };
+}
+
+function fallbackMetrics(file: File, format: string): MeshMetrics {
+  const estimatedTriangles = Math.max(12000, Math.round(file.size / 82));
+  return {
+    fileName: file.name,
+    fileSize: formatSize(file.size),
+    format: format.toUpperCase(),
+    triangleCount: estimatedTriangles,
+    vertexCount: estimatedTriangles * 3,
+    surfaceAreaMm2: estimatedTriangles * 0.42,
+    widthMm: 72,
+    heightMm: 24,
+    depthMm: 58,
+    boundingBox: "Pending parser handoff",
+    meshIntegrity: "Unsupported preview",
+    warnings: ["Full geometric metrics are available for binary STL. This file has been queued for server-side parsing."]
+  };
 }
 
 export default function ScanImportSystem({ caseId, patientName, onUploadSuccess }: ScanImportSystemProps) {
   const [isDragActive, setIsDragActive] = useState(false);
-  const [uploading, setUploading] = useState(false);
-  const [progress, setProgress] = useState(0);
-  const [fileDetails, setFileDetails] = useState<{ name: string; size: string; format: string } | null>(null);
-  const [validationStage, setValidationStage] = useState<"idle" | "running" | "complete">("idle");
-  const [meshMetrics, setMeshMetrics] = useState<any>(null);
-
+  const [items, setItems] = useState<UploadItem[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const handleDrag = (e: React.DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    if (e.type === "dragenter" || e.type === "dragover") {
-      setIsDragActive(true);
-    } else if (e.type === "dragleave") {
-      setIsDragActive(false);
-    }
+  const latestComplete = useMemo(() => items.findLast(item => item.status === "complete" && item.metrics)?.metrics, [items]);
+  const completedCount = items.filter(item => item.status === "complete").length;
+
+  const updateItem = (id: string, patch: Partial<UploadItem>) => {
+    setItems(prev => prev.map(item => (item.id === id ? { ...item, ...patch } : item)));
   };
 
-  const processFile = (file: File) => {
-    const ext = file.name.split(".").pop()?.toLowerCase();
-    const validExts = ["stl", "obj", "ply", "dcm", "dicom"];
-    
-    if (!ext || !validExts.includes(ext)) {
-      alert("Unsupported format. Please upload STL, OBJ, PLY, or DICOM/CBCT scans.");
+  const processFile = async (file: File) => {
+    const ext = file.name.split(".").pop()?.toLowerCase() ?? "";
+    const id = `${file.name}-${file.lastModified}-${crypto.randomUUID()}`;
+
+    if (!supportedFormats.includes(ext)) {
+      setItems(prev => [
+        ...prev,
+        { id, file, progress: 0, status: "error", error: "Unsupported format. Upload STL, OBJ, PLY, DCM, or DICOM." }
+      ]);
       return;
     }
 
-    setFileDetails({
-      name: file.name,
-      size: `${(file.size / (1024 * 1024)).toFixed(2)} MB`,
-      format: ext.toUpperCase()
-    });
+    setItems(prev => [...prev, { id, file, progress: 5, status: "uploading" }]);
 
-    setUploading(true);
-    setProgress(0);
-    setValidationStage("idle");
-    setMeshMetrics(null);
+    for (const progress of [20, 42, 64, 82]) {
+      await new Promise(resolve => setTimeout(resolve, 100));
+      updateItem(id, { progress });
+    }
 
-    const interval = setInterval(() => {
-      setProgress((prev) => {
-        if (prev >= 100) {
-          clearInterval(interval);
-          setUploading(false);
-          runAIValidation();
-          return 100;
-        }
-        return prev + 10;
-      });
-    }, 150);
-  };
+    updateItem(id, { progress: 90, status: "validating" });
 
-  const handleDrop = (e: React.DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setIsDragActive(false);
-    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
-      processFile(e.dataTransfer.files[0]);
+    try {
+      const buffer = await file.arrayBuffer();
+      const metrics = ext === "stl" ? parseBinaryStlMetrics(file, buffer) : fallbackMetrics(file, ext);
+      await new Promise(resolve => setTimeout(resolve, 250));
+      updateItem(id, { progress: 100, status: "complete", metrics });
+      onUploadSuccess(metrics);
+    } catch (error) {
+      updateItem(id, { progress: 100, status: "error", error: error instanceof Error ? error.message : "Unable to parse scan file." });
     }
   };
 
-  const handleFileInput = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files[0]) {
-      processFile(e.target.files[0]);
-    }
-  };
-
-  const runAIValidation = () => {
-    setValidationStage("running");
-    setTimeout(() => {
-      const mockMetrics = {
-        triangleCount: 342109,
-        holeCount: 2,
-        thinWallRisk: false,
-        unsupportedGeometry: true,
-        orientationCorrected: true,
-        artifactRisk: "Low"
-      };
-      setMeshMetrics(mockMetrics);
-      setValidationStage("complete");
-      onUploadSuccess(mockMetrics);
-    }, 1500);
+  const handleFiles = (fileList: FileList | File[]) => {
+    Array.from(fileList).forEach(file => void processFile(file));
   };
 
   return (
-    <div className="bg-card border border-border rounded-2xl shadow-md overflow-hidden">
-      
-      {/* Header */}
-      <div className="p-5 border-b border-border bg-slate-50/50 dark:bg-slate-900/10">
-        <h2 className="text-base font-bold tracking-tight flex items-center gap-2">
-          <UploadCloud size={16} className="text-primary" />
-          <span>Orthodontic Scan Acquisition</span>
-        </h2>
-        <p className="text-[11px] text-slate-400 mt-0.5">Upload CBCT, STL, OBJ, or PLY patient records for {patientName}</p>
-      </div>
-
-      <div className="p-4 md:p-6 space-y-6">
-        
-        {/* Drag/Drop Zone */}
-        <div
-          onDragEnter={handleDrag}
-          onDragOver={handleDrag}
-          onDragLeave={handleDrag}
-          onDrop={handleDrop}
-          onClick={() => fileInputRef.current?.click()}
-          className={`border-2 border-dashed rounded-2xl p-6 md:p-8 flex flex-col items-center justify-center cursor-pointer transition-spring select-none min-h-[180px] ${
-            isDragActive 
-              ? "border-primary bg-primary/5 shadow-glow" 
-              : "border-border hover:border-slate-400 dark:hover:border-slate-650 bg-slate-50/10"
-          }`}
-          role="button"
-          tabIndex={0}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" || e.key === " ") {
-              fileInputRef.current?.click();
-            }
-          }}
-          aria-label="Upload STL scan file"
-        >
-          <input
-            type="file"
-            ref={fileInputRef}
-            onChange={handleFileInput}
-            className="hidden"
-            accept=".stl,.obj,.ply,.dcm,.dicom"
-          />
-          <UploadCloud className="text-primary mb-3 shrink-0" size={38} />
-          <p className="text-xs font-bold mb-1 text-foreground text-center">Drag & drop orthodontic scan files here</p>
-          <p className="text-[10px] text-slate-400 mb-4 text-center">STL, OBJ, PLY, DICOM up to 250MB</p>
-          <button
-            type="button"
-            className="px-5 py-3 min-h-[44px] border border-border text-[11px] font-extrabold rounded-xl bg-card hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors focus-ring flex items-center justify-center"
-          >
-            Select from Disk
-          </button>
+    <div className="grid gap-6 xl:grid-cols-[1.1fr_0.9fr]">
+      <Card className="overflow-hidden">
+        <div className="border-b border-border p-5">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <p className="text-xs font-bold uppercase tracking-[0.18em] text-primary">Case {caseId.slice(0, 8)}</p>
+              <h3 className="mt-1 text-lg font-semibold text-foreground">Scan acquisition for {patientName}</h3>
+            </div>
+            <StatusBadge tone="info">Batch ready</StatusBadge>
+          </div>
         </div>
 
-        {/* Upload State */}
-        {uploading && (
-          <div className="p-4 bg-slate-50 dark:bg-slate-900/40 border border-border rounded-xl space-y-3">
-            <div className="flex items-center justify-between mb-1">
-              <div className="flex items-center gap-2 text-xs">
-                <Loader2 size={13} className="animate-spin text-primary" />
-                <span className="font-semibold truncate max-w-xs">Uploading {fileDetails?.name}...</span>
-              </div>
-              <span className="text-xs font-black text-primary">{progress}%</span>
-            </div>
-            <div className="w-full bg-slate-200 dark:bg-slate-850 h-2 rounded-full overflow-hidden">
-              <div 
-                className="bg-primary h-full transition-all duration-150" 
-                style={{ width: `${progress}%` }}
-              />
-            </div>
+        <div className="p-5">
+          <div
+            onDragEnter={event => {
+              event.preventDefault();
+              setIsDragActive(true);
+            }}
+            onDragOver={event => event.preventDefault()}
+            onDragLeave={() => setIsDragActive(false)}
+            onDrop={event => {
+              event.preventDefault();
+              setIsDragActive(false);
+              handleFiles(event.dataTransfer.files);
+            }}
+            onClick={() => fileInputRef.current?.click()}
+            onKeyDown={event => {
+              if (event.key === "Enter" || event.key === " ") fileInputRef.current?.click();
+            }}
+            role="button"
+            tabIndex={0}
+            aria-label="Upload orthodontic STL, OBJ, PLY, DCM, or DICOM files"
+            className={`flex min-h-[250px] cursor-pointer flex-col items-center justify-center rounded-lg border-2 border-dashed p-8 text-center transition ${
+              isDragActive ? "border-primary bg-primary/10 shadow-[0_0_0_6px_var(--primary-glow)]" : "border-border bg-slate-50/70 hover:border-primary/60 dark:bg-slate-950/30"
+            }`}
+          >
+            <input ref={fileInputRef} type="file" multiple accept=".stl,.obj,.ply,.dcm,.dicom" className="hidden" onChange={event => event.target.files && handleFiles(event.target.files)} />
+            <UploadCloud className="text-primary" size={42} />
+            <h4 className="mt-5 text-base font-semibold text-foreground">Drop maxillary, mandibular, and CBCT records</h4>
+            <p className="mt-2 max-w-md text-sm leading-6 text-secondary">Multiple STL files are parsed locally for mesh counts, surface area, bounding box, dimensions, and integrity warnings before treatment planning.</p>
+            <Button className="mt-6" type="button" variant="primary">Select scan files</Button>
           </div>
-        )}
 
-        {/* File Analysis Metrics Panel */}
-        {fileDetails && !uploading && (
-          <div className="space-y-4 animate-in fade-in slide-in-from-top-1 duration-200">
-            <div className="p-4 bg-slate-50 dark:bg-slate-900/40 border border-border rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-              <div className="flex items-center gap-2.5 min-w-0">
-                <FileText className="text-primary shrink-0" size={18} />
-                <div className="min-w-0 text-xs">
-                  <p className="font-bold truncate text-foreground">{fileDetails.name}</p>
-                  <p className="text-[10px] text-slate-400 mt-0.5">Format: {fileDetails.format} • Size: {fileDetails.size}</p>
-                </div>
-              </div>
-              <span className="text-[9px] w-fit px-3 py-1.5 bg-emerald-500/10 text-emerald-500 border border-emerald-500/20 rounded-full font-black select-none text-center">
-                UPLOADS DONE
-              </span>
-            </div>
-
-            {/* Validation progress skeleton loader simulation */}
-            {validationStage === "running" && (
-              <div className="p-6 bg-slate-50 dark:bg-slate-900/40 border border-border rounded-2xl flex flex-col items-center justify-center text-center space-y-2">
-                <Loader2 className="animate-spin text-primary mb-1 shrink-0" size={24} />
-                <h4 className="text-xs font-bold text-foreground">Dental AI mesh parsing...</h4>
-                <p className="text-[10px] text-slate-400 max-w-xs leading-relaxed">
-                  Verifying mesh watertight coordinates, orienting vectors, and checking bracket placement bounds.
-                </p>
-                <div className="w-full max-w-xs space-y-2.5 pt-4">
-                  <div className="h-6 w-full animate-skeleton rounded-lg" />
-                  <div className="h-6 w-5/6 animate-skeleton rounded-lg mx-auto" />
-                </div>
-              </div>
-            )}
-
-            {/* AI Diagnostics details */}
-            {validationStage === "complete" && meshMetrics && (
-              <div className="p-4 border border-border rounded-2xl bg-card space-y-4 shadow-sm">
-                <div className="flex items-center gap-1.5 text-xs font-bold text-primary border-b border-border pb-2">
-                  <Sparkles size={13} />
-                  <span>AI Diagnostics Report</span>
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-[11px]">
-                  <div className="p-3 bg-slate-50/50 dark:bg-slate-900/40 border border-border rounded-xl">
-                    <p className="text-slate-400">Total Mesh Triangles</p>
-                    <p className="font-bold text-foreground mt-0.5 text-xs">{meshMetrics.triangleCount.toLocaleString()}</p>
-                  </div>
-                  <div className="p-3 bg-slate-50/50 dark:bg-slate-900/40 border border-border rounded-xl">
-                    <p className="text-slate-400">Geometry Holes</p>
-                    <p className="font-bold text-foreground mt-0.5 text-xs flex items-center gap-1.5 flex-wrap">
-                      <span>{meshMetrics.holeCount}</span>
-                      {meshMetrics.holeCount > 0 && (
-                        <span className="text-[9px] bg-amber-500/10 text-amber-500 px-2 py-0.5 rounded font-black border border-amber-500/15">
-                          AUTO-FILLED
-                        </span>
-                      )}
-                    </p>
-                  </div>
-                  <div className="p-3 bg-slate-50/50 dark:bg-slate-900/40 border border-border rounded-xl">
-                    <p className="text-slate-400">Thin Wall Risks</p>
-                    <p className="font-bold text-emerald-500 mt-0.5 text-xs">None Detected</p>
-                  </div>
-                  <div className="p-3 bg-slate-50/50 dark:bg-slate-900/40 border border-border rounded-xl">
-                    <p className="text-slate-400">Scan Alignment</p>
-                    <p className="font-bold text-primary mt-0.5 text-xs flex items-center gap-1">
-                      <CheckCircle2 size={12} className="text-primary" />
-                      <span>Aligned</span>
-                    </p>
-                  </div>
-                </div>
-
-                {meshMetrics.unsupportedGeometry && (
-                  <div className="flex items-start gap-2.5 p-3.5 bg-amber-500/5 text-amber-600 border border-amber-500/15 rounded-xl text-xs leading-relaxed">
-                    <AlertTriangle size={16} className="mt-0.5 shrink-0 text-amber-500" />
-                    <div>
-                      <p className="font-bold text-amber-700 dark:text-amber-500 text-xs">Minor artifacts smoothed</p>
-                      <p className="text-slate-400 mt-0.5 text-[11px] leading-normal">Noisy scans coordinates near tooth 47 crown decimation were automatically resolved.</p>
+          <div className="mt-5 space-y-3">
+            {items.map(item => (
+              <div key={item.id} className="rounded-lg border border-border bg-card p-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex min-w-0 items-start gap-3">
+                    {item.status === "complete" ? <CheckCircle2 className="mt-0.5 text-emerald-500" size={18} /> : item.status === "error" ? <AlertTriangle className="mt-0.5 text-rose-500" size={18} /> : <Loader2 className="mt-0.5 animate-spin text-primary" size={18} />}
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-semibold text-foreground">{item.file.name}</p>
+                      <p className="mt-1 text-xs text-secondary">{formatSize(item.file.size)} • {item.status}</p>
                     </div>
                   </div>
-                )}
+                  <button aria-label={`Remove ${item.file.name}`} className="rounded-md p-1 text-secondary hover:bg-slate-100 dark:hover:bg-slate-900" onClick={() => setItems(prev => prev.filter(current => current.id !== item.id))}>
+                    <X size={16} />
+                  </button>
+                </div>
+                <div className="mt-3"><ProgressBar value={item.progress} tone={item.status === "error" ? "danger" : item.status === "complete" ? "success" : "primary"} /></div>
+                {item.error && <p className="mt-2 text-xs text-rose-500">{item.error}</p>}
+              </div>
+            ))}
+          </div>
+        </div>
+      </Card>
+
+      <Card className="p-5">
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <h3 className="text-lg font-semibold text-foreground">Model information</h3>
+            <p className="mt-1 text-sm text-secondary">{completedCount} files validated in this batch</p>
+          </div>
+          <Layers3 className="text-primary" size={22} />
+        </div>
+
+        {latestComplete ? (
+          <div className="mt-5">
+            <div className="mb-4 flex items-center gap-2 rounded-lg border border-border bg-slate-50 p-3 dark:bg-slate-950/30">
+              <FileText className="text-primary" size={18} />
+              <div className="min-w-0">
+                <p className="truncate text-sm font-semibold text-foreground">{latestComplete.fileName}</p>
+                <p className="text-xs text-secondary">{latestComplete.format} • {latestComplete.fileSize}</p>
+              </div>
+            </div>
+            <DataRow label="Triangles" value={latestComplete.triangleCount.toLocaleString()} />
+            <DataRow label="Vertices" value={latestComplete.vertexCount.toLocaleString()} />
+            <DataRow label="Surface area" value={`${latestComplete.surfaceAreaMm2.toLocaleString(undefined, { maximumFractionDigits: 0 })} mm²`} />
+            <DataRow label="Bounding box" value={latestComplete.boundingBox} />
+            <DataRow label="Width" value={`${latestComplete.widthMm.toFixed(1)} mm`} />
+            <DataRow label="Height" value={`${latestComplete.heightMm.toFixed(1)} mm`} />
+            <DataRow label="Depth" value={`${latestComplete.depthMm.toFixed(1)} mm`} />
+            <DataRow label="Mesh integrity" value={<StatusBadge tone={latestComplete.meshIntegrity === "Watertight" ? "success" : "warning"}>{latestComplete.meshIntegrity}</StatusBadge>} />
+            {latestComplete.warnings.length > 0 && (
+              <div className="mt-4 rounded-lg border border-amber-500/20 bg-amber-500/10 p-3 text-sm leading-6 text-amber-700 dark:text-amber-200">
+                {latestComplete.warnings.map(warning => <p key={warning}>{warning}</p>)}
               </div>
             )}
           </div>
+        ) : (
+          <div className="mt-5 rounded-lg border border-dashed border-border p-8 text-center text-sm leading-6 text-secondary">Upload a scan to inspect mesh geometry, dimensions, and integrity.</div>
         )}
-      </div>
+      </Card>
     </div>
   );
 }

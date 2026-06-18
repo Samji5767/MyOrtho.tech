@@ -1,0 +1,112 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}-backend
+  labels:
+    app: myortho-backend
+spec:
+  replicas: {{ .Values.backend.replicaCount | default 3 }}
+  selector:
+    matchLabels:
+      app: myortho-backend
+  template:
+    metadata:
+      labels:
+        app: myortho-backend
+    spec:
+      containers:
+        - name: backend
+          image: "{{ .Values.image.repository }}/backend:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - containerPort: 4000
+          resources:
+            limits:
+              cpu: {{ .Values.backend.resources.limits.cpu }}
+              memory: {{ .Values.backend.resources.limits.memory }}
+            requests:
+              cpu: {{ .Values.backend.resources.requests.cpu }}
+              memory: {{ .Values.backend.resources.requests.memory }}
+          env:
+            - name: PORT
+              value: "4000"
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: myortho-secrets
+                  key: database-url
+            - name: REDIS_URL
+              value: "redis://myortho-redis:6379"
+            - name: SUPABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: myortho-secrets
+                  key: supabase-url
+            - name: SUPABASE_ANON_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: myortho-secrets
+                  key: supabase-anon-key
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}-frontend
+  labels:
+    app: myortho-frontend
+spec:
+  replicas: {{ .Values.frontend.replicaCount | default 3 }}
+  selector:
+    matchLabels:
+      app: myortho-frontend
+  template:
+    metadata:
+      labels:
+        app: myortho-frontend
+    spec:
+      containers:
+        - name: frontend
+          image: "{{ .Values.image.repository }}/frontend:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - containerPort: 3000
+          resources:
+            limits:
+              cpu: {{ .Values.frontend.resources.limits.cpu }}
+              memory: {{ .Values.frontend.resources.limits.memory }}
+            requests:
+              cpu: {{ .Values.frontend.resources.requests.cpu }}
+              memory: {{ .Values.frontend.resources.requests.memory }}
+          env:
+            - name: NEXT_PUBLIC_API_URL
+              value: "https://api.myortho.tech"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}-ai-engine
+  labels:
+    app: myortho-ai-engine
+spec:
+  replicas: {{ .Values.aiEngine.replicaCount | default 2 }}
+  selector:
+    matchLabels:
+      app: myortho-ai-engine
+  template:
+    metadata:
+      labels:
+        app: myortho-ai-engine
+    spec:
+      containers:
+        - name: ai-engine
+          image: "{{ .Values.image.repository }}/ai-engine:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - containerPort: 8000
+          resources:
+            limits:
+              cpu: {{ .Values.aiEngine.resources.limits.cpu }}
+              memory: {{ .Values.aiEngine.resources.limits.memory }}
+            requests:
+              cpu: {{ .Values.aiEngine.resources.requests.cpu }}
+              memory: {{ .Values.aiEngine.resources.requests.memory }}

@@ -12,7 +12,7 @@ actor STLLoader {
         // Reliable binary detection: compare file size against the expected
         // binary layout (84-byte header + N × 50-byte triangles).
         let possibleCount = data.withUnsafeBytes {
-            $0.load(fromByteOffset: 80, as: UInt32.self)
+            $0.loadUnaligned(fromByteOffset: 80, as: UInt32.self)
         }
         let expectedBinarySize = 84 + Int(possibleCount) * 50
         let isBinary = (data.count == expectedBinarySize) && possibleCount > 0
@@ -57,16 +57,16 @@ actor STLLoader {
                 guard outIdx < outputCount else { break }
                 let base = 84 + i * 50
 
-                let nx = ptr.load(fromByteOffset: base,      as: Float.self)
-                let ny = ptr.load(fromByteOffset: base + 4,  as: Float.self)
-                let nz = ptr.load(fromByteOffset: base + 8,  as: Float.self)
+                let nx = ptr.loadUnaligned(fromByteOffset: base,      as: Float.self)
+                let ny = ptr.loadUnaligned(fromByteOffset: base + 4,  as: Float.self)
+                let nz = ptr.loadUnaligned(fromByteOffset: base + 8,  as: Float.self)
                 let n  = SCNVector3(nx, ny, nz)
 
                 for v in 0..<3 {
                     let vo  = base + 12 + v * 12
-                    let x   = ptr.load(fromByteOffset: vo,     as: Float.self)
-                    let y   = ptr.load(fromByteOffset: vo + 4, as: Float.self)
-                    let z   = ptr.load(fromByteOffset: vo + 8, as: Float.self)
+                    let x   = ptr.loadUnaligned(fromByteOffset: vo,     as: Float.self)
+                    let y   = ptr.loadUnaligned(fromByteOffset: vo + 4, as: Float.self)
+                    let z   = ptr.loadUnaligned(fromByteOffset: vo + 8, as: Float.self)
                     let idx = outIdx * 3 + v
                     vertices[idx] = SCNVector3(x, y, z)
                     normals[idx]  = n

@@ -52,6 +52,7 @@ services:
       - SUPABASE_SERVICE_ROLE_KEY=${SUPABASE_SERVICE_ROLE_KEY:-}
       - JWT_SECRET=${JWT_SECRET:-}
       - ENCRYPTION_KEY=${ENCRYPTION_KEY:-}
+      - FRONTEND_URL=${FRONTEND_URL:-https://myortho.tech}
     depends_on:
       database:
         condition: service_healthy

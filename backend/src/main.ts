@@ -1,4 +1,5 @@
 import { NestFactory } from '@nestjs/core';
+import { ValidationPipe } from '@nestjs/common';
 import { AppModule } from './app.module';
 import { AllExceptionsFilter } from './common/all-exceptions.filter';
 
@@ -20,7 +21,28 @@ async function bootstrap() {
   }
 
   const app = await NestFactory.create(AppModule);
-  app.enableCors();
+
+  // CORS: allow the configured frontend origin (production) plus localhost for dev.
+  // Wildcard was removed to prevent cross-site request forgery in production.
+  const allowedOrigins = [
+    process.env.FRONTEND_URL,
+    'http://localhost:3000',
+    'http://localhost:3005',
+  ].filter(Boolean) as string[];
+  app.enableCors({ origin: allowedOrigins, credentials: true });
+
+  // Global input validation — strips unknown fields; transform coerces primitives.
+  // forbidNonWhitelisted is intentionally absent: several controllers still use
+  // untyped @Body() dto: any, which has no class-validator metadata at runtime.
+  // With forbidNonWhitelisted those endpoints would silently reject valid requests.
+  // Re-enable once all controllers have decorated DTO classes.
+  app.useGlobalPipes(
+    new ValidationPipe({
+      whitelist: true,
+      transform: true,
+    }),
+  );
+
   app.useGlobalFilters(new AllExceptionsFilter());
 
   const port = process.env.PORT || 4000;

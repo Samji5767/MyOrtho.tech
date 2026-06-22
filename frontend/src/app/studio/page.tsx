@@ -15,6 +15,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { Button, Card, StatusBadge } from "@/components/DesignSystem";
+import CADCapabilityMatrix from "@/components/CADCapabilityMatrix";
 
 // ─── Heavy 3D components — SSR off, load only when tab is active ──────────────
 
@@ -128,12 +129,7 @@ function ViewerTab() {
 function CadTab() {
   return (
     <div className="space-y-4">
-      <div className="rounded-xl border border-[color:var(--border)] bg-[color:var(--card)] p-3">
-        <div className="flex items-center gap-2">
-          <StatusBadge tone="info">Offline lighting</StatusBadge>
-          <StatusBadge tone="neutral">No CDN fetch</StatusBadge>
-        </div>
-      </div>
+      <CADCapabilityMatrix />
       <CADEngine />
     </div>
   );

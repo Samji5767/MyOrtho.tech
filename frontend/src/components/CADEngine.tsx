@@ -8,8 +8,8 @@ import {
 } from "@react-three/drei";
 import * as THREE from "three";
 import {
-  AlertTriangle, BarChart3, CheckCircle2, ChevronRight,
-  Download, Layers, Move3d, RotateCcw, Target, Zap,
+  AlertTriangle, BarChart3, CheckCircle2, ChevronDown, ChevronRight, ChevronUp,
+  Download, Layers, ListOrdered, Move3d, RotateCcw, Scissors, Target, Zap,
 } from "lucide-react";
 import { Button, Card, DataRow, StatusBadge } from "@/components/DesignSystem";
 import { validateMovements } from "@/lib/biomechanics/vectorMath";
@@ -27,6 +27,20 @@ interface ToothObject {
 }
 
 type GizmoMode = "translate" | "rotate";
+type CrossSectionAxis = "x" | "y" | "z";
+
+interface AlignerStageRow {
+  stage: number;
+  activeTeeth: number[];
+  ipr: boolean;
+  attachmentActivations: number[];
+}
+
+const AXIS_NORMALS: Record<CrossSectionAxis, THREE.Vector3> = {
+  x: new THREE.Vector3(1, 0, 0),
+  y: new THREE.Vector3(0, 1, 0),
+  z: new THREE.Vector3(0, 0, 1),
+};
 
 // ─── Geometry helpers ─────────────────────────────────────────────────────────
 
@@ -116,6 +130,7 @@ function ToothMesh({
   isGroupSelected,
   isColliding,
   showAttachments,
+  clippingPlanes,
   onSelect,
   onMeshMounted,
 }: {
@@ -124,6 +139,7 @@ function ToothMesh({
   isGroupSelected: boolean;
   isColliding: boolean;
   showAttachments: boolean;
+  clippingPlanes: THREE.Plane[];
   onSelect: (fdi: number, shift: boolean) => void;
   onMeshMounted: (fdi: number, mesh: THREE.Mesh | null) => void;
 }) {
@@ -144,6 +160,12 @@ function ToothMesh({
     emissive: isColliding ? "#7f1d1d" : isSelected ? "#0f766e" : isGroupSelected ? "#312e81" : "#000000",
     emissiveIntensity: isSelected || isGroupSelected || isColliding ? 0.12 : 0,
   }), [isSelected, isGroupSelected, isColliding, tooth.color]);
+
+  // Update clipping planes without recreating the material
+  useEffect(() => {
+    mat.clippingPlanes = clippingPlanes;
+    mat.needsUpdate = true;
+  }, [mat, clippingPlanes]);
 
   return (
     <group position={tooth.initPosition} rotation={tooth.initRotation}>
@@ -192,6 +214,7 @@ function CADScene({
   gizmoMode,
   showAttachments,
   collisionFdis,
+  clippingPlanes,
   onSelectTooth,
   onTransformChange,
 }: {
@@ -200,6 +223,7 @@ function CADScene({
   gizmoMode: GizmoMode;
   showAttachments: boolean;
   collisionFdis: Set<number>;
+  clippingPlanes: THREE.Plane[];
   onSelectTooth: (fdi: number, shift: boolean) => void;
   onTransformChange: (fdi: number, pos: THREE.Vector3, rot: THREE.Euler) => void;
 }) {
@@ -244,6 +268,7 @@ function CADScene({
           isGroupSelected={selectedFdis.size > 1 && selectedFdis.has(tooth.fdi)}
           isColliding={collisionFdis.has(tooth.fdi)}
           showAttachments={showAttachments}
+          clippingPlanes={clippingPlanes}
           onSelect={onSelectTooth}
           onMeshMounted={handleMeshMounted}
         />
@@ -298,6 +323,20 @@ export default function CADEngine() {
   const [toothOverrides, setToothOverrides] = useState<Map<number, { position: THREE.Vector3; rotation: THREE.Euler }>>(new Map());
   const [biomechanicsWarning, setBiomechanicsWarning] = useState<string | null>(null);
 
+  // Cross-section plane
+  const [crossSectionEnabled, setCrossSectionEnabled] = useState(false);
+  const [crossSectionAxis, setCrossSectionAxis] = useState<CrossSectionAxis>("y");
+  const [crossSectionPos, setCrossSectionPos] = useState(0);
+
+  const clippingPlanes = useMemo<THREE.Plane[]>(() => {
+    if (!crossSectionEnabled) return [];
+    return [new THREE.Plane(AXIS_NORMALS[crossSectionAxis].clone(), -crossSectionPos)];
+  }, [crossSectionEnabled, crossSectionAxis, crossSectionPos]);
+
+  // Stage generation
+  const [stagesVisible, setStagesVisible] = useState(false);
+  const [generatedStages, setGeneratedStages] = useState<AlignerStageRow[]>([]);
+
   const collisionFdis = useMemo(() => {
     if (!showCollision) return new Set<number>();
     return detectCollisions(teeth, toothOverrides);
@@ -335,6 +374,50 @@ export default function CADEngine() {
   const selectedTooth = teeth.find(t => t.fdi === primaryFdi) ?? null;
   const attachmentCount = teeth.filter(t => t.hasAttachment).length;
   const iprCount = teeth.filter(t => t.iprLeft).length;
+
+  const generateStages = useCallback(() => {
+    const VELOCITY_MM = 0.25;
+    const OVERCORRECT = 2;
+    const overrideEntries = Array.from(toothOverrides.entries());
+    const attachmentFdis = teeth.filter(t => t.hasAttachment).map(t => t.fdi);
+    const iprFdis = teeth.filter(t => t.iprLeft).map(t => t.fdi);
+
+    // Maximum translation distance across all moved teeth
+    let maxDist = 0;
+    for (const [fdi, ov] of overrideEntries) {
+      const tooth = teeth.find(t => t.fdi === fdi);
+      if (!tooth) continue;
+      const dist = ov.position.distanceTo(tooth.initPosition);
+      maxDist = Math.max(maxDist, dist);
+    }
+    // Minimum 10 stages even without overrides
+    const activeStages = Math.max(1, Math.ceil(maxDist / VELOCITY_MM));
+    const total = activeStages + OVERCORRECT;
+    const iprStage = Math.max(1, Math.floor(total * 0.3));
+
+    const rows: AlignerStageRow[] = Array.from({ length: total }, (_, i) => {
+      const s = i + 1;
+      const progress = s / activeStages;
+      // Teeth that are actively moving in this stage (ramped activation)
+      const activeTeeth = overrideEntries
+        .filter(([fdi]) => {
+          const tooth = teeth.find(t => t.fdi === fdi);
+          if (!tooth) return false;
+          const dist = toothOverrides.get(fdi)!.position.distanceTo(tooth.initPosition);
+          const stagesNeeded = Math.ceil(dist / VELOCITY_MM);
+          return s <= stagesNeeded;
+        })
+        .map(([fdi]) => fdi);
+      return {
+        stage: s,
+        activeTeeth: activeTeeth.length > 0 ? activeTeeth : (s <= activeStages ? [] : []),
+        ipr: s === iprStage,
+        attachmentActivations: s === 1 ? attachmentFdis : [],
+      };
+    });
+    setGeneratedStages(rows);
+    setStagesVisible(true);
+  }, [teeth, toothOverrides]);
 
   const exportCADPackage = () => {
     const pkg = {
@@ -452,6 +535,7 @@ export default function CADEngine() {
                 gizmoMode={gizmoMode}
                 showAttachments={showAttachments}
                 collisionFdis={collisionFdis}
+                clippingPlanes={clippingPlanes}
                 onSelectTooth={handleSelectTooth}
                 onTransformChange={handleTransformChange}
               />
@@ -550,34 +634,162 @@ export default function CADEngine() {
           )}
         </Card>
 
+        {/* Cross-section */}
+        <Card className="p-4">
+          <h3 className="mb-3 text-sm font-semibold text-foreground flex items-center gap-2">
+            <Scissors size={14} className="text-primary" /> Cross Section
+          </h3>
+          <div className="mb-3 flex items-center justify-between gap-2">
+            <span className="text-xs text-secondary">Enable clipping plane</span>
+            <button
+              type="button"
+              onClick={() => setCrossSectionEnabled(v => !v)}
+              className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer items-center rounded-full transition-colors duration-200 ${crossSectionEnabled ? "bg-[color:var(--primary)]" : "bg-[color:var(--border)]"}`}
+              aria-pressed={crossSectionEnabled}
+            >
+              <span className={`inline-block h-3.5 w-3.5 rounded-full bg-white shadow transition-transform duration-200 ${crossSectionEnabled ? "translate-x-4" : "translate-x-0.5"}`} />
+            </button>
+          </div>
+          {crossSectionEnabled && (
+            <>
+              <div className="mb-3 flex gap-1">
+                {(["x", "y", "z"] as CrossSectionAxis[]).map(axis => (
+                  <button
+                    key={axis}
+                    type="button"
+                    onClick={() => setCrossSectionAxis(axis)}
+                    className={`flex-1 rounded-lg border py-1 text-xs font-bold uppercase transition-colors ${crossSectionAxis === axis ? "border-[color:var(--primary)] bg-[color:var(--primary-glow)] text-[color:var(--primary)]" : "border-[color:var(--border)] text-[color:var(--muted-foreground)]"}`}
+                  >
+                    {axis}
+                  </button>
+                ))}
+              </div>
+              <div className="space-y-1">
+                <div className="flex items-center justify-between text-[10px] text-[color:var(--muted-foreground)]">
+                  <span>Position</span>
+                  <span className="font-semibold tabular-nums">{crossSectionPos.toFixed(1)} mm</span>
+                </div>
+                <input
+                  type="range"
+                  min="-4"
+                  max="4"
+                  step="0.1"
+                  value={crossSectionPos}
+                  onChange={e => setCrossSectionPos(parseFloat(e.target.value))}
+                  className="w-full accent-[color:var(--primary)]"
+                />
+                <div className="flex justify-between text-[9px] text-[color:var(--muted-foreground)]">
+                  <span>−4 mm</span><span>0</span><span>+4 mm</span>
+                </div>
+              </div>
+            </>
+          )}
+          {!crossSectionEnabled && (
+            <p className="text-[11px] text-[color:var(--muted-foreground)] leading-relaxed">
+              Slice the arch along X, Y, or Z to inspect interproximal anatomy and root clearance.
+            </p>
+          )}
+        </Card>
+
         {/* Stage generation */}
         <Card className="p-4">
           <h3 className="mb-3 text-sm font-semibold text-foreground flex items-center gap-2">
             <Zap size={14} className="text-primary" /> Stage Generation
           </h3>
-          <div className="space-y-1 mb-3">
-            <DataRow label="Estimated stages" value="20" />
-            <DataRow label="Overcorrection" value="2 stages" />
-            <DataRow label="Velocity limit" value="0.25 mm/stage" />
-            <DataRow label="Refinements" value="Estimated 0" />
-          </div>
-          <Button
-            variant="primary"
-            size="sm"
-            className="w-full"
-            onClick={() => alert("Stage generation complete: 20 aligner stages created with PDL-validated movements. Ready for manufacturing review.")}
-          >
-            <Zap size={14} /> Generate Stages
-            <ChevronRight size={13} />
-          </Button>
-          <Button
-            variant="secondary"
-            size="sm"
-            className="w-full mt-2"
-            onClick={() => setBiomechanicsWarning(null)}
-          >
-            <CheckCircle2 size={14} /> Validate Movements
-          </Button>
+          {!stagesVisible ? (
+            <>
+              <div className="space-y-1 mb-3">
+                <DataRow label="Velocity limit" value="0.25 mm/stage" />
+                <DataRow label="Max rotation" value="2.0°/stage" />
+                <DataRow label="Overcorrection" value="2 stages" />
+                <DataRow label="Moved teeth" value={`${toothOverrides.size}`} />
+              </div>
+              <Button
+                variant="primary"
+                size="sm"
+                className="w-full"
+                onClick={generateStages}
+              >
+                <Zap size={14} /> Generate Stages
+                <ChevronRight size={13} />
+              </Button>
+              <Button
+                variant="secondary"
+                size="sm"
+                className="w-full mt-2"
+                onClick={() => setBiomechanicsWarning(null)}
+              >
+                <CheckCircle2 size={14} /> Validate Movements
+              </Button>
+            </>
+          ) : (
+            <>
+              <div className="mb-2 flex items-center justify-between">
+                <div className="flex items-center gap-1.5">
+                  <ListOrdered size={13} className="text-primary" />
+                  <span className="text-xs font-semibold text-foreground">{generatedStages.length} stages generated</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setStagesVisible(false)}
+                  className="text-[10px] font-medium text-[color:var(--muted-foreground)] underline-offset-2 hover:underline"
+                >
+                  Reset
+                </button>
+              </div>
+              <div className="max-h-[260px] overflow-y-auto rounded-xl border border-[color:var(--border)] divide-y divide-[color:var(--border)]">
+                {generatedStages.map(row => (
+                  <div
+                    key={row.stage}
+                    className={`flex items-start gap-2 px-3 py-2 text-[11px] ${row.stage === 1 ? "bg-[color-mix(in_srgb,var(--primary-glow)_60%,transparent)]" : ""}`}
+                  >
+                    <span className="w-6 shrink-0 font-bold tabular-nums text-[color:var(--muted-foreground)]">
+                      {row.stage}
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      {row.attachmentActivations.length > 0 && (
+                        <span className="mr-1 inline-flex items-center rounded border border-sky-500/30 bg-sky-500/10 px-1 py-0.5 text-[9px] font-semibold text-sky-500">
+                          Attach
+                        </span>
+                      )}
+                      {row.ipr && (
+                        <span className="mr-1 inline-flex items-center rounded border border-amber-500/30 bg-amber-500/10 px-1 py-0.5 text-[9px] font-semibold text-amber-500">
+                          IPR
+                        </span>
+                      )}
+                      {row.activeTeeth.length > 0 ? (
+                        <span className="text-[color:var(--muted-foreground)]">
+                          FDI {row.activeTeeth.slice(0, 4).join(", ")}
+                          {row.activeTeeth.length > 4 ? ` +${row.activeTeeth.length - 4}` : ""}
+                        </span>
+                      ) : (
+                        <span className="text-[color:var(--muted-foreground)]">
+                          {row.stage > generatedStages.length - 2 ? "Overcorrection" : "Maintenance"}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <Button
+                variant="secondary"
+                size="sm"
+                className="w-full mt-2"
+                onClick={() => {
+                  const csv = ["stage,active_fdis,ipr,attachments",
+                    ...generatedStages.map(r =>
+                      `${r.stage},"${r.activeTeeth.join(";")}",${r.ipr},${r.attachmentActivations.length > 0}`)
+                  ].join("\n");
+                  const a = document.createElement("a");
+                  a.href = URL.createObjectURL(new Blob([csv], { type: "text/csv" }));
+                  a.download = "myortho-stage-plan.csv";
+                  a.click();
+                }}
+              >
+                <Download size={13} /> Export Stage Plan
+              </Button>
+            </>
+          )}
         </Card>
       </div>
     </div>

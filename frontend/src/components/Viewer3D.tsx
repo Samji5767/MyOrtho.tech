@@ -4,6 +4,8 @@ import React, { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { Canvas, ThreeEvent, useThree } from "@react-three/fiber";
 import { ContactShadows, Html, OrbitControls, PerspectiveCamera } from "@react-three/drei";
 import { STLLoader } from "three/examples/jsm/loaders/STLLoader.js";
+import { PLYLoader } from "three/examples/jsm/loaders/PLYLoader.js";
+import { OBJLoader } from "three/examples/jsm/loaders/OBJLoader.js";
 import * as THREE from "three";
 import { Camera, Download, Expand, Eye, FlipHorizontal2, Maximize2, RotateCcw, Ruler, Scissors, UploadCloud } from "lucide-react";
 import { Button, Card, DataRow, ProgressBar, StatusBadge } from "@/components/DesignSystem";
@@ -364,10 +366,7 @@ export default function Viewer3D() {
     const parsed = loader.parse(buffer);
     const centered = centerGeometry(parsed);
     setLoadingProgress(80);
-    setGeometry(previous => {
-      previous.dispose();
-      return centered;
-    });
+    setGeometry(previous => { previous.dispose(); return centered; });
     setStats(getStats(centered, file.name));
     setMeasurePoints([]);
     setHoverPoint(null);
@@ -376,6 +375,74 @@ export default function Viewer3D() {
     setResetSignal(signal => signal + 1);
     setLoadingProgress(100);
     window.setTimeout(() => setLoadingProgress(null), 450);
+  };
+
+  const loadPly = async (file: File) => {
+    setLoadingProgress(10);
+    const buffer = await file.arrayBuffer();
+    setLoadingProgress(55);
+    const loader = new PLYLoader();
+    const parsed = loader.parse(buffer);
+    const centered = centerGeometry(parsed);
+    setLoadingProgress(80);
+    setGeometry(previous => { previous.dispose(); return centered; });
+    setStats(getStats(centered, file.name));
+    setMeasurePoints([]);
+    setHoverPoint(null);
+    setMeasurementHistory([]);
+    setPreset("occlusal");
+    setResetSignal(signal => signal + 1);
+    setLoadingProgress(100);
+    window.setTimeout(() => setLoadingProgress(null), 450);
+  };
+
+  const loadObj = async (file: File) => {
+    setLoadingProgress(10);
+    const text = await file.text();
+    setLoadingProgress(45);
+    const loader = new OBJLoader();
+    const group = loader.parse(text);
+    setLoadingProgress(65);
+
+    // Merge all child mesh geometries into one BufferGeometry
+    const positions: number[] = [];
+    const normals: number[] = [];
+    group.traverse(child => {
+      const mesh = child as THREE.Mesh;
+      if (!mesh.isMesh) return;
+      const geo = mesh.geometry as THREE.BufferGeometry;
+      const pos = geo.getAttribute("position");
+      const norm = geo.getAttribute("normal");
+      for (let i = 0; i < pos.count; i++) {
+        positions.push(pos.getX(i), pos.getY(i), pos.getZ(i));
+        if (norm) normals.push(norm.getX(i), norm.getY(i), norm.getZ(i));
+      }
+    });
+
+    const merged = new THREE.BufferGeometry();
+    merged.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
+    if (normals.length === positions.length) {
+      merged.setAttribute("normal", new THREE.Float32BufferAttribute(normals, 3));
+    }
+    merged.computeVertexNormals();
+    const centered = centerGeometry(merged);
+    setLoadingProgress(88);
+    setGeometry(previous => { previous.dispose(); return centered; });
+    setStats(getStats(centered, file.name));
+    setMeasurePoints([]);
+    setHoverPoint(null);
+    setMeasurementHistory([]);
+    setPreset("occlusal");
+    setResetSignal(signal => signal + 1);
+    setLoadingProgress(100);
+    window.setTimeout(() => setLoadingProgress(null), 450);
+  };
+
+  const loadFile = (file: File) => {
+    const ext = file.name.split(".").pop()?.toLowerCase();
+    if (ext === "ply") return void loadPly(file);
+    if (ext === "obj") return void loadObj(file);
+    return void loadStl(file);
   };
 
   const exportScreenshot = () => {
@@ -416,8 +483,8 @@ export default function Viewer3D() {
             {isDemoModel && <p className="mt-1 text-xs text-secondary">No STL selected. Clinical demo geometry is shown until a scan is uploaded.</p>}
           </div>
           <div className="flex flex-wrap gap-2">
-            <input ref={fileRef} type="file" accept=".stl" className="hidden" onChange={event => event.target.files?.[0] && void loadStl(event.target.files[0])} />
-            <Button variant="secondary" size="sm" onClick={() => fileRef.current?.click()}><UploadCloud size={15} /> STL</Button>
+            <input ref={fileRef} type="file" accept=".stl,.ply,.obj" className="hidden" onChange={event => event.target.files?.[0] && loadFile(event.target.files[0])} />
+            <Button variant="secondary" size="sm" onClick={() => fileRef.current?.click()}><UploadCloud size={15} /> STL · PLY · OBJ</Button>
             <Button variant={measurementMode ? "primary" : "secondary"} size="sm" onClick={() => setMeasurementMode(value => !value)}><Ruler size={15} /> Measure</Button>
             <Button variant={clipping ? "primary" : "secondary"} size="sm" onClick={() => setClipping(value => !value)}><Scissors size={15} /> Section</Button>
             <Button variant="secondary" size="icon" aria-label="Reset camera" onClick={() => setResetSignal(signal => signal + 1)}><RotateCcw size={17} /></Button>

@@ -8,11 +8,9 @@ if [ -f .env ]; then
   set -a; . ./.env; set +a
 fi
 
-FRONTEND_PORT="${FRONTEND_PORT:-3000}"
+FRONTEND_PORT="${FRONTEND_PORT:-3005}"
 BACKEND_PORT="${BACKEND_PORT:-4000}"
 AI_ENGINE_PORT="${AI_ENGINE_PORT:-8000}"
-POSTGRES_PORT="${POSTGRES_PORT:-5432}"
-REDIS_PORT="${REDIS_PORT:-6379}"
 
 ok()   { printf "  \033[32m✓\033[0m %-12s %s\n" "$1" "$2"; }
 fail() { printf "  \033[31m✗\033[0m %-12s %s\n" "$1" "$2"; }
@@ -31,13 +29,14 @@ check_http() {
   fi
 }
 
-check_tcp() {
-  local name="$1" host="$2" port="$3"
-  if (exec 3<>"/dev/tcp/$host/$port") 2>/dev/null; then
-    ok "$name" "$host:$port → open"
-    exec 3>&- 3<&- 2>/dev/null || true
+# Postgres and Redis are not published to the host (internal network only),
+# so probe them through their containers instead of a host TCP connection.
+check_container() {
+  local name="$1"; shift
+  if docker compose exec -T "$name" "$@" >/dev/null 2>&1; then
+    ok "$name" "container probe → ok"
   else
-    fail "$name" "$host:$port → closed"
+    fail "$name" "container probe → failed (is the stack up?)"
     failures=$((failures + 1))
   fi
 }
@@ -46,8 +45,8 @@ printf "\033[1mMyOrtho.tech health check\033[0m\n"
 check_http "frontend"  "http://localhost:${FRONTEND_PORT}"
 check_http "backend"   "http://localhost:${BACKEND_PORT}/health"
 check_http "ai-engine" "http://localhost:${AI_ENGINE_PORT}/health"
-check_tcp  "database"  "localhost" "${POSTGRES_PORT}"
-check_tcp  "redis"     "localhost" "${REDIS_PORT}"
+check_container "database" pg_isready -U "${POSTGRES_USER:-myortho_admin}" -d "${POSTGRES_DB:-myortho_tech}"
+check_container "redis" redis-cli ping
 
 echo
 if [ "$failures" -eq 0 ]; then

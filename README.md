@@ -68,7 +68,7 @@ make health
 
 Once up:
 
-- Frontend → http://localhost:3000
+- Frontend → http://localhost:3005
 - Backend API → http://localhost:4000
 - AI Engine docs → http://localhost:8000/docs
 

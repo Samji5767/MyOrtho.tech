@@ -14,7 +14,7 @@ import {
 export default function PrivacyConsentPanel() {
   const [allowAiTraining, setAllowAiTraining] = useState(false);
   const [allowThirdParty, setAllowThirdParty] = useState(false);
-  const [patientName, setPatientName] = useState("Eleanor Vance");
+  const [patientName, setPatientName] = useState("");
   const [showPortabilityAlert, setShowPortabilityAlert] = useState(false);
 
   const handleDownloadPortability = () => {

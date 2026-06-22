@@ -58,97 +58,17 @@ export default function RegulatoryCompliance() {
   const [capaCorrective, setCapaCorrective] = useState("");
   const [capaPreventive, setCapaPreventive] = useState("");
 
-  // Mock DHR Records
-  const [dhrRecords, setDhrRecords] = useState<DHRRecord[]>([
-    {
-      id: "dhr-1",
-      caseId: "c1",
-      patientName: "Eleanor Vance",
-      batchNumber: "BATCH-2026-A109",
-      manufacturedAt: "2026-06-12 14:23 UTC",
-      operatorName: "Marcus Sterling",
-      qcPassed: true,
-      dhrHash: "f1a8e94cb02c91845a90d8a57e3f421ba1019df94689c1c5a93d8b18471e42c2"
-    },
-    {
-      id: "dhr-2",
-      caseId: "c2",
-      patientName: "Jameson Foster",
-      batchNumber: "BATCH-2026-A110",
-      manufacturedAt: "2026-06-13 09:15 UTC",
-      operatorName: "Marcus Sterling",
-      qcPassed: true,
-      dhrHash: "8b7e6d5c4b3a2a10f9e8d7c6b5a49382f7e6d5c4b3a2a10f9e8d7c6b5a49382f"
-    },
-    {
-      id: "dhr-3",
-      caseId: "c3",
-      patientName: "Amelia Thorne",
-      batchNumber: "BATCH-2026-B004",
-      manufacturedAt: "2026-06-14 11:00 UTC",
-      operatorName: "Elena Rostova",
-      qcPassed: false,
-      dhrHash: "d7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8"
-    }
-  ]);
+  const [dhrRecords, setDhrRecords] = useState<DHRRecord[]>([]);
 
-  // Mock CAPA Logs
-  const [capaLogs, setCapaLogs] = useState<CAPALog[]>([
-    {
-      id: "capa-101",
-      reporterName: "Dr. Sarah Jenkins",
-      description: "Minor dimensional warping detected on maxillary alignment model print post-curing.",
-      rootCause: "SLA UV curing chamber temp exceeded 45°C due to inadequate internal fan ventilation.",
-      correctiveAction: "Reprinted maxillary model at calibrated 38°C; inspected laser path deflection angles.",
-      preventiveAction: "Added scheduled bi-weekly cleaning interval for UV cure unit radiator fans.",
-      status: "completed",
-      createdAt: "2026-06-05"
-    },
-    {
-      id: "capa-102",
-      reporterName: "Elena Rostova",
-      description: "Clinician reported 3Shape scanner coordinate system mapping offset on FDI 23 rotation path.",
-      rootCause: "Mesh translation matrix inversion in scanner connector plugin offset by 0.08mm.",
-      correctiveAction: "Updated coordinates parser translation algorithm to enforce rigid body projections.",
-      preventiveAction: "Enforced automated unit tests on scanner module translation boundaries.",
-      status: "investigating",
-      createdAt: "2026-06-11"
-    }
-  ]);
+  const [capaLogs, setCapaLogs] = useState<CAPALog[]>([]);
 
-  // Mock Audit Logs
-  const [auditLogs] = useState<AuditLog[]>([
-    {
-      id: "aud-901",
-      userName: "Dr. Sarah Jenkins",
-      action: "E-Signed Aligner Staging Prescription",
-      details: "Case c1 (Eleanor Vance). Hash: f1a8e94cb02c91845a90d8a57e3f421b...",
-      ipAddress: "192.168.1.45",
-      createdAt: "2026-06-14 21:30"
-    },
-    {
-      id: "aud-902",
-      userName: "Marcus Sterling",
-      action: "Exported DHR Staging STL Files",
-      details: "Batch BATCH-2026-A109. Verified 3D print mesh manifold structures.",
-      ipAddress: "192.168.1.112",
-      createdAt: "2026-06-14 18:15"
-    },
-    {
-      id: "aud-903",
-      userName: "Dr. Sarah Jenkins",
-      action: "Approved Restorative Veneer Staging",
-      details: "Patient Jameson Foster (c2). Locked digital mock-up layers.",
-      ipAddress: "192.168.1.45",
-      createdAt: "2026-06-14 15:40"
-    }
-  ]);
+  const [auditLogs] = useState<AuditLog[]>([]);
 
   const handleCreateCAPA = (e: React.FormEvent) => {
     e.preventDefault();
     const newLog: CAPALog = {
       id: `capa-${Math.floor(Math.random() * 900) + 100}`,
-      reporterName: "Dr. Sarah Jenkins",
+      reporterName: "Lab Operator",
       description: capaDesc,
       rootCause: capaRoot || null,
       correctiveAction: capaCorrective || null,

@@ -34,61 +34,9 @@ interface BrandNode {
 export default function BusinessCRM() {
   const [activeTab, setActiveTab] = useState<"crm" | "mna">("crm");
   
-  // Mock CRM leads
-  const [leads, setLeads] = useState<CRMLead[]>([
-    {
-      id: "ld-101",
-      name: "Aesthetic Smile Dental Group (12 clinics)",
-      contactEmail: "onboarding@aestheticsmile.com",
-      stage: "negotiation",
-      expectedValue: 45000,
-      assignedTo: "Marcus Sterling"
-    },
-    {
-      id: "ld-102",
-      name: "Summit Orthodontics Center",
-      contactEmail: "info@summitortho.com",
-      stage: "demo_scheduled",
-      expectedValue: 12000,
-      assignedTo: "Elena Rostova"
-    },
-    {
-      id: "ld-103",
-      name: "Metro Dental Labs (Distributor)",
-      contactEmail: "partner@metrodentallabs.de",
-      stage: "partnered",
-      expectedValue: 85000,
-      assignedTo: "Marcus Sterling"
-    }
-  ]);
+  const [leads, setLeads] = useState<CRMLead[]>([]);
 
-  // Mock M&A multi-brands
-  const [brands, setBrands] = useState<BrandNode[]>([
-    {
-      id: "br-1",
-      brandName: "MyOrtho Premium Clear Aligners",
-      relationship: "division",
-      monthlyRevenue: 125000,
-      totalCasesCount: 420,
-      status: "active"
-    },
-    {
-      id: "br-2",
-      brandName: "AlignExpress White-Label Franchise",
-      relationship: "franchise",
-      monthlyRevenue: 48000,
-      totalCasesCount: 180,
-      status: "active"
-    },
-    {
-      id: "br-3",
-      brandName: "RestorCrown Laboratory Subsidiary",
-      relationship: "subsidiary",
-      monthlyRevenue: 62000,
-      totalCasesCount: 290,
-      status: "integration_phase"
-    }
-  ]);
+  const [brands, setBrands] = useState<BrandNode[]>([]);
 
   const [newLeadName, setNewLeadName] = useState("");
   const [newLeadValue, setNewLeadValue] = useState(15000);
@@ -102,7 +50,7 @@ export default function BusinessCRM() {
       contactEmail: newLeadEmail,
       stage: "discovery",
       expectedValue: newLeadValue,
-      assignedTo: "Dr. Sarah Jenkins"
+      assignedTo: ""
     };
     setLeads([...leads, newLd]);
     setNewLeadName("");

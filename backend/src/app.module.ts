@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { HealthModule } from './health/health.module';
 import { CasesModule } from './cases/cases.module';
 import { PrintersModule } from './printers/printers.module';
 import { AiModule } from './ai/ai.module';
@@ -16,6 +17,7 @@ import { MessagingModule } from './messaging/messaging.module';
 
 @Module({
   imports: [
+    HealthModule,
     AuthModule,
     CasesModule,
     PrintersModule,

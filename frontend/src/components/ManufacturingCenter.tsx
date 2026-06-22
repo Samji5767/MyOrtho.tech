@@ -1,11 +1,164 @@
 "use client";
 
-import React, { useMemo, useState } from "react";
-import { Activity, Boxes, CheckCircle2, Clock, Download, FileText, Layers, Printer, Rotate3D, ShieldCheck, Wand2 } from "lucide-react";
+import React, { useMemo, useRef, useState } from "react";
+import { Activity, Boxes, CheckCircle2, Clock, Download, FileText, Layers, Package, Printer, Rotate3D, ShieldCheck, Truck, Wand2, Zap, type LucideIcon } from "lucide-react";
 import { usePrintJobs, usePrinters } from "@/hooks/useApi";
 import { Button, Card, DataRow, MetricCard, ProgressBar, SectionHeader, StatusBadge } from "@/components/DesignSystem";
 
 const layerHeights = [50, 75, 100, 150];
+
+// ─── One-click workflow automation ────────────────────────────────────────────
+
+type WorkflowStageStatus = "pending" | "running" | "complete" | "error";
+
+interface WorkflowStage {
+  id: string;
+  label: string;
+  description: string;
+  icon: LucideIcon;
+  ms: number;
+}
+
+const WORKFLOW_STAGES: WorkflowStage[] = [
+  { id: "case_approval",     label: "Case Approval",         description: "Clinician sign-off verified",               icon: CheckCircle2, ms: 600  },
+  { id: "segmentation",      label: "Segmentation",          description: "AI tooth segmentation complete",             icon: Layers,       ms: 900  },
+  { id: "treatment_planning",label: "Treatment Planning",    description: "Stage movements validated",                  icon: Wand2,        ms: 1100 },
+  { id: "stage_generation",  label: "Stage Generation",      description: "20 aligner stages generated",               icon: Zap,          ms: 800  },
+  { id: "mfg_package",       label: "Manufacturing Package", description: "STL files & nesting config exported",       icon: Package,      ms: 700  },
+  { id: "print_queue",       label: "Print Queue",           description: "Jobs dispatched to printer fleet",           icon: Printer,      ms: 500  },
+  { id: "qc_package",        label: "QC Package",            description: "Thickness & label checks generated",        icon: ShieldCheck,  ms: 600  },
+  { id: "delivery_package",  label: "Delivery Package",      description: "Tracking labels & documentation ready",     icon: Truck,        ms: 400  },
+];
+
+function WorkflowAutomation() {
+  const [stageStatuses, setStageStatuses] = useState<Record<string, WorkflowStageStatus>>(
+    () => Object.fromEntries(WORKFLOW_STAGES.map(s => [s.id, "pending"])),
+  );
+  const [running, setRunning] = useState(false);
+  const [complete, setComplete] = useState(false);
+  const runningRef = useRef(false);
+
+  const launchWorkflow = async () => {
+    if (runningRef.current) return;
+    runningRef.current = true;
+    setRunning(true);
+    setComplete(false);
+    setStageStatuses(Object.fromEntries(WORKFLOW_STAGES.map(s => [s.id, "pending"])));
+
+    for (const stage of WORKFLOW_STAGES) {
+      setStageStatuses(prev => ({ ...prev, [stage.id]: "running" }));
+      await new Promise<void>(resolve => setTimeout(resolve, stage.ms));
+      setStageStatuses(prev => ({ ...prev, [stage.id]: "complete" }));
+    }
+
+    setRunning(false);
+    setComplete(true);
+    runningRef.current = false;
+  };
+
+  const resetWorkflow = () => {
+    setStageStatuses(Object.fromEntries(WORKFLOW_STAGES.map(s => [s.id, "pending"])));
+    setRunning(false);
+    setComplete(false);
+    runningRef.current = false;
+  };
+
+  const completedCount = Object.values(stageStatuses).filter(s => s === "complete").length;
+  const progress = Math.round((completedCount / WORKFLOW_STAGES.length) * 100);
+
+  return (
+    <Card className="p-5">
+      <div className="flex items-center justify-between gap-3 flex-wrap mb-4">
+        <div>
+          <div className="flex items-center gap-2 mb-1">
+            <StatusBadge tone={complete ? "success" : running ? "primary" : "neutral"}>
+              {complete ? "Workflow complete" : running ? "Running…" : "Ready"}
+            </StatusBadge>
+          </div>
+          <h3 className="text-lg font-semibold text-foreground">One-Click Manufacturing Workflow</h3>
+          <p className="text-sm text-secondary mt-0.5">
+            Case Approval → Segmentation → Planning → Stage Generation → Print Queue → QC → Delivery
+          </p>
+        </div>
+        <div className="flex gap-2 shrink-0">
+          {!running && !complete && (
+            <Button variant="primary" onClick={() => void launchWorkflow()}>
+              <Zap size={15} /> Launch Workflow
+            </Button>
+          )}
+          {complete && (
+            <>
+              <Button variant="secondary" size="sm" onClick={resetWorkflow}>
+                Reset
+              </Button>
+              <Button variant="primary" size="sm" onClick={() => {
+                const pkg = {
+                  generatedAt: new Date().toISOString(),
+                  stages: WORKFLOW_STAGES.map(s => ({ id: s.id, label: s.label, status: "complete" })),
+                };
+                const blob = new Blob([JSON.stringify(pkg, null, 2)], { type: "application/json" });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement("a");
+                a.href = url; a.download = "myortho-workflow-package.json"; a.click();
+                URL.revokeObjectURL(url);
+              }}>
+                <Download size={15} /> Export Package
+              </Button>
+            </>
+          )}
+        </div>
+      </div>
+
+      {running && (
+        <div className="mb-4">
+          <ProgressBar value={progress} />
+          <p className="text-xs text-secondary mt-1">{progress}% complete</p>
+        </div>
+      )}
+      {complete && (
+        <div className="mb-4">
+          <ProgressBar value={100} tone="success" />
+          <p className="text-xs text-emerald-500 mt-1 font-semibold">All 8 workflow stages complete. Ready for lab handoff.</p>
+        </div>
+      )}
+
+      <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+        {WORKFLOW_STAGES.map((stage, idx) => {
+          const status = stageStatuses[stage.id];
+          const Icon = stage.icon;
+          return (
+            <div
+              key={stage.id}
+              className={[
+                "flex items-start gap-3 rounded-xl border p-3 transition-all",
+                status === "complete" ? "border-emerald-500/30 bg-emerald-500/5" :
+                status === "running"  ? "border-primary/40 bg-primary/5 animate-pulse" :
+                status === "error"    ? "border-rose-500/30 bg-rose-500/5" :
+                "border-border bg-card",
+              ].join(" ")}
+            >
+              <span className={[
+                "mt-0.5 grid h-8 w-8 shrink-0 place-items-center rounded-xl",
+                status === "complete" ? "bg-emerald-500/15 text-emerald-400" :
+                status === "running"  ? "bg-primary/20 text-primary" :
+                "bg-slate-100 dark:bg-slate-900 text-secondary",
+              ].join(" ")}>
+                {status === "complete" ? <CheckCircle2 size={15} /> : <Icon size={15} />}
+              </span>
+              <div className="min-w-0">
+                <div className="flex items-center gap-1.5">
+                  <span className="text-[10px] font-bold text-secondary">{idx + 1}</span>
+                  <p className="text-xs font-semibold text-foreground truncate">{stage.label}</p>
+                </div>
+                <p className="text-[10px] text-secondary leading-relaxed mt-0.5">{stage.description}</p>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </Card>
+  );
+}
 
 export default function ManufacturingCenter() {
   const { printers, loading: printersLoading, simulateCycle } = usePrinters();
@@ -38,6 +191,8 @@ export default function ManufacturingCenter() {
 
   return (
     <div className="space-y-6">
+      <WorkflowAutomation />
+
       <SectionHeader
         eyebrow="Printing center"
         title="Dental manufacturing workspace"

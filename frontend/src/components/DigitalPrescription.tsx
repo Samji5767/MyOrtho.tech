@@ -25,8 +25,8 @@ interface PrescriptionRevision {
 }
 
 export default function DigitalPrescription() {
-  const [patientName, setPatientName] = useState("Eleanor Vance");
-  const [dentistName, setDentistName] = useState("Dr. Sarah Jenkins");
+  const [patientName, setPatientName] = useState("");
+  const [dentistName, setDentistName] = useState("");
   const [instructions, setInstructions] = useState(
     "Perform maxillary expansion of 1.5mm. Correct FDI 11 and 21 crowding. Apply 0.2mm IPR distal of 12."
   );
@@ -46,15 +46,7 @@ export default function DigitalPrescription() {
   const [approvedForMfg, setApprovedForMfg] = useState(false);
 
   // Revision History State
-  const [revisions, setRevisions] = useState<PrescriptionRevision[]>([
-    {
-      revision: 1,
-      signedBy: "Dr. Sarah Jenkins",
-      timestamp: "2026-06-12 18:45 UTC",
-      hash: "82a93b4c1d2e3f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a",
-      notes: "Initial diagnostic staging setup and mesh acquisition approval."
-    }
-  ]);
+  const [revisions, setRevisions] = useState<PrescriptionRevision[]>([]);
 
   // Recalculate stress whenever displacements change
   useEffect(() => {

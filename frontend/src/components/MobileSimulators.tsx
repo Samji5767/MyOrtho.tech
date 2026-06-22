@@ -223,7 +223,7 @@ function SimulatedDoctorApp() {
       <div className="p-4 bg-slate-900 border-b border-slate-800 flex items-center justify-between">
         <div>
           <span className="text-[9px] uppercase font-bold text-teal-400">Orthodontist Mobile</span>
-          <h4 className="font-extrabold text-sm text-slate-100">Dr. Sarah Jenkins</h4>
+          <h4 className="font-extrabold text-sm text-slate-100">Orthodontist</h4>
         </div>
         <div className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
       </div>
@@ -238,7 +238,7 @@ function SimulatedDoctorApp() {
               Planning
             </span>
           </div>
-          <p className="text-xs font-bold text-slate-200">Eleanor Vance (FDI 12-21)</p>
+          <p className="text-xs font-bold text-slate-200">No case loaded (FDI —)</p>
           <div className="w-full bg-slate-800 h-1 rounded-full overflow-hidden">
             <div className="bg-teal-500 h-full w-[45%]" />
           </div>
@@ -257,7 +257,7 @@ function SimulatedDoctorApp() {
             {isSigned ? (
               <div className="text-center space-y-1">
                 <Check size={20} className="text-teal-400 mx-auto" />
-                <span className="text-[9px] font-bold text-slate-300">Signed: Dr. Sarah Jenkins</span>
+                <span className="text-[9px] font-bold text-slate-300">Signed: Doctor</span>
                 <span className="text-[8px] text-slate-500 font-mono">MD-2026-06-15</span>
               </div>
             ) : (
@@ -344,10 +344,10 @@ function SimulatedPatientApp() {
       <div className="p-4 bg-slate-900 border-b border-slate-800 flex items-center justify-between">
         <div className="flex items-center gap-2">
           <div className="h-8 w-8 rounded-full bg-indigo-500 flex items-center justify-center text-[10px] font-bold">
-            EV
+            —
           </div>
           <div>
-            <h4 className="font-extrabold text-xs text-slate-100">Eleanor Vance</h4>
+            <h4 className="font-extrabold text-xs text-slate-100">No patient loaded</h4>
             <span className="text-[8px] text-indigo-400 font-semibold uppercase">Patient Profile</span>
           </div>
         </div>

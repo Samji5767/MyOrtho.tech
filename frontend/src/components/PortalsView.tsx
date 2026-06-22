@@ -63,7 +63,7 @@ export default function PortalsView({ caseId = "c1", patientId = "p1" }: Portals
       day: "numeric"
     });
     try {
-      await bookAppointment(newApptTitle, `${dateFormatted} at ${newApptTime}`, "Dr. Sarah Jenkins Clinic");
+      await bookAppointment(newApptTitle, `${dateFormatted} at ${newApptTime}`, "MyOrtho Clinic");
       alert(`📅 Visit booked successfully: ${newApptTitle}`);
     } catch (err) {
       alert("Failed to book appointment.");

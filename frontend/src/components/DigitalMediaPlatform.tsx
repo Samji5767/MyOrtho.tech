@@ -24,22 +24,7 @@ export default function DigitalMediaPlatform() {
   const [activeTab, setActiveTab] = useState<"simulation" | "deck">("simulation");
   const [simulationDiff, setSimulationDiff] = useState(50); // slider before/after percentage
   
-  const [assets] = useState<MediaAsset[]>([
-    {
-      id: "media-301",
-      patientName: "Eleanor Vance",
-      type: "simulation",
-      title: "18-Stage Maxillary expansion photorealistic projection",
-      createdAt: "2026-06-13"
-    },
-    {
-      id: "media-302",
-      patientName: "Jameson Foster",
-      type: "deck",
-      title: "Before/After treatment presentation slides for lab",
-      createdAt: "2026-06-12"
-    }
-  ]);
+  const [assets] = useState<MediaAsset[]>([]);
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 h-full min-h-[600px] text-xs">

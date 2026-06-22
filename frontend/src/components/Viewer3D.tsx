@@ -2,7 +2,7 @@
 
 import React, { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { Canvas, ThreeEvent, useThree } from "@react-three/fiber";
-import { ContactShadows, Environment, Html, OrbitControls, PerspectiveCamera } from "@react-three/drei";
+import { ContactShadows, Html, OrbitControls, PerspectiveCamera } from "@react-three/drei";
 import { STLLoader } from "three/examples/jsm/loaders/STLLoader.js";
 import * as THREE from "three";
 import { Camera, Download, Expand, Eye, FlipHorizontal2, Maximize2, RotateCcw, Ruler, Scissors, UploadCloud } from "lucide-react";
@@ -18,6 +18,28 @@ type ModelStats = {
   height: number;
   depth: number;
 };
+
+type MeasurementRecord = {
+  id: string;
+  name: string;
+  points: [THREE.Vector3, THREE.Vector3];
+  distance: number;
+  createdAt: string;
+};
+
+export interface Viewer3DProps {
+  file?: File | null;
+  preset?: ViewPreset;
+  clipping?: boolean;
+  measurementMode?: boolean;
+  measurementPoints?: THREE.Vector3[];
+  onMeasurementPointsChange?: (points: THREE.Vector3[]) => void;
+  onHoverPointChange?: (point: THREE.Vector3 | null) => void;
+  onStatsChange?: (stats: ModelStats) => void;
+  onPresetChange?: (preset: ViewPreset) => void;
+  onClippingChange?: (enabled: boolean) => void;
+  onMeasurementModeChange?: (enabled: boolean) => void;
+}
 
 const viewPresets: Record<ViewPreset, [number, number, number]> = {
   occlusal: [0, 8, 0.1],
@@ -120,35 +142,73 @@ function CameraFrame({ geometry, preset, resetSignal }: { geometry: THREE.Buffer
   return null;
 }
 
-function MeasurementOverlay({ points }: { points: THREE.Vector3[] }) {
-  if (points.length < 2) return null;
-  const start = points[0];
-  const end = points[1];
-  const mid = start.clone().add(end).multiplyScalar(0.5);
-  const direction = end.clone().sub(start);
-  const distance = direction.length();
-  const quaternion = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), direction.clone().normalize());
+function MeasurementOverlay({ points, hoverPoint }: { points: THREE.Vector3[]; hoverPoint: THREE.Vector3 | null }) {
+  const linePoints = points.length === 1 && hoverPoint ? [points[0], hoverPoint] : points;
+  const start = linePoints[0];
+  const end = linePoints[1];
+  const mid = start && end ? start.clone().add(end).multiplyScalar(0.5) : null;
+  const direction = start && end ? end.clone().sub(start) : null;
+  const distance = direction ? direction.length() : 0;
+  const quaternion = direction ? new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), direction.clone().normalize()) : null;
 
   return (
     <>
-      <mesh position={mid} quaternion={quaternion}>
-        <cylinderGeometry args={[0.018, 0.018, distance, 16]} />
-        <meshBasicMaterial color="#2dd4bf" />
-      </mesh>
-      {points.map((point, index) => (
-        <mesh key={index} position={point}>
-          <sphereGeometry args={[0.06, 16, 16]} />
+      {mid && quaternion && (
+        <mesh position={mid} quaternion={quaternion}>
+          <cylinderGeometry args={[0.018, 0.018, distance, 16]} />
           <meshBasicMaterial color="#2dd4bf" />
         </mesh>
+      )}
+      {points.map((point, index) => (
+        <group key={index}>
+          <mesh position={point}>
+            <sphereGeometry args={[0.06, 16, 16]} />
+            <meshBasicMaterial color="#2dd4bf" />
+          </mesh>
+          <Html position={point.clone().add(new THREE.Vector3(0.04, 0.04, 0.04))} center>
+            <span className="rounded-md border border-teal-400/40 bg-slate-950/90 px-2 py-1 text-xs font-bold text-teal-100 shadow-lg">
+              {String.fromCharCode(65 + index)}
+            </span>
+          </Html>
+        </group>
       ))}
-      <Html position={mid} center>
-        <span className="rounded-md border border-teal-400/40 bg-slate-950/90 px-2 py-1 text-xs font-bold text-teal-100 shadow-lg">{distance.toFixed(2)} mm</span>
-      </Html>
+      {hoverPoint && (
+        <group>
+          <mesh position={hoverPoint}>
+            <sphereGeometry args={[0.05, 16, 16]} />
+            <meshBasicMaterial color="#f59e0b" transparent opacity={0.75} />
+          </mesh>
+          <Html position={hoverPoint.clone().add(new THREE.Vector3(0.04, 0.04, 0.04))} center>
+            <span className="rounded-md border border-amber-400/40 bg-slate-950/90 px-2 py-1 text-xs font-bold text-amber-100 shadow-lg">
+              Next point
+            </span>
+          </Html>
+        </group>
+      )}
+      {mid && (
+        <Html position={mid} center>
+          <span className="rounded-md border border-teal-400/40 bg-slate-950/90 px-2 py-1 text-xs font-bold text-teal-100 shadow-lg">
+            {distance.toFixed(2)} mm
+          </span>
+        </Html>
+      )}
     </>
   );
 }
 
-function DentalModel({ geometry, clipping, measurementMode, onPick }: { geometry: THREE.BufferGeometry; clipping: boolean; measurementMode: boolean; onPick: (point: THREE.Vector3) => void }) {
+function DentalModel({
+  geometry,
+  clipping,
+  measurementMode,
+  onPick,
+  onHover,
+}: {
+  geometry: THREE.BufferGeometry;
+  clipping: boolean;
+  measurementMode: boolean;
+  onPick: (point: THREE.Vector3) => void;
+  onHover: (point: THREE.Vector3 | null) => void;
+}) {
   const clippingPlane = useMemo(() => new THREE.Plane(new THREE.Vector3(0, -1, 0), 0), []);
 
   return (
@@ -156,7 +216,13 @@ function DentalModel({ geometry, clipping, measurementMode, onPick }: { geometry
       geometry={geometry}
       castShadow
       receiveShadow
-      onDoubleClick={(event: ThreeEvent<MouseEvent>) => {
+      onPointerMove={(event: ThreeEvent<PointerEvent>) => {
+        if (!measurementMode) return;
+        event.stopPropagation();
+        onHover(event.point.clone());
+      }}
+      onPointerOut={() => onHover(null)}
+      onPointerDown={(event: ThreeEvent<PointerEvent>) => {
         if (!measurementMode) return;
         event.stopPropagation();
         onPick(event.point.clone());
@@ -177,7 +243,7 @@ function DentalModel({ geometry, clipping, measurementMode, onPick }: { geometry
   );
 }
 
-function Scene({ geometry, preset, resetSignal, clipping, measurementMode, measurePoints, setMeasurePoints }: {
+function Scene({ geometry, preset, resetSignal, clipping, measurementMode, measurePoints, setMeasurePoints, hoverPoint, setHoverPoint, onMeasurementComplete }: {
   geometry: THREE.BufferGeometry;
   preset: ViewPreset;
   resetSignal: number;
@@ -185,6 +251,9 @@ function Scene({ geometry, preset, resetSignal, clipping, measurementMode, measu
   measurementMode: boolean;
   measurePoints: THREE.Vector3[];
   setMeasurePoints: React.Dispatch<React.SetStateAction<THREE.Vector3[]>>;
+  hoverPoint: THREE.Vector3 | null;
+  setHoverPoint: React.Dispatch<React.SetStateAction<THREE.Vector3 | null>>;
+  onMeasurementComplete: (points: [THREE.Vector3, THREE.Vector3]) => void;
 }) {
   return (
     <>
@@ -196,12 +265,33 @@ function Scene({ geometry, preset, resetSignal, clipping, measurementMode, measu
         geometry={geometry}
         clipping={clipping}
         measurementMode={measurementMode}
-        onPick={point => setMeasurePoints(prev => (prev.length >= 2 ? [point] : [...prev, point]))}
+        onPick={(point) =>
+          setMeasurePoints((prev) => {
+            const next = prev.length >= 2 ? [point] : [...prev, point];
+            if (next.length === 2) {
+              onMeasurementComplete([next[0], next[1]]);
+            }
+            return next;
+          })
+        }
+        onHover={setHoverPoint}
       />
-      <MeasurementOverlay points={measurePoints} />
+      <MeasurementOverlay points={measurePoints} hoverPoint={hoverPoint} />
       <ContactShadows opacity={0.34} scale={10} blur={2.4} far={4} position={[0, -1.25, 0]} />
-      <Environment preset="studio" />
-      <OrbitControls makeDefault enableDamping dampingFactor={0.08} minDistance={1.5} maxDistance={80} />
+      <OrbitControls
+        makeDefault
+        enabled={!measurementMode}
+        enableDamping
+        dampingFactor={0.08}
+        enablePan
+        enableZoom
+        enableRotate
+        screenSpacePanning={false}
+        minDistance={1.5}
+        maxDistance={80}
+        minPolarAngle={0.3}
+        maxPolarAngle={Math.PI - 0.3}
+      />
       <gridHelper args={[12, 24, "#486072", "#253342"]} position={[0, -1.24, 0]} />
     </>
   );
@@ -214,6 +304,8 @@ export default function Viewer3D() {
   const [clipping, setClipping] = useState(false);
   const [measurementMode, setMeasurementMode] = useState(false);
   const [measurePoints, setMeasurePoints] = useState<THREE.Vector3[]>([]);
+  const [hoverPoint, setHoverPoint] = useState<THREE.Vector3 | null>(null);
+  const [measurementHistory, setMeasurementHistory] = useState<MeasurementRecord[]>([]);
   const [loadingProgress, setLoadingProgress] = useState<number | null>(null);
   const [resetSignal, setResetSignal] = useState(0);
   const [viewerNode, setViewerNode] = useState<HTMLDivElement | null>(null);
@@ -221,6 +313,48 @@ export default function Viewer3D() {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
   useEffect(() => () => geometry.dispose(), [geometry]);
+
+  const addMeasurement = (points: [THREE.Vector3, THREE.Vector3]) => {
+    const distance = points[0].distanceTo(points[1]);
+    setMeasurementHistory((previous) => [
+      {
+        id: `${Date.now()}-${previous.length}`,
+        name: `Measurement ${previous.length + 1}`,
+        points,
+        distance,
+        createdAt: new Date().toLocaleTimeString([], { hour12: false }),
+      },
+      ...previous,
+    ]);
+  };
+
+  const renameMeasurement = (id: string) => {
+    const nextName = window.prompt("Rename measurement");
+    if (!nextName) return;
+    setMeasurementHistory((previous) => previous.map((entry) => (entry.id === id ? { ...entry, name: nextName } : entry)));
+  };
+
+  const deleteMeasurement = (id: string) => {
+    setMeasurementHistory((previous) => previous.filter((entry) => entry.id !== id));
+  };
+
+  const clearMeasurementHistory = () => {
+    setMeasurementHistory([]);
+    setMeasurePoints([]);
+    setHoverPoint(null);
+  };
+
+  const exportMeasurementSummary = () => {
+    if (measurementHistory.length === 0) return;
+    const rows = measurementHistory.map((entry) => `${entry.createdAt},${entry.name},${entry.distance.toFixed(2)} mm`).join("\n");
+    const blob = new Blob([`time,name,distance\n${rows}`], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = "myortho-measurement-summary.csv";
+    anchor.click();
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+  };
 
   const loadStl = async (file: File) => {
     setLoadingProgress(10);
@@ -236,6 +370,8 @@ export default function Viewer3D() {
     });
     setStats(getStats(centered, file.name));
     setMeasurePoints([]);
+    setHoverPoint(null);
+    setMeasurementHistory([]);
     setPreset("occlusal");
     setResetSignal(signal => signal + 1);
     setLoadingProgress(100);
@@ -260,6 +396,8 @@ export default function Viewer3D() {
     }
   };
 
+  const isDemoModel = stats.fileName === "Clinical demo arch";
+
   return (
     <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_340px]">
       <Card className="overflow-hidden">
@@ -268,8 +406,14 @@ export default function Viewer3D() {
             <div className="flex items-center gap-2">
               <StatusBadge tone="primary">PBR STL viewer</StatusBadge>
               <StatusBadge tone={measurementMode ? "success" : "neutral"}>Measurements {measurementMode ? "on" : "off"}</StatusBadge>
+              <StatusBadge tone={clipping ? "warning" : "neutral"}>Section {clipping ? "on" : "off"}</StatusBadge>
+              <StatusBadge tone={loadingProgress !== null ? "info" : "neutral"}>{loadingProgress !== null ? "Parsing" : "Ready"}</StatusBadge>
             </div>
             <h3 className="mt-2 text-lg font-semibold tracking-tight text-foreground">Treatment model workspace</h3>
+            <p className="mt-1 text-xs text-secondary">
+              Measurement is based on imported mesh geometry and should be professionally verified.
+            </p>
+            {isDemoModel && <p className="mt-1 text-xs text-secondary">No STL selected. Clinical demo geometry is shown until a scan is uploaded.</p>}
           </div>
           <div className="flex flex-wrap gap-2">
             <input ref={fileRef} type="file" accept=".stl" className="hidden" onChange={event => event.target.files?.[0] && void loadStl(event.target.files[0])} />
@@ -282,7 +426,28 @@ export default function Viewer3D() {
           </div>
         </div>
 
-        <div ref={setViewerNode} className="relative h-[560px] min-h-[420px] bg-[#0b111a] clinical-grid md:h-[680px]">
+        <div className="border-b border-border/60 bg-card p-3 lg:hidden">
+          <div className="grid grid-cols-2 gap-2">
+            <Button variant={measurementMode ? "primary" : "secondary"} size="sm" onClick={() => setMeasurementMode(value => !value)}>
+              <Ruler size={15} /> Measure
+            </Button>
+            <Button variant={clipping ? "primary" : "secondary"} size="sm" onClick={() => setClipping(value => !value)}>
+              <Scissors size={15} /> Section
+            </Button>
+            <Button variant="secondary" size="sm" onClick={() => setResetSignal(signal => signal + 1)}>
+              <RotateCcw size={15} /> Reset
+            </Button>
+            <Button variant="secondary" size="sm" onClick={() => void toggleFullscreen()}>
+              <Expand size={15} /> Fullscreen
+            </Button>
+          </div>
+        </div>
+
+        <div
+          ref={setViewerNode}
+          className="relative touch-none select-none h-[420px] min-h-[360px] bg-[#0b111a] clinical-grid md:h-[680px]"
+          onDoubleClick={() => setResetSignal((signal) => signal + 1)}
+        >
           {loadingProgress !== null && (
             <div className="absolute left-4 right-4 top-4 z-20 rounded-lg border border-border bg-card/95 p-3 shadow-lg backdrop-blur">
               <div className="mb-2 flex items-center justify-between text-xs font-semibold text-foreground"><span>Optimizing STL geometry</span><span>{loadingProgress}%</span></div>
@@ -299,11 +464,22 @@ export default function Viewer3D() {
             }}
           >
             <Suspense fallback={<Html center><span className="rounded-lg bg-slate-950 px-3 py-2 text-sm text-white">Loading renderer...</span></Html>}>
-              <Scene geometry={geometry} preset={preset} resetSignal={resetSignal} clipping={clipping} measurementMode={measurementMode} measurePoints={measurePoints} setMeasurePoints={setMeasurePoints} />
+              <Scene
+                geometry={geometry}
+                preset={preset}
+                resetSignal={resetSignal}
+                clipping={clipping}
+                measurementMode={measurementMode}
+                measurePoints={measurePoints}
+                setMeasurePoints={setMeasurePoints}
+                hoverPoint={hoverPoint}
+                setHoverPoint={setHoverPoint}
+                onMeasurementComplete={addMeasurement}
+              />
             </Suspense>
           </Canvas>
-          <div className="pointer-events-none absolute bottom-4 left-4 rounded-lg border border-white/10 bg-slate-950/70 px-3 py-2 text-xs text-slate-200 backdrop-blur">
-            Double click the model to place measurement points
+          <div className="pointer-events-none absolute bottom-4 left-4 right-4 rounded-2xl border border-white/10 bg-slate-950/70 px-3 py-2 text-xs text-slate-200 backdrop-blur lg:right-auto">
+            {measurementMode ? "Tap a surface to place points A and B, hover to preview the next point, and tap again to continue measuring." : "Tap and drag to rotate, pinch to zoom, and use the toolbar to enable measurement mode."}
           </div>
         </div>
       </Card>
@@ -321,7 +497,7 @@ export default function Viewer3D() {
               ["front", Eye],
               ["top", Download],
               ["bottom", UploadCloud]
-            ] as [ViewPreset, React.ComponentType<{ size?: number }>][]) .map(([view, Icon]) => (
+            ] as [ViewPreset, React.ComponentType<{ size?: number }>][]).map(([view, Icon]) => (
               <Button key={view} variant={preset === view ? "primary" : "secondary"} size="sm" onClick={() => setPreset(view)}>
                 <Icon size={14} /> {view}
               </Button>
@@ -339,6 +515,45 @@ export default function Viewer3D() {
             <DataRow label="Height" value={`${stats.height.toFixed(1)} mm`} />
             <DataRow label="Depth" value={`${stats.depth.toFixed(1)} mm`} />
             <DataRow label="Material" value="Dental enamel PBR" />
+          </div>
+        </Card>
+
+        <Card className="p-4">
+          <div className="flex items-center justify-between gap-3">
+            <h3 className="text-sm font-semibold text-foreground">Measurement history</h3>
+            <StatusBadge tone="neutral">{measurementHistory.length}</StatusBadge>
+          </div>
+          <div className="mt-4 space-y-2">
+            <DataRow label="Last distance" value={measurementHistory[0] ? `${measurementHistory[0].distance.toFixed(2)} mm` : "—"} />
+            <div className="flex flex-wrap gap-2">
+              <Button variant="secondary" size="sm" onClick={clearMeasurementHistory} disabled={measurementHistory.length === 0}>
+                Clear all
+              </Button>
+              <Button variant="secondary" size="sm" onClick={exportMeasurementSummary} disabled={measurementHistory.length === 0}>
+                Export
+              </Button>
+            </div>
+            {measurementHistory.length === 0 ? (
+              <p className="rounded-lg border border-dashed border-border px-3 py-4 text-sm text-secondary">
+                Place two measurement points to create a history entry.
+              </p>
+            ) : (
+              measurementHistory.slice(0, 4).map((entry) => (
+                <div key={entry.id} className="rounded-lg border border-border p-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <button type="button" className="text-left text-sm font-semibold text-foreground" onClick={() => renameMeasurement(entry.id)}>
+                      {entry.name}
+                    </button>
+                    <span className="text-xs text-secondary">{entry.createdAt}</span>
+                  </div>
+                  <p className="mt-1 text-xs text-secondary">{entry.distance.toFixed(2)} mm</p>
+                  <div className="mt-3 flex gap-2">
+                    <Button variant="ghost" size="sm" onClick={() => renameMeasurement(entry.id)}>Rename</Button>
+                    <Button variant="ghost" size="sm" onClick={() => deleteMeasurement(entry.id)}>Delete</Button>
+                  </div>
+                </div>
+              ))
+            )}
           </div>
         </Card>
 

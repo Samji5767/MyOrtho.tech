@@ -25,32 +25,13 @@ interface LegalConsentRecord {
 
 export default function ConsentPortal() {
   const [jurisdiction, setJurisdiction] = useState("US-CA");
-  const [patientName, setPatientName] = useState("Eleanor Vance");
+  const [patientName, setPatientName] = useState("");
   const [signName, setSignName] = useState("");
   const [agreedToRisks, setAgreedToRisks] = useState(false);
   const [isSigned, setIsSigned] = useState(false);
   const [signedHash, setSignedHash] = useState("");
-  
-  const [records, setRecords] = useState<LegalConsentRecord[]>([
-    {
-      id: "csr-801",
-      patientName: "Eleanor Vance",
-      jurisdiction: "US-CA",
-      signedAt: "Pending",
-      retentionUntil: "2036-06-14",
-      documentHash: "Pending Signing",
-      status: "pending"
-    },
-    {
-      id: "csr-802",
-      patientName: "Jameson Foster",
-      jurisdiction: "EU-DE",
-      signedAt: "2026-06-08 14:15 UTC",
-      retentionUntil: "2036-06-08",
-      documentHash: "f1a8e94cb02c91845a90d8a57e3f421ba1019df94689c1c5a93d8b18471e42c2",
-      status: "signed"
-    }
-  ]);
+
+  const [records, setRecords] = useState<LegalConsentRecord[]>([]);
 
   const handleSignConsent = (e: React.FormEvent) => {
     e.preventDefault();

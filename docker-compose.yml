@@ -1,20 +1,23 @@
 version: "3.8"
 
+# Values come from `.env` (see .env.example). Defaults below preserve the
+# original dev behavior so the stack still runs without a .env file.
+
 services:
   database:
     image: postgres:15-alpine
     container_name: myortho-db
     environment:
-      POSTGRES_USER: myortho_admin
-      POSTGRES_PASSWORD: secret_password
-      POSTGRES_DB: myortho_tech
+      POSTGRES_USER: ${POSTGRES_USER:-myortho_admin}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-secret_password}
+      POSTGRES_DB: ${POSTGRES_DB:-myortho_tech}
     ports:
-      - "5432:5432"
+      - "${POSTGRES_PORT:-5432}:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./database/schema.sql:/docker-entrypoint-initdb.d/schema.sql
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U myortho_admin -d myortho_tech"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-myortho_admin} -d ${POSTGRES_DB:-myortho_tech}"]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -23,7 +26,12 @@ services:
     image: redis:7-alpine
     container_name: myortho-cache
     ports:
-      - "6379:6379"
+      - "${REDIS_PORT:-6379}:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
 
   backend:
     build:
@@ -31,18 +39,28 @@ services:
       dockerfile: Dockerfile
     container_name: myortho-backend
     ports:
-      - "4000:4000"
+      - "${BACKEND_PORT:-4000}:4000"
     environment:
       - PORT=4000
-      - DATABASE_URL=postgresql://myortho_admin:secret_password@database:5432/myortho_tech
-      - REDIS_URL=redis://redis:6379
-      - SUPABASE_URL=https://placeholder.supabase.co
-      - SUPABASE_ANON_KEY=placeholder
+      - NODE_ENV=${NODE_ENV:-development}
+      - DATABASE_URL=${DATABASE_URL:-postgresql://myortho_admin:secret_password@database:5432/myortho_tech}
+      - REDIS_URL=${REDIS_URL:-redis://redis:6379}
+      - SUPABASE_URL=${SUPABASE_URL:-https://placeholder.supabase.co}
+      - SUPABASE_ANON_KEY=${SUPABASE_ANON_KEY:-placeholder}
+      - SUPABASE_SERVICE_ROLE_KEY=${SUPABASE_SERVICE_ROLE_KEY:-}
+      - JWT_SECRET=${JWT_SECRET:-}
+      - ENCRYPTION_KEY=${ENCRYPTION_KEY:-}
     depends_on:
       database:
         condition: service_healthy
       redis:
         condition: service_started
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:4000/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
 
   frontend:
     build:
@@ -50,9 +68,10 @@ services:
       dockerfile: Dockerfile
     container_name: myortho-frontend
     ports:
-      - "3000:3000"
+      - "${FRONTEND_PORT:-3000}:3000"
     environment:
-      - NEXT_PUBLIC_API_URL=http://localhost:4000
+      - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL:-http://localhost:4000}
+      - NEXT_PUBLIC_AI_URL=${NEXT_PUBLIC_AI_URL:-http://localhost:8000}
     depends_on:
       - backend
 
@@ -62,7 +81,9 @@ services:
       dockerfile: Dockerfile
     container_name: myortho-ai
     ports:
-      - "8000:8000"
+      - "${AI_ENGINE_PORT:-8000}:8000"
+    environment:
+      - AI_DEVICE=${AI_DEVICE:-cuda}
     volumes:
       - shared_storage:/app/storage
     deploy:

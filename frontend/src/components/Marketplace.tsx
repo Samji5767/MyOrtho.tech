@@ -16,7 +16,7 @@ interface MarketplaceOffer {
 const initialOffers: MarketplaceOffer[] = [
   { id: "off1", title: "Premium Clear Aligner 3D Slicing & Planning", provider: "Stuttgart Ortho Labs", serviceType: "design", price: 45.00, deliverySla: "24 Hours", rating: 4.9 },
   { id: "off2", title: "NextDent Model Resin Printing & Washing", provider: "APAC Manufacturing Hub", serviceType: "printing", price: 15.00, deliverySla: "48 Hours", rating: 4.8 },
-  { id: "off3", title: "Complex Molar Tipping Clinical Consultation", provider: "Dr. Sarah Jenkins Clinic", serviceType: "consulting", price: 120.00, deliverySla: "12 Hours", rating: 5.0 }
+  { id: "off3", title: "Complex Molar Tipping Clinical Consultation", provider: "Independent Orthodontist", serviceType: "consulting", price: 120.00, deliverySla: "12 Hours", rating: 5.0 }
 ];
 
 export default function Marketplace() {

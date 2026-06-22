@@ -1,8 +1,35 @@
+# Dependencies
+node_modules/
+.venv/
+venv/
+
+# Next.js
+.next/
+next-build/
+out/
+dist/
+build/
+*.tsbuildinfo
+
+# Python
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# macOS
 .DS_Store
 ._*
-node_modules
-dist
-build
+
+# Env / secrets
 .env
-.env.*
-coverage
+.env.local
+.env.production
+
+# Xcode
+DerivedData/
+*.xcuserdata/
+frontend/ios/App/CapApp-SPM/.build/
+
+# Logs
+*.log
+coverage/

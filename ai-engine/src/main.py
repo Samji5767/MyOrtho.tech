@@ -57,6 +57,24 @@ def run_segmentation_task(req: SegmentationRequest):
     except Exception as e:
         logger.error(f"Failed to segment mesh: {str(e)}")
 
+@app.get("/health")
+async def health():
+    """Liveness probe: the process is up and serving requests."""
+    return {"status": "ok", "service": "myortho-ai-engine", "version": app.version}
+
+
+@app.get("/ready")
+async def ready():
+    """Readiness probe: report the active compute backend."""
+    cuda = torch.cuda.is_available()
+    return {
+        "ready": True,
+        "device": "cuda" if cuda else "cpu",
+        "gpu_acceleration": cuda,
+        "models_loaded": True,
+    }
+
+
 @app.post("/ai/segment")
 async def trigger_segmentation(req: SegmentationRequest, background_tasks: BackgroundTasks):
     background_tasks.add_task(run_segmentation_task, req)

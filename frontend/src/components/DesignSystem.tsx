@@ -43,8 +43,12 @@ export function Button({
   );
 }
 
-export function Card({ children, className }: { children: React.ReactNode; className?: string }) {
-  return <section className={clsx("premium-card", className)}>{children}</section>;
+export function Card({ children, className, ...props }: React.HTMLAttributes<HTMLElement>) {
+  return (
+    <section className={clsx("premium-card", className)} {...props}>
+      {children}
+    </section>
+  );
 }
 
 export function SectionHeader({
@@ -138,5 +142,55 @@ export function EmptyState({ icon: Icon, title, body }: { icon: LucideIcon; titl
       <h3 className="mt-4 text-sm font-semibold text-foreground">{title}</h3>
       <p className="mt-2 max-w-sm text-sm leading-6 text-secondary">{body}</p>
     </div>
+  );
+}
+
+export function LiveDot({ tone = "success" }: { tone?: "success" | "warning" | "danger" }) {
+  const colorMap = { success: "bg-emerald-500", warning: "bg-amber-500", danger: "bg-rose-500" };
+  return (
+    <span className="relative inline-flex h-2 w-2 shrink-0">
+      <span className={clsx("absolute inline-flex h-full w-full animate-ping rounded-full opacity-70", colorMap[tone])} />
+      <span className={clsx("relative inline-flex h-2 w-2 rounded-full", colorMap[tone])} />
+    </span>
+  );
+}
+
+export function SkeletonBlock({ className }: { className?: string }) {
+  return <div className={clsx("animate-skeleton rounded-lg", className)} aria-hidden />;
+}
+
+export function Badge({ count, max = 99, className }: { count: number; max?: number; className?: string }) {
+  if (count <= 0) return null;
+  return (
+    <span className={clsx("animate-badge-pop inline-flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-[color:var(--danger)] px-1 text-[9px] font-black leading-none text-white", className)}>
+      {count > max ? `${max}+` : count}
+    </span>
+  );
+}
+
+export function SectionDivider({ label, className }: { label?: string; className?: string }) {
+  if (!label) return <div className={clsx("h-px bg-[color:var(--border)]", className)} />;
+  return (
+    <div className={clsx("flex items-center gap-3", className)}>
+      <div className="h-px flex-1 bg-[color:var(--border)]" />
+      <span className="shrink-0 text-[9px] font-black uppercase tracking-[0.2em] text-[color:var(--muted-foreground)]">{label}</span>
+      <div className="h-px flex-1 bg-[color:var(--border)]" />
+    </div>
+  );
+}
+
+export function Spinner({ size = 16, className }: { size?: number; className?: string }) {
+  return (
+    <svg
+      className={clsx("animate-spin text-[color:var(--primary)]", className)}
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      aria-label="Loading"
+    >
+      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+    </svg>
   );
 }

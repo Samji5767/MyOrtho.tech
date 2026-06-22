@@ -1,7 +1,6 @@
 import { Patient, Case, Printer, PrintJob } from "@/types";
 import { supabase, ensureAuth } from "@/lib/supabase";
 
-// Setup storage key constants for localStorage fallback
 const PATIENTS_KEY = "myortho_patients";
 const CASES_KEY = "myortho_cases";
 const PRINTERS_KEY = "myortho_printers";
@@ -12,94 +11,16 @@ const AUDIT_LOGS_KEY = "myortho_audit_logs";
 const BILLING_KEY = "myortho_billing_data";
 const COMMUNICATIONS_KEY = "myortho_communications";
 
-const defaultOrganizationId = "d0b1a2c3-4d5e-6f7a-8b9c-0d1e2f3a4b5c";
-const defaultProfileId = "e1b2c3d4-5e6f-7a8b-9c0d-1e2f3a4b5c6d";
-
-// Helper to check if Supabase is fully configured
 const isSupabaseConfigured = () => {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
   return url && key && !url.includes("placeholder") && key !== "placeholder";
 };
 
-// Helper to delay simulation (shows off premium loading states/skeletons)
-const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
-
-// Default seed data matching initial mockup structures
-const defaultPatients: Patient[] = [
-  { id: "p1", firstName: "Eleanor", lastName: "Vance", dob: "1994-08-12", gender: "Female", clinicalNotes: "Class II Malocclusion, crowding in mandibular anterior sector.", createdAt: "2026-05-10" },
-  { id: "p2", firstName: "Julian", lastName: "Kerr", dob: "1988-11-23", gender: "Male", clinicalNotes: "Diastema between upper central incisors, minor deep bite.", createdAt: "2026-05-15" },
-  { id: "p3", firstName: "Amara", lastName: "Sato", dob: "2001-03-04", gender: "Female", clinicalNotes: "Open bite, requires segmentation and 24 aligner stages.", createdAt: "2026-06-01" }
-];
-
-const defaultCases: Case[] = [
-  { id: "c1", patientId: "p1", patientName: "Eleanor Vance", status: "planning", currentStageId: "s1", notes: "Requires upper/lower clear aligners. 18 maxillary stages.", createdAt: "2026-05-10", updatedAt: "2026-06-12" },
-  { id: "c2", patientId: "p2", patientName: "Julian Kerr", status: "pending_approval", currentStageId: "s2", notes: "Awaiting approval for stage layout. IPR required at tooth 11/21.", createdAt: "2026-05-15", updatedAt: "2026-06-13" },
-  { id: "c3", patientId: "p3", patientName: "Amara Sato", status: "manufacturing", currentStageId: "s3", notes: "Aligner model generation complete. Print jobs in queue.", createdAt: "2026-06-01", updatedAt: "2026-06-14" }
-];
-
-const defaultPrinters: Printer[] = [
-  { id: "pr1", name: "Formlabs 3B+ (Lab A)", brand: "Formlabs", model: "Form 3B+", status: "printing", materialType: "Draft Resin V2", materialVolumeMl: 850, ipAddress: "192.168.1.45", createdAt: "2026-04-12" },
-  { id: "pr2", name: "SprintRay Pro 95S", brand: "SprintRay", model: "Pro 95S", status: "idle", materialType: "Model Gray", materialVolumeMl: 1200, ipAddress: "192.168.1.48", createdAt: "2026-04-20" },
-  { id: "pr3", name: "Asiga Max UV", brand: "Asiga", model: "Max UV", status: "offline", materialType: "Ortho Model", materialVolumeMl: 400, ipAddress: "192.168.1.52", createdAt: "2026-05-02" }
-];
-
-const defaultPrintJobs: PrintJob[] = [
-  { id: "job1", printerId: "pr1", printerName: "Formlabs 3B+", stageNumber: 4, patientName: "Eleanor Vance", status: "printing", qualityScore: 0.98, createdAt: "2026-06-14" },
-  { id: "job2", printerId: "pr2", printerName: "SprintRay Pro 95S", stageNumber: 8, patientName: "Julian Kerr", status: "queued", qualityScore: 0.95, createdAt: "2026-06-14" },
-  { id: "job3", printerId: "pr1", printerName: "Formlabs 3B+", stageNumber: 12, patientName: "Amara Sato", status: "completed", qualityScore: 0.99, createdAt: "2026-06-14" },
-  { id: "job4", printerId: "pr3", printerName: "Asiga Max UV", stageNumber: 1, patientName: "Aiden Cross", status: "failed", qualityScore: 0.74, qcNotes: "Thin wall risk failed at buccal shell", createdAt: "2026-06-13" }
-];
-
-const defaultAppointments = [
-  { id: "appt-1", title: "Orthodontic Staging Progress Check", dateTime: "Tuesday, June 23 at 10:30 AM", doctor: "Dr. Sarah Jenkins Clinic" }
-];
-
-const defaultSecuritySettings = {
-  ssoEnabled: true,
-  mfaEnforced: true,
-  domain: "https://portal.myortho.tech"
-};
-
-const defaultAuditLogs = [
-  { timestamp: "2026-06-14 21:12:05", user: "sarah.jenkins@myortho.tech", action: "Approved Case #c1 Staging Plan", ip: "192.168.1.104", severity: "info" },
-  { timestamp: "2026-06-14 20:45:12", user: "system-worker", action: "AI Scan Segmentation Completed", ip: "10.0.4.88", severity: "info" },
-  { timestamp: "2026-06-14 18:22:30", user: "operator-bill", action: "Resin Low Warning: Formlabs Printer 1", ip: "192.168.1.45", severity: "warning" },
-  { timestamp: "2026-06-14 15:10:04", user: "unknown-admin", action: "Failed Login Attempt: Tenant Portal", ip: "203.0.113.19", severity: "critical" }
-];
-
-const defaultBilling = {
-  meters: { caseExports: 12, apiCalls: 1245, resinMl: 450, storageGb: 48 },
-  subscription: { planTier: "premium", monthlyPrice: 599, status: "active" },
-  invoices: [
-    { id: "inv-9901", billingPeriod: "May 2026", totalCost: 485.45, status: "paid", invoiceDate: "2026-06-01" },
-    { id: "inv-9854", billingPeriod: "Apr 2026", totalCost: 390.12, status: "paid", invoiceDate: "2026-05-01" }
-  ]
-};
-
-const defaultComments = [
-  "Dr. Sam: Posterior crossbite alignment looks good. Attachment on tooth 13 is crucial.",
-  "Lab Tech: Watertight STL staging models sliced and validated."
-];
-
-const defaultSupportMessages = [
-  { sender: "clinic", text: "Let us know if you feel minor tightness on aligner #4. That is normal for the first 48 hours." }
-];
-
-const defaultConsents = [
-  { name: "HIPAA Data Sharing Consent", signedAt: "2026-06-12 11:22", hash: "SHA-256: 4f18e9a...", status: "Signed" },
-  { name: "Aligner Treatment Informed Consent", signedAt: "2026-06-12 11:25", hash: "SHA-256: 9b2d8e...", status: "Signed" }
-];
-
-// Initializer helper for LocalStorage Fallback
-const getStoredData = <T>(key: string, defaults: T): T => {
-  if (typeof window === "undefined") return defaults;
-  const data = localStorage.getItem(key);
-  if (!data) {
-    localStorage.setItem(key, JSON.stringify(defaults));
-    return defaults;
-  }
-  return JSON.parse(data) as T;
+const getStoredData = <T>(key: string, fallback: T): T => {
+  if (typeof window === "undefined") return fallback;
+  const stored = localStorage.getItem(key);
+  return stored ? (JSON.parse(stored) as T) : fallback;
 };
 
 const setStoredData = <T>(key: string, data: T): void => {
@@ -107,22 +28,7 @@ const setStoredData = <T>(key: string, data: T): void => {
   localStorage.setItem(key, JSON.stringify(data));
 };
 
-// Database ID translation helpers to preserve backward compatibility with mock keys
-const resolveCaseId = (id: string): string => {
-  if (id === "c1" || id === "case-1") return "c1111111-1111-1111-1111-111111111111";
-  if (id === "c2" || id === "case-2") return "c2222222-2222-2222-2222-222222222222";
-  if (id === "c3" || id === "case-3") return "c3333333-3333-3333-3333-333333333333";
-  return id;
-};
-
-const resolvePatientId = (id: string): string => {
-  if (id === "p1" || id === "patient-1") return "11111111-1111-1111-1111-111111111111";
-  if (id === "p2" || id === "patient-2") return "22222222-2222-2222-2222-222222222222";
-  if (id === "p3" || id === "patient-3") return "33333333-3333-3333-3333-333333333333";
-  return id;
-};
-
-// Database Row Mappers to protect types and camelCase conversions
+// Row mappers for Supabase → domain types
 const mapPatient = (row: any): Patient => ({
   id: row.id,
   firstName: row.first_name,
@@ -181,36 +87,50 @@ const mapAppointment = (row: any): any => ({
     hour: "2-digit",
     minute: "2-digit"
   }),
-  doctor: "Dr. Sarah Jenkins Clinic"
+  doctor: row.profiles?.full_name ?? ""
 });
 
+type SecuritySettings = {
+  ssoEnabled: boolean;
+  mfaEnforced: boolean;
+  domain: string;
+};
+
+const emptySecuritySettings: SecuritySettings = {
+  ssoEnabled: false,
+  mfaEnforced: false,
+  domain: ""
+};
+
+// Resolved at runtime from environment — no hardcoded org/profile IDs
+const orgId = () => process.env.NEXT_PUBLIC_ORG_ID ?? "";
+const profileId = () => process.env.NEXT_PUBLIC_PROFILE_ID ?? "";
+
 export const apiService = {
-  // Patients API
+  // Patients
   async getPatients(): Promise<Patient[]> {
-    await delay(150);
     if (isSupabaseConfigured()) {
       await ensureAuth();
       const { data, error } = await supabase
         .from("patients")
         .select("*")
-        .eq("organization_id", defaultOrganizationId);
+        .eq("organization_id", orgId());
       if (error) {
         console.error("Supabase getPatients error:", error.message);
       } else if (data) {
         return data.map(mapPatient);
       }
     }
-    return getStoredData(PATIENTS_KEY, defaultPatients);
+    return getStoredData<Patient[]>(PATIENTS_KEY, []);
   },
 
   async createPatient(firstName: string, lastName: string, dob: string, gender: string, clinicalNotes: string): Promise<Patient> {
-    await delay(200);
     if (isSupabaseConfigured()) {
       await ensureAuth();
       const { data, error } = await supabase
         .from("patients")
         .insert({
-          organization_id: defaultOrganizationId,
+          organization_id: orgId(),
           first_name: firstName,
           last_name: lastName,
           dob,
@@ -225,9 +145,9 @@ export const apiService = {
         return mapPatient(data);
       }
     }
-    const patients = getStoredData<Patient[]>(PATIENTS_KEY, defaultPatients);
+    const patients = getStoredData<Patient[]>(PATIENTS_KEY, []);
     const newPatient: Patient = {
-      id: `p${patients.length + 1}`,
+      id: `local-${Date.now()}`,
       firstName,
       lastName,
       dob,
@@ -240,9 +160,8 @@ export const apiService = {
     return newPatient;
   },
 
-  // Cases API
+  // Cases
   async getCases(): Promise<Case[]> {
-    await delay(150);
     if (isSupabaseConfigured()) {
       await ensureAuth();
       const { data, error } = await supabase
@@ -254,19 +173,17 @@ export const apiService = {
         return data.map(mapCase);
       }
     }
-    return getStoredData(CASES_KEY, defaultCases);
+    return getStoredData<Case[]>(CASES_KEY, []);
   },
 
   async createCase(patientId: string, patientName: string, notes: string): Promise<Case> {
-    await delay(200);
     if (isSupabaseConfigured()) {
       await ensureAuth();
-      const resolvedPatientId = resolvePatientId(patientId);
       const { data, error } = await supabase
         .from("cases")
         .insert({
-          patient_id: resolvedPatientId,
-          dentist_id: defaultProfileId,
+          patient_id: patientId,
+          dentist_id: profileId(),
           status: "draft",
           notes
         })
@@ -278,9 +195,9 @@ export const apiService = {
         return mapCase(data);
       }
     }
-    const cases = getStoredData<Case[]>(CASES_KEY, defaultCases);
+    const cases = getStoredData<Case[]>(CASES_KEY, []);
     const newCase: Case = {
-      id: `c${cases.length + 1}`,
+      id: `local-${Date.now()}`,
       patientId,
       patientName,
       status: "draft",
@@ -294,7 +211,6 @@ export const apiService = {
   },
 
   async updateCaseStatus(id: string, status: Case["status"]): Promise<Case> {
-    await delay(150);
     if (isSupabaseConfigured()) {
       await ensureAuth();
       const { data, error } = await supabase
@@ -309,38 +225,32 @@ export const apiService = {
         return mapCase(data);
       }
     }
-    const cases = getStoredData<Case[]>(CASES_KEY, defaultCases);
+    const cases = getStoredData<Case[]>(CASES_KEY, []);
     const idx = cases.findIndex(c => c.id === id);
     if (idx === -1) throw new Error("Case not found");
-    cases[idx] = {
-      ...cases[idx],
-      status,
-      updatedAt: new Date().toISOString().split("T")[0]
-    };
+    cases[idx] = { ...cases[idx], status, updatedAt: new Date().toISOString().split("T")[0] };
     setStoredData(CASES_KEY, cases);
     return cases[idx];
   },
 
-  // Printers API
+  // Printers
   async getPrinters(): Promise<Printer[]> {
-    await delay(100);
     if (isSupabaseConfigured()) {
       await ensureAuth();
       const { data, error } = await supabase
         .from("printers")
         .select("*")
-        .eq("organization_id", defaultOrganizationId);
+        .eq("organization_id", orgId());
       if (error) {
         console.error("Supabase getPrinters error:", error.message);
       } else if (data) {
         return data.map(mapPrinter);
       }
     }
-    return getStoredData(PRINTERS_KEY, defaultPrinters);
+    return getStoredData<Printer[]>(PRINTERS_KEY, []);
   },
 
   async simulatePrinterCycle(id: string): Promise<Printer> {
-    await delay(200);
     if (isSupabaseConfigured()) {
       await ensureAuth();
       const { data: printer } = await supabase.from("printers").select("*").eq("id", id).single();
@@ -349,10 +259,7 @@ export const apiService = {
         const volumeReduced = nextStatus === "printing" ? 80 : 0;
         const { data, error } = await supabase
           .from("printers")
-          .update({
-            status: nextStatus,
-            material_volume_ml: Math.max(0, printer.material_volume_ml - volumeReduced)
-          })
+          .update({ status: nextStatus, material_volume_ml: Math.max(0, printer.material_volume_ml - volumeReduced) })
           .eq("id", id)
           .select()
           .single();
@@ -363,24 +270,18 @@ export const apiService = {
         }
       }
     }
-    const printers = getStoredData<Printer[]>(PRINTERS_KEY, defaultPrinters);
+    const printers = getStoredData<Printer[]>(PRINTERS_KEY, []);
     const idx = printers.findIndex(p => p.id === id);
     if (idx === -1) throw new Error("Printer not found");
-    const currentStatus = printers[idx].status;
-    const nextStatus: Printer["status"] = currentStatus === "idle" ? "printing" : "idle";
+    const nextStatus: Printer["status"] = printers[idx].status === "idle" ? "printing" : "idle";
     const volumeReduced = nextStatus === "printing" ? 80 : 0;
-    printers[idx] = {
-      ...printers[idx],
-      status: nextStatus,
-      materialVolumeMl: Math.max(0, printers[idx].materialVolumeMl - volumeReduced)
-    };
+    printers[idx] = { ...printers[idx], status: nextStatus, materialVolumeMl: Math.max(0, printers[idx].materialVolumeMl - volumeReduced) };
     setStoredData(PRINTERS_KEY, printers);
     return printers[idx];
   },
 
-  // Print Jobs API
+  // Print Jobs
   async getPrintJobs(): Promise<PrintJob[]> {
-    await delay(100);
     if (isSupabaseConfigured()) {
       await ensureAuth();
       const { data, error } = await supabase
@@ -392,55 +293,50 @@ export const apiService = {
             stage_number,
             treatment_plans(
               cases(
-                patients(
-                  first_name,
-                  last_name
-                )
+                patients(first_name, last_name)
               )
             )
           )
         `)
-        .eq("organization_id", defaultOrganizationId);
+        .eq("organization_id", orgId());
       if (error) {
         console.error("Supabase getPrintJobs error:", error.message);
       } else if (data) {
         return data.map(mapPrintJob);
       }
     }
-    return getStoredData(PRINT_JOBS_KEY, defaultPrintJobs);
+    return getStoredData<PrintJob[]>(PRINT_JOBS_KEY, []);
   },
 
-  // Appointments API
+  // Appointments
   async getAppointments(): Promise<any[]> {
-    await delay(150);
     if (isSupabaseConfigured()) {
       await ensureAuth();
       const { data, error } = await supabase
         .from("appointments")
-        .select("*, patients(*)");
+        .select("*, patients(*), profiles(full_name)");
       if (error) {
         console.error("Supabase getAppointments error:", error.message);
       } else if (data) {
         return data.map(mapAppointment);
       }
     }
-    return getStoredData(APPOINTMENTS_KEY, defaultAppointments);
+    return getStoredData<any[]>(APPOINTMENTS_KEY, []);
   },
 
   async createAppointment(title: string, dateTime: string, doctor: string): Promise<any> {
-    await delay(200);
+    // TODO: createAppointment requires a patientId parameter for production use
     if (isSupabaseConfigured()) {
       await ensureAuth();
       const { data, error } = await supabase
         .from("appointments")
         .insert({
-          patient_id: "11111111-1111-1111-1111-111111111111", // Eleanor Vance default patient UUID
-          dentist_id: defaultProfileId,
+          dentist_id: profileId(),
           scheduled_at: new Date(dateTime.replace(" at ", " ")).toISOString(),
           visit_reason: title,
           status: "scheduled"
         })
-        .select()
+        .select("*, profiles(full_name)")
         .single();
       if (error) {
         console.error("Supabase createAppointment error:", error.message);
@@ -448,110 +344,84 @@ export const apiService = {
         return mapAppointment(data);
       }
     }
-    const appts = getStoredData<any[]>(APPOINTMENTS_KEY, defaultAppointments);
-    const newAppt = {
-      id: `appt-${appts.length + 1}`,
-      title,
-      dateTime,
-      doctor
-    };
+    const appts = getStoredData<any[]>(APPOINTMENTS_KEY, []);
+    const newAppt = { id: `local-${Date.now()}`, title, dateTime, doctor };
     appts.push(newAppt);
     setStoredData(APPOINTMENTS_KEY, appts);
     return newAppt;
   },
 
-  // Security Settings API
-  async getSecuritySettings(): Promise<typeof defaultSecuritySettings> {
-    await delay(100);
+  // Security Settings
+  async getSecuritySettings(): Promise<SecuritySettings> {
     if (isSupabaseConfigured()) {
       await ensureAuth();
       const { data, error } = await supabase
         .from("organizations")
         .select("settings")
-        .eq("id", defaultOrganizationId)
+        .eq("id", orgId())
         .single();
       if (error) {
         console.error("Supabase getSecuritySettings error:", error.message);
       } else if (data && data.settings) {
         return {
-          ssoEnabled: data.settings.ssoEnabled ?? true,
-          mfaEnforced: data.settings.mfaEnforced ?? true,
-          domain: data.settings.domain ?? "https://portal.myortho.tech"
+          ssoEnabled: data.settings.ssoEnabled ?? false,
+          mfaEnforced: data.settings.mfaEnforced ?? false,
+          domain: data.settings.domain ?? ""
         };
       }
     }
-    return getStoredData(SECURITY_KEY, defaultSecuritySettings);
+    return getStoredData<SecuritySettings>(SECURITY_KEY, emptySecuritySettings);
   },
 
-  async updateSecuritySettings(ssoEnabled: boolean, mfaEnforced: boolean): Promise<typeof defaultSecuritySettings> {
-    await delay(150);
+  async updateSecuritySettings(ssoEnabled: boolean, mfaEnforced: boolean): Promise<SecuritySettings> {
     if (isSupabaseConfigured()) {
       await ensureAuth();
-      const { data: org } = await supabase.from("organizations").select("settings").eq("id", defaultOrganizationId).single();
+      const { data: org } = await supabase.from("organizations").select("settings").eq("id", orgId()).single();
       const updatedSettings = { ...(org?.settings || {}), ssoEnabled, mfaEnforced };
-      const { error } = await supabase
-        .from("organizations")
-        .update({ settings: updatedSettings })
-        .eq("id", defaultOrganizationId);
+      const { error } = await supabase.from("organizations").update({ settings: updatedSettings }).eq("id", orgId());
       if (error) {
         console.error("Supabase updateSecuritySettings error:", error.message);
       } else {
-        return { ssoEnabled, mfaEnforced, domain: org?.settings?.domain || "https://portal.myortho.tech" };
+        return { ssoEnabled, mfaEnforced, domain: org?.settings?.domain ?? "" };
       }
     }
-    const settings = { ...defaultSecuritySettings, ssoEnabled, mfaEnforced };
+    const settings = { ...emptySecuritySettings, ssoEnabled, mfaEnforced };
     setStoredData(SECURITY_KEY, settings);
     return settings;
   },
 
-  // Audit Logs API
+  // Audit Logs
   async getAuditLogs(): Promise<any[]> {
-    await delay(100);
     if (isSupabaseConfigured()) {
       await ensureAuth();
       const { data, error } = await supabase
         .from("audit_logs")
         .select("*, profiles(email)")
-        .eq("organization_id", defaultOrganizationId)
+        .eq("organization_id", orgId())
         .order("created_at", { ascending: false });
       if (error) {
         console.error("Supabase getAuditLogs error:", error.message);
       } else if (data) {
         return data.map(row => ({
           timestamp: new Date(row.created_at).toISOString().replace("T", " ").split(".")[0],
-          user: row.profiles?.email || "system-worker",
+          user: row.profiles?.email || "system",
           action: row.action,
-          ip: row.ip_address || "127.0.0.1",
+          ip: row.ip_address || "",
           severity: (row.details?.severity || "info") as "info" | "warning" | "critical"
         }));
       }
     }
-    return getStoredData(AUDIT_LOGS_KEY, defaultAuditLogs);
+    return getStoredData<any[]>(AUDIT_LOGS_KEY, []);
   },
 
-  // Billing subscriptions and Usage Meters API
+  // Billing
   async getBillingData(): Promise<any> {
-    await delay(100);
     if (isSupabaseConfigured()) {
       await ensureAuth();
-      // Fetch subscription
-      const { data: sub } = await supabase.from("billing_subscriptions").select("*").eq("organization_id", defaultOrganizationId).maybeSingle();
-      // Fetch usage meters
-      const { data: meters } = await supabase.from("billing_usage_meters").select("*").eq("organization_id", defaultOrganizationId);
-      
-      const mappedSub = sub ? {
-        planTier: sub.plan_tier,
-        monthlyPrice: sub.monthly_price,
-        status: sub.status
-      } : defaultBilling.subscription;
-
-      const mappedMeters = {
-        caseExports: 0,
-        apiCalls: 0,
-        resinMl: 0,
-        storageGb: 0
-      };
-
+      const { data: sub } = await supabase.from("billing_subscriptions").select("*").eq("organization_id", orgId()).maybeSingle();
+      const { data: meters } = await supabase.from("billing_usage_meters").select("*").eq("organization_id", orgId());
+      const mappedSub = sub ? { planTier: sub.plan_tier, monthlyPrice: sub.monthly_price, status: sub.status } : null;
+      const mappedMeters = { caseExports: 0, apiCalls: 0, resinMl: 0, storageGb: 0 };
       if (meters) {
         meters.forEach(m => {
           if (m.metric_type === "case_export") mappedMeters.caseExports += m.quantity;
@@ -560,26 +430,19 @@ export const apiService = {
           if (m.metric_type === "storage_gb") mappedMeters.storageGb += m.quantity;
         });
       }
-
-      return {
-        subscription: mappedSub,
-        meters: mappedMeters,
-        invoices: defaultBilling.invoices // Maintain invoice records fallback
-      };
+      return { subscription: mappedSub, meters: mappedMeters, invoices: [] };
     }
-    return getStoredData(BILLING_KEY, defaultBilling);
+    return getStoredData<any>(BILLING_KEY, null);
   },
 
-  // Case Comments API
+  // Case Comments
   async getCaseComments(caseId: string): Promise<string[]> {
-    await delay(100);
     if (isSupabaseConfigured()) {
       await ensureAuth();
-      const resolvedCaseId = resolveCaseId(caseId);
       const { data, error } = await supabase
         .from("model_comments")
         .select("*")
-        .eq("case_id", resolvedCaseId)
+        .eq("case_id", caseId)
         .order("created_at", { ascending: true });
       if (error) {
         console.error("Supabase getCaseComments error:", error.message);
@@ -587,44 +450,38 @@ export const apiService = {
         return data.map(c => c.comment_text);
       }
     }
-    return getStoredData(`${COMMUNICATIONS_KEY}_comments_${caseId}`, defaultComments);
+    return getStoredData<string[]>(`${COMMUNICATIONS_KEY}_comments_${caseId}`, []);
   },
 
   async addCaseComment(caseId: string, author: string, text: string): Promise<string> {
-    await delay(100);
     const commentWithAuthor = `${author}: ${text}`;
     if (isSupabaseConfigured()) {
       await ensureAuth();
-      const resolvedCaseId = resolveCaseId(caseId);
-      const { error } = await supabase
-        .from("model_comments")
-        .insert({
-          case_id: resolvedCaseId,
-          author_id: defaultProfileId,
-          comment_text: commentWithAuthor,
-          coordinate_x: 0,
-          coordinate_y: 0,
-          coordinate_z: 0
-        });
+      const { error } = await supabase.from("model_comments").insert({
+        case_id: caseId,
+        author_id: profileId(),
+        comment_text: commentWithAuthor,
+        coordinate_x: 0,
+        coordinate_y: 0,
+        coordinate_z: 0
+      });
       if (error) {
         console.error("Supabase addCaseComment error:", error.message);
       } else {
         return commentWithAuthor;
       }
     }
-    const comments = getStoredData<string[]>(`${COMMUNICATIONS_KEY}_comments_${caseId}`, defaultComments);
+    const comments = getStoredData<string[]>(`${COMMUNICATIONS_KEY}_comments_${caseId}`, []);
     comments.push(commentWithAuthor);
     setStoredData(`${COMMUNICATIONS_KEY}_comments_${caseId}`, comments);
     return commentWithAuthor;
   },
 
-  // Support messages API
+  // Support Messages
   async getSupportMessages(caseId: string): Promise<any[]> {
-    await delay(100);
     if (isSupabaseConfigured()) {
       await ensureAuth();
-      const resolvedCaseId = resolveCaseId(caseId);
-      const { data: conversations } = await supabase.from("conversations").select("id").eq("case_id", resolvedCaseId).limit(1);
+      const { data: conversations } = await supabase.from("conversations").select("id").eq("case_id", caseId).limit(1);
       if (conversations && conversations.length > 0) {
         const { data, error } = await supabase
           .from("messages")
@@ -635,37 +492,33 @@ export const apiService = {
           console.error("Supabase getSupportMessages error:", error.message);
         } else if (data) {
           return data.map(m => ({
-            sender: m.sender_id === defaultProfileId ? "patient" : "clinic",
+            sender: m.sender_id === profileId() ? "patient" : "clinic",
             text: m.text
           }));
         }
       }
     }
-    return getStoredData(`${COMMUNICATIONS_KEY}_support_${caseId}`, defaultSupportMessages);
+    return getStoredData<any[]>(`${COMMUNICATIONS_KEY}_support_${caseId}`, []);
   },
 
   async sendSupportMessage(caseId: string, sender: "patient" | "clinic", text: string): Promise<any> {
-    await delay(100);
     const msg = { sender, text };
     if (isSupabaseConfigured()) {
       await ensureAuth();
-      const resolvedCaseId = resolveCaseId(caseId);
-      let { data: conv } = await supabase.from("conversations").select("id").eq("case_id", resolvedCaseId).limit(1).maybeSingle();
+      let { data: conv } = await supabase.from("conversations").select("id").eq("case_id", caseId).limit(1).maybeSingle();
       if (!conv) {
-        const { data: newConv } = await supabase.from("conversations").insert({ case_id: resolvedCaseId }).select().single();
+        const { data: newConv } = await supabase.from("conversations").insert({ case_id: caseId }).select().single();
         conv = newConv;
         if (conv) {
-          await supabase.from("participants").insert({ conversation_id: conv.id, profile_id: defaultProfileId });
+          await supabase.from("participants").insert({ conversation_id: conv.id, profile_id: profileId() });
         }
       }
       if (conv) {
-        const { error } = await supabase
-          .from("messages")
-          .insert({
-            conversation_id: conv.id,
-            sender_id: sender === "patient" ? defaultProfileId : null, // patient references Sarah Profile in our seed
-            text
-          });
+        const { error } = await supabase.from("messages").insert({
+          conversation_id: conv.id,
+          sender_id: sender === "patient" ? profileId() : null,
+          text
+        });
         if (error) {
           console.error("Supabase sendSupportMessage error:", error.message);
         } else {
@@ -673,22 +526,20 @@ export const apiService = {
         }
       }
     }
-    const msgs = getStoredData<any[]>(`${COMMUNICATIONS_KEY}_support_${caseId}`, defaultSupportMessages);
+    const msgs = getStoredData<any[]>(`${COMMUNICATIONS_KEY}_support_${caseId}`, []);
     msgs.push(msg);
     setStoredData(`${COMMUNICATIONS_KEY}_support_${caseId}`, msgs);
     return msg;
   },
 
-  // Consent Records API
+  // Consent Records
   async getConsentRecords(patientId: string): Promise<any[]> {
-    await delay(100);
     if (isSupabaseConfigured()) {
       await ensureAuth();
-      const resolvedPatientId = resolvePatientId(patientId);
       const { data, error } = await supabase
         .from("legal_consent_records")
         .select("*")
-        .eq("patient_id", resolvedPatientId)
+        .eq("patient_id", patientId)
         .order("esign_timestamp", { ascending: false });
       if (error) {
         console.error("Supabase getConsentRecords error:", error.message);
@@ -701,6 +552,6 @@ export const apiService = {
         }));
       }
     }
-    return getStoredData(`${COMMUNICATIONS_KEY}_consents_${patientId}`, defaultConsents);
+    return getStoredData<any[]>(`${COMMUNICATIONS_KEY}_consents_${patientId}`, []);
   }
 };

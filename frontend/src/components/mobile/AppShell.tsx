@@ -1,0 +1,196 @@
+"use client";
+
+import type { ReactNode } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
+import { usePathname } from "next/navigation";
+import { TopBar } from "./TopBar";
+import { TabBar, SidebarNav } from "./TabBar";
+import CommandPalette from "@/components/CommandPalette";
+import { isIOS, isNative } from "@/lib/capacitor/platform";
+import { hapticLight } from "@/lib/capacitor/haptics";
+
+// ─── Pull-to-refresh ──────────────────────────────────────────────────────────
+
+const PULL_THRESHOLD = 72;
+const MAX_PULL_DISTANCE = 100;
+
+function PullToRefresh({ onRefresh }: { onRefresh: () => Promise<void> }) {
+  const [pullDistance, setPullDistance] = useState(0);
+  const [refreshing, setRefreshing] = useState(false);
+  // Defer native check to after mount so server/client initial render both return null.
+  const [isNativeIOS, setIsNativeIOS] = useState(false);
+  const startY = useRef<number | null>(null);
+
+  useEffect(() => {
+    setIsNativeIOS(isNative() && isIOS());
+  }, []);
+
+  useEffect(() => {
+    if (!isNativeIOS) return;
+
+    const getScrollTop = () => window.scrollY ?? document.documentElement.scrollTop ?? 0;
+
+    const onTouchStart = (e: TouchEvent) => {
+      if (getScrollTop() > 0) return;
+      startY.current = e.touches[0].clientY;
+    };
+
+    const onTouchMove = (e: TouchEvent) => {
+      if (startY.current === null || getScrollTop() > 0) return;
+      const dist = e.touches[0].clientY - startY.current;
+      if (dist <= 0) return;
+      e.preventDefault();
+      setPullDistance(Math.min(dist * 0.55, MAX_PULL_DISTANCE));
+    };
+
+    const onTouchEnd = async () => {
+      if (startY.current === null) return;
+      startY.current = null;
+      if (pullDistance >= PULL_THRESHOLD) {
+        setRefreshing(true);
+        setPullDistance(0);
+        void hapticLight();
+        await onRefresh();
+        setRefreshing(false);
+      } else {
+        setPullDistance(0);
+      }
+    };
+
+    window.addEventListener("touchstart", onTouchStart, { passive: true });
+    window.addEventListener("touchmove", onTouchMove, { passive: false });
+    window.addEventListener("touchend", onTouchEnd, { passive: true });
+    return () => {
+      window.removeEventListener("touchstart", onTouchStart);
+      window.removeEventListener("touchmove", onTouchMove);
+      window.removeEventListener("touchend", onTouchEnd);
+    };
+  }, [isNativeIOS, pullDistance, onRefresh]);
+
+  if (!isNativeIOS) return null;
+  const opacity = Math.min(pullDistance / PULL_THRESHOLD, 1);
+  if (pullDistance <= 4 && !refreshing) return null;
+
+  return (
+    <div
+      className="fixed left-0 right-0 z-50 flex justify-center"
+      style={{
+        top: `calc(env(safe-area-inset-top, 0px) + 56px)`,
+        transform: `translateY(${refreshing ? 16 : pullDistance * 0.5}px)`,
+        opacity,
+      }}
+    >
+      <div className="flex items-center gap-2 rounded-full border border-border bg-card/90 px-4 py-1.5 text-xs font-semibold text-foreground shadow-lg backdrop-blur">
+        <span
+          className={refreshing ? "animate-spin" : ""}
+          style={{ display: "inline-block", transform: refreshing ? undefined : `rotate(${pullDistance * 3}deg)` }}
+        >
+          ↻
+        </span>
+        {refreshing ? "Refreshing…" : pullDistance >= PULL_THRESHOLD ? "Release to refresh" : "Pull to refresh"}
+      </div>
+    </div>
+  );
+}
+
+// ─── Dynamic Island spacer ────────────────────────────────────────────────────
+// HYDRATION SAFETY: isNative()/isIOS() access the Capacitor global which is
+// absent during static HTML generation but present in the iOS WebView. Calling
+// them during render causes server→null / client→div mismatch (#418/#423).
+// Defer the check to after mount so the initial render always returns null.
+
+function DynamicIslandSpacer() {
+  const [isNativeIOS, setIsNativeIOS] = useState(false);
+  useEffect(() => {
+    setIsNativeIOS(isNative() && isIOS());
+  }, []);
+  if (!isNativeIOS) return null;
+  return (
+    <div
+      aria-hidden
+      className="pointer-events-none fixed inset-x-0 top-0 z-[100]"
+      style={{ height: "env(safe-area-inset-top, 0px)" }}
+    />
+  );
+}
+
+// ─── iPad detection ───────────────────────────────────────────────────────────
+
+function useIsIPad(): boolean {
+  const [isIPad, setIsIPad] = useState(false);
+  useEffect(() => {
+    const check = () => {
+      const ua = navigator.userAgent;
+      setIsIPad(/iPad/.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 0));
+    };
+    check();
+  }, []);
+  return isIPad;
+}
+
+// ─── App shell ────────────────────────────────────────────────────────────────
+
+export function AppShell({ children }: { children: ReactNode }) {
+  const [commandOpen, setCommandOpen] = useState(false);
+  const isIPad = useIsIPad();
+  const pathname = usePathname() ?? '/';
+
+  const openCommand  = useCallback(() => setCommandOpen(true),  []);
+  const closeCommand = useCallback(() => setCommandOpen(false), []);
+
+  const handleRefresh = useCallback(async () => {
+    await new Promise<void>((resolve) => setTimeout(resolve, 800));
+    window.dispatchEvent(new CustomEvent("app-refresh"));
+  }, []);
+
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        setCommandOpen((prev) => !prev);
+      }
+    };
+    const onCustomEvent = () => setCommandOpen(true);
+    window.addEventListener("keydown", onKeyDown);
+    window.addEventListener("open-command-palette", onCustomEvent);
+    return () => {
+      window.removeEventListener("keydown", onKeyDown);
+      window.removeEventListener("open-command-palette", onCustomEvent);
+    };
+  }, []);
+
+  useEffect(() => {
+    const onTabChange = () => void hapticLight();
+    window.addEventListener("tab-changed", onTabChange);
+    return () => window.removeEventListener("tab-changed", onTabChange);
+  }, []);
+
+  // ── iPad layout: sidebar + content ──────────────────────────────────────────
+  if (isIPad) {
+    return (
+      <div className="ipad-shell-root">
+        <DynamicIslandSpacer />
+        <SidebarNav />
+        <div className="ipad-shell-content">
+          <main>{children}</main>
+        </div>
+        <CommandPalette isOpen={commandOpen} onClose={closeCommand} />
+      </div>
+    );
+  }
+
+  // ── Mobile layout: top bar + scrollable content + bottom tab bar ─────────────
+  // Inbox (/) owns its full-bleed header — TopBar is hidden there.
+  const showTopBar = pathname !== '/';
+
+  return (
+    <div className="app-shell-root">
+      <DynamicIslandSpacer />
+      <PullToRefresh onRefresh={handleRefresh} />
+      {showTopBar && <TopBar onOpenSearch={openCommand} />}
+      <main className="app-shell-content">{children}</main>
+      <TabBar />
+      <CommandPalette isOpen={commandOpen} onClose={closeCommand} />
+    </div>
+  );
+}

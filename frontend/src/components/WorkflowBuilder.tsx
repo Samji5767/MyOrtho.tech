@@ -23,10 +23,7 @@ export default function WorkflowBuilder() {
   const [newCondition, setNewCondition] = useState("If Region is EU-Central");
   const [newAction, setNewAction] = useState("Route to Stuttgart Lab");
 
-  const [logs, setLogs] = useState([
-    { id: "log-1", timestamp: "17:01:22", rule: "Staging Setup", message: "Rule Staging Setup fired: Tooth FDI #12 overjet detected as 4.8mm. Case flagged for Senior Review.", status: "fired" },
-    { id: "log-2", timestamp: "16:55:04", rule: "Scan Uploaded", message: "Rule Scan Uploaded triggered: case Eleanor Vance routed to Stuttgart Lab.", status: "success" }
-  ]);
+  const [logs, setLogs] = useState<Array<{ id: string; timestamp: string; rule: string; message: string; status: string }>>([]);
 
   const triggerSimulationEvent = () => {
     const activeRules = rules.filter(r => r.isActive);
@@ -36,7 +33,7 @@ export default function WorkflowBuilder() {
     
     let msg = "";
     if (rule.trigger === "Scan Uploaded") {
-      msg = `Rule Scan Uploaded triggered: case patient Marcus Aurelius (${rule.condition}) routed successfully.`;
+      msg = `Rule Scan Uploaded triggered: case routed (${rule.condition}) successfully.`;
     } else if (rule.trigger === "Staging Setup") {
       msg = `Rule Staging Setup fired: case FDI 11-21 setup verified. Action: ${rule.action}`;
     } else {

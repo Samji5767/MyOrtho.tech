@@ -25,13 +25,7 @@ export default function GlobalSearch() {
   const [useSemantic, setUseSemantic] = useState(false);
   const [filter, setFilter] = useState<string>("all");
 
-  const [results] = useState<SearchResult[]>([
-    { id: "res-1", category: "patient", title: "Eleanor Vance", subtitle: "Patient ID: p1 | DOB: 1994-08-12", score: 0.95 },
-    { id: "res-2", category: "case", title: "Maxillary expansion staging for Eleanor Vance (c1)", subtitle: "Active stage: 12 | Status: planning", score: 0.92 },
-    { id: "res-3", category: "file", title: "maxillary_stage_12_print.stl", subtitle: "File size: 14.5 MB | Format: STL", score: 0.88 },
-    { id: "res-4", category: "message", title: "Dr. Sarah Jenkins: Checked orthodontic root movement limits", subtitle: "In case chat Eleanor Vance", score: 0.85 },
-    { id: "res-5", category: "job", title: "SLA Print Job #BATCH-2026-A109", subtitle: "Status: received | Operator: Marcus Sterling", score: 0.79 }
-  ]);
+  const [results] = useState<SearchResult[]>([]);
 
   const filteredResults = results.filter(res => {
     const matchesQuery = res.title.toLowerCase().includes(query.toLowerCase()) || res.subtitle.toLowerCase().includes(query.toLowerCase());
@@ -127,7 +121,7 @@ export default function GlobalSearch() {
 
           {filteredResults.length === 0 && (
             <div className="text-center py-12 text-slate-400">
-              No records found matching query. Try typing "Eleanor" or "stl".
+              No records found. Add patients and cases to enable search.
             </div>
           )}
         </div>

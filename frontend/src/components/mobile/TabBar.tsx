@@ -8,6 +8,7 @@ import {
   ClipboardList,
   Factory,
   FolderKanban,
+  GitBranch,
   LayoutDashboard,
   Layers3,
   MessageCircle,
@@ -123,6 +124,7 @@ const SIDEBAR_GROUPS: SidebarGroup[] = [
       { href: '/cases',          label: 'Cases',          icon: FolderKanban },
       { href: '/patients',       label: 'Patients',       icon: Users },
       { href: '/treatment-plan', label: 'Treatment Plan', icon: ClipboardList },
+      { href: '/workflow',       label: 'Workflow',       icon: GitBranch },
     ],
   },
   {

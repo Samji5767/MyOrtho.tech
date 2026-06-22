@@ -21,13 +21,23 @@ type ModelStats = {
   depth: number;
 };
 
+type MeasureType = "distance" | "angle" | "overjet" | "overbite";
+
 type MeasurementRecord = {
   id: string;
   name: string;
-  points: [THREE.Vector3, THREE.Vector3];
+  type: MeasureType;
+  points: THREE.Vector3[];
   distance: number;
+  angleDeg?: number;
   createdAt: string;
 };
+
+function computeAngleDeg(a: THREE.Vector3, vertex: THREE.Vector3, b: THREE.Vector3): number {
+  const va = a.clone().sub(vertex).normalize();
+  const vb = b.clone().sub(vertex).normalize();
+  return THREE.MathUtils.radToDeg(Math.acos(Math.max(-1, Math.min(1, va.dot(vb)))));
+}
 
 export interface Viewer3DProps {
   file?: File | null;
@@ -144,23 +154,44 @@ function CameraFrame({ geometry, preset, resetSignal }: { geometry: THREE.Buffer
   return null;
 }
 
-function MeasurementOverlay({ points, hoverPoint }: { points: THREE.Vector3[]; hoverPoint: THREE.Vector3 | null }) {
-  const linePoints = points.length === 1 && hoverPoint ? [points[0], hoverPoint] : points;
-  const start = linePoints[0];
-  const end = linePoints[1];
-  const mid = start && end ? start.clone().add(end).multiplyScalar(0.5) : null;
-  const direction = start && end ? end.clone().sub(start) : null;
-  const distance = direction ? direction.length() : 0;
-  const quaternion = direction ? new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), direction.clone().normalize()) : null;
+function LineSeg({ from, to }: { from: THREE.Vector3; to: THREE.Vector3 }) {
+  const mid = from.clone().add(to).multiplyScalar(0.5);
+  const dir = to.clone().sub(from);
+  const len = dir.length();
+  if (len < 0.0001) return null;
+  const quat = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir.clone().normalize());
+  return (
+    <mesh position={mid} quaternion={quat}>
+      <cylinderGeometry args={[0.018, 0.018, len, 12]} />
+      <meshBasicMaterial color="#2dd4bf" />
+    </mesh>
+  );
+}
+
+const ANGLE_POINT_LABELS = ["A", "Vertex", "B"];
+
+function MeasurementOverlay({
+  points,
+  hoverPoint,
+  measureType,
+}: {
+  points: THREE.Vector3[];
+  hoverPoint: THREE.Vector3 | null;
+  measureType: MeasureType;
+}) {
+  const isAngle = measureType === "angle";
+  const pointsNeeded = isAngle ? 3 : 2;
+  const previewStart = points.length > 0 && points.length < pointsNeeded ? points[points.length - 1] : null;
+  const previewEnd = previewStart ? hoverPoint : null;
 
   return (
     <>
-      {mid && quaternion && (
-        <mesh position={mid} quaternion={quaternion}>
-          <cylinderGeometry args={[0.018, 0.018, distance, 16]} />
-          <meshBasicMaterial color="#2dd4bf" />
-        </mesh>
-      )}
+      {/* Completed segments */}
+      {!isAngle && points.length === 2 && <LineSeg from={points[0]} to={points[1]} />}
+      {isAngle && points.length >= 2 && <LineSeg from={points[0]} to={points[1]} />}
+      {isAngle && points.length === 3 && <LineSeg from={points[1]} to={points[2]} />}
+
+      {/* Placed point markers */}
       {points.map((point, index) => (
         <group key={index}>
           <mesh position={point}>
@@ -169,31 +200,58 @@ function MeasurementOverlay({ points, hoverPoint }: { points: THREE.Vector3[]; h
           </mesh>
           <Html position={point.clone().add(new THREE.Vector3(0.04, 0.04, 0.04))} center>
             <span className="rounded-md border border-teal-400/40 bg-slate-950/90 px-2 py-1 text-xs font-bold text-teal-100 shadow-lg">
-              {String.fromCharCode(65 + index)}
+              {isAngle ? (ANGLE_POINT_LABELS[index] ?? String.fromCharCode(65 + index)) : String.fromCharCode(65 + index)}
             </span>
           </Html>
         </group>
       ))}
-      {hoverPoint && (
+
+      {/* Hover preview */}
+      {previewStart && previewEnd && (
         <group>
-          <mesh position={hoverPoint}>
+          <LineSeg from={previewStart} to={previewEnd} />
+          <mesh position={previewEnd}>
             <sphereGeometry args={[0.05, 16, 16]} />
             <meshBasicMaterial color="#f59e0b" transparent opacity={0.75} />
           </mesh>
-          <Html position={hoverPoint.clone().add(new THREE.Vector3(0.04, 0.04, 0.04))} center>
+          <Html position={previewEnd.clone().add(new THREE.Vector3(0.04, 0.04, 0.04))} center>
             <span className="rounded-md border border-amber-400/40 bg-slate-950/90 px-2 py-1 text-xs font-bold text-amber-100 shadow-lg">
-              Next point
+              {isAngle ? ANGLE_POINT_LABELS[points.length] ?? "Next" : "Next"}
             </span>
           </Html>
         </group>
       )}
-      {mid && (
-        <Html position={mid} center>
-          <span className="rounded-md border border-teal-400/40 bg-slate-950/90 px-2 py-1 text-xs font-bold text-teal-100 shadow-lg">
-            {distance.toFixed(2)} mm
-          </span>
-        </Html>
-      )}
+
+      {/* Distance label */}
+      {!isAngle && points.length === 2 && (() => {
+        const mid = points[0].clone().add(points[1]).multiplyScalar(0.5);
+        const displayVal = measureType === "overjet"
+          ? Math.abs(points[0].x - points[1].x)
+          : measureType === "overbite"
+          ? Math.abs(points[0].y - points[1].y)
+          : points[0].distanceTo(points[1]);
+        const suffix = measureType === "overjet" ? " ↔" : measureType === "overbite" ? " ↕" : "";
+        return (
+          <Html position={mid} center>
+            <span className="rounded-md border border-teal-400/40 bg-slate-950/90 px-2 py-1 text-xs font-bold text-teal-100 shadow-lg">
+              {displayVal.toFixed(2)} mm{suffix}
+            </span>
+          </Html>
+        );
+      })()}
+
+      {/* Angle label */}
+      {isAngle && points.length === 3 && (() => {
+        const deg = computeAngleDeg(points[0], points[1], points[2]);
+        const labelPos = points[1].clone().add(new THREE.Vector3(0, 0.18, 0));
+        return (
+          <Html position={labelPos} center>
+            <span className="rounded-md border border-teal-400/40 bg-slate-950/90 px-2 py-1 text-xs font-bold text-teal-100 shadow-lg">
+              {deg.toFixed(1)}°
+            </span>
+          </Html>
+        );
+      })()}
     </>
   );
 }
@@ -245,18 +303,21 @@ function DentalModel({
   );
 }
 
-function Scene({ geometry, preset, resetSignal, clipping, measurementMode, measurePoints, setMeasurePoints, hoverPoint, setHoverPoint, onMeasurementComplete }: {
+function Scene({ geometry, preset, resetSignal, clipping, measurementMode, measureType, measurePoints, setMeasurePoints, hoverPoint, setHoverPoint, onMeasurementComplete }: {
   geometry: THREE.BufferGeometry;
   preset: ViewPreset;
   resetSignal: number;
   clipping: boolean;
   measurementMode: boolean;
+  measureType: MeasureType;
   measurePoints: THREE.Vector3[];
   setMeasurePoints: React.Dispatch<React.SetStateAction<THREE.Vector3[]>>;
   hoverPoint: THREE.Vector3 | null;
   setHoverPoint: React.Dispatch<React.SetStateAction<THREE.Vector3 | null>>;
-  onMeasurementComplete: (points: [THREE.Vector3, THREE.Vector3]) => void;
+  onMeasurementComplete: (points: THREE.Vector3[], type: MeasureType) => void;
 }) {
+  const pointsNeeded = measureType === "angle" ? 3 : 2;
+
   return (
     <>
       <PerspectiveCamera makeDefault fov={35} position={[0, 7, 7]} />
@@ -269,16 +330,16 @@ function Scene({ geometry, preset, resetSignal, clipping, measurementMode, measu
         measurementMode={measurementMode}
         onPick={(point) =>
           setMeasurePoints((prev) => {
-            const next = prev.length >= 2 ? [point] : [...prev, point];
-            if (next.length === 2) {
-              onMeasurementComplete([next[0], next[1]]);
+            const next = prev.length >= pointsNeeded ? [point] : [...prev, point];
+            if (next.length === pointsNeeded) {
+              onMeasurementComplete(next, measureType);
             }
             return next;
           })
         }
         onHover={setHoverPoint}
       />
-      <MeasurementOverlay points={measurePoints} hoverPoint={hoverPoint} />
+      <MeasurementOverlay points={measurePoints} hoverPoint={hoverPoint} measureType={measureType} />
       <ContactShadows opacity={0.34} scale={10} blur={2.4} far={4} position={[0, -1.25, 0]} />
       <OrbitControls
         makeDefault
@@ -307,6 +368,7 @@ export default function Viewer3D() {
   const [measurementMode, setMeasurementMode] = useState(false);
   const [measurePoints, setMeasurePoints] = useState<THREE.Vector3[]>([]);
   const [hoverPoint, setHoverPoint] = useState<THREE.Vector3 | null>(null);
+  const [measureType, setMeasureType] = useState<MeasureType>("distance");
   const [measurementHistory, setMeasurementHistory] = useState<MeasurementRecord[]>([]);
   const [loadingProgress, setLoadingProgress] = useState<number | null>(null);
   const [resetSignal, setResetSignal] = useState(0);
@@ -316,14 +378,27 @@ export default function Viewer3D() {
 
   useEffect(() => () => geometry.dispose(), [geometry]);
 
-  const addMeasurement = (points: [THREE.Vector3, THREE.Vector3]) => {
-    const distance = points[0].distanceTo(points[1]);
+  const addMeasurement = (points: THREE.Vector3[], type: MeasureType) => {
+    let distance = 0;
+    let angleDeg: number | undefined;
+    if (type === "angle" && points.length === 3) {
+      angleDeg = computeAngleDeg(points[0], points[1], points[2]);
+    } else if (type === "overjet" && points.length === 2) {
+      distance = Math.abs(points[0].x - points[1].x);
+    } else if (type === "overbite" && points.length === 2) {
+      distance = Math.abs(points[0].y - points[1].y);
+    } else if (points.length >= 2) {
+      distance = points[0].distanceTo(points[1]);
+    }
+    const label = type === "distance" ? "Distance" : type === "angle" ? "Angle" : type === "overjet" ? "Overjet" : "Overbite";
     setMeasurementHistory((previous) => [
       {
         id: `${Date.now()}-${previous.length}`,
-        name: `Measurement ${previous.length + 1}`,
+        name: `${label} ${previous.length + 1}`,
+        type,
         points,
         distance,
+        angleDeg,
         createdAt: new Date().toLocaleTimeString([], { hour12: false }),
       },
       ...previous,
@@ -348,8 +423,13 @@ export default function Viewer3D() {
 
   const exportMeasurementSummary = () => {
     if (measurementHistory.length === 0) return;
-    const rows = measurementHistory.map((entry) => `${entry.createdAt},${entry.name},${entry.distance.toFixed(2)} mm`).join("\n");
-    const blob = new Blob([`time,name,distance\n${rows}`], { type: "text/csv" });
+    const rows = measurementHistory.map((entry) => {
+      const val = entry.type === "angle"
+        ? `${entry.angleDeg?.toFixed(1) ?? "0"}°`
+        : `${entry.distance.toFixed(2)} mm`;
+      return `${entry.createdAt},${entry.name},${entry.type},${val}`;
+    }).join("\n");
+    const blob = new Blob([`time,name,type,value\n${rows}`], { type: "text/csv" });
     const url = URL.createObjectURL(blob);
     const anchor = document.createElement("a");
     anchor.href = url;
@@ -485,13 +565,34 @@ export default function Viewer3D() {
           <div className="flex flex-wrap gap-2">
             <input ref={fileRef} type="file" accept=".stl,.ply,.obj" className="hidden" onChange={event => event.target.files?.[0] && loadFile(event.target.files[0])} />
             <Button variant="secondary" size="sm" onClick={() => fileRef.current?.click()}><UploadCloud size={15} /> STL · PLY · OBJ</Button>
-            <Button variant={measurementMode ? "primary" : "secondary"} size="sm" onClick={() => setMeasurementMode(value => !value)}><Ruler size={15} /> Measure</Button>
+            <Button variant={measurementMode ? "primary" : "secondary"} size="sm" onClick={() => { setMeasurementMode(v => !v); setMeasurePoints([]); setHoverPoint(null); }}><Ruler size={15} /> Measure</Button>
             <Button variant={clipping ? "primary" : "secondary"} size="sm" onClick={() => setClipping(value => !value)}><Scissors size={15} /> Section</Button>
             <Button variant="secondary" size="icon" aria-label="Reset camera" onClick={() => setResetSignal(signal => signal + 1)}><RotateCcw size={17} /></Button>
             <Button variant="secondary" size="icon" aria-label="Export screenshot" onClick={exportScreenshot}><Camera size={17} /></Button>
             <Button variant="secondary" size="icon" aria-label="Fullscreen" onClick={() => void toggleFullscreen()}><Expand size={17} /></Button>
           </div>
         </div>
+
+        {measurementMode && (
+          <div className="flex flex-wrap items-center gap-1.5 border-b border-border/60 px-4 py-2">
+            <span className="mr-1 text-[10px] font-bold uppercase tracking-widest text-secondary">Mode:</span>
+            {(["distance", "angle", "overjet", "overbite"] as MeasureType[]).map((t) => (
+              <button
+                key={t}
+                type="button"
+                onClick={() => { setMeasureType(t); setMeasurePoints([]); setHoverPoint(null); }}
+                className={[
+                  "rounded-full border px-2.5 py-1 text-[11px] font-semibold transition focus-ring",
+                  measureType === t
+                    ? "border-teal-500/40 bg-teal-500/15 text-teal-300"
+                    : "border-border bg-card/60 text-secondary hover:text-foreground",
+                ].join(" ")}
+              >
+                {t === "distance" ? "Distance (mm)" : t === "angle" ? "Angle (°)" : t === "overjet" ? "Overjet H (mm)" : "Overbite V (mm)"}
+              </button>
+            ))}
+          </div>
+        )}
 
         <div className="border-b border-border/60 bg-card p-3 lg:hidden">
           <div className="grid grid-cols-2 gap-2">
@@ -537,6 +638,7 @@ export default function Viewer3D() {
                 resetSignal={resetSignal}
                 clipping={clipping}
                 measurementMode={measurementMode}
+                measureType={measureType}
                 measurePoints={measurePoints}
                 setMeasurePoints={setMeasurePoints}
                 hoverPoint={hoverPoint}
@@ -546,7 +648,15 @@ export default function Viewer3D() {
             </Suspense>
           </Canvas>
           <div className="pointer-events-none absolute bottom-4 left-4 right-4 rounded-2xl border border-white/10 bg-slate-950/70 px-3 py-2 text-xs text-slate-200 backdrop-blur lg:right-auto">
-            {measurementMode ? "Tap a surface to place points A and B, hover to preview the next point, and tap again to continue measuring." : "Tap and drag to rotate, pinch to zoom, and use the toolbar to enable measurement mode."}
+            {measurementMode
+              ? measureType === "angle"
+                ? "Tap point A (first arm), then Vertex (apex), then point B (second arm) to compute the angle."
+                : measureType === "overjet"
+                ? "Tap upper incisor tip (A) then lower incisor tip (B). Horizontal distance is reported as overjet."
+                : measureType === "overbite"
+                ? "Tap upper incisor edge (A) then lower incisor edge (B). Vertical distance is reported as overbite."
+                : "Tap point A then point B on the surface. Hover to preview. Result appears in the history panel."
+              : "Tap and drag to rotate · Pinch to zoom · Enable Measure for clinical distance and angle tools."}
           </div>
         </div>
       </Card>
@@ -591,7 +701,14 @@ export default function Viewer3D() {
             <StatusBadge tone="neutral">{measurementHistory.length}</StatusBadge>
           </div>
           <div className="mt-4 space-y-2">
-            <DataRow label="Last distance" value={measurementHistory[0] ? `${measurementHistory[0].distance.toFixed(2)} mm` : "—"} />
+            <DataRow
+              label="Last measurement"
+              value={measurementHistory[0]
+                ? measurementHistory[0].type === "angle"
+                  ? `${measurementHistory[0].angleDeg?.toFixed(1) ?? "—"}°`
+                  : `${measurementHistory[0].distance.toFixed(2)} mm`
+                : "—"}
+            />
             <div className="flex flex-wrap gap-2">
               <Button variant="secondary" size="sm" onClick={clearMeasurementHistory} disabled={measurementHistory.length === 0}>
                 Clear all
@@ -613,7 +730,13 @@ export default function Viewer3D() {
                     </button>
                     <span className="text-xs text-secondary">{entry.createdAt}</span>
                   </div>
-                  <p className="mt-1 text-xs text-secondary">{entry.distance.toFixed(2)} mm</p>
+                  <p className="mt-1 text-xs text-secondary">
+                    {entry.type === "angle"
+                      ? `${entry.angleDeg?.toFixed(1) ?? "—"}°`
+                      : `${entry.distance.toFixed(2)} mm`}
+                    {entry.type === "overjet" && " — overjet"}
+                    {entry.type === "overbite" && " — overbite"}
+                  </p>
                   <div className="mt-3 flex gap-2">
                     <Button variant="ghost" size="sm" onClick={() => renameMeasurement(entry.id)}>Rename</Button>
                     <Button variant="ghost" size="sm" onClick={() => deleteMeasurement(entry.id)}>Delete</Button>

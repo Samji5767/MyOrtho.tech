@@ -8,6 +8,7 @@ import {
   ClipboardList,
   Factory,
   FolderKanban,
+  LayoutDashboard,
   Layers3,
   MessageCircle,
   ScanLine,
@@ -112,7 +113,8 @@ const SIDEBAR_GROUPS: SidebarGroup[] = [
   {
     label: 'Command',
     items: [
-      { href: '/',          label: 'Inbox',          icon: MessageCircle },
+      { href: '/',           label: 'Inbox',     icon: MessageCircle    },
+      { href: '/dashboard',  label: 'Dashboard', icon: LayoutDashboard  },
     ],
   },
   {

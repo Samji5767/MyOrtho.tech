@@ -225,6 +225,42 @@ export const CAD_CAPABILITIES: CadCapability[] = [
     statusNote: "Working in CAD Engine: exports a structured JSON CAD package today.",
     surface: "CADEngine",
   },
+  {
+    id: "bolton-analysis",
+    name: "Bolton Analysis",
+    phase: "plan",
+    maturity: "simulated",
+    summary: "Compute anterior (6:6) and overall (12:12) tooth-width discrepancy ratios.",
+    statusNote: "Live in CAD Engine: editable tooth-width inputs compute anterior ratio vs. 77.2 ± 1.65% norm with clinical interpretation. Overall ratio uses the same inputs extended to first molars.",
+    surface: "CADEngine",
+  },
+  {
+    id: "precision-cut-designer",
+    name: "Precision Cut Designer",
+    phase: "design",
+    maturity: "planned",
+    summary: "Design precision-cut windows for button bonding and elastic attachment on aligner shells.",
+    statusNote: "PrecisionCut model defined in lib/cad/models.ts; on-shell cut interaction planned.",
+    surface: null,
+  },
+  {
+    id: "pontic-designer",
+    name: "Pontic Designer",
+    phase: "design",
+    maturity: "planned",
+    summary: "Design pontic spaces in aligner arches for edentulous sites during orthodontic space management.",
+    statusNote: "Pontic model defined; space-management interaction planned.",
+    surface: null,
+  },
+  {
+    id: "bite-ramp-designer",
+    name: "Bite Ramp Designer",
+    phase: "design",
+    maturity: "planned",
+    summary: "Add lingual bite ramps to upper aligners to open the bite and disengage posterior teeth.",
+    statusNote: "BiteRamp model defined; ramp geometry tooling planned for the design phase.",
+    surface: null,
+  },
 ];
 
 export function capabilitiesByPhase(phase: CapabilityPhase): CadCapability[] {

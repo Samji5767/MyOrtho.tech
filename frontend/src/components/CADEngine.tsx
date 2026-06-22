@@ -9,7 +9,7 @@ import {
 import * as THREE from "three";
 import {
   AlertTriangle, BarChart3, CheckCircle2, ChevronDown, ChevronRight, ChevronUp,
-  Download, Layers, ListOrdered, Move3d, RotateCcw, Scissors, Target, Zap,
+  Download, Layers, ListOrdered, Move3d, RotateCcw, Ruler, Scissors, Target, Zap,
 } from "lucide-react";
 import { Button, Card, DataRow, StatusBadge } from "@/components/DesignSystem";
 import { validateMovements } from "@/lib/biomechanics/vectorMath";
@@ -336,6 +336,39 @@ export default function CADEngine() {
   // Stage generation
   const [stagesVisible, setStagesVisible] = useState(false);
   const [generatedStages, setGeneratedStages] = useState<AlignerStageRow[]>([]);
+
+  // Bolton Analysis
+  const [boltonMode, setBoltonMode] = useState<"anterior" | "overall">("anterior");
+  const [boltonExpanded, setBoltonExpanded] = useState(false);
+  const [boltonWidths, setBoltonWidths] = useState<Record<string, number>>({
+    u13: 7.8, u12: 6.8, u11: 8.4, u21: 8.4, u22: 6.8, u23: 7.8,
+    l43: 6.6, l42: 5.8, l41: 5.4, l31: 5.4, l32: 5.8, l33: 6.6,
+    u14: 7.1, u15: 6.8, u16: 10.5, u24: 7.1, u25: 6.8, u26: 10.5,
+    l44: 7.3, l45: 7.2, l46: 11.1, l34: 7.3, l35: 7.2, l36: 11.1,
+  });
+
+  const boltonResult = useMemo(() => {
+    const sum = (keys: string[]) => keys.reduce((s, k) => s + (boltonWidths[k] ?? 0), 0);
+    const upperAnt = sum(["u13", "u12", "u11", "u21", "u22", "u23"]);
+    const lowerAnt = sum(["l43", "l42", "l41", "l31", "l32", "l33"]);
+    const upperAll = upperAnt + sum(["u14", "u15", "u16", "u24", "u25", "u26"]);
+    const lowerAll = lowerAnt + sum(["l44", "l45", "l46", "l34", "l35", "l36"]);
+    const ratio = boltonMode === "anterior"
+      ? (upperAnt > 0 ? (lowerAnt / upperAnt) * 100 : 0)
+      : (upperAll > 0 ? (lowerAll / upperAll) * 100 : 0);
+    const [ideal, sd] = boltonMode === "anterior" ? [77.2, 1.65] : [91.3, 1.91];
+    const normal = ratio >= ideal - sd && ratio <= ideal + sd;
+    let interpretation: string;
+    if (ratio > ideal + sd) {
+      const excess = Math.abs(lowerAnt - upperAnt * (ideal / 100)).toFixed(1);
+      interpretation = `Mandibular excess (~${excess} mm). Consider lower arch IPR or accept residual upper spacing.`;
+    } else if (ratio < ideal - sd) {
+      interpretation = `Maxillary excess. Consider upper arch IPR or accept residual lower spacing.`;
+    } else {
+      interpretation = `Within normal range. No tooth-size discrepancy adjustment anticipated.`;
+    }
+    return { ratio, ideal, sd, normal, interpretation };
+  }, [boltonMode, boltonWidths]);
 
   const collisionFdis = useMemo(() => {
     if (!showCollision) return new Set<number>();
@@ -687,6 +720,88 @@ export default function CADEngine() {
           {!crossSectionEnabled && (
             <p className="text-[11px] text-[color:var(--muted-foreground)] leading-relaxed">
               Slice the arch along X, Y, or Z to inspect interproximal anatomy and root clearance.
+            </p>
+          )}
+        </Card>
+
+        {/* Bolton Analysis */}
+        <Card className="p-4">
+          <div className="mb-2 flex items-center gap-2">
+            <Ruler size={14} className="text-[color:var(--primary)]" />
+            <h3 className="flex-1 text-sm font-semibold text-foreground">Bolton Analysis</h3>
+            <StatusBadge tone="info">Simulated</StatusBadge>
+            <button
+              type="button"
+              onClick={() => setBoltonExpanded(v => !v)}
+              className="text-[color:var(--muted-foreground)] transition-colors hover:text-[color:var(--foreground)]"
+            >
+              {boltonExpanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+            </button>
+          </div>
+
+          {boltonExpanded ? (
+            <>
+              <p className="mb-3 text-[11px] leading-relaxed text-[color:var(--muted-foreground)]">
+                Edit tooth widths (mm) to compute ratio. Pre-filled with population averages.
+              </p>
+              {/* Mode toggle */}
+              <div className="mb-3 flex gap-1">
+                {(["anterior", "overall"] as const).map(m => (
+                  <button
+                    key={m}
+                    type="button"
+                    onClick={() => setBoltonMode(m)}
+                    className={`flex-1 rounded-lg border py-1 text-[10px] font-semibold transition-colors ${boltonMode === m ? "border-[color:var(--primary)] bg-[color:var(--primary-glow)] text-[color:var(--primary)]" : "border-[color:var(--border)] text-[color:var(--muted-foreground)]"}`}
+                  >
+                    {m === "anterior" ? "Anterior 6:6" : "Overall 12:12"}
+                  </button>
+                ))}
+              </div>
+              {/* Width inputs */}
+              <div className="mb-3 grid grid-cols-2 gap-2">
+                {([
+                  { label: "Upper (mm)", keys: boltonMode === "anterior" ? ["u13","u12","u11","u21","u22","u23"] : ["u13","u12","u11","u21","u22","u23","u14","u15","u16","u24","u25","u26"] },
+                  { label: "Lower (mm)", keys: boltonMode === "anterior" ? ["l43","l42","l41","l31","l32","l33"] : ["l43","l42","l41","l31","l32","l33","l44","l45","l46","l34","l35","l36"] },
+                ] as const).map(col => (
+                  <div key={col.label}>
+                    <p className="mb-1 text-[9px] font-bold uppercase tracking-wide text-[color:var(--muted-foreground)]">{col.label}</p>
+                    <div className="space-y-1">
+                      {col.keys.map(k => (
+                        <div key={k} className="flex items-center gap-1.5">
+                          <span className="w-5 shrink-0 text-[9px] font-semibold text-[color:var(--muted-foreground)]">{k.slice(1)}</span>
+                          <input
+                            type="number" min="1" max="20" step="0.1"
+                            value={boltonWidths[k] ?? ""}
+                            onChange={e => setBoltonWidths(prev => ({ ...prev, [k]: parseFloat(e.target.value) || 0 }))}
+                            className="h-6 w-full rounded-md border border-[color:var(--border)] bg-[color:var(--card)] px-1.5 text-[10px] tabular-nums text-[color:var(--foreground)] focus:border-[color:var(--primary)] focus:outline-none"
+                          />
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+              {/* Result */}
+              <div className={`rounded-xl border p-3 ${boltonResult.normal ? "border-green-500/30 bg-green-500/10" : "border-amber-500/30 bg-amber-500/10"}`}>
+                <div className="mb-1 flex items-center justify-between">
+                  <span className="text-[10px] font-semibold text-[color:var(--foreground)]">
+                    {boltonMode === "anterior" ? "Anterior Ratio" : "Overall Ratio"}
+                  </span>
+                  <span className={`text-xs font-bold tabular-nums ${boltonResult.normal ? "text-green-400" : "text-amber-400"}`}>
+                    {boltonResult.ratio.toFixed(1)}%
+                  </span>
+                </div>
+                <p className="text-[10px] leading-relaxed text-[color:var(--muted-foreground)]">
+                  {boltonResult.interpretation}
+                </p>
+                <p className="mt-1 text-[9px] text-[color:var(--muted-foreground)]">
+                  Normal: {boltonMode === "anterior" ? "77.2 ± 1.65%" : "91.3 ± 1.91%"}
+                </p>
+              </div>
+            </>
+          ) : (
+            <p className="text-[11px] leading-relaxed text-[color:var(--muted-foreground)]">
+              Anterior (6:6) and overall (12:12) tooth-width discrepancy analysis. Pre-filled with population averages — expand to compute your case.
             </p>
           )}
         </Card>

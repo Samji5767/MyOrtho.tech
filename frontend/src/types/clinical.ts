@@ -16,7 +16,7 @@ export type ThreadStatus =
 export type FilterKey = 'all' | 'urgent' | 'approval' | 'manufacturing' | 'completed';
 
 export type WorkflowSection =
-  | 'Overview' | 'Scan' | 'Segment' | 'CAD' | 'Plan' | 'Mfg' | 'Notes';
+  | 'Overview' | 'Scan' | 'Segment' | 'CAD' | 'Plan' | 'Mfg' | 'Notes' | 'Workflow' | 'Audit';
 
 export type TimelineEventType =
   | 'system'

@@ -25,6 +25,8 @@ import {
 } from "lucide-react";
 import { LiveDot, ProgressBar, StatusBadge } from "@/components/DesignSystem";
 import { ClinicalEmptyState } from "@/components/ClinicalEmptyState";
+import ClinicalWorkflow from "@/components/ClinicalWorkflow";
+import AuditTrail from "@/components/AuditTrail";
 import { isDemoMode } from "@/lib/appMode";
 import {
   MOCK_THREADS,
@@ -259,7 +261,7 @@ function ComposerBar() {
 
 // ─── Workflow section tabs ────────────────────────────────────────────────────
 
-const WORKFLOW_SECTIONS: WorkflowSection[] = ['Overview', 'Scan', 'Segment', 'CAD', 'Plan', 'Mfg', 'Notes'];
+const WORKFLOW_SECTIONS: WorkflowSection[] = ['Overview', 'Scan', 'Segment', 'CAD', 'Plan', 'Mfg', 'Notes', 'Workflow', 'Audit'];
 
 function WorkflowTabs({ active, onChange }: { active: WorkflowSection; onChange: (s: WorkflowSection) => void }) {
   return (
@@ -348,19 +350,37 @@ function CaseRoom({ thread, onBack }: { thread: PatientThread; onBack: () => voi
 
       {/* Case activity timeline */}
       <div className="flex-1 space-y-1 pb-[calc(var(--tab-bar-height)+var(--sa-bottom)+4.5rem)] pt-3">
-        {events.map((event) => (
-          <TimelineCard key={event.id} event={event} />
-        ))}
-
-        <div className="px-4 py-4">
-          <Link
-            href="/ai-analysis"
-            className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-[color:var(--primary)] px-4 text-sm font-semibold text-[color:var(--primary-foreground)] shadow-[var(--shadow-sm)] transition-transform active:scale-95"
-          >
-            Open full scan workspace
-            <ArrowRight size={16} />
-          </Link>
-        </div>
+        {section === 'Workflow' ? (
+          <div className="px-4">
+            <ClinicalWorkflow
+              caseId={thread.caseId}
+              caseName={thread.patientName}
+              initialStatus="clinical-review"
+              initialHistory={[]}
+              currentActor="Dr. Demo"
+              currentActorRole="Clinical Director"
+            />
+          </div>
+        ) : section === 'Audit' ? (
+          <div className="px-4">
+            <AuditTrail caseId={thread.caseId} isLive={false} />
+          </div>
+        ) : (
+          <>
+            {events.map((event) => (
+              <TimelineCard key={event.id} event={event} />
+            ))}
+            <div className="px-4 py-4">
+              <Link
+                href="/ai-analysis"
+                className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-[color:var(--primary)] px-4 text-sm font-semibold text-[color:var(--primary-foreground)] shadow-[var(--shadow-sm)] transition-transform active:scale-95"
+              >
+                Open full scan workspace
+                <ArrowRight size={16} />
+              </Link>
+            </div>
+          </>
+        )}
       </div>
 
       {/* Fixed composer bar above tab bar */}

@@ -304,7 +304,7 @@ function StatBars({ bars, title }: { bars: BarStat[]; title: string }) {
 
 export default function DashboardPage() {
   const [role, setRole] = useState<Role>("orthodontist");
-  const [previewMode, setPreviewMode] = useState(false);
+  const [previewMode, setPreviewMode] = useState(true);
 
   const data = previewMode ? PREVIEW[role] : null;
   const roleInfo = ROLE_CONFIG.find((r) => r.key === role)!;

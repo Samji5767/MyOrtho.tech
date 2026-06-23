@@ -86,6 +86,19 @@ export class AuthController {
       },
     };
   }
+
+  @Post('onboarding')
+  @HttpCode(HttpStatus.OK)
+  async onboarding(
+    @Req() req: Request,
+    @Body() body: Record<string, unknown>,
+  ) {
+    const token = (req.cookies as Record<string, string>)[COOKIE_NAME];
+    if (!token) throw new UnauthorizedException('No session');
+    const payload = this.authService.verifyToken(token);
+    await this.authService.markOnboarded(payload.sub);
+    return { ok: true, role: payload.role };
+  }
 }
 
 // GET /api/me — convenience alias for session (used by frontend app shell)

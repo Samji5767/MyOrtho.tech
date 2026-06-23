@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import {
   BarChart3,
   Box,
+  Brain,
   ClipboardList,
   Factory,
   FolderKanban,
@@ -14,6 +15,7 @@ import {
   MessageCircle,
   ScanLine,
   Settings,
+  Shield,
   Users,
   type LucideIcon,
 } from "lucide-react";
@@ -144,13 +146,15 @@ const SIDEBAR_GROUPS: SidebarGroup[] = [
   {
     label: 'Intelligence',
     items: [
-      { href: '/analytics', label: 'Analytics', icon: BarChart3 },
+      { href: '/analytics',     label: 'Analytics',      icon: BarChart3 },
+      { href: '/ai-readiness',  label: 'AI Readiness',   icon: Brain     },
     ],
   },
   {
     label: 'Settings',
     items: [
-      { href: '/settings', label: 'Settings', icon: Settings },
+      { href: '/settings', label: 'Settings',     icon: Settings },
+      { href: '/trust',    label: 'Trust Center', icon: Shield   },
     ],
   },
 ];

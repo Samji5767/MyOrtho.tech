@@ -5,6 +5,7 @@ import { useState } from "react";
 import {
   Bell,
   BellRing,
+  Brain,
   CheckCircle2,
   ChevronRight,
   ClipboardCheck,
@@ -16,6 +17,7 @@ import {
   Printer,
   RotateCcw,
   Server,
+  Shield,
   ShieldCheck,
   Smartphone,
   Sparkles,
@@ -94,7 +96,7 @@ export default function SettingsPage() {
                 <span className="text-xs font-semibold text-emerald-600 dark:text-emerald-400">Platform active</span>
               </div>
               <StatusBadge tone="primary">Doctor</StatusBadge>
-              <StatusBadge tone="success">HIPAA ready</StatusBadge>
+              <StatusBadge tone="info">HIPAA prepared</StatusBadge>
             </div>
           </div>
         </div>
@@ -431,6 +433,49 @@ export default function SettingsPage() {
           ))}
         </div>
       </Card>
+      {/* PLATFORM LINKS — AI Readiness + Trust Center */}
+      <Card className="p-5">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <p className="text-xs font-bold uppercase tracking-[0.18em] text-[color:var(--primary)]">Platform</p>
+            <h2 className="mt-1 text-xl font-semibold tracking-tight text-[color:var(--foreground)]">
+              AI &amp; compliance
+            </h2>
+            <p className="mt-1 text-sm text-[color:var(--muted-foreground)]">
+              Review AI capability maturity and data-handling policies.
+            </p>
+          </div>
+        </div>
+        <div className="mt-4 grid gap-2 sm:grid-cols-2">
+          <Link
+            href="/ai-readiness"
+            className="ios-chip flex items-center gap-3 px-4 py-3 transition-transform duration-150 active:scale-[0.99]"
+          >
+            <span className="grid h-9 w-9 shrink-0 place-items-center rounded-2xl bg-blue-500/10 text-blue-600 dark:text-blue-400">
+              <Brain size={16} />
+            </span>
+            <span className="min-w-0">
+              <span className="block text-sm font-semibold text-[color:var(--foreground)]">AI Readiness</span>
+              <span className="text-xs text-[color:var(--muted-foreground)]">Capability maturity matrix</span>
+            </span>
+            <ChevronRight size={15} className="ml-auto shrink-0 text-[color:var(--muted-foreground)]" />
+          </Link>
+          <Link
+            href="/trust"
+            className="ios-chip flex items-center gap-3 px-4 py-3 transition-transform duration-150 active:scale-[0.99]"
+          >
+            <span className="grid h-9 w-9 shrink-0 place-items-center rounded-2xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
+              <Shield size={16} />
+            </span>
+            <span className="min-w-0">
+              <span className="block text-sm font-semibold text-[color:var(--foreground)]">Trust Center</span>
+              <span className="text-xs text-[color:var(--muted-foreground)]">PHI, compliance &amp; security</span>
+            </span>
+            <ChevronRight size={15} className="ml-auto shrink-0 text-[color:var(--muted-foreground)]" />
+          </Link>
+        </div>
+      </Card>
+
       {/* VERSION FOOTER */}
       <div className="flex flex-col items-center gap-1 py-4 text-center">
         <div className="flex items-center gap-2">

@@ -166,7 +166,7 @@ export const CAD_CAPABILITIES: CadCapability[] = [
     id: "cross-sections",
     name: "Cross Sections",
     phase: "design",
-    maturity: "simulated",
+    maturity: "implemented",
     summary: "Slice the model along arbitrary planes to inspect interproximal and root anatomy.",
     statusNote: "Live in CAD Engine: toggle + axis selector (X/Y/Z) + position slider. Clipping is applied to all tooth materials in real time.",
     surface: "CADEngine",

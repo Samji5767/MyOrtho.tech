@@ -143,19 +143,16 @@ Capabilities are organized by clinical category. Maturity labels match the appli
 
 ## Capability Count Summary
 
-| Category | Implemented | Simulated | Planned | Total |
-|---|---|---|---|---|
-| Scan Import | 3 | 0 | 0 | 3 |
-| Measurement | 4 | 0 | 0 | 4 |
-| Arch Analysis | 0 | 2 | 0 | 2 |
-| Segmentation | 0 | 0 | 2 | 2 |
-| Treatment Planning | 4 | 3 | 0 | 7 |
-| Auto Planning | 0 | 0 | 3 | 3 |
-| Visualization | 0 | 1 | 2 | 3 |
-| Manufacturing Prep | 0 | 0 | 4 | 4 |
-| Attachment | 0 | 1 | 1 | 2 |
-| Export | 1 | 0 | 0 | 1 |
-| **Total** | **12** | **7** | **12** | **33** |
+Counts reflect the registry in `lib/cad/capabilities.ts` (22 base) + `lib/cad/roadmap.ts` ROADMAP_ONLY (7 new) = **29 unique capabilities**.
+
+| Maturity | Count | Capabilities |
+|---|---|---|
+| **Implemented** | **4** | Clinical Measurements, Movement Vectors, Cross Sections, Export Workflow |
+| **Simulated** | **8** | Case Review, Arch Analysis, Treatment Planning, Bolton Analysis, IPR Planning, Attachment Placement, Manufacturing Preparation, Aligner Review |
+| **Planned** | **17** | Occlusal Analysis, Margin Drawing, Trimline Design, Button Placement, Undercut Detection, Blockout Visualization, Annotation Layering, Precision Cut, Pontic Designer, Bite Ramp Designer + Occlusal Heatmap, Contact Mapping, Root-Aware Movement, AI Segmentation, AI Landmark Detection, Auto Setup Proposal, Refinement Prediction |
+| **Total** | **29** | |
+
+> Scan import (STL/PLY/OBJ) is an implemented feature of the Viewer3D but is not tracked as a separate registry entry — it is a prerequisite for all review-phase capabilities.
 
 ---
 

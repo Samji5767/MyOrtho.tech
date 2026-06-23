@@ -52,7 +52,7 @@ It distinguishes between what is **implemented**, what is **simulated** (realist
 | Angle measurement (3-point) | Implemented | Dot-product arm vectors |
 | Overjet measurement | Implemented | |ΔX| horizontal |
 | Overbite measurement | Implemented | |ΔY| vertical |
-| Cross-section viewer | Simulated | Clipping plane |
+| Cross-section viewer | Implemented | Real-time Three.js clipping plane on imported mesh |
 | Bolton Analysis | Simulated | Editable inputs, representative |
 | IPR planning | Simulated | Markers only |
 | Attachment placement | Simulated | Visual only |

@@ -1,43 +1,30 @@
 import { Injectable, CanActivate, ExecutionContext, UnauthorizedException } from '@nestjs/common';
-import { createClient } from '@supabase/supabase-js';
+import type { Request } from 'express';
+import { AuthService } from './auth.service';
+
+const COOKIE_NAME = 'mo_session';
 
 @Injectable()
 export class AuthGuard implements CanActivate {
-  private supabase = createClient(
-    process.env.SUPABASE_URL || 'https://placeholder.supabase.co',
-    process.env.SUPABASE_ANON_KEY || 'placeholder'
-  );
+  constructor(private readonly authService: AuthService) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
-    const request = context.switchToHttp().getRequest();
-    const url = process.env.SUPABASE_URL;
-    const key = process.env.SUPABASE_ANON_KEY;
+    const request = context.switchToHttp().getRequest<Request>();
+    const token = (request.cookies as Record<string, string>)[COOKIE_NAME];
 
-    if (!url || !key || url.includes('placeholder') || key === 'placeholder') {
-      throw new UnauthorizedException('Backend Supabase credentials are not configured.');
+    if (!token) {
+      throw new UnauthorizedException('Authentication required');
     }
 
-    const authHeader = request.headers.authorization;
+    const payload = this.authService.verifyToken(token);
 
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      throw new UnauthorizedException('Missing or invalid authorization token');
-    }
-
-    const token = authHeader.split(' ')[1];
-    
-    // Validate JWT using Supabase auth manager
-    const { data: { user }, error } = await this.supabase.auth.getUser(token);
-    
-    if (error || !user) {
-      throw new UnauthorizedException('Invalid JWT session credentials');
-    }
-
-    // Attach user profile metadata for route multi-tenant check
-    request.user = {
-      id: user.id,
-      email: user.email,
-      role: user.user_metadata?.role || 'dentist',
-      organizationId: user.user_metadata?.organizationId,
+    // Attach user to request for downstream use
+    (request as Request & { user: unknown }).user = {
+      id: payload.sub,
+      email: payload.email,
+      role: payload.role,
+      name: payload.name,
+      orgId: payload.orgId,
     };
 
     return true;

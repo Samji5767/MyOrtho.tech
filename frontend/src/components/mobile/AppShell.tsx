@@ -6,8 +6,15 @@ import { usePathname } from "next/navigation";
 import { TopBar } from "./TopBar";
 import { TabBar, SidebarNav } from "./TabBar";
 import CommandPalette from "@/components/CommandPalette";
+import { AuthGate } from "@/components/AuthGate";
 import { isIOS, isNative } from "@/lib/capacitor/platform";
 import { hapticLight } from "@/lib/capacitor/haptics";
+
+// Public routes that bypass auth gate and suppress chrome (nav/top bar)
+const PUBLIC_PATHS = ["/login", "/onboarding"];
+function isPublicPath(p: string) {
+  return PUBLIC_PATHS.some(pub => p === pub || p === pub + "/" || p.startsWith(pub + "/"));
+}
 
 // ─── Pull-to-refresh ──────────────────────────────────────────────────────────
 
@@ -165,6 +172,18 @@ export function AppShell({ children }: { children: ReactNode }) {
     return () => window.removeEventListener("tab-changed", onTabChange);
   }, []);
 
+  const isPublic = isPublicPath(pathname);
+
+  // ── Public routes (login / onboarding): render bare, no nav, no auth gate ──
+  if (isPublic) {
+    return (
+      <>
+        <DynamicIslandSpacer />
+        <main>{children}</main>
+      </>
+    );
+  }
+
   // ── iPad layout: sidebar + content ──────────────────────────────────────────
   if (isIPad) {
     return (
@@ -172,7 +191,9 @@ export function AppShell({ children }: { children: ReactNode }) {
         <DynamicIslandSpacer />
         <SidebarNav />
         <div className="ipad-shell-content">
-          <main>{children}</main>
+          <AuthGate>
+            <main>{children}</main>
+          </AuthGate>
         </div>
         <CommandPalette isOpen={commandOpen} onClose={closeCommand} />
       </div>
@@ -188,7 +209,9 @@ export function AppShell({ children }: { children: ReactNode }) {
       <DynamicIslandSpacer />
       <PullToRefresh onRefresh={handleRefresh} />
       {showTopBar && <TopBar onOpenSearch={openCommand} />}
-      <main className="app-shell-content">{children}</main>
+      <AuthGate>
+        <main className="app-shell-content">{children}</main>
+      </AuthGate>
       <TabBar />
       <CommandPalette isOpen={commandOpen} onClose={closeCommand} />
     </div>

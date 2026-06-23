@@ -53,6 +53,9 @@ services:
       - JWT_SECRET=${JWT_SECRET:-}
       - ENCRYPTION_KEY=${ENCRYPTION_KEY:-}
       - FRONTEND_URL=${FRONTEND_URL:-https://myortho.tech}
+      - MYORTHO_ADMIN_EMAIL=${MYORTHO_ADMIN_EMAIL:-}
+      - MYORTHO_ADMIN_PASSWORD=${MYORTHO_ADMIN_PASSWORD:-}
+      - MYORTHO_ADMIN_NAME=${MYORTHO_ADMIN_NAME:-Platform Admin}
     depends_on:
       database:
         condition: service_healthy

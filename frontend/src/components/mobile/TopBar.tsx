@@ -1,15 +1,32 @@
 "use client";
 
 import Link from "next/link";
-import { BellRing, Search, Stethoscope } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { BellRing, LogOut, Search, Stethoscope } from "lucide-react";
+import { useAuth } from "@/context/AuthContext";
+import { roleLabel } from "@/lib/auth";
 
-const DOCTOR_INITIALS = "DF";
+function userInitials(name: string): string {
+  const parts = name.trim().split(/\s+/);
+  if (parts.length >= 2) return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+  return name.slice(0, 2).toUpperCase();
+}
 
 interface TopBarProps {
   onOpenSearch: () => void;
 }
 
 export function TopBar({ onOpenSearch }: TopBarProps) {
+  const { user, logout } = useAuth();
+  const router = useRouter();
+
+  async function handleLogout() {
+    await logout();
+    router.replace("/login");
+  }
+
+  const initials = user ? userInitials(user.name) : "—";
+
   return (
     <header
       className="sticky top-0 z-40 border-b border-[color:var(--border)] bg-[color-mix(in_srgb,var(--background)_84%,transparent)] backdrop-blur-xl lg:hidden"
@@ -28,7 +45,7 @@ export function TopBar({ onOpenSearch }: TopBarProps) {
               MY ORTHO
             </span>
             <span className="mt-0.5 truncate text-sm font-semibold tracking-tight text-[color:var(--foreground)]">
-              Clinic dashboard
+              {user ? roleLabel(user.role) : "Clinical OS"}
             </span>
           </span>
         </Link>
@@ -52,13 +69,25 @@ export function TopBar({ onOpenSearch }: TopBarProps) {
           <BellRing size={16} strokeWidth={2} />
         </button>
 
+        {/* User avatar → settings */}
         <Link
           href="/settings"
-          aria-label="Profile and settings"
+          aria-label={user ? `${user.name} — settings` : "Profile and settings"}
+          title={user ? `${user.name} · ${roleLabel(user.role)}` : "Profile"}
           className="focus-ring touch-target grid h-11 w-11 place-items-center rounded-full bg-gradient-to-br from-[color:var(--primary)] to-[color:var(--clinical-highlight)] text-[11px] font-semibold tracking-tight text-[color:var(--primary-foreground)] shadow-[var(--shadow-sm)] transition-transform duration-200 active:scale-95"
         >
-          {DOCTOR_INITIALS}
+          {initials}
         </Link>
+
+        {/* Sign out */}
+        <button
+          type="button"
+          aria-label="Sign out"
+          onClick={handleLogout}
+          className="focus-ring touch-target flex h-11 w-11 items-center justify-center rounded-full border border-[color:var(--border)] bg-[color:var(--card)] text-[color:var(--muted-foreground)] shadow-[var(--shadow-sm)] transition-all duration-200 hover:border-rose-300 hover:text-rose-500 active:scale-95 dark:hover:border-rose-700"
+        >
+          <LogOut size={15} strokeWidth={2} />
+        </button>
       </div>
     </header>
   );

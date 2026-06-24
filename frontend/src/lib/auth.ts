@@ -1,7 +1,4 @@
-// Auth API helpers — all calls use credentials: 'include' to send the
-// mo_session HttpOnly cookie that the backend sets on login.
-
-const API = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000';
+// Auth API helpers — same-origin relative paths so nginx /api/ proxy handles routing.
 
 export interface AuthUser {
   id: string;
@@ -14,7 +11,7 @@ export interface AuthUser {
 
 export async function fetchSession(): Promise<AuthUser | null> {
   try {
-    const res = await fetch(`${API}/api/auth/session`, {
+    const res = await fetch(`/api/auth/session`, {
       credentials: 'include',
       headers: { 'Content-Type': 'application/json' },
     });
@@ -28,7 +25,7 @@ export async function fetchSession(): Promise<AuthUser | null> {
 
 export async function login(email: string, password: string): Promise<{ user: AuthUser } | { error: string }> {
   try {
-    const res = await fetch(`${API}/api/auth/login`, {
+    const res = await fetch(`/api/auth/login`, {
       method: 'POST',
       credentials: 'include',
       headers: { 'Content-Type': 'application/json' },
@@ -44,7 +41,7 @@ export async function login(email: string, password: string): Promise<{ user: Au
 
 export async function logout(): Promise<void> {
   try {
-    await fetch(`${API}/api/auth/logout`, {
+    await fetch(`/api/auth/logout`, {
       method: 'POST',
       credentials: 'include',
     });

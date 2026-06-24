@@ -21,8 +21,6 @@ import {
 import { useAuth } from "@/context/AuthContext";
 import { getRoleConfig, getPrimaryWorkspace, type RoleKey } from "@/lib/roles";
 
-const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
-
 // ─── Role catalogue ───────────────────────────────────────────────────────────
 
 interface RoleOption {
@@ -178,7 +176,7 @@ export default function OnboardingPage() {
   async function finish() {
     setSaving(true);
     try {
-      await fetch(`${API}/api/auth/onboarding`, {
+      await fetch(`/api/auth/onboarding`, {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },

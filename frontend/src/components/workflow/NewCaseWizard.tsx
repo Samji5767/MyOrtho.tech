@@ -230,8 +230,6 @@ export default function NewCaseWizard() {
     setSubmitting(true);
     setSubmitError(null);
 
-    const apiUrl = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
-
     try {
       const body = {
         patient: {
@@ -261,7 +259,7 @@ export default function NewCaseWizard() {
         },
       };
 
-      const res = await fetch(`${apiUrl}/cases`, {
+      const res = await fetch(`/api/cases`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",

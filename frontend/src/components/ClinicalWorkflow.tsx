@@ -206,7 +206,7 @@ export default function ClinicalWorkflow({
 
     try {
       if (caseId !== "DEMO-001") {
-        await fetch(`${process.env.NEXT_PUBLIC_API_URL ?? ""}/cases/${caseId}/status`, {
+        await fetch(`/api/cases/${caseId}/status`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ status: action.toStatus, notes }),

@@ -8,7 +8,7 @@ struct MyOrthoApp: App {
     @State private var store          = CaseEventStore(context: AppPersistence.container.mainContext)
     @State private var navigation     = AppNavigation()
     @State private var lockManager    = AppLockManager()
-    @State private var showLaunch     = true
+    @State private var authSession    = AuthSession()
     @State private var isInBackground = false
 
     init() {
@@ -46,43 +46,44 @@ struct MyOrthoApp: App {
     var body: some Scene {
         WindowGroup {
             ZStack {
-                MainTabView()
-                    .environment(store)
-                    .environment(config)
-                    .environment(navigation)
-                    .environment(lockManager)
-                    .onAppear {
-                        try? SeedData.populateIfNeeded(store: store)
-                        lockManager.lockIfEnabled()
-                    }
-
-                if showLaunch {
+                if authSession.isLoading {
                     LaunchScreenView()
-                        .transition(.opacity)
-                        .zIndex(1)
+
+                } else if authSession.isAuthenticated {
+                    MainTabView()
+                        .environment(store)
+                        .environment(config)
+                        .environment(navigation)
+                        .environment(lockManager)
+                        .environment(authSession)
                         .onAppear {
-                            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
-                                withAnimation(.easeOut(duration: 0.5)) {
-                                    showLaunch = false
-                                }
-                            }
+                            try? SeedData.populateIfNeeded(store: store)
+                            lockManager.lockIfEnabled()
                         }
+                        .transition(.opacity)
+
+                } else {
+                    LoginView(authSession: authSession)
+                        .transition(.opacity)
                 }
 
-                // Face ID lock screen
-                if lockManager.isLocked {
+                // Face ID lock screen — only shown when already authenticated
+                if authSession.isAuthenticated && lockManager.isLocked {
                     LockScreenView(lockManager: lockManager)
                         .zIndex(2)
                         .transition(.opacity)
                         .onAppear { Task { await lockManager.authenticate() } }
                 }
 
-                // App switcher privacy overlay — hides patient data in the task switcher
+                // App-switcher privacy overlay — hides patient data in task switcher
                 if isInBackground {
                     appSwitcherOverlay
                         .zIndex(3)
                 }
             }
+            .animation(.easeInOut(duration: 0.3), value: authSession.isAuthenticated)
+            .animation(.easeInOut(duration: 0.3), value: authSession.isLoading)
+            .task { await authSession.validateOnLaunch() }
             .onReceive(NotificationCenter.default.publisher(for: UIApplication.willResignActiveNotification)) { _ in
                 isInBackground = true
             }

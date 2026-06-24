@@ -1,8 +1,9 @@
 import SwiftUI
 
 struct SettingsView: View {
-    @Environment(AppConfig.self) private var config
+    @Environment(AppConfig.self)      private var config
     @Environment(AppLockManager.self) private var lockManager
+    @Environment(AuthSession.self)    private var authSession
 
     var body: some View {
         Form {
@@ -11,6 +12,7 @@ struct SettingsView: View {
             currencySection
             securitySection
             appSection
+            accountSection
         }
         .scrollContentBackground(.hidden)
         .background(Color.moBackground)
@@ -106,6 +108,22 @@ struct SettingsView: View {
     private var appSection: some View {
         Section("About") {
             LabeledContent("Contact", value: "hello@myortho.tech")
+        }
+    }
+
+    private var accountSection: some View {
+        Section {
+            if let user = authSession.currentUser {
+                LabeledContent("Signed in as", value: user.email)
+                    .foregroundStyle(Color.moTextSecondary)
+            }
+            Button(role: .destructive) {
+                Task { await authSession.logout() }
+            } label: {
+                Label("Sign Out", systemImage: "rectangle.portrait.and.arrow.right")
+            }
+        } header: {
+            Text("Account")
         }
     }
 }

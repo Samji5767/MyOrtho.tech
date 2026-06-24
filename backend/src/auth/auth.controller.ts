@@ -60,6 +60,7 @@ export class AuthController {
         orgId: payload.orgId,
         isOnboarded: payload.isOnboarded,
       },
+      token, // Raw JWT for native iOS Keychain — web clients use the cookie above
     };
   }
 
@@ -72,7 +73,10 @@ export class AuthController {
 
   @Get('session')
   session(@Req() req: Request) {
-    const token = (req.cookies as Record<string, string>)[COOKIE_NAME];
+    const cookieToken = (req.cookies as Record<string, string>)[COOKIE_NAME];
+    const authHeader = req.headers.authorization as string | undefined;
+    const bearerToken = authHeader?.startsWith('Bearer ') ? authHeader.substring(7) : undefined;
+    const token = cookieToken ?? bearerToken;
     if (!token) throw new UnauthorizedException('No session');
     const payload = this.authService.verifyToken(token);
     return {

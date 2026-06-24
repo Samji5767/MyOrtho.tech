@@ -50,6 +50,10 @@
 		C1E9D95D2FE7EFD100469564 /* CaseListRootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1E9D95C2FE7EFD100469564 /* CaseListRootView.swift */; };
 		C1E9D95F2FE7EFD200469564 /* CaseListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1E9D95E2FE7EFD200469564 /* CaseListView.swift */; };
 		C1E9D9612FE7EFD200469564 /* CaseListEmptyStateView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1E9D9602FE7EFD200469564 /* CaseListEmptyStateView.swift */; };
+		E1A00006000000000000AABB /* KeychainStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1A00002000000000000AABB /* KeychainStore.swift */; };
+		E1A00007000000000000AABB /* AuthService.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1A00003000000000000AABB /* AuthService.swift */; };
+		E1A00008000000000000AABB /* AuthSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1A00004000000000000AABB /* AuthSession.swift */; };
+		E1A00009000000000000AABB /* LoginView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1A00005000000000000AABB /* LoginView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -98,6 +102,10 @@
 		C1E9D95C2FE7EFD100469564 /* CaseListRootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CaseListRootView.swift; sourceTree = "<group>"; };
 		C1E9D95E2FE7EFD200469564 /* CaseListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CaseListView.swift; sourceTree = "<group>"; };
 		C1E9D9602FE7EFD200469564 /* CaseListEmptyStateView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CaseListEmptyStateView.swift; sourceTree = "<group>"; };
+		E1A00002000000000000AABB /* KeychainStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainStore.swift; sourceTree = "<group>"; };
+		E1A00003000000000000AABB /* AuthService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthService.swift; sourceTree = "<group>"; };
+		E1A00004000000000000AABB /* AuthSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthSession.swift; sourceTree = "<group>"; };
+		E1A00005000000000000AABB /* LoginView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LoginView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -153,6 +161,7 @@
 				C189EA952FE85FFA00C91F8C /* M-Home */,
 				C167FBDB2FE958DE00A914BE /* M-Workspace */,
 				C167FBDC2FE958DF00A914BE /* M-Manufacturing */,
+				E1A00001000000000000AABB /* M-Auth */,
 			);
 			path = App;
 			sourceTree = "<group>";
@@ -265,6 +274,17 @@
 				C16498442FE9B4180047F35B /* EventCards.swift */,
 			);
 			path = "M-CaseList";
+			sourceTree = "<group>";
+		};
+		E1A00001000000000000AABB /* M-Auth */ = {
+			isa = PBXGroup;
+			children = (
+				E1A00002000000000000AABB /* KeychainStore.swift */,
+				E1A00003000000000000AABB /* AuthService.swift */,
+				E1A00004000000000000AABB /* AuthSession.swift */,
+				E1A00005000000000000AABB /* LoginView.swift */,
+			);
+			path = "M-Auth";
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -385,6 +405,10 @@
 				C189EA5B2FE8205F00C91F8C /* NewCaseView.swift in Sources */,
 				C16498452FE9B4180047F35B /* EventCards.swift in Sources */,
 				C189EA722FE8439700C91F8C /* SettingsView.swift in Sources */,
+				E1A00006000000000000AABB /* KeychainStore.swift in Sources */,
+				E1A00007000000000000AABB /* AuthService.swift in Sources */,
+				E1A00008000000000000AABB /* AuthSession.swift in Sources */,
+				E1A00009000000000000AABB /* LoginView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -539,7 +563,8 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 3;
+				CURRENT_PROJECT_VERSION = 4;
+				DEVELOPMENT_TEAM = FLNUF29P34;
 				INFOPLIST_FILE = App/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = MyOrtho.tech;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
@@ -548,7 +573,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 2.0;
+				MARKETING_VERSION = 3.0;
 				OTHER_SWIFT_FLAGS = "$(inherited) \"-D\" \"COCOAPODS\" \"-DDEBUG\"";
 				PRODUCT_BUNDLE_IDENTIFIER = com.samji.myortho.app;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -563,7 +588,8 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 3;
+				CURRENT_PROJECT_VERSION = 4;
+				DEVELOPMENT_TEAM = FLNUF29P34;
 				INFOPLIST_FILE = App/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = MyOrtho.tech;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
@@ -572,7 +598,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 2.0;
+				MARKETING_VERSION = 3.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.samji.myortho.app;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "";

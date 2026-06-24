@@ -10,7 +10,10 @@ export class AuthGuard implements CanActivate {
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const request = context.switchToHttp().getRequest<Request>();
-    const token = (request.cookies as Record<string, string>)[COOKIE_NAME];
+    const cookieToken = (request.cookies as Record<string, string>)[COOKIE_NAME];
+    const authHeader = request.headers.authorization as string | undefined;
+    const bearerToken = authHeader?.startsWith('Bearer ') ? authHeader.substring(7) : undefined;
+    const token = cookieToken ?? bearerToken;
 
     if (!token) {
       throw new UnauthorizedException('Authentication required');

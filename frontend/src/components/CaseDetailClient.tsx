@@ -1,7 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
+import { fetchCase, type CaseDetail } from "@/lib/api/cases";
 import {
   Activity,
   ArrowLeft,
@@ -276,6 +277,14 @@ function SummaryTab({ profile }: { profile: CaseProfile }) {
 
 export default function CaseDetailClient({ id }: { id: string }) {
   const [tab, setTab] = useState<Tab>("summary");
+  const [liveData, setLiveData] = useState<CaseDetail | null>(null);
+  const [dataSource, setDataSource] = useState<'api' | 'demo' | 'loading'>('loading');
+
+  useEffect(() => {
+    fetchCase(id)
+      .then(({ data, source }) => { setLiveData(data); setDataSource(source); })
+      .catch(() => setDataSource('demo'));
+  }, [id]);
 
   const profile = CASE_PROFILES[id] ?? {
     patient: id, initials: id.slice(-2).toUpperCase(), accentClass: "bg-slate-500",
@@ -302,10 +311,14 @@ export default function CaseDetailClient({ id }: { id: string }) {
             {profile.initials}
           </span>
           <div className="min-w-0 flex-1">
-            <p className="truncate text-sm font-bold text-[color:var(--foreground)]">{profile.patient}</p>
+            <p className="truncate text-sm font-bold text-[color:var(--foreground)]">
+              {liveData ? `${liveData.patient.firstName} ${liveData.patient.lastName}` : profile.patient}
+            </p>
             <div className="flex items-center gap-2">
-              <span className="font-mono text-xs text-[color:var(--muted-foreground)]">{id}</span>
-              <StatusBadge tone="info">Representative</StatusBadge>
+              <span className="font-mono text-xs text-[color:var(--muted-foreground)]">{liveData?.id ?? id}</span>
+              {dataSource === 'loading' && <StatusBadge tone="neutral">Loading…</StatusBadge>}
+              {dataSource === 'api'     && <StatusBadge tone="success">Live</StatusBadge>}
+              {dataSource === 'demo'    && <StatusBadge tone="info">Representative data</StatusBadge>}
             </div>
           </div>
         </div>

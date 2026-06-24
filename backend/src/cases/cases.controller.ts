@@ -1,44 +1,124 @@
-import { Controller, Get, Post, Body, Param, UseGuards, Req, ForbiddenException } from '@nestjs/common';
-import { CasesService } from './cases.service';
+import {
+  Controller,
+  Get,
+  Post,
+  Patch,
+  Body,
+  Param,
+  UseGuards,
+  Req,
+  HttpCode,
+  HttpStatus,
+  UnauthorizedException,
+} from '@nestjs/common';
+import type { Request } from 'express';
+import { CasesService, type CreateCaseDto, type UpdateCaseDto } from './cases.service';
 import { AuthGuard } from '../auth/auth.guard';
+import { PermissionsGuard } from '../auth/permissions.guard';
+import { RequirePermission } from '../auth/require-permission.decorator';
+import type { CaseStatus } from '../workflow/workflow.service';
 
-@Controller('cases')
-@UseGuards(AuthGuard)
+interface AuthUser {
+  id: string;
+  email: string;
+  role: string;
+  name: string;
+  orgId: string | null;
+}
+
+function getUser(req: Request): AuthUser {
+  const user = (req as Request & { user?: AuthUser }).user;
+  if (!user) throw new UnauthorizedException('No session');
+  return user;
+}
+
+function getIp(req: Request): string {
+  return (req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim() ?? req.ip ?? 'unknown';
+}
+
+@Controller('api/cases')
+@UseGuards(AuthGuard, PermissionsGuard)
 export class CasesController {
   constructor(private readonly casesService: CasesService) {}
 
   @Get()
-  async getCases(@Req() req) {
-    const orgId = req.user.organizationId;
-    if (!orgId) {
-      throw new ForbiddenException('User is not associated with an organization');
-    }
-    return this.casesService.findAllByOrg(orgId);
+  @RequirePermission('cases:read')
+  async getCases(@Req() req: Request) {
+    const user = getUser(req);
+    if (!user.orgId) return [];
+    return this.casesService.findAllByOrg(user.orgId);
   }
 
   @Post()
-  async createCase(@Req() req, @Body() createDto: any) {
-    const orgId = req.user.organizationId;
-    if (!orgId) {
-      throw new ForbiddenException('User is not associated with an organization');
-    }
-    return this.casesService.create(orgId, createDto);
+  @HttpCode(HttpStatus.CREATED)
+  @RequirePermission('cases:write')
+  async createCase(@Req() req: Request, @Body() dto: CreateCaseDto) {
+    const user = getUser(req);
+    if (!user.orgId) throw new UnauthorizedException('No organization assigned');
+    return this.casesService.create(user.orgId, user.id, dto, {
+      actorEmail: user.email,
+      ipAddress: getIp(req),
+    });
   }
 
   @Get(':id')
-  async getCaseById(@Req() req, @Param('id') id: string) {
-    const orgId = req.user.organizationId;
-    return this.casesService.findOne(id, orgId);
+  @RequirePermission('cases:read')
+  async getCaseById(@Req() req: Request, @Param('id') id: string) {
+    const user = getUser(req);
+    if (!user.orgId) throw new UnauthorizedException('No organization assigned');
+    return this.casesService.findOne(id, user.orgId);
+  }
+
+  @Patch(':id')
+  @RequirePermission('cases:write')
+  async updateCase(
+    @Req() req: Request,
+    @Param('id') id: string,
+    @Body() dto: UpdateCaseDto,
+  ) {
+    const user = getUser(req);
+    if (!user.orgId) throw new UnauthorizedException('No organization assigned');
+    return this.casesService.update(id, user.orgId, user.id, dto, {
+      actorEmail: user.email,
+      ipAddress: getIp(req),
+    });
+  }
+
+  @Post(':id/transition')
+  @HttpCode(HttpStatus.OK)
+  @RequirePermission('cases:write')
+  async transitionCase(
+    @Req() req: Request,
+    @Param('id') id: string,
+    @Body() body: { toStatus: CaseStatus; notes?: string },
+  ) {
+    const user = getUser(req);
+    if (!user.orgId) throw new UnauthorizedException('No organization assigned');
+    return this.casesService.transition(
+      id,
+      user.orgId,
+      user.id,
+      user.role,
+      body.toStatus,
+      body.notes,
+      { actorEmail: user.email, ipAddress: getIp(req) },
+    );
   }
 
   @Post(':id/approve')
-  async approveCase(
-    @Req() req,
-    @Param('id') id: string,
-    @Body('signature') signature: string
-  ) {
-    const orgId = req.user.organizationId;
-    const userId = req.user.id;
-    return this.casesService.approveStaging(id, orgId, userId, signature);
+  @HttpCode(HttpStatus.OK)
+  @RequirePermission('cases:approve')
+  async approveCase(@Req() req: Request, @Param('id') id: string, @Body() body: { notes?: string }) {
+    const user = getUser(req);
+    if (!user.orgId) throw new UnauthorizedException('No organization assigned');
+    return this.casesService.transition(
+      id,
+      user.orgId,
+      user.id,
+      user.role,
+      'approved',
+      body.notes,
+      { actorEmail: user.email, ipAddress: getIp(req) },
+    );
   }
 }

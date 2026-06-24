@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { AuthModule } from '../auth/auth.module';
 import { ScannerService } from './scanner.service';
 import { ScannerController } from './scanner.controller';
 import { 
@@ -10,6 +11,7 @@ import {
 } from './connectors/scanner.connector';
 
 @Module({
+  imports: [AuthModule],
   controllers: [ScannerController],
   providers: [
     ScannerService,

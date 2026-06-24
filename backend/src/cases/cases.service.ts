@@ -1,102 +1,235 @@
-import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/common';
-import { createClient } from '@supabase/supabase-js';
+import {
+  Injectable,
+  Inject,
+  NotFoundException,
+  ForbiddenException,
+  Logger,
+} from '@nestjs/common';
+import type { Pool } from 'pg';
+import { PG_POOL } from '../database/database.module';
+import { AuditService } from '../audit/audit.service';
+import { WorkflowService, type CaseStatus } from '../workflow/workflow.service';
+
+export interface CreateCaseDto {
+  patientId: string;
+  chiefComplaint?: string;
+  malocclusionClass?: string;
+  notes?: string;
+}
+
+export interface UpdateCaseDto {
+  chiefComplaint?: string;
+  malocclusionClass?: string;
+  notes?: string;
+}
 
 @Injectable()
 export class CasesService {
-  private supabase = createClient(
-    process.env.SUPABASE_URL || 'https://placeholder.supabase.co',
-    process.env.SUPABASE_ANON_KEY || 'placeholder'
-  );
+  private readonly logger = new Logger(CasesService.name);
 
-  private getClient() {
-    const url = process.env.SUPABASE_URL;
-    const key = process.env.SUPABASE_ANON_KEY;
-    if (!url || !key || url.includes('placeholder') || key === 'placeholder') {
-      throw new Error('Supabase credentials are not configured on the backend.');
-    }
-    return this.supabase;
+  constructor(
+    @Inject(PG_POOL) private readonly pool: Pool,
+    private readonly auditService: AuditService,
+    private readonly workflowService: WorkflowService,
+  ) {}
+
+  // ─── List cases by org (joined with patient name) ─────────────────────────
+
+  async findAllByOrg(orgId: string) {
+    const { rows } = await this.pool.query(
+      `SELECT
+         c.id, c.status, c.notes, c.chief_complaint, c.malocclusion_class,
+         c.created_at, c.updated_at,
+         p.id AS patient_id, p.first_name, p.last_name,
+         au.full_name AS assigned_to_name, au.email AS assigned_to_email,
+         au.id AS assigned_to_id
+       FROM cases c
+       JOIN patients p ON p.id = c.patient_id
+       LEFT JOIN auth_users au ON au.id = c.assigned_to
+       WHERE p.organization_id = $1
+       ORDER BY c.updated_at DESC`,
+      [orgId],
+    );
+    return rows.map(this.formatCase);
   }
 
-  async findAllByOrg(organizationId: string) {
-    const { data, error } = await this.getClient()
-      .from('cases')
-      .select('*, patients(*)')
-      .eq('patients.organization_id', organizationId);
+  // ─── Get single case with full details ────────────────────────────────────
 
-    if (error) throw new Error(error.message);
-    return data || [];
-  }
+  async findOne(id: string, orgId: string) {
+    const { rows } = await this.pool.query(
+      `SELECT
+         c.id, c.status, c.notes, c.chief_complaint, c.malocclusion_class,
+         c.created_at, c.updated_at,
+         p.id AS patient_id, p.first_name, p.last_name,
+         p.dob AS date_of_birth, p.gender, p.clinical_notes AS patient_notes,
+         p.organization_id,
+         au.full_name AS assigned_to_name, au.id AS assigned_to_id
+       FROM cases c
+       JOIN patients p ON p.id = c.patient_id
+       LEFT JOIN auth_users au ON au.id = c.assigned_to
+       WHERE c.id = $1`,
+      [id],
+    );
 
-  async create(organizationId: string, dto: any) {
-    // 1. Ensure Patient exists and belongs to organization
-    const { data: patient, error: pError } = await this.getClient()
-      .from('patients')
-      .select('id')
-      .eq('id', dto.patientId)
-      .eq('organization_id', organizationId)
-      .single();
-
-    if (pError || !patient) {
-      throw new ForbiddenException('Patient record not found in this organization scope');
+    const row = rows[0];
+    if (!row) throw new NotFoundException(`Case ${id} not found`);
+    if (row.organization_id !== orgId) {
+      throw new ForbiddenException('Access denied to this case');
     }
 
-    // 2. Insert Case
-    const { data: newCase, error: cError } = await this.getClient()
-      .from('cases')
-      .insert({
-        patient_id: dto.patientId,
-        dentist_id: dto.dentistId,
-        notes: dto.notes,
-        status: 'draft',
-      })
-      .select()
-      .single();
+    const history = await this.workflowService.getHistory(id);
+    const allowedTransitions = this.workflowService.allowedTransitions(
+      row.status as CaseStatus,
+    );
 
-    if (cError) throw new Error(cError.message);
-    return newCase;
+    return {
+      ...this.formatCase(row),
+      patient: {
+        id: row.patient_id,
+        firstName: row.first_name,
+        lastName: row.last_name,
+        dateOfBirth: row.date_of_birth,
+        gender: row.gender,
+        clinicalNotes: row.patient_notes,
+      },
+      workflowHistory: history,
+      allowedTransitions,
+    };
   }
 
-  async findOne(id: string, organizationId: string) {
-    const { data: caseItem, error } = await this.getClient()
-      .from('cases')
-      .select('*, patients(*)')
-      .eq('id', id)
-      .single();
+  // ─── Create ───────────────────────────────────────────────────────────────
 
-    if (error || !caseItem) {
-      throw new NotFoundException('Case record not found');
+  async create(
+    orgId: string,
+    createdBy: string,
+    dto: CreateCaseDto,
+    opts: { actorEmail?: string; ipAddress?: string } = {},
+  ) {
+    // Verify patient belongs to org
+    const { rows: patRows } = await this.pool.query(
+      'SELECT id FROM patients WHERE id = $1 AND organization_id = $2',
+      [dto.patientId, orgId],
+    );
+    if (!patRows[0]) {
+      throw new ForbiddenException('Patient not found in this organization');
     }
 
-    // Tenant Check
-    if (caseItem.patients.organization_id !== organizationId) {
-      throw new ForbiddenException('Access denied to cross-tenant case data');
-    }
+    const { rows } = await this.pool.query(
+      `INSERT INTO cases
+         (patient_id, assigned_to, status, chief_complaint, malocclusion_class, notes)
+       VALUES ($1, $2, 'draft'::case_status, $3, $4, $5)
+       RETURNING id`,
+      [
+        dto.patientId,
+        createdBy,
+        dto.chiefComplaint ?? null,
+        dto.malocclusionClass ?? null,
+        dto.notes ?? null,
+      ],
+    );
 
-    return caseItem;
+    const newId = rows[0].id as string;
+
+    await this.auditService.log({
+      organizationId: orgId,
+      actorId: createdBy,
+      actorEmail: opts.actorEmail,
+      resourceType: 'case',
+      resourceId: newId,
+      action: 'case.created',
+      details: dto,
+      ipAddress: opts.ipAddress,
+    });
+
+    return this.findOne(newId, orgId);
   }
 
-  async approveStaging(id: string, organizationId: string, doctorId: string, signature: string) {
-    const caseItem = await this.findOne(id, organizationId);
+  // ─── Update ───────────────────────────────────────────────────────────────
 
-    // Update case status to approved & sign treatment plan
-    const { data, error } = await this.getClient()
-      .from('treatment_plans')
-      .update({
-        doctor_approval: true,
-        doctor_signature: signature,
-        approved_at: new Date().toISOString(),
-      })
-      .eq('case_id', id)
-      .select();
+  async update(
+    id: string,
+    orgId: string,
+    actorId: string,
+    dto: UpdateCaseDto,
+    opts: { actorEmail?: string; ipAddress?: string } = {},
+  ) {
+    await this.findOne(id, orgId); // ownership check
 
-    if (error) throw new Error(error.message);
+    const fields: string[] = [];
+    const values: unknown[] = [];
+    let i = 1;
 
-    // Update case status
-    await this.getClient()
-      .from('cases')
-      .update({ status: 'approved' })
-      .eq('id', id);
+    if (dto.chiefComplaint !== undefined) { fields.push(`chief_complaint = $${i++}`); values.push(dto.chiefComplaint); }
+    if (dto.malocclusionClass !== undefined) { fields.push(`malocclusion_class = $${i++}`); values.push(dto.malocclusionClass); }
+    if (dto.notes !== undefined) { fields.push(`notes = $${i++}`); values.push(dto.notes); }
 
-    return { success: true, message: 'Treatment staging plan approved successfully' };
+    if (fields.length === 0) return this.findOne(id, orgId);
+
+    fields.push(`updated_at = now()`);
+    values.push(id);
+
+    await this.pool.query(
+      `UPDATE cases SET ${fields.join(', ')} WHERE id = $${i}`,
+      values,
+    );
+
+    await this.auditService.log({
+      organizationId: orgId,
+      actorId,
+      actorEmail: opts.actorEmail,
+      resourceType: 'case',
+      resourceId: id,
+      action: 'case.updated',
+      details: dto,
+      ipAddress: opts.ipAddress,
+    });
+
+    return this.findOne(id, orgId);
+  }
+
+  // ─── Status transition ────────────────────────────────────────────────────
+
+  async transition(
+    id: string,
+    orgId: string,
+    actorId: string,
+    actorRole: string,
+    toStatus: CaseStatus,
+    notes?: string,
+    opts: { actorEmail?: string; ipAddress?: string } = {},
+  ) {
+    await this.findOne(id, orgId); // ownership check
+    return this.workflowService.transition({
+      caseId: id,
+      toStatus,
+      actorId,
+      actorRole,
+      orgId,
+      actorEmail: opts.actorEmail,
+      notes,
+      ipAddress: opts.ipAddress,
+    });
+  }
+
+  // ─── Helpers ──────────────────────────────────────────────────────────────
+
+  private formatCase(row: Record<string, unknown>) {
+    return {
+      id: row['id'],
+      status: row['status'],
+      chiefComplaint: row['chief_complaint'],
+      malocclusionClass: row['malocclusion_class'],
+      notes: row['notes'],
+      createdAt: row['created_at'],
+      updatedAt: row['updated_at'],
+      patient: {
+        id: row['patient_id'],
+        firstName: row['first_name'],
+        lastName: row['last_name'],
+      },
+      assignedTo: row['assigned_to_id']
+        ? { id: row['assigned_to_id'], name: row['assigned_to_name'], email: row['assigned_to_email'] }
+        : null,
+    };
   }
 }

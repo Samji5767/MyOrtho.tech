@@ -1,0 +1,118 @@
+import { Injectable, Inject, BadRequestException, Logger } from '@nestjs/common';
+import type { Pool } from 'pg';
+import { PG_POOL } from '../database/database.module';
+import { AuditService } from '../audit/audit.service';
+
+// Valid case status values — must exactly match the case_status enum in schema.sql
+export const CASE_STATUSES = [
+  'draft',
+  'scan_uploaded',
+  'segmenting',
+  'planning',
+  'pending_approval',
+  'approved',
+  'staging',
+  'manufacturing',
+  'completed',
+  'canceled',
+] as const;
+
+export type CaseStatus = (typeof CASE_STATUSES)[number];
+
+// Allowed transitions: from → allowed next statuses
+const TRANSITIONS: Record<CaseStatus, CaseStatus[]> = {
+  draft:            ['scan_uploaded', 'canceled'],
+  scan_uploaded:    ['segmenting', 'canceled'],
+  segmenting:       ['planning', 'scan_uploaded'],
+  planning:         ['pending_approval'],
+  pending_approval: ['approved', 'planning'],
+  approved:         ['staging', 'pending_approval'],
+  staging:          ['manufacturing'],
+  manufacturing:    ['completed'],
+  completed:        [],
+  canceled:         [],
+};
+
+export interface TransitionInput {
+  caseId: string;
+  toStatus: CaseStatus;
+  actorId: string;
+  actorRole: string;
+  orgId: string;
+  actorEmail?: string;
+  notes?: string;
+  ipAddress?: string;
+}
+
+@Injectable()
+export class WorkflowService {
+  private readonly logger = new Logger(WorkflowService.name);
+
+  constructor(
+    @Inject(PG_POOL) private readonly pool: Pool,
+    private readonly auditService: AuditService,
+  ) {}
+
+  async transition(input: TransitionInput): Promise<{ fromStatus: string; toStatus: string }> {
+    // Read current status
+    const { rows } = await this.pool.query<{ status: string }>(
+      'SELECT status FROM cases WHERE id = $1',
+      [input.caseId],
+    );
+    const current = rows[0]?.status as CaseStatus | undefined;
+    if (!current) {
+      throw new BadRequestException(`Case ${input.caseId} not found`);
+    }
+
+    const allowed = TRANSITIONS[current] ?? [];
+    if (!allowed.includes(input.toStatus)) {
+      throw new BadRequestException(
+        `Transition from '${current}' to '${input.toStatus}' is not permitted`,
+      );
+    }
+
+    // Update case status
+    await this.pool.query(
+      'UPDATE cases SET status = $1::case_status, updated_at = now() WHERE id = $2',
+      [input.toStatus, input.caseId],
+    );
+
+    // Write workflow event (immutable)
+    await this.pool.query(
+      `INSERT INTO workflow_events
+         (case_id, from_status, to_status, actor_id, actor_role, notes)
+       VALUES ($1, $2, $3, $4, $5, $6)`,
+      [input.caseId, current, input.toStatus, input.actorId, input.actorRole, input.notes ?? null],
+    );
+
+    // Write audit event
+    await this.auditService.log({
+      organizationId: input.orgId,
+      actorId: input.actorId,
+      actorEmail: input.actorEmail,
+      resourceType: 'case',
+      resourceId: input.caseId,
+      action: `case.status.${input.toStatus}`,
+      details: { fromStatus: current, toStatus: input.toStatus, notes: input.notes },
+      ipAddress: input.ipAddress,
+    });
+
+    return { fromStatus: current, toStatus: input.toStatus };
+  }
+
+  async getHistory(caseId: string) {
+    const { rows } = await this.pool.query(
+      `SELECT we.*, au.full_name AS actor_name, au.email AS actor_email
+       FROM workflow_events we
+       LEFT JOIN auth_users au ON au.id = we.actor_id
+       WHERE we.case_id = $1
+       ORDER BY we.created_at ASC`,
+      [caseId],
+    );
+    return rows;
+  }
+
+  allowedTransitions(status: CaseStatus): CaseStatus[] {
+    return TRANSITIONS[status] ?? [];
+  }
+}

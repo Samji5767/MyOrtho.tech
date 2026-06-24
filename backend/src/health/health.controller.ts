@@ -1,15 +1,13 @@
-import { Controller, Get } from '@nestjs/common';
+import { Controller, Get, Inject } from '@nestjs/common';
+import type { Pool } from 'pg';
+import { PG_POOL } from '../database/database.module';
 
-/**
- * Public, unauthenticated health endpoints for load balancers, container
- * orchestrators (Docker/Kubernetes liveness & readiness probes), and the
- * repository `scripts/health-check.sh`.
- */
 @Controller('health')
 export class HealthController {
   private readonly startedAt = Date.now();
 
-  /** Liveness: the process is up and serving requests. */
+  constructor(@Inject(PG_POOL) private readonly pool: Pool) {}
+
   @Get()
   getHealth() {
     return {
@@ -21,24 +19,27 @@ export class HealthController {
     };
   }
 
-  /**
-   * Readiness: the service has the configuration it needs to handle real
-   * traffic. Returns `ready: false` (still HTTP 200) when required env is
-   * missing or still set to placeholders, so orchestrators can gate rollout.
-   */
   @Get('ready')
-  getReadiness() {
-    const url = process.env.SUPABASE_URL;
-    const key = process.env.SUPABASE_ANON_KEY;
+  async getReadiness() {
+    const databaseUrl = Boolean(process.env.DATABASE_URL);
+
+    let dbConnected = false;
+    if (databaseUrl) {
+      try {
+        await this.pool.query('SELECT 1');
+        dbConnected = true;
+      } catch {
+        dbConnected = false;
+      }
+    }
+
     const checks = {
-      supabaseConfigured: Boolean(url && key && !url.includes('placeholder') && key !== 'placeholder'),
-      databaseUrlSet: Boolean(process.env.DATABASE_URL),
+      databaseUrlSet: databaseUrl,
+      databaseConnected: dbConnected,
+      jwtSecretSet: Boolean(process.env.JWT_SECRET),
     };
-    const ready = Object.values(checks).every(Boolean);
-    return {
-      ready,
-      checks,
-      timestamp: new Date().toISOString(),
-    };
+    const ready = checks.databaseUrlSet && checks.databaseConnected;
+
+    return { ready, checks, timestamp: new Date().toISOString() };
   }
 }

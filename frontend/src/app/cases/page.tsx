@@ -1,7 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
+import { fetchCases, type CaseListItem } from "@/lib/api/cases";
 import {
   AlertCircle,
   AlertTriangle,
@@ -175,9 +176,62 @@ function CaseRow({ c }: { c: DemoCase }) {
   );
 }
 
+// ─── Live case row ─────────────────────────────────────────────────────────────
+
+function LiveCaseRow({ c }: { c: CaseListItem }) {
+  const patientName = `${c.patient.firstName} ${c.patient.lastName}`;
+  const initials = `${c.patient.firstName[0] ?? "?"}${c.patient.lastName[0] ?? "?"}`.toUpperCase();
+  const statusTone: "neutral" | "info" | "warning" | "success" =
+    c.status === "completed" ? "success"
+    : c.status === "scan_uploaded" || c.status === "segmenting" ? "info"
+    : c.status === "pending_approval" || c.status === "planning" ? "warning"
+    : "neutral";
+  const label = c.status.replace(/_/g, " ").replace(/\b\w/g, (l) => l.toUpperCase());
+
+  return (
+    <Link
+      href={`/cases/${c.id}`}
+      className="group flex items-center gap-3 px-4 py-3 transition-colors hover:bg-[color:var(--border)]/40 active:scale-[0.995]"
+    >
+      <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[color:var(--primary)] text-xs font-bold text-[color:var(--primary-foreground)]">
+        {initials}
+      </span>
+      <div className="min-w-0 flex-1">
+        <div className="flex items-baseline gap-2">
+          <span className="font-semibold text-[color:var(--foreground)]">{patientName}</span>
+          <span className="font-mono text-[10px] text-[color:var(--muted-foreground)] truncate">{c.id.slice(0, 8)}…</span>
+        </div>
+        <p className="mt-0.5 truncate text-xs text-[color:var(--muted-foreground)]">
+          {c.chiefComplaint ?? c.malocclusionClass ?? "—"}
+          {c.assignedTo ? ` · ${c.assignedTo.name}` : ""}
+        </p>
+      </div>
+      <div className="flex shrink-0 flex-col items-end gap-1.5">
+        <StatusBadge tone={statusTone}>{label}</StatusBadge>
+        <span className="text-[10px] tabular-nums text-[color:var(--muted-foreground)]">
+          {new Date(c.updatedAt).toLocaleDateString()}
+        </span>
+      </div>
+      <ChevronRight size={14} className="shrink-0 text-[color:var(--muted-foreground)] transition-colors group-hover:text-[color:var(--foreground)]" />
+    </Link>
+  );
+}
+
 export default function CasesPage() {
   const [previewMode, setPreviewMode] = useState(true);
   const [filter, setFilter] = useState<FilterKey>("all");
+
+  // Live data (fetched when preview mode is off)
+  const [apiCases, setApiCases] = useState<CaseListItem[]>([]);
+  const [apiSource, setApiSource] = useState<"loading" | "api" | "demo">("loading");
+
+  useEffect(() => {
+    if (previewMode) return;
+    setApiSource("loading");
+    fetchCases()
+      .then(({ cases, source }) => { setApiCases(cases); setApiSource(source); })
+      .catch(() => setApiSource("demo"));
+  }, [previewMode]);
 
   const cases = previewMode ? DEMO_CASES : [];
   const visible = filterCases(cases, filter);
@@ -232,18 +286,26 @@ export default function CasesPage() {
           Representative preview data · Not connected to live data
         </div>
       )}
+      {!previewMode && apiSource === "demo" && (
+        <div className="flex items-center gap-2 rounded-xl border border-amber-200/60 bg-amber-50/60 px-3 py-2 text-xs text-amber-800 dark:border-amber-500/20 dark:bg-amber-500/10 dark:text-amber-300">
+          <AlertTriangle size={12} className="shrink-0" />
+          API fallback — backend unreachable · Showing demo cases
+        </div>
+      )}
 
       {/* KPI row */}
       <div className="grid grid-cols-3 gap-3">
         <Card className="flex flex-col items-center gap-2 p-3">
           <span className="text-2xl font-bold tabular-nums text-[color:var(--foreground)]">
-            {previewMode ? cases.filter(c => c.status !== "completed").length : "0"}
+            {previewMode
+              ? cases.filter(c => c.status !== "completed").length
+              : apiSource === "loading" ? "…" : apiCases.filter(c => c.status !== "completed").length}
           </span>
           <StatusBadge tone="primary">Active</StatusBadge>
         </Card>
         <Card className="flex flex-col items-center gap-2 p-3">
           <span className="text-2xl font-bold tabular-nums text-[color:var(--foreground)]">
-            {previewMode ? reviewCount : "0"}
+            {previewMode ? reviewCount : apiSource === "loading" ? "…" : apiCases.filter(c => c.status === "pending_approval").length}
           </span>
           <StatusBadge tone="warning">Needs review</StatusBadge>
         </Card>
@@ -303,32 +365,47 @@ export default function CasesPage() {
           </div>
         </Card>
       ) : (
-        <Card className="flex flex-col items-center gap-4 p-10 text-center">
-          <span className="grid h-16 w-16 place-items-center rounded-3xl bg-[color:var(--primary-glow)] text-[color:var(--primary)]">
-            <FolderKanban size={28} />
-          </span>
-          <div>
-            <p className="text-base font-semibold text-[color:var(--foreground)]">No active cases</p>
-            <p className="mt-1 text-sm text-[color:var(--muted-foreground)]">
-              New cases will appear here after a patient record or scan upload is created.
-            </p>
+        <Card className="overflow-hidden p-0">
+          <div className="flex items-center justify-between border-b border-[color:var(--border)] px-4 py-3">
+            <div className="flex items-center gap-2">
+              <FolderKanban size={15} className="text-[color:var(--primary)]" />
+              <h2 className="text-sm font-semibold text-[color:var(--foreground)]">
+                {apiSource === "api" ? "Live Cases" : apiSource === "demo" ? "Demo Cases (Fallback)" : "Loading…"}
+              </h2>
+            </div>
+            {apiSource === "api" && (
+              <StatusBadge tone="success">Live</StatusBadge>
+            )}
           </div>
-          <div className="flex flex-wrap justify-center gap-2">
-            <button
-              type="button"
-              onClick={() => setPreviewMode(true)}
-              className="inline-flex h-10 items-center gap-2 rounded-full bg-[color:var(--primary)] px-5 text-sm font-semibold text-[color:var(--primary-foreground)] transition-transform active:scale-95"
-            >
-              Enable preview mode
-            </button>
-            <Link
-              href="/studio"
-              className="inline-flex h-10 items-center gap-2 rounded-full border border-[color:var(--border)] bg-[color:var(--card)] px-5 text-sm font-semibold text-[color:var(--foreground)] transition-transform active:scale-95"
-            >
-              <UploadCloud size={15} className="text-[color:var(--primary)]" />
-              Upload STL / PLY / OBJ
-            </Link>
-          </div>
+
+          {apiSource === "loading" ? (
+            <div className="flex items-center justify-center py-10">
+              <Clock size={20} className="animate-spin text-[color:var(--muted-foreground)]" />
+            </div>
+          ) : apiCases.length === 0 ? (
+            <div className="flex flex-col items-center gap-4 p-10 text-center">
+              <span className="grid h-16 w-16 place-items-center rounded-3xl bg-[color:var(--primary-glow)] text-[color:var(--primary)]">
+                <FolderKanban size={28} />
+              </span>
+              <div>
+                <p className="text-base font-semibold text-[color:var(--foreground)]">No active cases</p>
+                <p className="mt-1 text-sm text-[color:var(--muted-foreground)]">
+                  New cases will appear here after a patient record or scan upload is created.
+                </p>
+              </div>
+              <Link
+                href="/studio"
+                className="inline-flex h-10 items-center gap-2 rounded-full border border-[color:var(--border)] bg-[color:var(--card)] px-5 text-sm font-semibold text-[color:var(--foreground)] transition-transform active:scale-95"
+              >
+                <UploadCloud size={15} className="text-[color:var(--primary)]" />
+                Upload STL / PLY / OBJ
+              </Link>
+            </div>
+          ) : (
+            <div className="divide-y divide-[color:var(--border)]">
+              {apiCases.map(c => <LiveCaseRow key={c.id} c={c} />)}
+            </div>
+          )}
         </Card>
       )}
 

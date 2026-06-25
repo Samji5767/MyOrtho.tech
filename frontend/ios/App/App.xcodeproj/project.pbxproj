@@ -54,6 +54,12 @@
 		E1A00007000000000000AABB /* AuthService.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1A00003000000000000AABB /* AuthService.swift */; };
 		E1A00008000000000000AABB /* AuthSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1A00004000000000000AABB /* AuthSession.swift */; };
 		E1A00009000000000000AABB /* LoginView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1A00005000000000000AABB /* LoginView.swift */; };
+		F315C15B000000000000A008 /* MyOrthoAPIClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = F315C15B000000000000A002 /* MyOrthoAPIClient.swift */; };
+		F315C15B000000000000A009 /* APIModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = F315C15B000000000000A003 /* APIModels.swift */; };
+		F315C15B000000000000A00A /* LiveCasesViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = F315C15B000000000000A004 /* LiveCasesViewModel.swift */; };
+		F315C15B000000000000A00B /* LiveCasesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F315C15B000000000000A005 /* LiveCasesView.swift */; };
+		F315C15B000000000000A00C /* LiveCaseDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F315C15B000000000000A006 /* LiveCaseDetailView.swift */; };
+		F315C15B000000000000A00D /* LiveManufacturingViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = F315C15B000000000000A007 /* LiveManufacturingViewModel.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -106,6 +112,12 @@
 		E1A00003000000000000AABB /* AuthService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthService.swift; sourceTree = "<group>"; };
 		E1A00004000000000000AABB /* AuthSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthSession.swift; sourceTree = "<group>"; };
 		E1A00005000000000000AABB /* LoginView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LoginView.swift; sourceTree = "<group>"; };
+		F315C15B000000000000A002 /* MyOrthoAPIClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MyOrthoAPIClient.swift; sourceTree = "<group>"; };
+		F315C15B000000000000A003 /* APIModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APIModels.swift; sourceTree = "<group>"; };
+		F315C15B000000000000A004 /* LiveCasesViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiveCasesViewModel.swift; sourceTree = "<group>"; };
+		F315C15B000000000000A005 /* LiveCasesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiveCasesView.swift; sourceTree = "<group>"; };
+		F315C15B000000000000A006 /* LiveCaseDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiveCaseDetailView.swift; sourceTree = "<group>"; };
+		F315C15B000000000000A007 /* LiveManufacturingViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiveManufacturingViewModel.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -162,6 +174,7 @@
 				C167FBDB2FE958DE00A914BE /* M-Workspace */,
 				C167FBDC2FE958DF00A914BE /* M-Manufacturing */,
 				E1A00001000000000000AABB /* M-Auth */,
+				F315C15B000000000000A001 /* M-API */,
 			);
 			path = App;
 			sourceTree = "<group>";
@@ -180,6 +193,7 @@
 			isa = PBXGroup;
 			children = (
 				C167FBDF2FE9590900A914BE /* ManufacturingView.swift */,
+				F315C15B000000000000A007 /* LiveManufacturingViewModel.swift */,
 			);
 			path = "M-Manufacturing";
 			sourceTree = "<group>";
@@ -272,6 +286,9 @@
 				C167FBE12FE963EC00A914BE /* CaseEditSheet.swift */,
 				C167FBE32FE963EC00A914BE /* CaseThreadView.swift */,
 				C16498442FE9B4180047F35B /* EventCards.swift */,
+				F315C15B000000000000A004 /* LiveCasesViewModel.swift */,
+				F315C15B000000000000A005 /* LiveCasesView.swift */,
+				F315C15B000000000000A006 /* LiveCaseDetailView.swift */,
 			);
 			path = "M-CaseList";
 			sourceTree = "<group>";
@@ -285,6 +302,15 @@
 				E1A00005000000000000AABB /* LoginView.swift */,
 			);
 			path = "M-Auth";
+			sourceTree = "<group>";
+		};
+		F315C15B000000000000A001 /* M-API */ = {
+			isa = PBXGroup;
+			children = (
+				F315C15B000000000000A002 /* MyOrthoAPIClient.swift */,
+				F315C15B000000000000A003 /* APIModels.swift */,
+			);
+			path = "M-API";
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -409,6 +435,12 @@
 				E1A00007000000000000AABB /* AuthService.swift in Sources */,
 				E1A00008000000000000AABB /* AuthSession.swift in Sources */,
 				E1A00009000000000000AABB /* LoginView.swift in Sources */,
+				F315C15B000000000000A008 /* MyOrthoAPIClient.swift in Sources */,
+				F315C15B000000000000A009 /* APIModels.swift in Sources */,
+				F315C15B000000000000A00A /* LiveCasesViewModel.swift in Sources */,
+				F315C15B000000000000A00B /* LiveCasesView.swift in Sources */,
+				F315C15B000000000000A00C /* LiveCaseDetailView.swift in Sources */,
+				F315C15B000000000000A00D /* LiveManufacturingViewModel.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

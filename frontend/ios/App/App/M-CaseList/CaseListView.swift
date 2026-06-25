@@ -12,6 +12,7 @@ struct CaseListView: View {
     @State private var showingNewCase = false
     @State private var showDeleteError = false
     @State private var deleteErrorMessage = ""
+    @State private var showingServerCases = false
 
     @Environment(AppConfig.self) private var config
 
@@ -47,6 +48,9 @@ struct CaseListView: View {
         }
         .sheet(isPresented: $showingNewCase) {
             NewCaseView { id in selectedCaseID = id }
+        }
+        .sheet(isPresented: $showingServerCases) {
+            LiveCasesView()
         }
         .alert("Delete Failed", isPresented: $showDeleteError) {
             Button("OK") {}
@@ -168,6 +172,15 @@ struct CaseListView: View {
                 Image(systemName: "square.and.pencil")
                     .accessibilityLabel("New case")
             }
+        }
+        ToolbarItem(placement: .navigationBarLeading) {
+            Button {
+                showingServerCases = true
+            } label: {
+                Label("Server Cases", systemImage: "cloud")
+                    .labelStyle(.iconOnly)
+            }
+            .accessibilityLabel("View server cases")
         }
     }
 

@@ -84,6 +84,11 @@ struct MyOrthoApp: App {
             .animation(.easeInOut(duration: 0.3), value: authSession.isAuthenticated)
             .animation(.easeInOut(duration: 0.3), value: authSession.isLoading)
             .task { await authSession.validateOnLaunch() }
+            .onChange(of: authSession.isAuthenticated) { old, new in
+                if new && !old {
+                    UINotificationFeedbackGenerator().notificationOccurred(.success)
+                }
+            }
             .onReceive(NotificationCenter.default.publisher(for: UIApplication.willResignActiveNotification)) { _ in
                 isInBackground = true
             }

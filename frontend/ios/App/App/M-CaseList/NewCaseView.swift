@@ -7,7 +7,8 @@ struct NewCaseView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(CaseEventStore.self) private var store
 
-    @State private var patientName = ""
+    @State private var patientName  = ""
+    @State private var contactInfo  = ""
     @State private var caseType: CaseType = .aligner
     @State private var startDate = Date.now
     @State private var showSaveError = false
@@ -22,6 +23,11 @@ struct NewCaseView: View {
             Form {
                 Section("Patient") {
                     TextField("Full name", text: $patientName)
+                        .textContentType(.name)
+                    TextField("Phone or email (optional)", text: $contactInfo)
+                        .keyboardType(.emailAddress)
+                        .textContentType(.emailAddress)
+                        .autocapitalization(.none)
                 }
                 Section("Treatment") {
                     Picker("Type", selection: $caseType) {
@@ -60,6 +66,7 @@ struct NewCaseView: View {
             patientName: name,
             patientID: patientID,
             caseType: caseType,
+            contactInfo: contactInfo.trimmingCharacters(in: .whitespaces),
             startDate: startDate
         )
         do {

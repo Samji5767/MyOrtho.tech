@@ -16,7 +16,7 @@ struct WorkspaceView: View {
 
     var body: some View {
         ZStack {
-            Color(hex: "#0A0C10").ignoresSafeArea()
+            Color.moBackground.ignoresSafeArea()
 
             switch viewModel.loadState {
             case .idle:
@@ -32,14 +32,14 @@ struct WorkspaceView: View {
                 VStack(spacing: 16) {
                     ProgressView()
                         .progressViewStyle(.circular)
-                        .tint(Color(hex: "#00D4C2"))
+                        .tint(Color.moTeal)
                         .scaleEffect(1.4)
                     Text("Loading \(viewModel.currentFileName)…")
                         .font(.moBody)
-                        .foregroundStyle(Color(hex: "#8B95A8"))
+                        .foregroundStyle(Color.moTextSecondary)
                     Text("Large scans may take a moment")
                         .font(.moCaption)
-                        .foregroundStyle(Color(hex: "#4B5563"))
+                        .foregroundStyle(Color.moTextTertiary)
                 }
 
             case .loaded:
@@ -63,7 +63,7 @@ struct WorkspaceView: View {
                                 Text("Optimised: showing 150k of \(viewModel.originalTriangles.formatted()) triangles")
                                     .font(.moCaption)
                             }
-                            .foregroundStyle(Color(hex: "#F1F5F9"))
+                            .foregroundStyle(Color.moTextPrimary)
                             .padding(.horizontal, 14)
                             .padding(.vertical, 8)
                             .background(.ultraThinMaterial)
@@ -77,17 +77,17 @@ struct WorkspaceView: View {
                 VStack(spacing: 20) {
                     Image(systemName: "exclamationmark.triangle.fill")
                         .font(.system(size: 40))
-                        .foregroundStyle(Color(hex: "#EF4444"))
+                        .foregroundStyle(Color.moRejected)
                     Text("Could Not Load Scan")
                         .font(.moTitle2)
-                        .foregroundStyle(Color(hex: "#F1F5F9"))
+                        .foregroundStyle(Color.moTextPrimary)
                     Text(message)
                         .font(.moBody)
-                        .foregroundStyle(Color(hex: "#8B95A8"))
+                        .foregroundStyle(Color.moTextSecondary)
                         .multilineTextAlignment(.center)
                     Button("Try Again") { viewModel.loadState = .idle }
                         .buttonStyle(.bordered)
-                        .tint(Color(hex: "#00D4C2"))
+                        .tint(Color.moTeal)
                 }
                 .padding(40)
             }

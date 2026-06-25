@@ -108,6 +108,9 @@ struct SettingsView: View {
     private var appSection: some View {
         Section("About") {
             LabeledContent("Contact", value: "hello@myortho.tech")
+            Text("Clinical AI features use simulated data for demonstration. Not for diagnostic use.")
+                .font(.moCaption)
+                .foregroundStyle(Color.moTextTertiary)
         }
     }
 
@@ -132,4 +135,5 @@ struct SettingsView: View {
     NavigationStack { SettingsView() }
         .environment(AppConfig())
         .environment(AppLockManager())
+        .environment(AuthSession())
 }

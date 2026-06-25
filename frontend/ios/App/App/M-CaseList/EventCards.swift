@@ -150,6 +150,12 @@ struct SegmentationCard: View {
                     Text("AI Segmentation")
                         .font(.moHeadline)
                         .foregroundStyle(Color.moTextPrimary)
+                    Text("Demo")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(Color.moTextTertiary)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(Color.moSurfaceElevated, in: Capsule())
                     Spacer()
                     if let status = event.status {
                         EventStatusBadge(status: status)

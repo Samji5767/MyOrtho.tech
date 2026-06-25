@@ -3,12 +3,15 @@ import SwiftUI
 struct LoginView: View {
     let authSession: AuthSession
 
-    @State private var email    = ""
-    @State private var password = ""
-    @State private var showPwd  = false
+    @State private var email       = ""
+    @State private var password    = ""
+    @State private var showPwd     = false
+    @State private var showAppInfo = false
     @FocusState private var focused: Field?
 
     private enum Field { case email, password }
+
+    private let haptic = UINotificationFeedbackGenerator()
 
     var body: some View {
         ScrollView {
@@ -27,6 +30,63 @@ struct LoginView: View {
         }
         .background(Color.moBackground.ignoresSafeArea())
         .scrollDismissesKeyboard(.interactively)
+        .sheet(isPresented: $showAppInfo) { appInfoSheet }
+        .onChange(of: authSession.errorMessage) { _, msg in
+            if msg != nil { haptic.notificationOccurred(.error) }
+        }
+    }
+
+    // MARK: - App info sheet (App Store reviewer context)
+
+    private var appInfoSheet: some View {
+        NavigationStack {
+            List {
+                Section("About MyOrtho.tech") {
+                    Text("MyOrtho.tech is an orthodontic practice management system. It provides patient case management, 3D dental scan viewing, treatment planning workflows, and manufacturing tracking.")
+                        .font(.moBody)
+                        .foregroundStyle(Color.moTextSecondary)
+                        .listRowBackground(Color.moSurface)
+                }
+                Section("App Store Review") {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Demo credentials are provided in the App Review Notes section of App Store Connect.")
+                            .font(.moBody)
+                            .foregroundStyle(Color.moTextSecondary)
+                        Text("The app includes pre-populated demo cases (fictional patient data) visible after login.")
+                            .font(.moCaption)
+                            .foregroundStyle(Color.moTextTertiary)
+                    }
+                    .listRowBackground(Color.moSurface)
+                }
+                Section("Features") {
+                    Label("Patient case management", systemImage: "tray.full")
+                    Label("3D scan viewer (STL)", systemImage: "cube")
+                    Label("Treatment workflow timeline", systemImage: "list.clipboard")
+                    Label("Manufacturing job tracker", systemImage: "gearshape.2")
+                    Label("Clinical AI analysis (demo)", systemImage: "waveform.path.ecg")
+                }
+                .foregroundStyle(Color.moTextSecondary)
+                .font(.moBody)
+                .listRowBackground(Color.moSurface)
+
+                Section {
+                    Text("Clinical AI features use simulated data for demonstration purposes only. Not for diagnostic use.")
+                        .font(.moCaption)
+                        .foregroundStyle(Color.moTextTertiary)
+                        .listRowBackground(Color.moSurface)
+                }
+            }
+            .scrollContentBackground(.hidden)
+            .background(Color.moBackground)
+            .navigationTitle("About the App")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done") { showAppInfo = false }
+                        .foregroundStyle(Color.moTeal)
+                }
+            }
+        }
     }
 
     // MARK: - Logo
@@ -197,13 +257,22 @@ struct LoginView: View {
     // MARK: - Footer
 
     private var footer: some View {
-        VStack(spacing: 4) {
+        VStack(spacing: 8) {
             Text("Need access? Contact your administrator")
                 .font(.moCaption)
                 .foregroundStyle(Color.moTextSecondary)
-            Text("MyOrtho Clinical OS · Protected workspace")
-                .font(.system(size: 10))
+            Button {
+                showAppInfo = true
+            } label: {
+                HStack(spacing: 4) {
+                    Image(systemName: "info.circle")
+                        .font(.system(size: 11))
+                    Text("About this App")
+                        .font(.system(size: 11))
+                }
                 .foregroundStyle(Color.moTextTertiary)
+            }
+            .buttonStyle(.plain)
         }
     }
 

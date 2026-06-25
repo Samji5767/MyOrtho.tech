@@ -32,15 +32,21 @@ enum AuthError: LocalizedError {
 actor AuthService {
     static let shared = AuthService()
 
-    private let baseURL   = URL(string: "https://myortho.tech")!
-    private let tokenKey  = "mo_bearer_token"
-    private let urlSession: URLSession
+    private let baseURL            = URL(string: "https://myortho.tech")!
+    private let tokenKey           = "mo_bearer_token"
+    private let urlSession:        URLSession
+    private let sessionCheckSession: URLSession  // shorter timeout for app-launch validation
 
     private init() {
         let config = URLSessionConfiguration.default
         config.timeoutIntervalForRequest  = 30
         config.timeoutIntervalForResource = 60
         urlSession = URLSession(configuration: config)
+
+        let quickConfig = URLSessionConfiguration.default
+        quickConfig.timeoutIntervalForRequest  = 8
+        quickConfig.timeoutIntervalForResource = 10
+        sessionCheckSession = URLSession(configuration: quickConfig)
     }
 
     // MARK: - Keychain
@@ -62,7 +68,9 @@ actor AuthService {
         req.httpBody = try JSONEncoder().encode(["email": email, "password": password])
 
         let (data, response) = try await urlSession.data(for: req)
-        let http = response as! HTTPURLResponse
+        guard let http = response as? HTTPURLResponse else {
+            throw AuthError.networkError("Unexpected server response")
+        }
 
         if http.statusCode == 401 { throw AuthError.invalidCredentials }
         guard http.statusCode == 200 else {
@@ -84,8 +92,11 @@ actor AuthService {
         var req = URLRequest(url: baseURL.appendingPathComponent("api/auth/session"))
         req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
 
-        let (data, response) = try await urlSession.data(for: req)
-        let http = response as! HTTPURLResponse
+        // Use the quick session to fail fast on app launch if network is unavailable.
+        let (data, response) = try await sessionCheckSession.data(for: req)
+        guard let http = response as? HTTPURLResponse else {
+            throw AuthError.networkError("Unexpected server response")
+        }
 
         guard http.statusCode == 200 else {
             clearToken()

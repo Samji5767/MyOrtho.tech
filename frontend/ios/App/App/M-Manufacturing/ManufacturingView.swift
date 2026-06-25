@@ -89,7 +89,9 @@ struct ManufacturingRowView: View {
                         .foregroundStyle(Color.moManufacturing)
                         .clipShape(Capsule())
                 }
-                Text("\(meta.vendor) · \(meta.stageCount) \(meta.stageCount == 1 ? "aligner" : "aligners")")
+                Text(meta.stageCount > 0
+                     ? "\(meta.vendor) · \(meta.stageCount) \(meta.stageCount == 1 ? "aligner" : "aligners")"
+                     : meta.vendor)
                     .font(.moBody)
                     .foregroundStyle(Color.moTextSecondary)
                 if let ref = meta.trackingRef ?? meta.orderRef {

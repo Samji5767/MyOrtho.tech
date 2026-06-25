@@ -18,6 +18,8 @@ import { EventsModule } from './events/events.module';
 import { BillingModule } from './billing/billing.module';
 import { ObservabilityModule } from './observability/observability.module';
 import { MessagingModule } from './messaging/messaging.module';
+import { ScansModule } from './scans/scans.module';
+import { TreatmentPlansModule } from './treatment-plans/treatment-plans.module';
 
 @Module({
   imports: [
@@ -44,6 +46,8 @@ import { MessagingModule } from './messaging/messaging.module';
     BillingModule,
     ObservabilityModule,
     MessagingModule,
+    ScansModule,
+    TreatmentPlansModule,
   ],
 })
 export class AppModule {}

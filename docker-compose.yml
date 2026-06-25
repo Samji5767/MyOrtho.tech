@@ -56,6 +56,10 @@ services:
       - MYORTHO_ADMIN_EMAIL=${MYORTHO_ADMIN_EMAIL:-}
       - MYORTHO_ADMIN_PASSWORD=${MYORTHO_ADMIN_PASSWORD:-}
       - MYORTHO_ADMIN_NAME=${MYORTHO_ADMIN_NAME:-Platform Admin}
+      - UPLOADS_DIR=/app/uploads
+      - AI_ENGINE_URL=http://ai-engine:8000
+    volumes:
+      - uploads_data:/app/uploads
     depends_on:
       database:
         condition: service_healthy
@@ -92,7 +96,9 @@ services:
       - AI_DEVICE=${AI_DEVICE:-cpu}
     volumes:
       - shared_storage:/app/storage
+      - uploads_data:/app/uploads:ro
 
 volumes:
   postgres_data:
   shared_storage:
+  uploads_data:

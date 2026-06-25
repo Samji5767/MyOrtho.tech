@@ -1,6 +1,9 @@
 from fastapi import FastAPI, HTTPException, BackgroundTasks
 from pydantic import BaseModel
 import logging
+import uuid
+from datetime import datetime, timezone
+from typing import Dict, Any
 import numpy as np
 import torch
 from src.segmentation import OrthoSegmentationEngine
@@ -21,6 +24,10 @@ segmentation_engine = OrthoSegmentationEngine()
 mesh_processor = MeshProcessor()
 landmark_detector = DentalLandmarkDetector()
 root_predictor = RootPredictorEngine()
+
+# In-memory job store: job_id → status dict.
+# Jobs are lost on restart; use a persistent store (Redis/DB) for production.
+job_store: Dict[str, Dict[str, Any]] = {}
 
 class SegmentationRequest(BaseModel):
     case_id: str
@@ -49,13 +56,33 @@ class AutoStageRequest(BaseModel):
     target_translation: list   # [x, y, z]
     max_step_mm: float = 0.25
 
-def run_segmentation_task(req: SegmentationRequest):
-    logger.info(f"Running tooth segmentation on scan {req.scan_id} for case {req.case_id}")
+def run_segmentation_task(job_id: str, req: SegmentationRequest):
+    job_store[job_id]["status"] = "processing"
+    job_store[job_id]["started_at"] = datetime.now(timezone.utc).isoformat()
+    logger.info(f"Running tooth segmentation on scan {req.scan_id} for case {req.case_id} (job {job_id})")
     try:
         results = segmentation_engine.segment_mesh(req.file_path, req.jaw_type)
-        logger.info(f"Segmentation complete for scan {req.scan_id}. Missing teeth: {results['missing_teeth']}")
+        job_store[job_id] = {
+            "status": "completed",
+            "case_id": req.case_id,
+            "scan_id": req.scan_id,
+            "teeth_detected": len(results.get("tooth_ids", [])),
+            "missing_teeth": results.get("missing_teeth", []),
+            "teeth_confidence": results.get("confidence_scores", {}),
+            "segmented_mesh_path": results.get("segmented_mesh_path"),
+            "completed_at": datetime.now(timezone.utc).isoformat(),
+            "disclaimer": "Segmentation is a workflow tool only. Not clinically validated.",
+        }
+        logger.info(f"Segmentation complete for job {job_id}. Missing teeth: {results.get('missing_teeth', [])}")
     except Exception as e:
-        logger.error(f"Failed to segment mesh: {str(e)}")
+        job_store[job_id] = {
+            "status": "failed",
+            "case_id": req.case_id,
+            "scan_id": req.scan_id,
+            "error": str(e),
+            "completed_at": datetime.now(timezone.utc).isoformat(),
+        }
+        logger.error(f"Segmentation job {job_id} failed: {str(e)}")
 
 @app.get("/health")
 async def health():
@@ -77,8 +104,30 @@ async def ready():
 
 @app.post("/ai/segment")
 async def trigger_segmentation(req: SegmentationRequest, background_tasks: BackgroundTasks):
-    background_tasks.add_task(run_segmentation_task, req)
-    return {"status": "queued", "message": "Mesh segmentation process initiated in background."}
+    job_id = str(uuid.uuid4())
+    job_store[job_id] = {
+        "status": "queued",
+        "case_id": req.case_id,
+        "scan_id": req.scan_id,
+        "queued_at": datetime.now(timezone.utc).isoformat(),
+    }
+    background_tasks.add_task(run_segmentation_task, job_id, req)
+    return {
+        "job_id": job_id,
+        "status": "queued",
+        "message": "Segmentation job queued. Poll /ai/jobs/{job_id} for status.",
+        "disclaimer": "Not clinically validated. For workflow assistance only.",
+    }
+
+@app.get("/ai/jobs/{job_id}")
+async def get_job_status(job_id: str):
+    job = job_store.get(job_id)
+    if not job:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Job '{job_id}' not found. Jobs are stored in memory and lost on restart."
+        )
+    return {"job_id": job_id, **job}
 
 @app.post("/mesh/hollow")
 async def hollow_mesh(req: HollowRequest):
@@ -149,6 +198,7 @@ async def get_models():
             {"model_name": "LandmarkMeanCurvature", "version": "v1.0.8", "framework": "Trimesh/Scipy"},
             {"model_name": "RootCollisionCenterline", "version": "v1.2.0", "framework": "Numpy/ICP"}
         ],
-        "validation_status": "certified_samd",
+        "validation_status": "not_clinically_validated",
+        "clinical_disclaimer": "These models are research-stage prototypes. They have NOT been cleared as Software as a Medical Device (SaMD). Do not use outputs for clinical decisions.",
         "last_verification_run": "2026-06-15"
     }

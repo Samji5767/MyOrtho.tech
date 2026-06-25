@@ -1,59 +1,63 @@
-import { Injectable, Logger } from '@nestjs/common';
-import { createClient } from '@supabase/supabase-js';
+import { Injectable, Inject, Logger, InternalServerErrorException } from '@nestjs/common';
+import type { Pool } from 'pg';
+import { PG_POOL } from '../database/database.module';
 
+const AI_ENGINE_URL = process.env.AI_ENGINE_URL ?? 'http://ai-engine:8000';
+
+/**
+ * Thin wrapper used by other modules to trigger segmentation.
+ * The primary segmentation API surface is in ScansModule (scans.service.ts).
+ * This service exists for backwards compatibility.
+ */
 @Injectable()
 export class AiOrchestratorService {
   private readonly logger = new Logger(AiOrchestratorService.name);
-  private supabase = createClient(
-    process.env.SUPABASE_URL || 'https://placeholder.supabase.co',
-    process.env.SUPABASE_ANON_KEY || 'placeholder'
-  );
 
-  async triggerToothSegmentation(caseId: string, scanId: string): Promise<boolean> {
-    this.logger.log(`Dispatching AI Segmentation task for case ${caseId}, scan ${scanId} to Python Compute Worker Queue`);
-    
-    // Simulate BullMQ/RabbitMQ job dispatching
-    // In production, this pushes to a Redis queue where Python worker handles it
-    
-    // 1. Mark case status as segmenting
-    await this.supabase
-      .from('cases')
-      .update({ status: 'segmenting' })
-      .eq('id', caseId);
+  constructor(@Inject(PG_POOL) private readonly pool: Pool) {}
 
-    // 2. Mock compute node callback
-    setTimeout(async () => {
-      this.logger.log(`Python Compute Node: AI segmentation complete for scan ${scanId}. Writing FDI mappings to DB.`);
-      
-      const mockSegmentationResults = {
-        teeth_confidence_scores: {
-          '11': 0.98, '12': 0.97, '13': 0.99, '21': 0.98, '22': 0.95, '23': 0.97
-        },
-        missing_teeth: [18, 28, 38, 48],
-        segmented_mesh_path: `/storage/cases/${caseId}/segmented/output.obj`,
-        gingiva_mesh_path: `/storage/cases/${caseId}/segmented/gingiva.obj`
-      };
+  /**
+   * Submits a segmentation job to the AI engine and returns the job_id.
+   * Advances case status to 'segmenting' in the database.
+   *
+   * Disclaimer: AI output is not clinically validated.
+   */
+  async triggerToothSegmentation(
+    caseId: string,
+    scanId: string,
+    filePath: string,
+    jawType: string,
+  ): Promise<{ jobId: string; status: string }> {
+    this.logger.log(`Submitting segmentation job — case ${caseId} scan ${scanId}`);
 
-      // Create segmentation result record
-      await this.supabase
-        .from('segmentation_results')
-        .insert({
-          case_id: caseId,
-          scan_id: scanId,
-          teeth_confidence_scores: mockSegmentationResults.teeth_confidence_scores,
-          segmented_mesh_path: mockSegmentationResults.segmented_mesh_path,
-          missing_teeth: mockSegmentationResults.missing_teeth,
-          gingiva_mesh_path: mockSegmentationResults.gingiva_mesh_path
-        });
+    let jobId: string;
+    try {
+      const res = await fetch(`${AI_ENGINE_URL}/ai/segment`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ case_id: caseId, scan_id: scanId, file_path: filePath, jaw_type: jawType }),
+        signal: AbortSignal.timeout(12_000),
+      });
+      if (!res.ok) {
+        throw new Error(`AI engine returned HTTP ${res.status}`);
+      }
+      const data = await res.json() as { job_id: string };
+      jobId = data.job_id;
+    } catch (err) {
+      this.logger.error(`AI engine unreachable: ${String(err)}`);
+      throw new InternalServerErrorException(
+        'AI segmentation engine is unavailable.',
+      );
+    }
 
-      // Update case status to planning
-      await this.supabase
-        .from('cases')
-        .update({ status: 'planning' })
-        .eq('id', caseId);
+    await this.pool
+      .query(
+        `UPDATE cases SET status = 'segmenting', updated_at = now()
+         WHERE id = $1 AND status IN ('scan_uploaded', 'draft')`,
+        [caseId],
+      )
+      .catch((e) => this.logger.warn(`Failed to advance case status: ${String(e)}`));
 
-    }, 3000);
-
-    return true;
+    this.logger.log(`Segmentation job ${jobId} queued for case ${caseId}`);
+    return { jobId, status: 'queued' };
   }
 }

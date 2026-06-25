@@ -3,6 +3,7 @@ import { MulterModule } from '@nestjs/platform-express';
 import { diskStorage } from 'multer';
 import * as path from 'path';
 import * as fs from 'fs';
+import { AuthModule } from '../auth/auth.module';
 import { ScansController, SegmentJobsController } from './scans.controller';
 import { ScansService } from './scans.service';
 
@@ -10,6 +11,7 @@ const UPLOAD_DIR = process.env.UPLOADS_DIR ?? '/app/uploads';
 
 @Module({
   imports: [
+    AuthModule,
     MulterModule.register({
       storage: diskStorage({
         destination: (_req, _file, cb) => {

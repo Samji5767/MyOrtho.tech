@@ -16,27 +16,29 @@ const AI_ENGINE_URL = process.env.AI_ENGINE_URL ?? 'http://ai-engine:8000';
 const VALID_JAW_TYPES = ['maxillary', 'mandibular', 'both'] as const;
 const VALID_FORMATS = ['stl', 'obj', 'ply'] as const;
 
-interface SegmentJob {
-  jobId: string;
-  caseId: string;
-  scanId: string;
-  orgId: string;
-  queuedAt: Date;
-}
+const SEG_DISCLAIMER =
+  'AI segmentation is a workflow tool only. Not clinically validated. Not for diagnostic use. ' +
+  'Output requires review by a licensed clinician before any clinical decision.';
+
+const MODEL_NOTE = {
+  modelName: 'MONAI-dental-seg',
+  modelVersion: '1.0.0',
+  validationStatus: 'research_use_only' as const,
+};
 
 @Injectable()
 export class ScansService {
   private readonly logger = new Logger(ScansService.name);
-  // In-memory job store — lost on restart. Use Redis for production.
-  private readonly segmentJobs = new Map<string, SegmentJob>();
 
   constructor(@Inject(PG_POOL) private readonly pool: Pool) {}
+
+  // ── Scans ───────────────────────────────────────────────────────────────────
 
   async findByCaseId(caseId: string, orgId: string) {
     await this.verifyCaseOwnership(caseId, orgId);
     const { rows } = await this.pool.query(
-      `SELECT id, case_id, jaw_type, file_path, file_format, file_size_bytes,
-              mesh_validation_metrics, created_at
+      `SELECT id, case_id, jaw_type, original_filename, file_path, file_format,
+              file_size_bytes, mesh_validation_metrics, created_at
        FROM scans WHERE case_id = $1 ORDER BY created_at DESC`,
       [caseId],
     );
@@ -44,6 +46,8 @@ export class ScansService {
       id: r.id as string,
       caseId: r.case_id as string,
       jawType: r.jaw_type as string,
+      originalFilename: (r.original_filename ?? null) as string | null,
+      filePath: r.file_path as string,
       fileFormat: r.file_format as string,
       fileSizeBytes: r.file_size_bytes as number,
       validationMetrics: r.mesh_validation_metrics as object,
@@ -79,10 +83,11 @@ export class ScansService {
     fs.renameSync(file.path, destPath);
 
     const { rows } = await this.pool.query(
-      `INSERT INTO scans (case_id, uploaded_by, jaw_type, file_path, file_format, file_size_bytes)
-       VALUES ($1, $2, $3, $4, $5, $6)
+      `INSERT INTO scans
+         (case_id, uploaded_by, jaw_type, original_filename, file_path, file_format, file_size_bytes)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)
        RETURNING id, created_at`,
-      [caseId, uploadedBy, jawType, destPath, ext, file.size],
+      [caseId, uploadedBy, jawType, file.originalname, destPath, ext, file.size],
     );
     const scan = rows[0];
 
@@ -98,11 +103,14 @@ export class ScansService {
       id: scan.id as string,
       caseId,
       jawType,
+      originalFilename: file.originalname,
       fileFormat: ext,
       fileSizeBytes: file.size,
       createdAt: scan.created_at as Date,
     };
   }
+
+  // ── Segmentation ────────────────────────────────────────────────────────────
 
   async triggerSegmentation(
     caseId: string,
@@ -113,7 +121,11 @@ export class ScansService {
     await this.verifyCaseOwnership(caseId, orgId);
 
     const { rows: scanRows } = await this.pool.query(
-      `SELECT id, file_path, jaw_type FROM scans WHERE id = $1 AND case_id = $2`,
+      `SELECT s.id, s.file_path, s.jaw_type, p.organization_id
+       FROM scans s
+       JOIN cases c ON c.id = s.case_id
+       JOIN patients p ON p.id = c.patient_id
+       WHERE s.id = $1 AND s.case_id = $2`,
       [scanId, caseId],
     );
     if (!scanRows[0]) throw new NotFoundException('Scan not found in this case');
@@ -136,7 +148,7 @@ export class ScansService {
         const body = await res.text().catch(() => '');
         throw new Error(`AI engine HTTP ${res.status}: ${body}`);
       }
-      const data = await res.json() as { job_id: string };
+      const data = (await res.json()) as { job_id: string };
       aiJobId = data.job_id;
     } catch (err) {
       this.logger.error(`AI engine unreachable: ${String(err)}`);
@@ -145,13 +157,25 @@ export class ScansService {
       );
     }
 
-    this.segmentJobs.set(aiJobId, {
-      jobId: aiJobId,
-      caseId,
-      scanId,
-      orgId,
-      queuedAt: new Date(),
-    });
+    // Persist job to DB (replaces in-memory map)
+    await this.pool.query(
+      `INSERT INTO segmentation_jobs
+         (ai_job_id, case_id, scan_id, organization_id, status,
+          model_name, model_version, validation_status, disclaimer)
+       VALUES ($1, $2, $3, $4, 'queued', $5, $6, $7, $8)
+       ON CONFLICT (ai_job_id) DO UPDATE
+         SET status = 'queued', updated_at = now()`,
+      [
+        aiJobId,
+        caseId,
+        scanId,
+        orgId,
+        MODEL_NOTE.modelName,
+        MODEL_NOTE.modelVersion,
+        MODEL_NOTE.validationStatus,
+        SEG_DISCLAIMER,
+      ],
+    );
 
     await this.pool.query(
       `UPDATE cases SET status = 'segmenting', updated_at = now()
@@ -166,70 +190,199 @@ export class ScansService {
       jobId: aiJobId,
       status: 'queued',
       message: 'Segmentation job submitted. Poll /api/segment-jobs/:jobId for status.',
-      disclaimer:
-        'AI segmentation is a workflow tool only. Not clinically validated. Not for diagnostic use.',
+      disclaimer: SEG_DISCLAIMER,
+      ...MODEL_NOTE,
     };
   }
 
   async getJobStatus(jobId: string, orgId: string) {
-    const job = this.segmentJobs.get(jobId);
-    if (!job)
+    // Load from DB (persistent, survives restarts)
+    const { rows } = await this.pool.query(
+      `SELECT sj.*, s.jaw_type AS scan_jaw_type, s.original_filename AS scan_filename
+       FROM segmentation_jobs sj
+       LEFT JOIN scans s ON s.id = sj.scan_id
+       WHERE sj.ai_job_id = $1 AND sj.organization_id = $2`,
+      [jobId, orgId],
+    );
+    if (!rows[0]) {
       throw new NotFoundException(
-        'Job not found. In-memory jobs are lost on backend restart.',
+        'Segmentation job not found. Jobs are scoped to your organization.',
       );
-    if (job.orgId !== orgId) throw new NotFoundException('Job not found');
+    }
+    const dbJob = rows[0];
 
-    let aiStatus: Record<string, unknown>;
+    // Poll AI engine for current status
+    let aiStatus: Record<string, unknown> | null = null;
     try {
       const res = await fetch(`${AI_ENGINE_URL}/ai/jobs/${jobId}`, {
         signal: AbortSignal.timeout(5_000),
       });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      aiStatus = (await res.json()) as Record<string, unknown>;
+      if (res.ok) {
+        aiStatus = (await res.json()) as Record<string, unknown>;
+      }
     } catch {
-      return {
-        jobId,
-        caseId: job.caseId,
-        scanId: job.scanId,
-        status: 'unknown',
-        error: 'AI engine unreachable',
-        disclaimer: 'AI segmentation is not clinically validated.',
-      };
+      // Return DB state when AI engine is unreachable
+      return this.formatJobRow(dbJob, null);
     }
 
-    // Write to DB when completed
-    if (aiStatus['status'] === 'completed') {
-      await this.pool
-        .query(
-          `INSERT INTO segmentation_results
-             (case_id, scan_id, teeth_confidence_scores, missing_teeth)
-           VALUES ($1, $2, $3, $4::int[])
-           ON CONFLICT DO NOTHING`,
-          [
-            job.caseId,
-            job.scanId,
-            JSON.stringify(aiStatus['teeth_confidence'] ?? {}),
-            aiStatus['missing_teeth'] ?? [],
-          ],
-        )
-        .catch((e) =>
-          this.logger.warn(`Failed to persist segmentation result: ${String(e)}`),
-        );
+    // Update DB with AI engine result
+    if (aiStatus) {
+      const aiStatusStr = aiStatus['status'] as string | undefined;
+      const updates: unknown[] = [aiStatusStr ?? dbJob.status, jobId];
+      let sql = `UPDATE segmentation_jobs SET status = $1, updated_at = now()`;
 
-      await this.pool.query(
-        `UPDATE cases SET status = 'planning', updated_at = now()
-         WHERE id = $1 AND status = 'segmenting'`,
-        [job.caseId],
-      ).catch(() => undefined);
+      if (aiStatusStr === 'processing' && !dbJob.started_at) {
+        sql += ', started_at = now()';
+      }
+      if (aiStatusStr === 'completed' || aiStatusStr === 'failed') {
+        sql += ', completed_at = COALESCE(completed_at, now())';
+      }
+      if (aiStatusStr === 'completed') {
+        const teethDetected = aiStatus['teeth_detected'] as number | undefined;
+        const confidenceScores = aiStatus['teeth_confidence'] ?? {};
+        const missingTeeth = aiStatus['missing_teeth'] ?? [];
+        sql += `, teeth_detected = $3, confidence_scores = $4, missing_teeth = $5::int[]`;
+        updates.push(teethDetected ?? null, JSON.stringify(confidenceScores), missingTeeth);
+      }
+      if (aiStatusStr === 'failed') {
+        sql += `, failure_reason = $3`;
+        updates.push((aiStatus['error'] as string | undefined) ?? 'AI engine reported failure');
+      }
+
+      sql += ` WHERE ai_job_id = $2`;
+      await this.pool.query(sql, updates).catch((e) =>
+        this.logger.warn(`Failed to update segmentation job: ${String(e)}`),
+      );
+
+      // Write final result to segmentation_results table
+      if (aiStatusStr === 'completed') {
+        await this.pool
+          .query(
+            `INSERT INTO segmentation_results
+               (case_id, scan_id, teeth_confidence_scores, missing_teeth)
+             VALUES ($1, $2, $3, $4::int[])
+             ON CONFLICT DO NOTHING`,
+            [
+              dbJob.case_id as string,
+              dbJob.scan_id as string,
+              JSON.stringify(aiStatus['teeth_confidence'] ?? {}),
+              aiStatus['missing_teeth'] ?? [],
+            ],
+          )
+          .catch((e) =>
+            this.logger.warn(`Failed to persist segmentation result: ${String(e)}`),
+          );
+
+        await this.pool
+          .query(
+            `UPDATE cases SET status = 'planning', updated_at = now()
+             WHERE id = $1 AND status = 'segmenting'`,
+            [dbJob.case_id as string],
+          )
+          .catch(() => undefined);
+      }
     }
 
+    return this.formatJobRow(dbJob, aiStatus);
+  }
+
+  async listJobsForCase(caseId: string, orgId: string) {
+    await this.verifyCaseOwnership(caseId, orgId);
+    const { rows } = await this.pool.query(
+      `SELECT sj.*, s.jaw_type AS scan_jaw_type, s.original_filename AS scan_filename
+       FROM segmentation_jobs sj
+       LEFT JOIN scans s ON s.id = sj.scan_id
+       WHERE sj.case_id = $1 AND sj.organization_id = $2
+       ORDER BY sj.created_at DESC`,
+      [caseId, orgId],
+    );
+    return rows.map((r) => this.formatJobRow(r, null));
+  }
+
+  async retryJob(jobId: string, orgId: string, actorEmail: string) {
+    const { rows } = await this.pool.query(
+      `SELECT * FROM segmentation_jobs WHERE ai_job_id = $1 AND organization_id = $2`,
+      [jobId, orgId],
+    );
+    if (!rows[0]) throw new NotFoundException('Segmentation job not found');
+    const dbJob = rows[0];
+
+    if (dbJob.status !== 'failed') {
+      throw new BadRequestException('Only failed jobs can be retried');
+    }
+
+    // Re-trigger AI engine
+    const { rows: scanRows } = await this.pool.query(
+      `SELECT file_path, jaw_type FROM scans WHERE id = $1`,
+      [dbJob.scan_id as string],
+    );
+    if (!scanRows[0]) throw new NotFoundException('Scan not found');
+
+    let newAiJobId: string;
+    try {
+      const res = await fetch(`${AI_ENGINE_URL}/ai/segment`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          case_id: dbJob.case_id as string,
+          scan_id: dbJob.scan_id as string,
+          file_path: scanRows[0].file_path as string,
+          jaw_type: scanRows[0].jaw_type as string,
+        }),
+        signal: AbortSignal.timeout(12_000),
+      });
+      if (!res.ok) throw new Error(`AI engine HTTP ${res.status}`);
+      const data = (await res.json()) as { job_id: string };
+      newAiJobId = data.job_id;
+    } catch (err) {
+      throw new InternalServerErrorException(
+        'Segmentation engine is unavailable for retry.',
+      );
+    }
+
+    // Update the existing row with the new job ID
+    await this.pool.query(
+      `UPDATE segmentation_jobs
+       SET ai_job_id = $1, status = 'queued', failure_reason = null,
+           started_at = null, completed_at = null, updated_at = now()
+       WHERE ai_job_id = $2`,
+      [newAiJobId, jobId],
+    );
+
+    this.logger.log(`Seg job ${jobId} retried as ${newAiJobId} by ${actorEmail}`);
     return {
-      jobId,
-      caseId: job.caseId,
-      scanId: job.scanId,
-      ...aiStatus,
-      disclaimer:
-        'AI segmentation is a workflow tool only. Not clinically validated. Not for diagnostic use.',
+      jobId: newAiJobId,
+      status: 'queued',
+      disclaimer: SEG_DISCLAIMER,
+    };
+  }
+
+  // ── Helpers ─────────────────────────────────────────────────────────────────
+
+  private formatJobRow(
+    r: Record<string, unknown>,
+    ai: Record<string, unknown> | null,
+  ) {
+    const status = (ai?.['status'] as string | undefined) ?? (r['status'] as string);
+    return {
+      jobId: r['ai_job_id'] as string,
+      caseId: r['case_id'] as string,
+      scanId: r['scan_id'] as string,
+      scanFilename: (r['scan_filename'] ?? null) as string | null,
+      scanJawType: (r['scan_jaw_type'] ?? null) as string | null,
+      status,
+      failureReason: (ai?.['error'] as string | undefined) ?? (r['failure_reason'] as string | null),
+      modelName: r['model_name'] as string | null,
+      modelVersion: r['model_version'] as string | null,
+      validationStatus: r['validation_status'] as string,
+      teethDetected: (ai?.['teeth_detected'] as number | undefined) ?? (r['teeth_detected'] as number | null),
+      missingTeeth: (ai?.['missing_teeth'] as number[] | undefined) ?? (r['missing_teeth'] as number[] | null),
+      outputMetadata: r['output_metadata'] as Record<string, unknown>,
+      queuedAt: r['queued_at'] as Date,
+      startedAt: r['started_at'] as Date | null,
+      completedAt: r['completed_at'] as Date | null,
+      createdAt: r['created_at'] as Date,
+      disclaimer: SEG_DISCLAIMER,
     };
   }
 

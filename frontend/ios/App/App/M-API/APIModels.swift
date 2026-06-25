@@ -85,18 +85,30 @@ struct APISegTriggerResponse: Decodable {
     let disclaimer: String?
 }
 
+/// Persistent segmentation job (Phase 15F — stored in segmentation_jobs table, survives backend restart)
 struct APISegJob: Decodable {
     let jobId: String
-    let status: String   // queued | processing | completed | failed
+    let status: String   // queued | processing | completed | failed | review_required
     let caseId: String?
     let scanId: String?
+    let scanFilename: String?
+    let scanJawType: String?
     let teethDetected: Int?
     let missingTeeth: [Int]?
+    let failureReason: String?
+    let modelName: String?
+    let modelVersion: String?
+    let validationStatus: String?  // not_validated | research_use_only | cleared
+    let queuedAt: Date?
+    let startedAt: Date?
     let completedAt: Date?
+    let createdAt: Date?
+    // Legacy field name from AI engine responses
     let error: String?
     let disclaimer: String?
 
-    var isTerminal: Bool { status == "completed" || status == "failed" }
+    var isTerminal: Bool { status == "completed" || status == "failed" || status == "review_required" }
+    var displayFailureReason: String? { failureReason ?? error }
 }
 
 // MARK: - Treatment plans
@@ -115,27 +127,38 @@ struct APITreatmentPlan: Decodable, Identifiable {
 }
 
 // MARK: - Manufacturing
-
-struct APIPrintJobsResponse: Decodable {
-    let jobs: [APIPrintJob]
-    let total: Int
-}
+//
+// Backend returns arrays directly (not wrapped).
+// APIPrintJobsResponse is kept as a Decodable wrapper for backwards compat —
+// LiveManufacturingViewModel decodes [APIPrintJob] directly.
 
 struct APIPrintJob: Decodable, Identifiable {
     let id: String
     let printerId: String?
-    let printerName: String?
-    let patientName: String?
+    let printer: APIPrinterRef?
+    let stageId: String?
+    let stageNumber: Int?
     let status: String
     let qualityScore: Double?
     let qcNotes: String?
+    let failureReason: String?
+    let retryCount: Int?
     let startedAt: Date?
     let completedAt: Date?
     let createdAt: Date
+    let connectorNote: String?
+
+    // Legacy iOS fields for backwards compat in LiveJobRow
+    var printerName: String? { printer?.name }
+    var patientName: String? { nil }
 }
 
-struct APIPrintersResponse: Decodable {
-    let printers: [APIPrinter]
+struct APIPrinterRef: Decodable {
+    let name: String
+    let brand: String
+    let model: String
+    let status: String
+    let connectorStatus: String?
 }
 
 struct APIPrinter: Decodable, Identifiable {
@@ -146,7 +169,9 @@ struct APIPrinter: Decodable, Identifiable {
     let status: String
     let materialType: String?
     let materialVolumeMl: Double?
-    let connectorStatus: String   // always "connector_required"
+    let connectorStatus: String
+    let apiEndpoint: String?
     let connectorNote: String
     let createdAt: Date
+    let updatedAt: Date
 }

@@ -15,9 +15,11 @@ import {
 import { Button, Card, StatusBadge } from "@/components/DesignSystem";
 import {
   listScans,
+  listSegmentationJobs,
   uploadScan,
   triggerSegmentation,
   pollJobStatus,
+  retrySegmentJob,
   type ScanRecord,
   type SegmentJobResult,
 } from "@/lib/api/scans";
@@ -78,8 +80,23 @@ export default function ScanPanel({ caseId }: { caseId: string }) {
   const loadScans = useCallback(async () => {
     setLoadError(null);
     try {
-      const data = await listScans(caseId);
-      setScans(data);
+      const [scansData, persistedJobs] = await Promise.all([
+        listScans(caseId),
+        listSegmentationJobs(caseId).catch(() => [] as SegmentJobResult[]),
+      ]);
+      setScans(scansData);
+      // Hydrate persisted jobs so status survives backend restart
+      if (persistedJobs.length > 0) {
+        setJobs((prev) => {
+          const next = { ...prev };
+          for (const job of persistedJobs) {
+            if (job.scanId && !next[job.scanId]) {
+              next[job.scanId] = { scanId: job.scanId, jobId: job.jobId, result: job };
+            }
+          }
+          return next;
+        });
+      }
     } catch (e) {
       setLoadError(e instanceof ApiError ? e.message : "Failed to load scans");
     } finally {
@@ -141,6 +158,22 @@ export default function ScanPanel({ caseId }: { caseId: string }) {
       setSegErrors((prev) => ({
         ...prev,
         [scanId]: e instanceof ApiError ? e.message : "Segmentation trigger failed",
+      }));
+    }
+  }
+
+  async function handleRetry(scanId: string, jobId: string) {
+    setSegErrors((prev) => { const n = { ...prev }; delete n[scanId]; return n; });
+    try {
+      const res = await retrySegmentJob(jobId);
+      setJobs((prev) => ({
+        ...prev,
+        [scanId]: { scanId, jobId: res.jobId, result: { jobId: res.jobId, status: "queued" } },
+      }));
+    } catch (e) {
+      setSegErrors((prev) => ({
+        ...prev,
+        [scanId]: e instanceof ApiError ? e.message : "Retry failed",
       }));
     }
   }
@@ -243,7 +276,8 @@ export default function ScanPanel({ caseId }: { caseId: string }) {
             {scans.map((scan) => {
               const job = jobs[scan.id];
               const segErr = segErrors[scan.id];
-              const canSegment = !job || job.result.status === "failed";
+              const isFailed = job?.result.status === "failed";
+              const canSegment = !job;
               return (
                 <div key={scan.id} className="flex items-start gap-3 px-4 py-3">
                   <FileBox size={15} className="mt-0.5 shrink-0 text-[color:var(--muted-foreground)]" />
@@ -258,12 +292,13 @@ export default function ScanPanel({ caseId }: { caseId: string }) {
                     {segErr && <p className="mt-1 text-xs text-red-500">{segErr}</p>}
                   </div>
                   {canSegment && (
-                    <Button
-                      variant="secondary"
-                      size="sm"
-                      onClick={() => handleSegment(scan.id)}
-                    >
+                    <Button variant="secondary" size="sm" onClick={() => handleSegment(scan.id)}>
                       <Cpu size={12} /> Segment
+                    </Button>
+                  )}
+                  {isFailed && job && (
+                    <Button variant="secondary" size="sm" onClick={() => handleRetry(scan.id, job.jobId)}>
+                      <RefreshCw size={12} /> Retry
                     </Button>
                   )}
                 </div>

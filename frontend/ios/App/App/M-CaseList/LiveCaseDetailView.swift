@@ -205,6 +205,19 @@ private struct LiveScansTab: View {
         do {
             scans = try await MyOrthoAPIClient.shared.get("/api/cases/\(caseId)/scans")
             loadState = .loaded
+            // Phase 15F: hydrate persisted segmentation jobs (survives backend restart)
+            let persistedJobs: [APISegJob] = (try? await MyOrthoAPIClient.shared.get(
+                "/api/cases/\(caseId)/scans/segmentation-jobs"
+            )) ?? []
+            for job in persistedJobs {
+                guard let scanId = job.scanId else { continue }
+                if segJobs[scanId] == nil {
+                    segJobs[scanId] = job
+                    if !job.isTerminal {
+                        startPolling(jobId: job.jobId, scanId: scanId)
+                    }
+                }
+            }
         } catch {
             loadState = .offline(error.localizedDescription)
         }
@@ -233,7 +246,7 @@ private struct LiveScansTab: View {
             while !Task.isCancelled {
                 try? await Task.sleep(nanoseconds: 3_000_000_000)
                 guard !Task.isCancelled else { break }
-                if let job: APISegJob = try? await MyOrthoAPIClient.shared.get("/api/segmentation/\(jobId)") {
+                if let job: APISegJob = try? await MyOrthoAPIClient.shared.get("/api/segment-jobs/\(jobId)") {
                     await MainActor.run { segJobs[scanId] = job }
                     if job.isTerminal { break }
                 }
@@ -324,9 +337,18 @@ private struct ScanItemRow: View {
                 status: response.status,
                 caseId: caseId,
                 scanId: scan.id,
+                scanFilename: scan.originalFilename,
+                scanJawType: scan.jawType,
                 teethDetected: nil,
                 missingTeeth: nil,
+                failureReason: nil,
+                modelName: nil,
+                modelVersion: nil,
+                validationStatus: nil,
+                queuedAt: nil,
+                startedAt: nil,
                 completedAt: nil,
+                createdAt: nil,
                 error: nil,
                 disclaimer: response.disclaimer
             )

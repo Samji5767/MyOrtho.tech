@@ -8,12 +8,16 @@ import {
   Factory,
   Loader2,
   Printer,
+  RefreshCw,
   WifiOff,
+  XCircle,
 } from "lucide-react";
-import { Card, StatusBadge } from "@/components/DesignSystem";
+import { Button, Card, StatusBadge } from "@/components/DesignSystem";
 import {
   listManufacturingJobs,
   listPrinters,
+  retryJob,
+  cancelJob,
   type ApiPrintJob,
   type ApiPrinter,
 } from "@/lib/api/manufacturing";
@@ -34,17 +38,25 @@ function jobStatusTone(status: string): "neutral" | "info" | "warning" | "succes
   return "neutral";
 }
 
+function connectorTone(status: string): "neutral" | "warning" | "success" | "danger" | "info" {
+  if (status === "online" || status === "configured") return "success";
+  if (status === "error") return "danger";
+  if (status === "offline") return "warning";
+  return "neutral";
+}
+
 export default function ManufacturingPage() {
   const [jobs, setJobs] = useState<ApiPrintJob[]>([]);
   const [printers, setPrinters] = useState<ApiPrinter[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [actionErrors, setActionErrors] = useState<Record<string, string>>({});
 
   useEffect(() => {
     Promise.all([listManufacturingJobs(), listPrinters()])
-      .then(([jobsRes, printersRes]) => {
-        setJobs(jobsRes.jobs);
-        setPrinters(printersRes.printers);
+      .then(([jobsArr, printersArr]) => {
+        setJobs(Array.isArray(jobsArr) ? jobsArr : []);
+        setPrinters(Array.isArray(printersArr) ? printersArr : []);
       })
       .catch(() => setLoadError("Backend unavailable — manufacturing data not loaded"))
       .finally(() => setLoading(false));
@@ -125,24 +137,68 @@ export default function ManufacturingPage() {
             {jobs.map((job) => (
               <div key={job.id} className="flex items-start gap-3 px-4 py-3">
                 <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2">
+                  <div className="flex flex-wrap items-center gap-2">
                     <span className="font-mono text-xs text-[color:var(--muted-foreground)]">
                       {job.id.slice(0, 8)}…
                     </span>
                     <StatusBadge tone={jobStatusTone(job.status)}>
                       {job.status.replace(/_/g, " ")}
                     </StatusBadge>
+                    {job.retryCount != null && job.retryCount > 0 && (
+                      <span className="text-[10px] text-[color:var(--muted-foreground)]">
+                        retry #{job.retryCount}
+                      </span>
+                    )}
                   </div>
-                  {job.patientName && (
+                  {job.printer && (
                     <p className="mt-0.5 text-xs text-[color:var(--muted-foreground)]">
-                      Patient: {job.patientName}
+                      Printer: {job.printer.name} ({job.printer.brand})
                     </p>
                   )}
-                  {job.printerName && (
-                    <p className="text-xs text-[color:var(--muted-foreground)]">
-                      Printer: {job.printerName}
+                  {job.failureReason && (
+                    <p className="mt-1 flex items-center gap-1 text-xs text-red-500">
+                      <XCircle size={10} className="shrink-0" /> {job.failureReason}
                     </p>
                   )}
+                  {actionErrors[job.id] && (
+                    <p className="mt-1 text-xs text-red-500">{actionErrors[job.id]}</p>
+                  )}
+                  <div className="mt-1.5 flex gap-2">
+                    {job.status === "failed" && (
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        onClick={async () => {
+                          try {
+                            const updated = await retryJob(job.id);
+                            setJobs((prev) => prev.map((j) => j.id === job.id ? { ...j, ...updated } : j));
+                            setActionErrors((p) => { const n = { ...p }; delete n[job.id]; return n; });
+                          } catch (e) {
+                            setActionErrors((p) => ({ ...p, [job.id]: e instanceof Error ? e.message : "Retry failed" }));
+                          }
+                        }}
+                      >
+                        <RefreshCw size={11} /> Retry
+                      </Button>
+                    )}
+                    {!["completed", "failed"].includes(job.status) && (
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        onClick={async () => {
+                          try {
+                            const updated = await cancelJob(job.id, "Cancelled by operator");
+                            setJobs((prev) => prev.map((j) => j.id === job.id ? { ...j, ...updated } : j));
+                            setActionErrors((p) => { const n = { ...p }; delete n[job.id]; return n; });
+                          } catch (e) {
+                            setActionErrors((p) => ({ ...p, [job.id]: e instanceof Error ? e.message : "Cancel failed" }));
+                          }
+                        }}
+                      >
+                        Cancel
+                      </Button>
+                    )}
+                  </div>
                 </div>
                 <span className="shrink-0 text-[10px] tabular-nums text-[color:var(--muted-foreground)]">
                   {new Date(job.createdAt).toLocaleDateString()}
@@ -173,11 +229,17 @@ export default function ManufacturingPage() {
                     {p.brand} {p.model}
                     {p.materialType ? ` · ${p.materialType}` : ""}
                   </p>
-                  <div className="mt-1.5 flex items-center gap-1.5">
+                  <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
                     <StatusBadge tone="neutral">{p.status}</StatusBadge>
-                    <span className="flex items-center gap-1 rounded-full border border-amber-200/60 bg-amber-50/60 px-2 py-0.5 text-[10px] font-semibold text-amber-700 dark:border-amber-500/20 dark:bg-amber-500/10 dark:text-amber-300">
-                      <WifiOff size={9} /> Connector required
-                    </span>
+                    {p.connectorStatus === "not_configured" || p.connectorStatus === "connector_required" ? (
+                      <span className="flex items-center gap-1 rounded-full border border-amber-200/60 bg-amber-50/60 px-2 py-0.5 text-[10px] font-semibold text-amber-700 dark:border-amber-500/20 dark:bg-amber-500/10 dark:text-amber-300">
+                        <WifiOff size={9} /> {p.connectorStatus === "not_configured" ? "Not configured" : "Connector required"}
+                      </span>
+                    ) : (
+                      <StatusBadge tone={connectorTone(p.connectorStatus)}>
+                        {p.connectorStatus}
+                      </StatusBadge>
+                    )}
                   </div>
                   <p className="mt-1 text-[10px] text-[color:var(--muted-foreground)]">{p.connectorNote}</p>
                 </div>

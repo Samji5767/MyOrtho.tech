@@ -11,11 +11,12 @@ final class LiveManufacturingViewModel {
         guard state != .loading else { return }
         state = .loading
         do {
-            async let jobsRes: APIPrintJobsResponse  = MyOrthoAPIClient.shared.get("/api/manufacturing/jobs")
-            async let printersRes: APIPrintersResponse = MyOrthoAPIClient.shared.get("/api/manufacturing/printers")
-            let (j, p) = try await (jobsRes, printersRes)
-            jobs     = j.jobs
-            printers = p.printers
+            // Backend returns arrays directly (not wrapped)
+            async let jobsArr: [APIPrintJob]  = MyOrthoAPIClient.shared.get("/api/manufacturing/jobs")
+            async let printersArr: [APIPrinter] = MyOrthoAPIClient.shared.get("/api/printers")
+            let (j, p) = try await (jobsArr, printersArr)
+            jobs     = j
+            printers = p
             state    = .loaded
         } catch let err as APIClientError {
             state = .offline(err.localizedDescription ?? "Could not reach server.")

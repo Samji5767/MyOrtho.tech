@@ -76,9 +76,16 @@ export class ScansController {
     const user = getUser(req);
     return this.scansService.triggerSegmentation(caseId, scanId, user.orgId!, user.email);
   }
+
+  /** List all persisted segmentation jobs for a case (survives backend restart). */
+  @Get('segmentation-jobs')
+  listSegmentationJobs(@Req() req: Request, @Param('caseId') caseId: string) {
+    const user = getUser(req);
+    return this.scansService.listJobsForCase(caseId, user.orgId!);
+  }
 }
 
-/** Polls AI-engine segmentation job status. */
+/** Polls AI-engine segmentation job status (by job ID). */
 @Controller('api/segment-jobs')
 @UseGuards(AuthGuard)
 export class SegmentJobsController {
@@ -89,5 +96,14 @@ export class SegmentJobsController {
     const user = (req as Request & { user?: AuthUser }).user;
     if (!user?.orgId) throw new UnauthorizedException();
     return this.scansService.getJobStatus(jobId, user.orgId);
+  }
+
+  /** Retry a failed segmentation job. */
+  @Post(':jobId/retry')
+  @HttpCode(HttpStatus.ACCEPTED)
+  retryJob(@Req() req: Request, @Param('jobId') jobId: string) {
+    const user = (req as Request & { user?: AuthUser }).user;
+    if (!user?.orgId) throw new UnauthorizedException();
+    return this.scansService.retryJob(jobId, user.orgId, user.email ?? 'unknown');
   }
 }

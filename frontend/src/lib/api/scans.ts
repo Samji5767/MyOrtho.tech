@@ -48,3 +48,11 @@ export function triggerSegmentation(
 export function pollJobStatus(jobId: string): Promise<SegmentJobResult> {
   return api.get<SegmentJobResult>(`/api/segment-jobs/${jobId}`);
 }
+
+export function listSegmentationJobs(caseId: string): Promise<SegmentJobResult[]> {
+  return api.get<SegmentJobResult[]>(`/api/cases/${caseId}/scans/segmentation-jobs`);
+}
+
+export function retrySegmentJob(jobId: string): Promise<{ jobId: string; status: string }> {
+  return api.post(`/api/segment-jobs/${jobId}/retry`, {});
+}

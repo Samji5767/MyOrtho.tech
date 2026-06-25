@@ -14,7 +14,7 @@ import {
 import type { Request } from 'express';
 import { AuthGuard } from '../auth/auth.guard';
 import { ManufacturingService } from './manufacturing.service';
-import { CreatePrintJobDto, UpdatePrintJobStatusDto } from './manufacturing.dto';
+import { CreatePrintJobDto, UpdatePrintJobStatusDto, CancelJobDto } from './manufacturing.dto';
 
 interface AuthUser {
   id: string;
@@ -58,13 +58,29 @@ export class ManufacturingController {
     @Body() dto: UpdatePrintJobStatusDto,
   ) {
     const user = auth(req);
-    return this.service.updateJobStatus(id, user.orgId!, dto.status, user.email);
+    return this.service.updateJobStatus(id, user.orgId!, dto.status, user.email, dto.failureReason);
+  }
+
+  /** Re-queue a failed job. Connector state must be resolved first. */
+  @Post(':id/retry')
+  @HttpCode(HttpStatus.ACCEPTED)
+  retryJob(@Req() req: Request, @Param('id') id: string) {
+    const user = auth(req);
+    return this.service.retryJob(id, user.orgId!, user.email);
+  }
+
+  /** Cancel an in-progress or queued job. */
+  @Post(':id/cancel')
+  @HttpCode(HttpStatus.OK)
+  cancelJob(@Req() req: Request, @Param('id') id: string, @Body() dto: CancelJobDto) {
+    const user = auth(req);
+    return this.service.cancelJob(id, user.orgId!, dto, user.email);
   }
 }
 
 /**
- * Printer registry — read-only from database.
- * Real-time telemetry requires a vendor connector (not yet configured).
+ * Printer registry — reads connector_status from DB.
+ * Real-time telemetry requires a configured vendor connector.
  */
 @Controller('api/printers')
 @UseGuards(AuthGuard)

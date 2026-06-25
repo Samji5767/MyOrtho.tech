@@ -38,4 +38,14 @@ export class UpdatePrintJobStatusDto {
   @IsOptional()
   @IsString()
   qcNotes?: string;
+
+  @IsOptional()
+  @IsString()
+  failureReason?: string;
+}
+
+export class CancelJobDto {
+  @IsOptional()
+  @IsString()
+  reason?: string;
 }

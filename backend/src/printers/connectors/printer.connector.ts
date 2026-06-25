@@ -1,4 +1,8 @@
-// Base and Concrete Plugin Connectors for 3D Printers
+// Printer connector interfaces and implementations for 3D dental printers.
+//
+// Honesty contract: No connector may return a successful result when credentials
+// or network access are absent. All simulated connectors that lack real
+// credentials must surface ConnectorError.notConfigured.
 
 export interface PrintJobDetails {
   jobId: string;
@@ -8,89 +12,181 @@ export interface PrintJobDetails {
 }
 
 export interface PrinterTelemetry {
-  status: 'idle' | 'printing' | 'error' | 'offline';
+  status: 'idle' | 'printing' | 'error' | 'offline' | 'not_configured';
   temperatureC?: number;
   resinVolumeMl: number;
   progressPercent?: number;
   currentSlice?: number;
+  connectorStatus: ConnectorStatus;
+}
+
+export type ConnectorStatus =
+  | 'not_configured'
+  | 'connector_required'
+  | 'configured'
+  | 'offline'
+  | 'online'
+  | 'error';
+
+export class ConnectorError extends Error {
+  readonly code: ConnectorStatus;
+  constructor(code: ConnectorStatus, message: string) {
+    super(message);
+    this.name = 'ConnectorError';
+    this.code = code;
+  }
+
+  static notConfigured(brand: string) {
+    return new ConnectorError(
+      'not_configured',
+      `${brand} connector is not configured. ` +
+        'Provide valid API credentials before submitting print jobs.',
+    );
+  }
+
+  static connectorRequired(brand: string) {
+    return new ConnectorError(
+      'connector_required',
+      `${brand} requires a dedicated connector plugin. ` +
+        'Install and configure the connector before printing.',
+    );
+  }
 }
 
 export interface PrinterConnector {
   brand: string;
-  connect(ipAddress: string): Promise<boolean>;
+  connectorStatus: ConnectorStatus;
+  connect(ipAddress: string, apiKey?: string): Promise<ConnectorStatus>;
   getTelemetry(ipAddress: string): Promise<PrinterTelemetry>;
   sendPrintJob(ipAddress: string, job: PrintJobDetails): Promise<boolean>;
   cancelPrintJob(ipAddress: string, jobId: string): Promise<boolean>;
 }
 
-// 1. Formlabs Plugin Connector
+// ── Formlabs Connector ────────────────────────────────────────────────────────
+//
+// Status: Connector Required — real integration requires Formlabs Fleet Control
+// API keys from https://formlabs.com/software/fleet-control/
+//
+// This stub surfaces the correct error state rather than faking success.
+
 export class FormlabsConnector implements PrinterConnector {
   readonly brand = 'Formlabs';
+  connectorStatus: ConnectorStatus = 'connector_required';
 
-  async connect(ipAddress: string): Promise<boolean> {
-    console.log(`Connecting to Formlabs device at ${ipAddress} via local API...`);
-    return true;
+  async connect(_ipAddress: string, apiKey?: string): Promise<ConnectorStatus> {
+    if (!apiKey) {
+      this.connectorStatus = 'connector_required';
+      return 'connector_required';
+    }
+    // Real credential validation would go here
+    this.connectorStatus = 'configured';
+    return 'configured';
   }
 
-  async getTelemetry(ipAddress: string): Promise<PrinterTelemetry> {
-    // Generate realistic fluctuating telemetry
-    const targetTemp = 37.0;
-    const temperatureC = parseFloat((targetTemp + (Math.random() - 0.5) * 0.8).toFixed(2));
-    
-    // Simulate resin levels dropping over time
-    const resinVolumeMl = Math.max(10, Math.round(780 - (Date.now() % 10000) * 0.05));
-    const progressPercent = Math.round((Date.now() / 5000) % 100);
-    const sliceCount = 800;
-    const currentSlice = Math.round((progressPercent / 100) * sliceCount);
-
+  async getTelemetry(_ipAddress: string): Promise<PrinterTelemetry> {
     return {
-      status: resinVolumeMl < 100 ? 'error' : 'printing',
-      temperatureC,
-      resinVolumeMl,
-      progressPercent,
-      currentSlice,
+      status: 'not_configured',
+      resinVolumeMl: 0,
+      connectorStatus: this.connectorStatus,
     };
   }
 
-  async sendPrintJob(ipAddress: string, job: PrintJobDetails): Promise<boolean> {
-    console.log(`Formlabs API: Parsing sliced model, hollowing checking... Sending job ${job.jobId} with ${job.materialVolumeMl}ml resin load.`);
-    return true;
+  async sendPrintJob(_ipAddress: string, _job: PrintJobDetails): Promise<boolean> {
+    throw ConnectorError.connectorRequired(this.brand);
   }
 
-  async cancelPrintJob(ipAddress: string, jobId: string): Promise<boolean> {
-    console.log(`Formlabs API: Cancel requested for active job ${jobId}`);
-    return true;
+  async cancelPrintJob(_ipAddress: string, _jobId: string): Promise<boolean> {
+    throw ConnectorError.connectorRequired(this.brand);
   }
 }
 
-// 2. SprintRay Plugin Connector
+// ── SprintRay Connector ───────────────────────────────────────────────────────
+//
+// Status: Connector Required — real integration requires SprintRay Cloud API
+// credentials from https://sprintray.com/
+//
+// This stub surfaces the correct error state rather than faking success.
+
 export class SprintRayConnector implements PrinterConnector {
   readonly brand = 'SprintRay';
+  connectorStatus: ConnectorStatus = 'connector_required';
 
-  async connect(ipAddress: string): Promise<boolean> {
-    console.log(`Connecting to SprintRay printer at ${ipAddress} via cloud handshake...`);
-    return true;
+  async connect(_ipAddress: string, apiKey?: string): Promise<ConnectorStatus> {
+    if (!apiKey) {
+      this.connectorStatus = 'connector_required';
+      return 'connector_required';
+    }
+    this.connectorStatus = 'configured';
+    return 'configured';
   }
 
-  async getTelemetry(ipAddress: string): Promise<PrinterTelemetry> {
-    const isPrinting = (Math.floor(Date.now() / 15000) % 2) === 0;
-    const progressPercent = isPrinting ? Math.round((Date.now() / 3000) % 100) : undefined;
-    
+  async getTelemetry(_ipAddress: string): Promise<PrinterTelemetry> {
     return {
-      status: isPrinting ? 'printing' : 'idle',
-      resinVolumeMl: 1200,
-      progressPercent,
-      temperatureC: isPrinting ? 36.5 : undefined
+      status: 'not_configured',
+      resinVolumeMl: 0,
+      connectorStatus: this.connectorStatus,
     };
   }
 
-  async sendPrintJob(ipAddress: string, job: PrintJobDetails): Promise<boolean> {
-    console.log(`SprintRay API: Uploading sliced job ${job.jobId} to dashboard queue.`);
-    return true;
+  async sendPrintJob(_ipAddress: string, _job: PrintJobDetails): Promise<boolean> {
+    throw ConnectorError.connectorRequired(this.brand);
   }
 
-  async cancelPrintJob(ipAddress: string, jobId: string): Promise<boolean> {
-    console.log(`SprintRay API: Canceling job ${jobId}`);
-    return true;
+  async cancelPrintJob(_ipAddress: string, _jobId: string): Promise<boolean> {
+    throw ConnectorError.connectorRequired(this.brand);
   }
+}
+
+// ── Generic Printer Connector ─────────────────────────────────────────────────
+//
+// Used for any printer brand that is not yet natively supported.
+// Always surfaces not_configured unless a custom endpoint is provided.
+
+export class GenericPrinterConnector implements PrinterConnector {
+  readonly brand: string;
+  connectorStatus: ConnectorStatus = 'not_configured';
+  private apiEndpoint: string | null = null;
+
+  constructor(brand: string) {
+    this.brand = brand;
+  }
+
+  async connect(ipAddress: string, apiKey?: string): Promise<ConnectorStatus> {
+    if (!ipAddress && !apiKey) {
+      this.connectorStatus = 'not_configured';
+      return 'not_configured';
+    }
+    this.apiEndpoint = ipAddress;
+    // Without a real connector plugin, we cannot actually connect
+    this.connectorStatus = 'connector_required';
+    return 'connector_required';
+  }
+
+  async getTelemetry(_ipAddress: string): Promise<PrinterTelemetry> {
+    return {
+      status: 'not_configured',
+      resinVolumeMl: 0,
+      connectorStatus: this.connectorStatus,
+    };
+  }
+
+  async sendPrintJob(_ipAddress: string, _job: PrintJobDetails): Promise<boolean> {
+    throw ConnectorError.notConfigured(this.brand);
+  }
+
+  async cancelPrintJob(_ipAddress: string, _jobId: string): Promise<boolean> {
+    throw ConnectorError.notConfigured(this.brand);
+  }
+}
+
+// ── Registry ──────────────────────────────────────────────────────────────────
+
+const CONNECTORS: Record<string, () => PrinterConnector> = {
+  Formlabs: () => new FormlabsConnector(),
+  SprintRay: () => new SprintRayConnector(),
+};
+
+export function getConnector(brand: string): PrinterConnector {
+  const factory = CONNECTORS[brand];
+  return factory ? factory() : new GenericPrinterConnector(brand);
 }

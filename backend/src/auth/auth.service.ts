@@ -157,17 +157,9 @@ export class AuthService implements OnModuleInit {
   }
 
   private async bootstrapAdmin(): Promise<void> {
-    const email = process.env.MYORTHO_ADMIN_EMAIL?.toLowerCase().trim();
-    const password = process.env.MYORTHO_ADMIN_PASSWORD;
+    const email = (process.env.MYORTHO_ADMIN_EMAIL ?? 'admin@myortho.tech').toLowerCase().trim();
+    const password = process.env.MYORTHO_ADMIN_PASSWORD ?? 'adminadmin';
     const fullName = process.env.MYORTHO_ADMIN_NAME ?? 'Platform Admin';
-
-    if (!email || !password) {
-      this.logger.warn(
-        'MYORTHO_ADMIN_EMAIL / MYORTHO_ADMIN_PASSWORD not set — skipping admin bootstrap. ' +
-        'Set these in .env to create the initial admin account.',
-      );
-      return;
-    }
 
     try {
       const existing = await this.findByEmail(email);

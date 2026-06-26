@@ -386,6 +386,29 @@ export class ScansService {
     };
   }
 
+  async getScanFile(
+    caseId: string,
+    scanId: string,
+    orgId: string,
+  ): Promise<{ filePath: string; originalFilename: string; fileFormat: string }> {
+    const { rows } = await this.pool.query(
+      `SELECT s.file_path, s.original_filename, s.file_format, p.organization_id
+       FROM scans s
+       JOIN cases c ON c.id = s.case_id
+       JOIN patients p ON p.id = c.patient_id
+       WHERE s.id = $1 AND s.case_id = $2`,
+      [scanId, caseId],
+    );
+    if (!rows[0] || (rows[0].organization_id as string) !== orgId) {
+      throw new NotFoundException('Scan not found');
+    }
+    return {
+      filePath: rows[0].file_path as string,
+      originalFilename: ((rows[0].original_filename as string | null) ?? `scan-${scanId}`),
+      fileFormat: rows[0].file_format as string,
+    };
+  }
+
   private async verifyCaseOwnership(caseId: string, orgId: string) {
     const { rows } = await this.pool.query(
       `SELECT c.id

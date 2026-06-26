@@ -5,15 +5,18 @@ import {
   Param,
   UseGuards,
   Req,
+  Res,
   UploadedFile,
   UseInterceptors,
   HttpCode,
   HttpStatus,
   BadRequestException,
   UnauthorizedException,
+  StreamableFile,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
-import type { Request } from 'express';
+import * as fs from 'fs';
+import type { Request, Response } from 'express';
 import { AuthGuard } from '../auth/auth.guard';
 import { ScansService } from './scans.service';
 
@@ -75,6 +78,27 @@ export class ScansController {
   ) {
     const user = getUser(req);
     return this.scansService.triggerSegmentation(caseId, scanId, user.orgId!, user.email);
+  }
+
+  /** Stream the raw scan file (STL/OBJ/PLY) — authenticated, org-scoped. */
+  @Get(':scanId/file')
+  async getScanFile(
+    @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
+    @Param('caseId') caseId: string,
+    @Param('scanId') scanId: string,
+  ): Promise<StreamableFile> {
+    const user = getUser(req);
+    const { filePath, originalFilename, fileFormat } =
+      await this.scansService.getScanFile(caseId, scanId, user.orgId!);
+    const mime =
+      fileFormat === 'stl' ? 'model/stl' :
+      fileFormat === 'obj' ? 'model/obj' :
+      'application/octet-stream';
+    res.setHeader('Content-Disposition', `inline; filename="${originalFilename}"`);
+    res.setHeader('Content-Type', mime);
+    res.setHeader('Cache-Control', 'private, max-age=3600');
+    return new StreamableFile(fs.createReadStream(filePath));
   }
 
   /** List all persisted segmentation jobs for a case (survives backend restart). */

@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import dynamic from "next/dynamic";
 import {
   AlertTriangle,
   CheckCircle2,
@@ -9,6 +10,7 @@ import {
   FileBox,
   Loader2,
   RefreshCw,
+  ScanLine,
   UploadCloud,
   XCircle,
 } from "lucide-react";
@@ -24,6 +26,11 @@ import {
   type SegmentJobResult,
 } from "@/lib/api/scans";
 import { ApiError } from "@/lib/api/client";
+
+// Loaded client-side only — WebGL cannot run on the server
+const ScanMultiView = dynamic(() => import("@/components/ScanMultiView"), { ssr: false });
+
+interface ViewTarget { scan: ScanRecord }
 
 const ACCEPTED_EXTS = ".stl,.obj,.ply";
 const MAX_MB = 250;
@@ -76,6 +83,7 @@ export default function ScanPanel({ caseId }: { caseId: string }) {
 
   const [jobs, setJobs] = useState<Record<string, ActiveJob>>({});
   const [segErrors, setSegErrors] = useState<Record<string, string>>({});
+  const [viewing, setViewing] = useState<ViewTarget | null>(null);
 
   const loadScans = useCallback(async () => {
     setLoadError(null);
@@ -291,16 +299,26 @@ export default function ScanPanel({ caseId }: { caseId: string }) {
                     {job && <div className="mt-1.5"><JobChip result={job.result} /></div>}
                     {segErr && <p className="mt-1 text-xs text-red-500">{segErr}</p>}
                   </div>
-                  {canSegment && (
-                    <Button variant="secondary" size="sm" onClick={() => handleSegment(scan.id)}>
-                      <Cpu size={12} /> Segment
+                  <div className="flex shrink-0 flex-col gap-1.5">
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      onClick={() => setViewing({ scan })}
+                      title="View in 6-view 3D layout"
+                    >
+                      <ScanLine size={12} /> View 3D
                     </Button>
-                  )}
-                  {isFailed && job && (
-                    <Button variant="secondary" size="sm" onClick={() => handleRetry(scan.id, job.jobId)}>
-                      <RefreshCw size={12} /> Retry
-                    </Button>
-                  )}
+                    {canSegment && (
+                      <Button variant="secondary" size="sm" onClick={() => handleSegment(scan.id)}>
+                        <Cpu size={12} /> Segment
+                      </Button>
+                    )}
+                    {isFailed && job && (
+                      <Button variant="secondary" size="sm" onClick={() => handleRetry(scan.id, job.jobId)}>
+                        <RefreshCw size={12} /> Retry
+                      </Button>
+                    )}
+                  </div>
                 </div>
               );
             })}
@@ -314,6 +332,17 @@ export default function ScanPanel({ caseId }: { caseId: string }) {
         AI segmentation is a workflow tool only. Output is not clinically validated and must be
         reviewed by a licensed clinician before any clinical decision.
       </div>
+
+      {/* 6-view 3D viewer modal */}
+      {viewing && (
+        <ScanMultiView
+          caseId={caseId}
+          scanId={viewing.scan.id}
+          filename={viewing.scan.originalFilename ?? viewing.scan.filePath.split("/").pop() ?? "scan"}
+          jawType={viewing.scan.jawType}
+          onClose={() => setViewing(null)}
+        />
+      )}
     </div>
   );
 }

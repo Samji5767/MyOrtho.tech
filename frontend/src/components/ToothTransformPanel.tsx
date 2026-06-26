@@ -19,14 +19,13 @@ import {
   type ToothMovement,
 } from "@/lib/api/toothMovements";
 import { ApiError } from "@/lib/api/client";
-
-// FDI quadrant labels for selector
-const FDI_GROUPS = [
-  { label: "UR",  teeth: [11,12,13,14,15,16,17,18] },
-  { label: "UL",  teeth: [21,22,23,24,25,26,27,28] },
-  { label: "LL",  teeth: [31,32,33,34,35,36,37,38] },
-  { label: "LR",  teeth: [41,42,43,44,45,46,47,48] },
-];
+import {
+  FDI_GROUPS,
+  formatTooth,
+  loadNotationPref,
+  saveNotationPref,
+  type ToothNotation,
+} from "@/lib/toothNotation";
 
 interface FieldDef {
   key: keyof ToothMovement;
@@ -92,6 +91,13 @@ export default function ToothTransformPanel({ caseId }: { caseId: string }) {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [notation, setNotation] = useState<ToothNotation>(() => loadNotationPref());
+
+  function toggleNotation() {
+    const next: ToothNotation = notation === "FDI" ? "Universal" : "FDI";
+    setNotation(next);
+    saveNotationPref(next);
+  }
 
   // Load plans on mount
   useEffect(() => {
@@ -234,10 +240,24 @@ export default function ToothTransformPanel({ caseId }: { caseId: string }) {
         </div>
       </Card>
 
-      {/* FDI tooth selector */}
+      {/* Tooth selector */}
       <Card className="p-4">
         <div className="mb-3 flex items-center justify-between">
-          <h3 className="text-sm font-semibold text-[color:var(--foreground)]">Select Tooth (FDI)</h3>
+          <div className="flex items-center gap-2">
+            <h3 className="text-sm font-semibold text-[color:var(--foreground)]">Select Tooth</h3>
+            {/* Notation toggle */}
+            <button
+              type="button"
+              onClick={toggleNotation}
+              className="rounded-full border border-[color:var(--border)] px-2 py-0.5 text-[10px] font-semibold text-[color:var(--muted-foreground)] transition hover:text-[color:var(--foreground)]"
+              title="Toggle between FDI and Universal (ADA) numbering"
+            >
+              {notation === "FDI" ? "FDI → #" : "# → FDI"}
+            </button>
+            <span className="text-[10px] text-[color:var(--muted-foreground)]">
+              {notation === "FDI" ? "ISO 3950" : "Universal (ADA)"}
+            </span>
+          </div>
           {movements.length > 0 && (
             <div className="flex gap-2">
               <Button variant="secondary" size="sm" onClick={() => downloadJson(movements, `movements-stage-${stageId.slice(0,8)}.json`)}>
@@ -269,8 +289,9 @@ export default function ToothTransformPanel({ caseId }: { caseId: string }) {
                         key={fdi}
                         type="button"
                         onClick={() => setSelectedFdi(fdi === selectedFdi ? null : fdi)}
+                        title={`FDI ${fdi}`}
                         className={[
-                          "relative flex h-9 w-9 items-center justify-center rounded-lg text-xs font-bold transition-all active:scale-95",
+                          "relative flex h-9 min-w-[2.25rem] items-center justify-center rounded-lg px-1 text-xs font-bold transition-all active:scale-95",
                           selectedFdi === fdi
                             ? "bg-[color:var(--primary)] text-[color:var(--primary-foreground)]"
                             : moved
@@ -278,7 +299,7 @@ export default function ToothTransformPanel({ caseId }: { caseId: string }) {
                             : "border border-[color:var(--border)] bg-[color:var(--card)] text-[color:var(--muted-foreground)] hover:text-[color:var(--foreground)]",
                         ].join(" ")}
                       >
-                        {fdi}
+                        {formatTooth(fdi, notation)}
                         {locked && (
                           <Lock size={6} className="absolute bottom-0.5 right-0.5 text-amber-500" />
                         )}
@@ -301,7 +322,10 @@ export default function ToothTransformPanel({ caseId }: { caseId: string }) {
           <div className="mb-3 flex items-center justify-between">
             <div className="flex items-center gap-2">
               <h3 className="text-sm font-semibold text-[color:var(--foreground)]">
-                Tooth FDI {selectedFdi}
+                Tooth {formatTooth(selectedFdi, notation)}
+                <span className="ml-1.5 text-xs font-normal text-[color:var(--muted-foreground)]">
+                  {notation === "Universal" ? `(FDI ${selectedFdi})` : ""}
+                </span>
               </h3>
               {hasMovement && (
                 <StatusBadge tone="success">Saved</StatusBadge>
@@ -406,7 +430,7 @@ export default function ToothTransformPanel({ caseId }: { caseId: string }) {
             <table className="w-full text-xs">
               <thead className="bg-[color:var(--muted)]/30">
                 <tr>
-                  {["FDI","Tx","Ty","Tz","Rx","Ry","Rz","Tip","Torq","Int","Ext","Lock"].map((h) => (
+                  {[notation === "Universal" ? "#" : "FDI","Tx","Ty","Tz","Rx","Ry","Rz","Tip","Torq","Int","Ext","Lock"].map((h) => (
                     <th key={h} className="whitespace-nowrap px-3 py-2 text-left font-semibold text-[color:var(--muted-foreground)]">{h}</th>
                   ))}
                 </tr>
@@ -418,7 +442,7 @@ export default function ToothTransformPanel({ caseId }: { caseId: string }) {
                     className="cursor-pointer hover:bg-[color:var(--muted)]/20"
                     onClick={() => setSelectedFdi(m.fdiNumber)}
                   >
-                    <td className="whitespace-nowrap px-3 py-2 font-bold text-[color:var(--foreground)]">{m.fdiNumber}</td>
+                    <td className="whitespace-nowrap px-3 py-2 font-bold text-[color:var(--foreground)]" title={`FDI ${m.fdiNumber}`}>{formatTooth(m.fdiNumber, notation)}</td>
                     {[m.translateX,m.translateY,m.translateZ,m.rotateX,m.rotateY,m.rotateZ,m.tip,m.torque,m.intrusion,m.extrusion].map((v, i) => (
                       <td key={i} className={`whitespace-nowrap px-3 py-2 tabular-nums ${v !== 0 ? "text-[color:var(--foreground)]" : "text-[color:var(--muted-foreground)]"}`}>
                         {v.toFixed(1)}

@@ -20,6 +20,7 @@ import { ObservabilityModule } from './observability/observability.module';
 import { MessagingModule } from './messaging/messaging.module';
 import { ScansModule } from './scans/scans.module';
 import { TreatmentPlansModule } from './treatment-plans/treatment-plans.module';
+import { CreditsModule } from './credits/credits.module';
 
 @Module({
   imports: [
@@ -48,6 +49,7 @@ import { TreatmentPlansModule } from './treatment-plans/treatment-plans.module';
     MessagingModule,
     ScansModule,
     TreatmentPlansModule,
+    CreditsModule,
   ],
 })
 export class AppModule {}

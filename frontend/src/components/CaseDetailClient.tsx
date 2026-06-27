@@ -15,6 +15,7 @@ import {
   Microscope,
   Ruler,
   Stethoscope,
+  Syringe,
   Target,
   UploadCloud,
 } from "lucide-react";
@@ -25,6 +26,7 @@ import ClinicalAnalysisPanel from "@/components/ClinicalAnalysisPanel";
 import { Card, DataRow, ProgressBar, StatusBadge } from "@/components/DesignSystem";
 import ClinicalWorkflow, { type CaseStatus, type WorkflowEvent } from "@/components/ClinicalWorkflow";
 import AuditTrail from "@/components/AuditTrail";
+import SurgicalPlanningPanel from "@/components/SurgicalPlanningPanel";
 
 // ─── Representative data keyed to case ID ─────────────────────────────────────
 
@@ -169,7 +171,7 @@ const CASE_PROFILES: Record<string, CaseProfile> = {
 
 // ─── Tabs ─────────────────────────────────────────────────────────────────────
 
-type Tab = "summary" | "workflow" | "audit" | "scans" | "plans" | "analysis" | "movements";
+type Tab = "summary" | "workflow" | "audit" | "scans" | "plans" | "analysis" | "movements" | "surgical";
 
 const TABS: { key: Tab; label: string; icon: React.ReactNode }[] = [
   { key: "summary",   label: "Summary",   icon: <ClipboardList size={13} /> },
@@ -177,6 +179,7 @@ const TABS: { key: Tab; label: string; icon: React.ReactNode }[] = [
   { key: "scans",     label: "Scans",     icon: <UploadCloud size={13} /> },
   { key: "plans",     label: "Plans",     icon: <ClipboardCheck size={13} /> },
   { key: "analysis",  label: "Analysis",  icon: <Microscope size={13} /> },
+  { key: "surgical",  label: "Surgical",  icon: <Syringe size={13} /> },
   { key: "movements", label: "Movements", icon: <Ruler size={13} /> },
   { key: "audit",     label: "Audit",     icon: <Activity size={13} /> },
 ];
@@ -368,6 +371,7 @@ export default function CaseDetailClient({ id }: { id: string }) {
         {tab === "scans"     && <ScanPanel caseId={id} />}
         {tab === "plans"     && <TreatmentPlansPanel caseId={id} />}
         {tab === "analysis"  && <ClinicalAnalysisPanel caseId={id} />}
+        {tab === "surgical"  && <SurgicalPlanningPanel caseId={id} />}
         {tab === "movements" && <ToothTransformPanel caseId={id} />}
         {tab === "audit"     && <AuditTrail caseId={id} isLive={false} />}
       </div>

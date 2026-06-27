@@ -1,120 +1,74 @@
-import { Injectable, Logger } from '@nestjs/common';
-import { createClient } from '@supabase/supabase-js';
+import { Inject, Injectable, NotFoundException } from '@nestjs/common';
+import type { Pool } from 'pg';
+import { PG_POOL } from '../database/database.module';
 
 @Injectable()
 export class MessagingService {
-  private readonly logger = new Logger(MessagingService.name);
-  private supabase = createClient(
-    process.env.SUPABASE_URL || 'https://placeholder.supabase.co',
-    process.env.SUPABASE_ANON_KEY || 'placeholder'
-  );
+  constructor(@Inject(PG_POOL) private readonly pool: Pool) {}
 
-  async createConversation(caseId: string, participantIds: string[]): Promise<any> {
-    this.logger.log(`Creating conversation for case ${caseId} with participants ${participantIds.join(',')}`);
-    
-    // 1. Insert conversation
-    const { data: conversation, error: convError } = await this.supabase
-      .from('conversations')
-      .insert({ case_id: caseId })
-      .select()
-      .single();
-
-    if (convError || !conversation) {
-      throw new Error(`Failed to create conversation: ${convError?.message}`);
+  async createConversation(orgId: string, caseId: string | null, subject: string | null, participantIds: string[]): Promise<{ id: string }> {
+    const { rows: [conv] } = await this.pool.query(
+      `INSERT INTO conversations (organization_id, case_id, subject) VALUES ($1, $2, $3) RETURNING id`,
+      [orgId, caseId ?? null, subject ?? null],
+    );
+    if (participantIds.length) {
+      const values = participantIds.map((_, i) => `($1, $${i + 2})`).join(',');
+      await this.pool.query(
+        `INSERT INTO conversation_participants (conversation_id, user_id) VALUES ${values} ON CONFLICT DO NOTHING`,
+        [conv.id, ...participantIds],
+      );
     }
-
-    // 2. Insert participants
-    const participantsData = participantIds.map((profileId) => ({
-      conversation_id: conversation.id,
-      profile_id: profileId,
-    }));
-
-    const { error: partError } = await this.supabase
-      .from('participants')
-      .insert(participantsData);
-
-    if (partError) {
-      throw new Error(`Failed to add participants: ${partError.message}`);
-    }
-
-    return conversation;
+    return { id: conv.id as string };
   }
 
-  async getConversationsForUser(userId: string): Promise<any[]> {
-    this.logger.log(`Fetching conversations for user: ${userId}`);
-
-    // Query conversations where user is a participant
-    const { data: participations, error } = await this.supabase
-      .from('participants')
-      .select('conversation_id, conversations(*)')
-      .eq('profile_id', userId);
-
-    if (error) {
-      this.logger.error(`Error fetching user conversations: ${error.message}`);
-      return [];
-    }
-
-    return participations.map(p => p.conversations);
+  async getConversationsForUser(orgId: string, userId: string) {
+    const { rows } = await this.pool.query(
+      `SELECT c.id, c.case_id, c.subject, c.created_at,
+              (SELECT body FROM messages m WHERE m.conversation_id = c.id ORDER BY m.created_at DESC LIMIT 1) as last_message,
+              (SELECT COUNT(*) FROM messages m WHERE m.conversation_id = c.id AND NOT ($2 = ANY(m.read_by))) as unread_count
+       FROM conversations c
+       JOIN conversation_participants cp ON cp.conversation_id = c.id
+       WHERE c.organization_id = $1 AND cp.user_id = $2
+       ORDER BY c.created_at DESC`,
+      [orgId, userId],
+    );
+    return rows;
   }
 
-  async getMessages(conversationId: string): Promise<any[]> {
-    this.logger.log(`Fetching messages for conversation: ${conversationId}`);
+  async getMessages(conversationId: string, userId: string) {
+    const { rows: part } = await this.pool.query(
+      `SELECT 1 FROM conversation_participants WHERE conversation_id = $1 AND user_id = $2`,
+      [conversationId, userId],
+    );
+    if (!part.length) throw new NotFoundException('Conversation not found');
 
-    const { data: messages, error } = await this.supabase
-      .from('messages')
-      .select('*')
-      .eq('conversation_id', conversationId)
-      .order('created_at', { ascending: true });
-
-    if (error) {
-      this.logger.error(`Error fetching messages: ${error.message}`);
-      return [];
-    }
-
-    return messages;
+    const { rows } = await this.pool.query(
+      `SELECT m.id, m.body, m.created_at, m.sender_id,
+              au.name as sender_name, ($2 = ANY(m.read_by)) as is_read
+       FROM messages m LEFT JOIN auth_users au ON au.id = m.sender_id
+       WHERE m.conversation_id = $1 ORDER BY m.created_at`,
+      [conversationId, userId],
+    );
+    await this.pool.query(
+      `UPDATE messages SET read_by = array_append(read_by, $2)
+       WHERE conversation_id = $1 AND NOT ($2 = ANY(read_by)) AND sender_id != $2`,
+      [conversationId, userId],
+    );
+    return rows;
   }
 
-  async saveMessage(
-    conversationId: string,
-    senderId: string,
-    text: string,
-    attachmentUrl?: string
-  ): Promise<any> {
-    this.logger.log(`Saving message in conversation ${conversationId} from sender ${senderId}`);
+  async sendMessage(conversationId: string, senderId: string, body: string) {
+    const { rows: part } = await this.pool.query(
+      `SELECT 1 FROM conversation_participants WHERE conversation_id = $1 AND user_id = $2`,
+      [conversationId, senderId],
+    );
+    if (!part.length) throw new NotFoundException('Conversation not found');
 
-    const { data: message, error } = await this.supabase
-      .from('messages')
-      .insert({
-        conversation_id: conversationId,
-        sender_id: senderId,
-        text,
-        attachment_url: attachmentUrl || null,
-      })
-      .select()
-      .single();
-
-    if (error || !message) {
-      throw new Error(`Failed to save message: ${error?.message}`);
-    }
-
-    return message;
-  }
-
-  async markMessagesAsRead(conversationId: string, userId: string): Promise<boolean> {
-    this.logger.log(`Marking messages as read in conversation ${conversationId} for user ${userId}`);
-
-    // Mark all messages in the conversation that are NOT sent by the current user as read
-    const { error } = await this.supabase
-      .from('messages')
-      .update({ read_status: true })
-      .eq('conversation_id', conversationId)
-      .neq('sender_id', userId);
-
-    if (error) {
-      this.logger.error(`Error marking messages as read: ${error.message}`);
-      return false;
-    }
-
-    return true;
+    const { rows } = await this.pool.query(
+      `INSERT INTO messages (conversation_id, sender_id, body, read_by)
+       VALUES ($1, $2, $3, ARRAY[$2]::uuid[]) RETURNING id, body, created_at`,
+      [conversationId, senderId, body],
+    );
+    return rows[0];
   }
 }

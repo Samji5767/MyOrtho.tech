@@ -2,9 +2,10 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { BellRing, LogOut, Search, Stethoscope } from "lucide-react";
+import { LogOut, Search, Stethoscope } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { roleLabel } from "@/lib/auth";
+import NotificationBell from "@/components/NotificationBell";
 
 function userInitials(name: string): string {
   const parts = name.trim().split(/\s+/);
@@ -61,13 +62,7 @@ export function TopBar({ onOpenSearch }: TopBarProps) {
           <Search size={16} strokeWidth={2} />
         </button>
 
-        <button
-          type="button"
-          aria-label="Notifications"
-          className="focus-ring touch-target relative flex h-11 w-11 items-center justify-center rounded-full border border-[color:var(--border)] bg-[color:var(--card)] text-[color:var(--foreground)] shadow-[var(--shadow-sm)] transition-transform duration-200 active:scale-95"
-        >
-          <BellRing size={16} strokeWidth={2} />
-        </button>
+        <NotificationBell />
 
         {/* User avatar → settings */}
         <Link

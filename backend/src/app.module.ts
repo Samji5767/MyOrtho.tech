@@ -23,6 +23,8 @@ import { TreatmentPlansModule } from './treatment-plans/treatment-plans.module';
 import { CreditsModule } from './credits/credits.module';
 import { AdminModule } from './admin/admin.module';
 import { AnalysisModule } from './analysis/analysis.module';
+import { SurgicalModule } from './surgical/surgical.module';
+import { NotificationsModule } from './notifications/notifications.module';
 
 @Module({
   imports: [
@@ -54,6 +56,8 @@ import { AnalysisModule } from './analysis/analysis.module';
     CreditsModule,
     AdminModule,
     AnalysisModule,
+    SurgicalModule,
+    NotificationsModule,
   ],
 })
 export class AppModule {}

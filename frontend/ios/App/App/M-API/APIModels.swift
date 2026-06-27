@@ -167,6 +167,93 @@ struct APIIprEntry: Decodable {
     let amountMm: Double
 }
 
+// MARK: - Surgical Planning (Phase 18)
+
+struct APIImplant: Decodable, Identifiable {
+    let id: String
+    let manufacturer: String
+    let system: String
+    let sku: String?
+    let diameterMm: Double
+    let lengthMm: Double
+    let material: String
+    let connectionType: String?
+
+    var displayName: String { "\(manufacturer) \(system) Ø\(String(format:"%.1f",diameterMm))×\(String(format:"%.0f",lengthMm))mm" }
+}
+
+struct APIImplantPlacement: Decodable, Identifiable {
+    let id: String
+    let toothNumber: String
+    let pitchDeg: Double?
+    let rollDeg: Double?
+    let boneDensity: String?
+    let safetyStatus: String   // safe | warning | collision
+    let notes: String?
+    let implant: APIImplantRef?
+    let plannedByEmail: String?
+    let createdAt: Date
+
+    var safetyColor: String {
+        switch safetyStatus {
+        case "collision": return "red"
+        case "warning": return "orange"
+        default: return "green"
+        }
+    }
+}
+
+struct APIImplantRef: Decodable {
+    let manufacturer: String
+    let system: String
+    let diameterMm: Double
+    let lengthMm: Double
+}
+
+struct APITadPlan: Decodable, Identifiable {
+    let id: String
+    let insertionSite: String
+    let toothA: String
+    let toothB: String?
+    let angulationDeg: Double?
+    let depthMm: Double?
+    let rootCollisionRisk: String  // low | moderate | high
+    let purpose: String?
+    let createdAt: Date
+}
+
+struct APISurgicalGuide: Decodable, Identifiable {
+    let id: String
+    let guideType: String         // implant | tad | osteotomy
+    let sleeveDiameterMm: Double?
+    let guideThicknessMm: Double
+    let ventHoles: Bool
+    let offsetMm: Double
+    let exportStatus: String      // pending | ready | exported
+    let exportedAt: Date?
+    let createdAt: Date
+}
+
+// MARK: - Notifications (Phase 18)
+
+struct APINotification: Decodable, Identifiable {
+    let id: String
+    let type: String
+    let title: String
+    let body: String?
+    let isRead: Bool
+    let readAt: Date?
+    let createdAt: Date
+
+    var relativeTime: String {
+        let diff = Date().timeIntervalSince(createdAt)
+        if diff < 60 { return "just now" }
+        if diff < 3600 { return "\(Int(diff/60))m ago" }
+        if diff < 86400 { return "\(Int(diff/3600))h ago" }
+        return "\(Int(diff/86400))d ago"
+    }
+}
+
 // MARK: - Manufacturing
 //
 // Backend returns arrays directly (not wrapped).

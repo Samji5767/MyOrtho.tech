@@ -44,11 +44,8 @@ export class MessagingGateway implements OnGatewayConnection, OnGatewayDisconnec
     client.join(data.conversationId);
     this.activeUsers.set(client.id, data.userId);
 
-    // Auto-mark messages as read when joining
-    await this.messagingService.markMessagesAsRead(data.conversationId, data.userId);
-    
-    // Fetch and send message history
-    const messages = await this.messagingService.getMessages(data.conversationId);
+    // Fetch and send message history (also marks as read via getMessages)
+    const messages = await this.messagingService.getMessages(data.conversationId, data.userId);
     client.emit('message_history', messages);
     
     // Notify room of presence/read update
@@ -69,12 +66,10 @@ export class MessagingGateway implements OnGatewayConnection, OnGatewayDisconnec
   ) {
     this.logger.log(`Message received from ${data.senderId} in room ${data.conversationId}: ${data.text}`);
     
-    // Save to database
-    const savedMsg = await this.messagingService.saveMessage(
+    const savedMsg = await this.messagingService.sendMessage(
       data.conversationId,
       data.senderId,
       data.text,
-      data.attachmentUrl
     );
 
     // If voice note metadata exists, append to the broadcast payload
@@ -105,12 +100,10 @@ export class MessagingGateway implements OnGatewayConnection, OnGatewayDisconnec
   ) {
     this.logger.log(`Read receipt from ${data.userId} in room ${data.conversationId}`);
     
-    const success = await this.messagingService.markMessagesAsRead(data.conversationId, data.userId);
-    if (success) {
-      this.server.to(data.conversationId).emit('messages_read', {
-        conversationId: data.conversationId,
-        userId: data.userId,
-      });
-    }
+    await this.messagingService.getMessages(data.conversationId, data.userId);
+    this.server.to(data.conversationId).emit('messages_read', {
+      conversationId: data.conversationId,
+      userId: data.userId,
+    });
   }
 }

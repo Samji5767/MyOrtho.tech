@@ -13,12 +13,14 @@ struct LiveCaseDetailView: View {
         case scans    = "Scans"
         case plans    = "Plans"
         case analysis = "Analysis"
+        case surgical = "Surgical"
 
         var icon: String {
             switch self {
             case .scans:    return "cube.box"
             case .plans:    return "list.clipboard"
             case .analysis: return "chart.bar.doc.horizontal"
+            case .surgical: return "cross.case"
             }
         }
     }
@@ -26,15 +28,26 @@ struct LiveCaseDetailView: View {
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
-                // Tab picker
-                Picker("Tab", selection: $selectedTab) {
-                    ForEach(DetailTab.allCases, id: \.self) { t in
-                        Label(t.rawValue, systemImage: t.icon).tag(t)
+                // Tab picker — scrollable to accommodate 4 tabs
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 4) {
+                        ForEach(DetailTab.allCases, id: \.self) { t in
+                            Button {
+                                selectedTab = t
+                            } label: {
+                                Label(t.rawValue, systemImage: t.icon)
+                                    .font(.caption)
+                                    .padding(.horizontal, 12)
+                                    .padding(.vertical, 7)
+                                    .background(selectedTab == t ? Color.accentColor : Color(.systemGray5))
+                                    .foregroundColor(selectedTab == t ? .white : .primary)
+                                    .clipShape(Capsule())
+                            }
+                        }
                     }
+                    .padding(.horizontal)
+                    .padding(.vertical, 10)
                 }
-                .pickerStyle(.segmented)
-                .padding(.horizontal)
-                .padding(.vertical, 10)
 
                 Divider()
 
@@ -42,6 +55,7 @@ struct LiveCaseDetailView: View {
                 case .scans:    LiveScansTab(caseId: caseId)
                 case .plans:    LivePlansTab(caseId: caseId)
                 case .analysis: LiveAnalysisTab(caseId: caseId)
+                case .surgical: LiveSurgicalTab(caseId: caseId)
                 }
             }
             .navigationTitle(patientName)
@@ -817,6 +831,190 @@ private struct DocumentPicker: UIViewControllerRepresentable {
         func documentPicker(_ controller: UIDocumentPickerViewController, didPickDocumentsAt urls: [URL]) {
             guard let url = urls.first else { return }
             onPick(url)
+        }
+    }
+}
+
+// MARK: - LiveSurgicalTab
+
+private struct LiveSurgicalTab: View {
+    let caseId: String
+
+    @State private var placements: [APIImplantPlacement] = []
+    @State private var tads: [APITadPlan] = []
+    @State private var guides: [APISurgicalGuide] = []
+    @State private var loadState: LiveLoadState = .idle
+
+    var body: some View {
+        ScrollView {
+            LazyVStack(alignment: .leading, spacing: 20) {
+                switch loadState {
+                case .loading:
+                    ProgressView("Loading surgical plan…").padding()
+
+                case .offline(let msg), .error(let msg):
+                    ContentUnavailableView(
+                        "Surgical data unavailable",
+                        systemImage: "cross.case.fill",
+                        description: Text(msg)
+                    )
+
+                case .idle, .loaded:
+                    // Implant Placements
+                    sectionHeader("Implant Placements", count: placements.count, icon: "cross.case")
+                    if placements.isEmpty {
+                        emptyRow("No implant placements planned")
+                    } else {
+                        ForEach(placements) { p in
+                            placementRow(p)
+                        }
+                    }
+
+                    // TAD Plans
+                    sectionHeader("TAD Plans", count: tads.count, icon: "staple")
+                    if tads.isEmpty {
+                        emptyRow("No TAD plans recorded")
+                    } else {
+                        ForEach(tads) { t in
+                            tadRow(t)
+                        }
+                    }
+
+                    // Surgical Guides
+                    sectionHeader("Surgical Guides", count: guides.count, icon: "printer")
+                    if guides.isEmpty {
+                        emptyRow("No surgical guides designed")
+                    } else {
+                        ForEach(guides) { g in
+                            guideRow(g)
+                        }
+                    }
+                }
+            }
+            .padding()
+        }
+        .task { await load() }
+        .refreshable { await load() }
+    }
+
+    // ── Sub-views ────────────────────────────────────────────────────────────
+
+    @ViewBuilder
+    private func sectionHeader(_ title: String, count: Int, icon: String) -> some View {
+        HStack(spacing: 6) {
+            Image(systemName: icon).foregroundColor(.accentColor)
+            Text(title).font(.headline)
+            Text("(\(count))").font(.subheadline).foregroundColor(.secondary)
+        }
+    }
+
+    @ViewBuilder
+    private func emptyRow(_ text: String) -> some View {
+        Text(text).font(.subheadline).foregroundColor(.secondary)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.vertical, 4)
+    }
+
+    @ViewBuilder
+    private func placementRow(_ p: APIImplantPlacement) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack {
+                Text("FDI #\(p.toothNumber)").font(.subheadline).bold()
+                Spacer()
+                Text(p.safetyStatus.capitalized)
+                    .font(.caption)
+                    .padding(.horizontal, 8).padding(.vertical, 3)
+                    .background(safetyBg(p.safetyStatus))
+                    .foregroundColor(safetyFg(p.safetyStatus))
+                    .clipShape(Capsule())
+            }
+            if let impl = p.implant {
+                Text("\(impl.manufacturer) Ø\(String(format:"%.1f",impl.diameterMm))×\(String(format:"%.0f",impl.lengthMm))mm")
+                    .font(.caption).foregroundColor(.secondary)
+            }
+            if let pitch = p.pitchDeg, let roll = p.rollDeg {
+                Text("Pitch \(String(format:"%.1f",pitch))°  Roll \(String(format:"%.1f",roll))°  Bone \(p.boneDensity ?? "—")")
+                    .font(.caption).foregroundColor(.secondary)
+            }
+        }
+        .padding(12)
+        .background(Color(.systemGray6))
+        .clipShape(RoundedRectangle(cornerRadius: 10))
+    }
+
+    @ViewBuilder
+    private func tadRow(_ t: APITadPlan) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack {
+                Text(t.insertionSite).font(.subheadline).bold()
+                Spacer()
+                Text(t.rootCollisionRisk.capitalized + " risk")
+                    .font(.caption)
+                    .padding(.horizontal, 8).padding(.vertical, 3)
+                    .background(riskBg(t.rootCollisionRisk))
+                    .foregroundColor(riskFg(t.rootCollisionRisk))
+                    .clipShape(Capsule())
+            }
+            Text("Root: \(t.toothA)\(t.toothB.map { " / \($0)" } ?? "")  ·  \(t.angulationDeg.map { "\(Int($0))°" } ?? "—")  ·  \(t.depthMm.map { String(format:"%.1fmm depth",$0) } ?? "—")")
+                .font(.caption).foregroundColor(.secondary)
+            if let p = t.purpose { Text(p).font(.caption).foregroundColor(.secondary) }
+        }
+        .padding(12)
+        .background(Color(.systemGray6))
+        .clipShape(RoundedRectangle(cornerRadius: 10))
+    }
+
+    @ViewBuilder
+    private func guideRow(_ g: APISurgicalGuide) -> some View {
+        HStack {
+            VStack(alignment: .leading, spacing: 3) {
+                Text(g.guideType.capitalized + " Guide").font(.subheadline).bold()
+                Text("Sleeve Ø\(g.sleeveDiameterMm.map { String(format:"%.1f",$0) } ?? "—")mm  ·  Thickness \(String(format:"%.1f",g.guideThicknessMm))mm\(g.ventHoles ? "  ·  Vents" : "")")
+                    .font(.caption).foregroundColor(.secondary)
+            }
+            Spacer()
+            Text(g.exportStatus.capitalized)
+                .font(.caption2).bold()
+                .padding(.horizontal, 8).padding(.vertical, 3)
+                .background(g.exportStatus == "exported" ? Color.green.opacity(0.15) : Color(.systemGray5))
+                .foregroundColor(g.exportStatus == "exported" ? .green : .secondary)
+                .clipShape(Capsule())
+        }
+        .padding(12)
+        .background(Color(.systemGray6))
+        .clipShape(RoundedRectangle(cornerRadius: 10))
+    }
+
+    // ── Helpers ──────────────────────────────────────────────────────────────
+
+    private func safetyBg(_ s: String) -> Color {
+        switch s { case "collision": return .red.opacity(0.15); case "warning": return .orange.opacity(0.15); default: return .green.opacity(0.15) }
+    }
+    private func safetyFg(_ s: String) -> Color {
+        switch s { case "collision": return .red; case "warning": return .orange; default: return .green }
+    }
+    private func riskBg(_ r: String) -> Color {
+        switch r { case "high": return .red.opacity(0.15); case "moderate": return .orange.opacity(0.15); default: return .green.opacity(0.15) }
+    }
+    private func riskFg(_ r: String) -> Color {
+        switch r { case "high": return .red; case "moderate": return .orange; default: return .green }
+    }
+
+    private func load() async {
+        loadState = .loading
+        do {
+            async let pReq: [APIImplantPlacement] = MyOrthoAPIClient.shared.get("/api/cases/\(caseId)/surgical/placements")
+            async let tReq: [APITadPlan]           = MyOrthoAPIClient.shared.get("/api/cases/\(caseId)/surgical/tads")
+            async let gReq: [APISurgicalGuide]     = MyOrthoAPIClient.shared.get("/api/cases/\(caseId)/surgical/guides")
+            placements = try await pReq
+            tads       = try await tReq
+            guides     = try await gReq
+            loadState  = .loaded
+        } catch APIClientError.httpError(404, _) {
+            placements = []; tads = []; guides = []
+            loadState = .loaded
+        } catch {
+            loadState = .error(error.localizedDescription)
         }
     }
 }

@@ -1,62 +1,66 @@
-import { Injectable, Logger } from '@nestjs/common';
-import { createClient } from '@supabase/supabase-js';
+import { Inject, Injectable, Logger } from '@nestjs/common';
+import type { Pool } from 'pg';
+import { PG_POOL } from '../database/database.module';
 
-export interface ProductionCenter {
-  id: string;
-  name: string;
-  region: string;
-  maxCapacity: number;
-  currentJobsCount: number;
-  slaPerformance: number; // e.g. 98.5%
+export interface ProductionTelemetry {
+  totalPrinters: number;
+  onlinePrinters: number;
+  queuedJobs: number;
+  processingJobs: number;
+  completedToday: number;
+  failedToday: number;
 }
 
 @Injectable()
 export class ManufacturingRouterService {
   private readonly logger = new Logger(ManufacturingRouterService.name);
-  private supabase = createClient(
-    process.env.SUPABASE_URL || 'https://placeholder.supabase.co',
-    process.env.SUPABASE_ANON_KEY || 'placeholder'
-  );
 
-  private mockCenters: ProductionCenter[] = [
-    { id: "lab_us", name: "Boston Aligner Production Hub", region: "US-East", maxCapacity: 200, currentJobsCount: 145, slaPerformance: 0.992 },
-    { id: "lab_eu", name: "Stuttgart Dental Center", region: "EU-Central", maxCapacity: 150, currentJobsCount: 142, slaPerformance: 0.985 },
-    { id: "lab_apac", name: "Singapore Digital Ortho Lab", region: "APAC-South", maxCapacity: 100, currentJobsCount: 45, slaPerformance: 0.998 }
-  ];
+  constructor(@Inject(PG_POOL) private readonly pool: Pool) {}
 
-  /**
-   * Evaluates closest regional lab centers, checking capacity limits and routing print job.
-   */
-  async routePrintJob(jobId: string, caseRegion: string): Promise<string> {
-    this.logger.log(`Manufacturing Router: Routing print job ${jobId} for region ${caseRegion}`);
-
-    // Find center in the same region
-    let targetCenter = this.mockCenters.find(c => c.region.toLowerCase() === caseRegion.toLowerCase());
-
-    // Capacity Balancing Logic: If target regional lab is near capacity limit (>90%), reroute to alternative lab
-    if (!targetCenter || (targetCenter.currentJobsCount / targetCenter.maxCapacity) > 0.90) {
-      this.logger.warn(`Region ${caseRegion} capacity warning! Routing to alternative under-utilized regional lab.`);
-      
-      // Find center with the lowest utilization ratio
-      targetCenter = [...this.mockCenters]
-        .sort((a, b) => (a.currentJobsCount / a.maxCapacity) - (b.currentJobsCount / b.maxCapacity))[0];
-    }
-
-    this.logger.log(`Manufacturing Router: Job ${jobId} routed successfully to ${targetCenter.name} (${targetCenter.region})`);
-    
-    // Simulate updating database record
-    await this.supabase
-      .from('print_jobs')
-      .update({ 
-        printer_id: targetCenter.id, // routing target
-        status: 'queued'
-      })
-      .eq('id', jobId);
-
-    return targetCenter.id;
+  async routePrintJob(jobId: string, printerId: string): Promise<{ routed: boolean; printerId: string }> {
+    this.logger.log(`Routing print job ${jobId} to printer ${printerId}`);
+    await this.pool.query(
+      `UPDATE print_jobs SET printer_id = $2, status = 'queued', updated_at = now()
+       WHERE id = $1`,
+      [jobId, printerId],
+    );
+    return { routed: true, printerId };
   }
 
-  async getProductionTelemetry(): Promise<ProductionCenter[]> {
-    return this.mockCenters;
+  async getProductionTelemetry(orgId: string): Promise<ProductionTelemetry> {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    const [{ rows: printerRows }, { rows: jobRows }] = await Promise.all([
+      this.pool.query(
+        `SELECT
+           COUNT(*) FILTER (WHERE status != 'offline') as online,
+           COUNT(*) as total
+         FROM printers WHERE organization_id = $1`,
+        [orgId],
+      ),
+      this.pool.query(
+        `SELECT
+           COUNT(*) FILTER (WHERE pj.status = 'queued') as queued,
+           COUNT(*) FILTER (WHERE pj.status = 'printing') as processing,
+           COUNT(*) FILTER (WHERE pj.status = 'completed' AND pj.completed_at >= $2) as completed_today,
+           COUNT(*) FILTER (WHERE pj.status = 'failed' AND pj.created_at >= $2) as failed_today
+         FROM print_jobs pj
+         JOIN printers pr ON pr.id = pj.printer_id
+         WHERE pr.organization_id = $1`,
+        [orgId, today],
+      ),
+    ]);
+
+    const pr = printerRows[0] ?? {};
+    const jr = jobRows[0] ?? {};
+    return {
+      totalPrinters: Number(pr.total ?? 0),
+      onlinePrinters: Number(pr.online ?? 0),
+      queuedJobs: Number(jr.queued ?? 0),
+      processingJobs: Number(jr.processing ?? 0),
+      completedToday: Number(jr.completed_today ?? 0),
+      failedToday: Number(jr.failed_today ?? 0),
+    };
   }
 }

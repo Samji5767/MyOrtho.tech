@@ -150,6 +150,34 @@ export class TreatmentPlansService {
     };
   }
 
+  async updatePlan(planId: string, caseId: string, orgId: string, dto: { estimatedStages?: number; aiRecommendationNotes?: string }) {
+    await this.verifyCaseOwnership(caseId, orgId);
+    const sets: string[] = [];
+    const vals: unknown[] = [];
+    if (dto.estimatedStages !== undefined) { sets.push(`estimated_stages = $${sets.length + 1}`); vals.push(dto.estimatedStages); }
+    if (dto.aiRecommendationNotes !== undefined) { sets.push(`ai_recommendation_notes = $${sets.length + 1}`); vals.push(dto.aiRecommendationNotes); }
+    if (sets.length === 0) throw new Error('Nothing to update');
+    sets.push(`updated_at = now()`);
+    vals.push(planId, caseId);
+    const { rows } = await this.pool.query(
+      `UPDATE treatment_plans SET ${sets.join(', ')} WHERE id = $${vals.length - 1} AND case_id = $${vals.length} RETURNING id`,
+      vals,
+    );
+    if (!rows[0]) throw new NotFoundException('Treatment plan not found');
+    return { id: rows[0].id as string, updated: true };
+  }
+
+  async bulkUpsertStages(planId: string, caseId: string, orgId: string, stages: CreateStageDto[]) {
+    await this.verifyCaseOwnership(caseId, orgId);
+    const { rows: planRows } = await this.pool.query(
+      `SELECT id FROM treatment_plans WHERE id = $1 AND case_id = $2`,
+      [planId, caseId],
+    );
+    if (!planRows[0]) throw new NotFoundException('Plan not found in this case');
+    const results = await Promise.all(stages.map((s) => this.createStage(planId, caseId, orgId, s)));
+    return { upserted: results.length, stages: results };
+  }
+
   private async verifyCaseOwnership(caseId: string, orgId: string) {
     const { rows } = await this.pool.query(
       `SELECT c.id FROM cases c

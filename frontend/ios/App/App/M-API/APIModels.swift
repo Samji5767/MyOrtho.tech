@@ -126,6 +126,47 @@ struct APITreatmentPlan: Decodable, Identifiable {
     let aiDisclaimer: String?
 }
 
+// MARK: - Clinical Analysis (Phase 17B)
+
+struct APICaseAnalysis: Decodable, Identifiable {
+    let id: String
+    let caseId: String
+    let boltonOverall: Double?
+    let boltonAnterior: Double?
+    let angleClass: String?
+    let overjetMm: Double?
+    let overbiteM: Double?
+    let upperCrowdingMm: Double?
+    let lowerCrowdingMm: Double?
+    let complexityScore: Int?
+    let iprSchedule: [APIIprEntry]
+    let notes: String?
+    let createdByEmail: String?
+    let createdAt: Date
+    let updatedAt: Date?
+
+    var boltonOverallFormatted: String {
+        guard let v = boltonOverall else { return "—" }
+        return String(format: "%.1f%%", v)
+    }
+    var boltonAnteriorFormatted: String {
+        guard let v = boltonAnterior else { return "—" }
+        return String(format: "%.1f%%", v)
+    }
+    var crowdingLabel: String {
+        let u = upperCrowdingMm.map { String(format: "U: %+.1fmm", $0) } ?? "U: —"
+        let l = lowerCrowdingMm.map { String(format: " L: %+.1fmm", $0) } ?? " L: —"
+        return u + l
+    }
+}
+
+struct APIIprEntry: Decodable {
+    let stage: Int
+    let toothA: String
+    let toothB: String
+    let amountMm: Double
+}
+
 // MARK: - Manufacturing
 //
 // Backend returns arrays directly (not wrapped).

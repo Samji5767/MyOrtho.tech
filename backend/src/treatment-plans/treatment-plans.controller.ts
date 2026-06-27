@@ -1,6 +1,7 @@
 import {
   Controller,
   Get,
+  Patch,
   Post,
   Param,
   Body,
@@ -29,6 +30,14 @@ class CreatePlanBody {
 class ApprovePlanBody {
   @IsString()
   signature: string;
+}
+
+class UpdatePlanBody {
+  @IsOptional() @IsNumber() @Min(1)
+  estimatedStages?: number;
+
+  @IsOptional() @IsString()
+  aiRecommendationNotes?: string;
 }
 
 class CreateStageBody {
@@ -100,6 +109,29 @@ export class TreatmentPlansController {
   ) {
     const user = auth(req);
     return this.service.approvePlan(planId, caseId, user.orgId!, user.id, body.signature);
+  }
+
+  @Patch(':planId')
+  updatePlan(
+    @Req() req: Request,
+    @Param('caseId') caseId: string,
+    @Param('planId') planId: string,
+    @Body() body: UpdatePlanBody,
+  ) {
+    const user = auth(req);
+    return this.service.updatePlan(planId, caseId, user.orgId!, body);
+  }
+
+  @Post(':planId/stages/bulk')
+  @HttpCode(HttpStatus.OK)
+  bulkUpsertStages(
+    @Req() req: Request,
+    @Param('caseId') caseId: string,
+    @Param('planId') planId: string,
+    @Body() body: { stages: CreateStageBody[] },
+  ) {
+    const user = auth(req);
+    return this.service.bulkUpsertStages(planId, caseId, user.orgId!, body.stages);
   }
 
   @Get(':planId/stages')

@@ -10,13 +10,15 @@ struct LiveCaseDetailView: View {
     @Environment(\.dismiss) private var dismiss
 
     enum DetailTab: String, CaseIterable {
-        case scans  = "Scans"
-        case plans  = "Plans"
+        case scans    = "Scans"
+        case plans    = "Plans"
+        case analysis = "Analysis"
 
         var icon: String {
             switch self {
-            case .scans: return "cube.box"
-            case .plans: return "list.clipboard"
+            case .scans:    return "cube.box"
+            case .plans:    return "list.clipboard"
+            case .analysis: return "chart.bar.doc.horizontal"
             }
         }
     }
@@ -37,8 +39,9 @@ struct LiveCaseDetailView: View {
                 Divider()
 
                 switch selectedTab {
-                case .scans: LiveScansTab(caseId: caseId)
-                case .plans: LivePlansTab(caseId: caseId)
+                case .scans:    LiveScansTab(caseId: caseId)
+                case .plans:    LivePlansTab(caseId: caseId)
+                case .analysis: LiveAnalysisTab(caseId: caseId)
                 }
             }
             .navigationTitle(patientName)
@@ -517,7 +520,7 @@ private struct LivePlansTab: View {
     private func loadPlans() async {
         loadState = .loading
         do {
-            plans = try await MyOrthoAPIClient.shared.get("/api/cases/\(caseId)/treatment-plans")
+            plans = try await MyOrthoAPIClient.shared.get("/api/cases/\(caseId)/plans")
             loadState = .loaded
         } catch {
             loadState = .offline(error.localizedDescription)
@@ -532,7 +535,7 @@ private struct LivePlansTab: View {
         }
         do {
             let plan: APITreatmentPlan = try await MyOrthoAPIClient.shared.post(
-                "/api/cases/\(caseId)/treatment-plans",
+                "/api/cases/\(caseId)/plans",
                 body: Body(estimatedStages: stages, aiRecommendationNotes: notes.isEmpty ? nil : notes)
             )
             plans.insert(plan, at: 0)
@@ -606,17 +609,187 @@ private struct PlanRow: View {
 
     private func approvePlan() async {
         approveState = .working
-        struct Body: Encodable { let doctorSignature: String }
+        struct Body: Encodable { let signature: String }
         do {
             let updated: APITreatmentPlan = try await MyOrthoAPIClient.shared.post(
-                "/api/cases/\(caseId)/treatment-plans/\(plan.id)/approve",
-                body: Body(doctorSignature: sigInput)
+                "/api/cases/\(caseId)/plans/\(plan.id)/approve",
+                body: Body(signature: sigInput)
             )
             approveState = .idle
             sigInput = ""
             onApproved(updated)
         } catch {
             approveState = .failed(error.localizedDescription)
+        }
+    }
+}
+
+// MARK: - LiveAnalysisTab
+
+private struct LiveAnalysisTab: View {
+    let caseId: String
+
+    @State private var analysis: APICaseAnalysis? = nil
+    @State private var loadState: LiveLoadState = .idle
+
+    var body: some View {
+        ScrollView {
+            VStack(spacing: 16) {
+                // Disclaimer
+                HStack(alignment: .top, spacing: 10) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .foregroundStyle(.orange)
+                        .font(.callout)
+                    Text("Clinical analysis indices are for workflow reference only. Not diagnostically validated. A licensed orthodontist must review all values before clinical use.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                .padding(12)
+                .background(.orange.opacity(0.08), in: RoundedRectangle(cornerRadius: 10))
+                .overlay(RoundedRectangle(cornerRadius: 10).stroke(.orange.opacity(0.25), lineWidth: 1))
+
+                switch loadState {
+                case .loading:
+                    ProgressView("Loading analysis…").padding()
+
+                case .offline(let msg), .error(let msg):
+                    ContentUnavailableView(
+                        "Analysis unavailable",
+                        systemImage: "chart.bar.xmark",
+                        description: Text(msg)
+                    )
+
+                case .idle, .loaded:
+                    if let a = analysis {
+                        analysisCard(a)
+                    } else {
+                        ContentUnavailableView(
+                            "No analysis yet",
+                            systemImage: "chart.bar.doc.horizontal",
+                            description: Text("Open this case in the web app to run Bolton analysis and save clinical measurements.")
+                        )
+                    }
+                }
+            }
+            .padding()
+        }
+        .task { await loadAnalysis() }
+    }
+
+    @ViewBuilder
+    private func analysisCard(_ a: APICaseAnalysis) -> some View {
+        VStack(alignment: .leading, spacing: 16) {
+            // Bolton ratios
+            VStack(alignment: .leading, spacing: 10) {
+                Text("Bolton Analysis")
+                    .font(.headline)
+
+                HStack {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Overall (12:12)")
+                            .font(.caption).foregroundStyle(.secondary)
+                        Text(a.boltonOverallFormatted)
+                            .font(.title2).fontWeight(.black)
+                            .foregroundStyle(boltonColor(a.boltonOverall, low: 87.5, high: 95.1))
+                        Text("norm 87.5–95.1%").font(.caption2).foregroundStyle(.tertiary)
+                    }
+                    Spacer()
+                    VStack(alignment: .trailing, spacing: 4) {
+                        Text("Anterior (6:6)")
+                            .font(.caption).foregroundStyle(.secondary)
+                        Text(a.boltonAnteriorFormatted)
+                            .font(.title2).fontWeight(.black)
+                            .foregroundStyle(boltonColor(a.boltonAnterior, low: 73.9, high: 80.5))
+                        Text("norm 73.9–80.5%").font(.caption2).foregroundStyle(.tertiary)
+                    }
+                }
+            }
+            .padding()
+            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
+
+            // Classification + measurements
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Clinical Measurements")
+                    .font(.headline)
+
+                Group {
+                    measureRow("Angle Classification", value: a.angleClass ?? "—")
+                    measureRow("Overjet", value: a.overjetMm.map { String(format: "%.1f mm", $0) } ?? "—")
+                    measureRow("Overbite", value: a.overbiteM.map  { String(format: "%.1f mm", $0) } ?? "—")
+                    measureRow("Crowding / Spacing", value: a.crowdingLabel)
+                    measureRow("Complexity Score", value: a.complexityScore.map { "\($0)/100" } ?? "—")
+                }
+            }
+            .padding()
+            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
+
+            // IPR schedule
+            if !a.iprSchedule.isEmpty {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("IPR Schedule (\(a.iprSchedule.count) events)")
+                        .font(.headline)
+                    ForEach(a.iprSchedule, id: \.stage) { ipr in
+                        HStack {
+                            Text("Stage \(ipr.stage)")
+                                .font(.caption).foregroundStyle(.secondary)
+                            Spacer()
+                            Text("\(ipr.toothA) × \(ipr.toothB)")
+                                .font(.caption).fontWeight(.semibold)
+                            Text(String(format: "%.2f mm", ipr.amountMm))
+                                .font(.caption).foregroundStyle(.teal)
+                        }
+                        Divider()
+                    }
+                }
+                .padding()
+                .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
+            }
+
+            // Notes
+            if let notes = a.notes, !notes.isEmpty {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Clinical Notes").font(.headline)
+                    Text(notes).font(.callout).foregroundStyle(.secondary)
+                }
+                .padding()
+                .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
+            }
+
+            // Meta
+            if let email = a.createdByEmail {
+                Text("Saved by \(email) on \(a.createdAt.formatted(date: .abbreviated, time: .shortened))")
+                    .font(.caption2).foregroundStyle(.tertiary)
+            }
+        }
+    }
+
+    private func measureRow(_ label: String, value: String) -> some View {
+        HStack {
+            Text(label).font(.subheadline).foregroundStyle(.secondary)
+            Spacer()
+            Text(value).font(.subheadline).fontWeight(.semibold)
+        }
+    }
+
+    private func boltonColor(_ value: Double?, low: Double, high: Double) -> Color {
+        guard let v = value else { return .secondary }
+        return (v >= low && v <= high) ? .green : .orange
+    }
+
+    private func loadAnalysis() async {
+        loadState = .loading
+        do {
+            analysis = try await MyOrthoAPIClient.shared.get("/api/cases/\(caseId)/analysis/latest")
+            loadState = .loaded
+        } catch let err as APIClientError {
+            if case .httpError(404, _) = err {
+                analysis = nil
+                loadState = .loaded
+            } else {
+                loadState = .offline(err.localizedDescription)
+            }
+        } catch {
+            loadState = .offline(error.localizedDescription)
         }
     }
 }

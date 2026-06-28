@@ -9,11 +9,15 @@ import {
   type MaskEditDto,
   type MaskRegionType,
 } from './segmentation.service';
+import { AutoCorrectionService } from './auto-correction.service';
 
 @Controller()
 @UseGuards(AuthGuard)
 export class SegmentationController {
-  constructor(private readonly svc: SegmentationService) {}
+  constructor(
+    private readonly svc: SegmentationService,
+    private readonly autoSvc: AutoCorrectionService,
+  ) {}
 
   @Get('api/cases/:caseId/segmentation/jobs')
   list(@Req() req: any, @Param('caseId') caseId: string) {
@@ -108,5 +112,44 @@ export class SegmentationController {
     @Param('jobId') jobId: string,
   ) {
     return this.svc.getConfidenceHeatmap(caseId, req.user.organizationId, jobId);
+  }
+
+  // ── Phase 25: Automatic Segmentation Correction ────────────────────────────
+
+  @Post('api/cases/:caseId/segmentation/jobs/:jobId/analyze')
+  analyzeJob(
+    @Req() req: any,
+    @Param('caseId') caseId: string,
+    @Param('jobId') jobId: string,
+  ) {
+    return this.autoSvc.analyzeJob(caseId, req.user.organizationId, jobId, req.user.sub);
+  }
+
+  @Get('api/cases/:caseId/segmentation/jobs/:jobId/corrections/report')
+  getCorrectionReport(
+    @Req() req: any,
+    @Param('caseId') caseId: string,
+    @Param('jobId') jobId: string,
+  ) {
+    return this.autoSvc.getReport(caseId, req.user.organizationId, jobId);
+  }
+
+  @Post('api/cases/:caseId/segmentation/jobs/:jobId/corrections/items/:itemId/repair')
+  repairItem(
+    @Req() req: any,
+    @Param('caseId') caseId: string,
+    @Param('jobId') jobId: string,
+    @Param('itemId') itemId: string,
+  ) {
+    return this.autoSvc.repairItem(caseId, req.user.organizationId, req.user.sub, jobId, itemId);
+  }
+
+  @Post('api/cases/:caseId/segmentation/jobs/:jobId/corrections/repair-all')
+  repairAll(
+    @Req() req: any,
+    @Param('caseId') caseId: string,
+    @Param('jobId') jobId: string,
+  ) {
+    return this.autoSvc.repairAll(caseId, req.user.organizationId, req.user.sub, jobId);
   }
 }

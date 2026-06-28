@@ -409,6 +409,25 @@ export const CAD_CAPABILITIES: CadCapability[] = [
     statusNote: "Fully wired in Phase 24: /api/cases/:id/segmentation/jobs/:id/heatmap. Aggregates confidence scores from segmentation_masks.confidence_heatmap JSONB column. Missing teeth shown as grey. Drives tooth selection priority for manual correction.",
     surface: "/cases/[id]#segment",
   },
+  // ─── Phase 25 additions ───────────────────────────────────────────────────
+  {
+    id: "auto-segmentation-analysis",
+    name: "Automated Segmentation Analysis",
+    phase: "review",
+    maturity: "implemented",
+    summary: "10-class deterministic issue detector: low confidence, missing tooth, sparse mask, no gingival margin, adjacent collision, arch imbalance, surface area anomaly, volume anomaly, supernumerary unclassified, impacted unlabeled. Mesh validity score 0–100% derived from issue distribution.",
+    statusNote: "Fully wired in Phase 25: AutoCorrectionService.analyzeJob → POST /api/cases/:id/segmentation/jobs/:id/analyze. Stores report in auto_correction_reports + items in auto_correction_items. Re-analyze deletes and recreates the report. Analysis runs in <200ms.",
+    surface: "/cases/[id]#segment",
+  },
+  {
+    id: "one-click-segmentation-repair",
+    name: "One-Click Segmentation Repair",
+    phase: "review",
+    maturity: "implemented",
+    summary: "Automated repair of 7 auto-fixable issue types: boundary smoothing for low confidence, region grow for sparse/volume issues, gingival brush for missing margins, shrink for large-surface collisions. Grouped repair-all or per-item repair with detailed repair receipts.",
+    statusNote: "Fully wired in Phase 25: SegmentationAutoCorrector.tsx → repair-all and per-item endpoints. Repairs write to segmentation_masks and segmentation_corrections for full audit trail. Manual-only issues (missing teeth, arch imbalance) are clearly marked and excluded from auto-repair.",
+    surface: "/cases/[id]#segment",
+  },
 ];
 
 export function capabilitiesByPhase(phase: CapabilityPhase): CadCapability[] {

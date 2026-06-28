@@ -1,19 +1,20 @@
 "use client";
 
-import { useState } from "react";
-import { Check, ChevronLeft, ChevronRight, Loader2, AlertCircle } from "lucide-react";
+import { useState, useEffect, useRef } from "react";
+import { Check, ChevronLeft, ChevronRight, Loader2, AlertCircle, Search, UserPlus, Upload, X } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { Button, Card, StatusBadge } from "@/components/DesignSystem";
+import { fetchPatients, createPatient, type PatientListItem } from "@/lib/api/patients";
+import { createCase } from "@/lib/api/cases";
+import { uploadScan } from "@/lib/api/scans";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-interface PatientData {
+interface NewPatientData {
   firstName: string;
   lastName: string;
   dob: string;
   gender: "male" | "female" | "other" | "";
-  phone: string;
-  email: string;
 }
 
 interface ClinicalData {
@@ -59,7 +60,7 @@ const LABEL = "text-xs font-semibold text-[color:var(--foreground)]";
 
 // ─── Step indicator ───────────────────────────────────────────────────────────
 
-const STEP_LABELS = ["Patient", "Clinical", "Goals", "Review"];
+const STEP_LABELS = ["Patient", "Clinical", "Goals", "Scans", "Review"];
 
 function StepIndicator({ current }: { current: number }) {
   return (
@@ -91,7 +92,7 @@ function StepIndicator({ current }: { current: number }) {
           {i < STEP_LABELS.length - 1 && (
             <div
               className={[
-                "mx-1 mb-3 h-0.5 w-10 transition-colors sm:w-16",
+                "mx-1 mb-3 h-0.5 w-8 transition-colors sm:w-12",
                 i < current ? "bg-[color:var(--primary)]" : "bg-[color:var(--border)]",
               ].join(" ")}
             />
@@ -193,6 +194,57 @@ function CheckPill({
   );
 }
 
+// ─── Scan file row ────────────────────────────────────────────────────────────
+
+function ScanFileRow({
+  label,
+  file,
+  onSelect,
+  onClear,
+}: {
+  label: string;
+  file: File | null;
+  onSelect: (f: File) => void;
+  onClear: () => void;
+}) {
+  const ref = useRef<HTMLInputElement>(null);
+  return (
+    <div className="flex items-center gap-3">
+      <input
+        ref={ref}
+        type="file"
+        accept=".stl,.obj,.ply"
+        className="hidden"
+        onChange={(e) => {
+          const f = e.target.files?.[0];
+          if (f) onSelect(f);
+          e.target.value = "";
+        }}
+      />
+      <div className="flex-1 rounded-xl border border-dashed border-[color:var(--border)] bg-[color:var(--card)] px-3 py-2.5 text-xs">
+        {file ? (
+          <span className="font-medium text-[color:var(--foreground)]">{file.name}</span>
+        ) : (
+          <span className="text-[color:var(--muted-foreground)]">{label} scan — STL / OBJ / PLY</span>
+        )}
+      </div>
+      {file ? (
+        <button
+          type="button"
+          onClick={onClear}
+          className="flex h-8 w-8 items-center justify-center rounded-lg border border-[color:var(--border)] text-[color:var(--muted-foreground)] hover:text-[color:var(--foreground)] transition-colors"
+        >
+          <X size={13} />
+        </button>
+      ) : (
+        <Button variant="secondary" size="sm" onClick={() => ref.current?.click()}>
+          <Upload size={12} /> Choose
+        </Button>
+      )}
+    </div>
+  );
+}
+
 // ─── Wizard ───────────────────────────────────────────────────────────────────
 
 export default function NewCaseWizard() {
@@ -201,27 +253,60 @@ export default function NewCaseWizard() {
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
 
-  const [patient, setPatient] = useState<PatientData>({
-    firstName: "", lastName: "", dob: "", gender: "", phone: "", email: "",
+  // Patient step state
+  const [patients, setPatients] = useState<PatientListItem[]>([]);
+  const [patientsLoading, setPatientsLoading] = useState(true);
+  const [search, setSearch] = useState("");
+  const [selectedPatient, setSelectedPatient] = useState<PatientListItem | null>(null);
+  const [createNew, setCreateNew] = useState(false);
+  const [newPatient, setNewPatient] = useState<NewPatientData>({
+    firstName: "", lastName: "", dob: "", gender: "",
   });
 
+  // Clinical step state
   const [clinical, setClinical] = useState<ClinicalData>({
     chiefComplaint: "", malocclusionClass: "", urgency: "routine", crowdingSeverity: "mild",
   });
 
+  // Goals step state
   const [goals, setGoals] = useState<GoalsData>({
     correctCrowding: true, correctSpacing: false, correctOverjet: false,
     correctOverbite: false, correctMidline: false, correctRotation: false,
     correctCrossbite: false, expectedDuration: "", notes: "",
   });
 
+  // Scans step state
+  const [upperFile, setUpperFile] = useState<File | null>(null);
+  const [lowerFile, setLowerFile] = useState<File | null>(null);
+
+  // Load patients once
+  useEffect(() => {
+    setPatientsLoading(true);
+    fetchPatients()
+      .then(({ patients }) => setPatients(patients))
+      .catch(() => setPatients([]))
+      .finally(() => setPatientsLoading(false));
+  }, []);
+
+  const filteredPatients = patients.filter((p) => {
+    const q = search.toLowerCase();
+    return (
+      p.firstName.toLowerCase().includes(q) ||
+      p.lastName.toLowerCase().includes(q) ||
+      `${p.firstName} ${p.lastName}`.toLowerCase().includes(q)
+    );
+  });
+
   // ── Validation ────────────────────────────────────────────────────────────
 
   function canAdvance(): boolean {
-    if (step === 0) return !!patient.firstName && !!patient.lastName && !!patient.dob;
+    if (step === 0) {
+      if (createNew) return !!newPatient.firstName && !!newPatient.lastName && !!newPatient.dob;
+      return !!selectedPatient;
+    }
     if (step === 1) return !!clinical.chiefComplaint && !!clinical.malocclusionClass;
     if (step === 2) return !!goals.expectedDuration;
-    return true;
+    return true; // scans and review are optional / always valid
   }
 
   // ── Submit ────────────────────────────────────────────────────────────────
@@ -231,55 +316,43 @@ export default function NewCaseWizard() {
     setSubmitError(null);
 
     try {
-      const body = {
-        patient: {
-          firstName: patient.firstName,
-          lastName: patient.lastName,
-          dateOfBirth: patient.dob,
-          gender: patient.gender || undefined,
-          phone: patient.phone || undefined,
-          email: patient.email || undefined,
-        },
-        clinical: {
-          chiefComplaint: clinical.chiefComplaint,
-          malocclusionClass: clinical.malocclusionClass,
-          crowdingSeverity: clinical.crowdingSeverity,
-          urgency: clinical.urgency,
-        },
-        treatmentGoals: {
-          correctCrowding: goals.correctCrowding,
-          correctSpacing: goals.correctSpacing,
-          correctOverjet: goals.correctOverjet,
-          correctOverbite: goals.correctOverbite,
-          correctMidline: goals.correctMidline,
-          correctRotation: goals.correctRotation,
-          correctCrossbite: goals.correctCrossbite,
-          expectedDurationMonths: goals.expectedDuration,
-          notes: goals.notes || undefined,
-        },
-      };
-
-      const res = await fetch(`/api/cases`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify(body),
-      });
-
-      if (!res.ok) {
-        const text = await res.text().catch(() => "Unknown error");
-        throw new Error(`Server responded ${res.status}: ${text}`);
+      // 1 — Resolve patient (create if new, otherwise use selected)
+      let patientId: string;
+      if (createNew) {
+        const p = await createPatient({
+          firstName: newPatient.firstName,
+          lastName: newPatient.lastName,
+          dateOfBirth: newPatient.dob || undefined,
+          gender: newPatient.gender || undefined,
+        });
+        patientId = p.id;
+      } else {
+        patientId = selectedPatient!.id;
       }
 
-      router.push("/cases");
+      // 2 — Create case
+      const caseRecord = await createCase({
+        patientId,
+        chiefComplaint: clinical.chiefComplaint || undefined,
+        malocclusionClass: clinical.malocclusionClass || undefined,
+        notes: goals.notes || undefined,
+      });
+
+      // 3 — Upload scans (fire-and-forget errors so case is still created)
+      const uploads: Promise<unknown>[] = [];
+      if (upperFile) uploads.push(uploadScan(caseRecord.id, upperFile, "maxillary").catch(() => null));
+      if (lowerFile) uploads.push(uploadScan(caseRecord.id, lowerFile, "mandibular").catch(() => null));
+      await Promise.all(uploads);
+
+      // 4 — Navigate to new case
+      router.push(`/cases/${caseRecord.id}`);
     } catch (err) {
       setSubmitError(err instanceof Error ? err.message : "Submission failed — check your backend connection.");
-    } finally {
       setSubmitting(false);
     }
   }
 
-  // ── Step content ──────────────────────────────────────────────────────────
+  // ── Options ───────────────────────────────────────────────────────────────
 
   const MALOCCLUSION_OPTIONS = [
     { value: "class-i" as const, label: "Class I" },
@@ -316,71 +389,144 @@ export default function NewCaseWizard() {
         {step === 0 && (
           <div className="flex flex-col gap-4">
             <div>
-              <h2 className="text-lg font-semibold text-[color:var(--foreground)]">Patient Details</h2>
+              <h2 className="text-lg font-semibold text-[color:var(--foreground)]">Patient</h2>
               <p className="mt-0.5 text-sm text-[color:var(--muted-foreground)]">
-                Enter patient information or search existing records.
+                Select an existing patient or create a new record.
               </p>
             </div>
-            <div className="grid gap-3 sm:grid-cols-2">
-              <Field label="First name" required>
-                <input
-                  className={INPUT}
-                  placeholder="Jane"
-                  value={patient.firstName}
-                  onChange={(e) => setPatient((p) => ({ ...p, firstName: e.target.value }))}
-                />
-              </Field>
-              <Field label="Last name" required>
-                <input
-                  className={INPUT}
-                  placeholder="Smith"
-                  value={patient.lastName}
-                  onChange={(e) => setPatient((p) => ({ ...p, lastName: e.target.value }))}
-                />
-              </Field>
+
+            {/* Toggle: existing vs. new */}
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => { setCreateNew(false); }}
+                className={[
+                  "flex items-center gap-1.5 rounded-xl border px-3 py-1.5 text-xs font-medium transition-colors",
+                  !createNew
+                    ? "border-[color:var(--primary)] bg-[color:var(--primary-glow)] text-[color:var(--primary)]"
+                    : "border-[color:var(--border)] text-[color:var(--muted-foreground)]",
+                ].join(" ")}
+              >
+                <Search size={11} /> Existing patient
+              </button>
+              <button
+                type="button"
+                onClick={() => { setCreateNew(true); setSelectedPatient(null); }}
+                className={[
+                  "flex items-center gap-1.5 rounded-xl border px-3 py-1.5 text-xs font-medium transition-colors",
+                  createNew
+                    ? "border-[color:var(--primary)] bg-[color:var(--primary-glow)] text-[color:var(--primary)]"
+                    : "border-[color:var(--border)] text-[color:var(--muted-foreground)]",
+                ].join(" ")}
+              >
+                <UserPlus size={11} /> New patient
+              </button>
             </div>
-            <div className="grid gap-3 sm:grid-cols-2">
-              <Field label="Date of birth" required>
-                <input
-                  type="date"
-                  className={INPUT}
-                  value={patient.dob}
-                  onChange={(e) => setPatient((p) => ({ ...p, dob: e.target.value }))}
-                />
-              </Field>
-              <Field label="Gender">
-                <select
-                  className={SELECT}
-                  value={patient.gender}
-                  onChange={(e) => setPatient((p) => ({ ...p, gender: e.target.value as PatientData["gender"] }))}
-                >
-                  <option value="">Select…</option>
-                  <option value="male">Male</option>
-                  <option value="female">Female</option>
-                  <option value="other">Other / prefer not to say</option>
-                </select>
-              </Field>
-            </div>
-            <div className="grid gap-3 sm:grid-cols-2">
-              <Field label="Phone">
-                <input
-                  type="tel"
-                  className={INPUT}
-                  placeholder="+1 (555) 000-0000"
-                  value={patient.phone}
-                  onChange={(e) => setPatient((p) => ({ ...p, phone: e.target.value }))}
-                />
-              </Field>
-              <Field label="Email">
-                <input
-                  type="email"
-                  className={INPUT}
-                  placeholder="jane@example.com"
-                  value={patient.email}
-                  onChange={(e) => setPatient((p) => ({ ...p, email: e.target.value }))}
-                />
-              </Field>
-            </div>
+
+            {/* Existing patient search */}
+            {!createNew && (
+              <div className="flex flex-col gap-2">
+                <div className="relative">
+                  <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-[color:var(--muted-foreground)]" />
+                  <input
+                    className={INPUT + " pl-8"}
+                    placeholder="Search by name…"
+                    value={search}
+                    onChange={(e) => setSearch(e.target.value)}
+                  />
+                </div>
+                {patientsLoading ? (
+                  <div className="flex items-center justify-center py-6 text-xs text-[color:var(--muted-foreground)]">
+                    <Loader2 size={14} className="mr-2 animate-spin" /> Loading patients…
+                  </div>
+                ) : filteredPatients.length === 0 ? (
+                  <div className="rounded-xl border border-dashed border-[color:var(--border)] py-5 text-center text-xs text-[color:var(--muted-foreground)]">
+                    {search ? `No patients matching "${search}"` : "No patients yet"}
+                    <button
+                      type="button"
+                      onClick={() => setCreateNew(true)}
+                      className="ml-1 font-medium text-[color:var(--primary)] hover:underline"
+                    >
+                      Create new
+                    </button>
+                  </div>
+                ) : (
+                  <div className="max-h-56 overflow-y-auto rounded-xl border border-[color:var(--border)] divide-y divide-[color:var(--border)]">
+                    {filteredPatients.map((p) => (
+                      <button
+                        key={p.id}
+                        type="button"
+                        onClick={() => setSelectedPatient(p)}
+                        className={[
+                          "flex w-full items-center justify-between gap-3 px-4 py-3 text-left text-sm transition-colors",
+                          selectedPatient?.id === p.id
+                            ? "bg-[color:var(--primary-glow)]"
+                            : "hover:bg-[color:var(--muted)]/30",
+                        ].join(" ")}
+                      >
+                        <div>
+                          <span className="font-medium text-[color:var(--foreground)]">{p.firstName} {p.lastName}</span>
+                          {p.dateOfBirth && (
+                            <span className="ml-2 text-xs text-[color:var(--muted-foreground)]">
+                              DOB: {p.dateOfBirth}
+                            </span>
+                          )}
+                        </div>
+                        {selectedPatient?.id === p.id && (
+                          <Check size={14} className="shrink-0 text-[color:var(--primary)]" />
+                        )}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* New patient form */}
+            {createNew && (
+              <div className="flex flex-col gap-3">
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <Field label="First name" required>
+                    <input
+                      className={INPUT}
+                      placeholder="Jane"
+                      value={newPatient.firstName}
+                      onChange={(e) => setNewPatient((p) => ({ ...p, firstName: e.target.value }))}
+                    />
+                  </Field>
+                  <Field label="Last name" required>
+                    <input
+                      className={INPUT}
+                      placeholder="Smith"
+                      value={newPatient.lastName}
+                      onChange={(e) => setNewPatient((p) => ({ ...p, lastName: e.target.value }))}
+                    />
+                  </Field>
+                </div>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <Field label="Date of birth" required>
+                    <input
+                      type="date"
+                      className={INPUT}
+                      value={newPatient.dob}
+                      onChange={(e) => setNewPatient((p) => ({ ...p, dob: e.target.value }))}
+                    />
+                  </Field>
+                  <Field label="Gender">
+                    <select
+                      className={SELECT}
+                      value={newPatient.gender}
+                      onChange={(e) => setNewPatient((p) => ({ ...p, gender: e.target.value as NewPatientData["gender"] }))}
+                    >
+                      <option value="">Select…</option>
+                      <option value="male">Male</option>
+                      <option value="female">Female</option>
+                      <option value="other">Other / prefer not to say</option>
+                    </select>
+                  </Field>
+                </div>
+              </div>
+            )}
           </div>
         )}
 
@@ -468,8 +614,43 @@ export default function NewCaseWizard() {
           </div>
         )}
 
-        {/* Step 4 — Review */}
+        {/* Step 4 — Scans */}
         {step === 3 && (
+          <div className="flex flex-col gap-4">
+            <div>
+              <h2 className="text-lg font-semibold text-[color:var(--foreground)]">Upload Scans</h2>
+              <p className="mt-0.5 text-sm text-[color:var(--muted-foreground)]">
+                Add STL, OBJ, or PLY arch scans. You can skip this step and upload later.
+              </p>
+            </div>
+            <div className="flex flex-col gap-3">
+              <Field label="Upper arch (maxillary)">
+                <ScanFileRow
+                  label="Upper arch"
+                  file={upperFile}
+                  onSelect={setUpperFile}
+                  onClear={() => setUpperFile(null)}
+                />
+              </Field>
+              <Field label="Lower arch (mandibular)">
+                <ScanFileRow
+                  label="Lower arch"
+                  file={lowerFile}
+                  onSelect={setLowerFile}
+                  onClear={() => setLowerFile(null)}
+                />
+              </Field>
+            </div>
+            {(upperFile || lowerFile) && (
+              <div className="rounded-xl border border-[color:var(--border)] bg-[color:var(--card)] p-3 text-xs text-[color:var(--muted-foreground)]">
+                Scans will be uploaded when you submit. You can trigger AI segmentation from the case detail page after upload.
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Step 5 — Review */}
+        {step === 4 && (
           <div className="flex flex-col gap-4">
             <div>
               <h2 className="text-lg font-semibold text-[color:var(--foreground)]">Review & Submit</h2>
@@ -479,24 +660,34 @@ export default function NewCaseWizard() {
             </div>
 
             {/* Patient summary */}
-            <div className="rounded-xl border border-[color:var(--border)] bg-[color:var(--card)] divide-y divide-[color:var(--border)]">
-              <div className="flex items-center justify-between px-4 py-2.5">
-                <span className="text-xs font-semibold text-[color:var(--muted-foreground)] uppercase tracking-wider">Patient</span>
-                <button type="button" onClick={() => setStep(0)} className="text-[10px] font-medium text-[color:var(--primary)] hover:underline">Edit</button>
-              </div>
-              {[
-                ["Name", `${patient.firstName} ${patient.lastName}`],
-                ["Date of birth", patient.dob || "—"],
-                ["Gender", patient.gender || "Not specified"],
-                ["Phone", patient.phone || "—"],
-                ["Email", patient.email || "—"],
-              ].map(([k, v]) => (
-                <div key={k} className="flex items-center justify-between px-4 py-2 text-xs">
-                  <span className="text-[color:var(--muted-foreground)]">{k}</span>
-                  <span className="font-medium text-[color:var(--foreground)]">{v}</span>
+            {(() => {
+              const patientRows: [string, string][] = createNew
+                ? [
+                    ["Name", `${newPatient.firstName} ${newPatient.lastName}`],
+                    ["Date of birth", newPatient.dob || "—"],
+                    ["Gender", newPatient.gender || "Not specified"],
+                    ["Status", "New patient — will be created"],
+                  ]
+                : [
+                    ["Name", `${selectedPatient!.firstName} ${selectedPatient!.lastName}`],
+                    ["Date of birth", selectedPatient!.dateOfBirth ?? "—"],
+                    ["Status", "Existing patient"],
+                  ];
+              return (
+                <div className="rounded-xl border border-[color:var(--border)] bg-[color:var(--card)] divide-y divide-[color:var(--border)]">
+                  <div className="flex items-center justify-between px-4 py-2.5">
+                    <span className="text-xs font-semibold text-[color:var(--muted-foreground)] uppercase tracking-wider">Patient</span>
+                    <button type="button" onClick={() => setStep(0)} className="text-[10px] font-medium text-[color:var(--primary)] hover:underline">Edit</button>
+                  </div>
+                  {patientRows.map(([k, v]) => (
+                    <div key={k} className="flex items-center justify-between px-4 py-2 text-xs">
+                      <span className="text-[color:var(--muted-foreground)]">{k}</span>
+                      <span className="font-medium text-[color:var(--foreground)]">{v}</span>
+                    </div>
+                  ))}
                 </div>
-              ))}
-            </div>
+              );
+            })()}
 
             {/* Clinical summary */}
             <div className="rounded-xl border border-[color:var(--border)] bg-[color:var(--card)] divide-y divide-[color:var(--border)]">
@@ -505,8 +696,10 @@ export default function NewCaseWizard() {
                 <button type="button" onClick={() => setStep(1)} className="text-[10px] font-medium text-[color:var(--primary)] hover:underline">Edit</button>
               </div>
               {[
-                ["Chief complaint", clinical.chiefComplaint],
-                ["Malocclusion", clinical.malocclusionClass.replace(/-/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())],
+                ["Chief complaint", clinical.chiefComplaint || "—"],
+                ["Malocclusion", clinical.malocclusionClass
+                  ? clinical.malocclusionClass.replace(/-/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())
+                  : "—"],
                 ["Crowding", `${clinical.crowdingSeverity.charAt(0).toUpperCase()}${clinical.crowdingSeverity.slice(1)}`],
                 ["Urgency", `${clinical.urgency.charAt(0).toUpperCase()}${clinical.urgency.slice(1)}`],
               ].map(([k, v]) => (
@@ -540,13 +733,29 @@ export default function NewCaseWizard() {
               </div>
               <div className="flex items-center justify-between px-4 py-2 text-xs">
                 <span className="text-[color:var(--muted-foreground)]">Duration</span>
-                <span className="font-medium text-[color:var(--foreground)]">{goals.expectedDuration} months</span>
+                <span className="font-medium text-[color:var(--foreground)]">{goals.expectedDuration || "Not set"} months</span>
               </div>
               {goals.notes && (
                 <div className="px-4 py-2 text-xs text-[color:var(--muted-foreground)]">
                   {goals.notes}
                 </div>
               )}
+            </div>
+
+            {/* Scans summary */}
+            <div className="rounded-xl border border-[color:var(--border)] bg-[color:var(--card)] divide-y divide-[color:var(--border)]">
+              <div className="flex items-center justify-between px-4 py-2.5">
+                <span className="text-xs font-semibold text-[color:var(--muted-foreground)] uppercase tracking-wider">Scans</span>
+                <button type="button" onClick={() => setStep(3)} className="text-[10px] font-medium text-[color:var(--primary)] hover:underline">Edit</button>
+              </div>
+              <div className="flex items-center justify-between px-4 py-2 text-xs">
+                <span className="text-[color:var(--muted-foreground)]">Upper arch</span>
+                <span className="font-medium text-[color:var(--foreground)]">{upperFile ? upperFile.name : "None"}</span>
+              </div>
+              <div className="flex items-center justify-between px-4 py-2 text-xs">
+                <span className="text-[color:var(--muted-foreground)]">Lower arch</span>
+                <span className="font-medium text-[color:var(--foreground)]">{lowerFile ? lowerFile.name : "None"}</span>
+              </div>
             </div>
 
             {/* Submit error */}
@@ -570,10 +779,19 @@ export default function NewCaseWizard() {
             <ChevronLeft size={15} /> Back
           </Button>
 
-          {step < 3 ? (
+          {step < 4 ? (
             <div className="flex items-center gap-3">
+              {step === 3 && (
+                <button
+                  type="button"
+                  onClick={() => setStep(4)}
+                  className="text-xs text-[color:var(--muted-foreground)] hover:text-[color:var(--foreground)] hover:underline transition-colors"
+                >
+                  Skip scans
+                </button>
+              )}
               <span className="text-xs text-[color:var(--muted-foreground)]">
-                Step {step + 1} of 4
+                Step {step + 1} of 5
               </span>
               <Button
                 variant="primary"

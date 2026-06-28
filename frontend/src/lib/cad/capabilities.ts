@@ -298,6 +298,43 @@ export const CAD_CAPABILITIES: CadCapability[] = [
     statusNote: "Fully wired in Phase 18: SurgicalPlanningPanel.tsx → /api/cases/:id/surgical/placements|tads|guides backed by PostgreSQL.",
     surface: "/cases/[id]#surgical",
   },
+  // ─── Phase 21 additions ───────────────────────────────────────────────────
+  {
+    id: "ai-tooth-segmentation",
+    name: "AI Tooth Segmentation",
+    phase: "review",
+    maturity: "implemented",
+    summary: "Full-arch tooth detection with FDI/Universal numbering, confidence scoring, per-tooth corrections, and correction history.",
+    statusNote: "Fully wired in Phase 21: AISegmentationCenter.tsx calls /api/cases/:id/segmentation/jobs. Supports external AI via AI_SEGMENTATION_URL env; falls back to deterministic FDI-chart rule engine. 13 correction types persisted to segmentation_corrections. Version history tracked per tooth.",
+    surface: "/cases/[id]#segment",
+  },
+  {
+    id: "ai-treatment-proposal",
+    name: "AI Treatment Proposal",
+    phase: "plan",
+    maturity: "implemented",
+    summary: "Clinical rule engine generates treatment stage count, IPR, attachment, anchorage, and expansion recommendations from Bolton ratios and crowding severity.",
+    statusNote: "Fully wired in Phase 21: AIProposalPanel.tsx → /api/cases/:id/proposals/generate. Clinical rules: crowding-based stage count 14–26, Class II/III +4–6 stages, Bolton anterior < 73.9% triggers expansion recs, IPR for crowding > 2 mm. Clinician accept/reject with notes stored in DB.",
+    surface: "/cases/[id]#proposal",
+  },
+  {
+    id: "preexport-qa",
+    name: "Pre-Export Quality Assurance",
+    phase: "manufacture",
+    maturity: "implemented",
+    summary: "10-check pre-export validation: missing teeth, numbering, mesh integrity, wall thickness, attachment validity, trim continuity, occlusion, collision, printable geometry, stage consistency.",
+    statusNote: "Fully wired in Phase 21: PreExportQAPanel.tsx → /api/cases/:id/preexport-qa/run. Each check returns pass/warning/fail with detail text. Clinician sign-off required; approvedAt stored in preexport_qa_reports.",
+    surface: "/cases/[id]#export",
+  },
+  {
+    id: "manufacturing-export",
+    name: "Manufacturing Export Package",
+    phase: "export",
+    maturity: "implemented",
+    summary: "Generate STL/OBJ/3MF/PLY/ZIP export packages for stage models, aligner shells, attachment templates, IBT, surgical guides, or full case bundles.",
+    statusNote: "Fully wired in Phase 21: manufacturing-prep controller → /api/cases/:id/manufacture/exports. Deterministic file manifest generation by export type and stage count; job lifecycle tracked in manufacture_exports table.",
+    surface: "/cases/[id]#export",
+  },
 ];
 
 export function capabilitiesByPhase(phase: CapabilityPhase): CadCapability[] {

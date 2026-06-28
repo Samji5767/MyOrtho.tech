@@ -95,6 +95,9 @@ export const submitSegmentationJob = (caseId: string, dto: {
   scanId?: string;
   modelType?: SegmentationModel;
   arch?: SegmentationArch;
+  gpuRequested?: boolean;
+  priority?: number;
+  onnxModelPath?: string;
 }) => api.post<SegmentationJob>(`/api/cases/${caseId}/segmentation/jobs`, dto);
 
 export const getSegmentationJob = (caseId: string, jobId: string) =>
@@ -110,3 +113,72 @@ export const updateSegment = (caseId: string, jobId: string, toothNumber: number
   isLocked?: boolean;
   isMissing?: boolean;
 }) => api.patch<ToothSegment>(`/api/cases/${caseId}/segmentation/jobs/${jobId}/segments/${toothNumber}`, patch);
+
+// ─── Phase 24: Mask editing ───────────────────────────────────────────────────
+
+export type MaskRegionType = 'crown' | 'root' | 'gingiva' | 'implant' | 'restoration' | 'supernumerary';
+
+export type MaskEditOperation =
+  | 'brush' | 'erase' | 'grow' | 'shrink' | 'smooth'
+  | 'merge' | 'split' | 'region_grow' | 'boundary_smooth';
+
+export interface SegmentationMask {
+  id: string;
+  jobId: string;
+  toothNumber: number;
+  regionType: MaskRegionType;
+  maskData: { vertices: number[]; normals: unknown[] };
+  confidenceHeatmap: Record<string, number>;
+  brushRadiusMm: number;
+  isManuallyEdited: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface MaskEditDto {
+  toothNumber: number;
+  regionType?: MaskRegionType;
+  operation: MaskEditOperation;
+  centre?: [number, number, number];
+  radiusMm?: number;
+  mergeIntoTooth?: number;
+  splitPlane?: [number, number, number];
+  seedVertex?: number;
+  growIterations?: number;
+}
+
+export interface HistoryEntry {
+  id: string;
+  sequenceNum: number;
+  actionType: string;
+  toothNumber: number | null;
+  regionType: string | null;
+  isUndone: boolean;
+  createdAt: string;
+}
+
+export const getMask = (caseId: string, jobId: string, toothNumber: number, regionType?: MaskRegionType) =>
+  api.get<SegmentationMask | null>(
+    `/api/cases/${caseId}/segmentation/jobs/${jobId}/masks/${toothNumber}${regionType ? `?regionType=${regionType}` : ''}`,
+  );
+
+export const editMask = (caseId: string, jobId: string, dto: MaskEditDto) =>
+  api.post<SegmentationMask>(`/api/cases/${caseId}/segmentation/jobs/${jobId}/masks`, dto);
+
+export const undoMaskEdit = (caseId: string, jobId: string) =>
+  api.post<{ undone: boolean; sequence?: number; action?: string }>(
+    `/api/cases/${caseId}/segmentation/jobs/${jobId}/undo`, {},
+  );
+
+export const redoMaskEdit = (caseId: string, jobId: string) =>
+  api.post<{ redone: boolean; sequence?: number; action?: string }>(
+    `/api/cases/${caseId}/segmentation/jobs/${jobId}/redo`, {},
+  );
+
+export const getHistoryStack = (caseId: string, jobId: string) =>
+  api.get<HistoryEntry[]>(`/api/cases/${caseId}/segmentation/jobs/${jobId}/history`);
+
+export const getConfidenceHeatmap = (caseId: string, jobId: string) =>
+  api.get<{ jobId: string; heatmapByTooth: Record<number, { confidence: number | null; regionHeatmaps: Record<string, unknown> }> }>(
+    `/api/cases/${caseId}/segmentation/jobs/${jobId}/heatmap`,
+  );

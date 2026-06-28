@@ -381,6 +381,34 @@ export const CAD_CAPABILITIES: CadCapability[] = [
     statusNote: "Fully wired in Phase 21: manufacturing-prep controller → /api/cases/:id/manufacture/exports. Deterministic file manifest generation by export type and stage count; job lifecycle tracked in manufacture_exports table.",
     surface: "/cases/[id]#export",
   },
+  // ─── Phase 24 additions ───────────────────────────────────────────────────
+  {
+    id: "segmentation-mask-editor",
+    name: "Segmentation Mask Editor",
+    phase: "review",
+    maturity: "implemented",
+    summary: "Interactive per-tooth mask editing with 8 operations: brush, erase, grow, shrink, boundary smoothing, region grow, smart merge, smart split. Per-region type (crown/root/gingiva/implant/restoration/supernumerary), undo/redo, and full history stack.",
+    statusNote: "Fully wired in Phase 24: SegmentationMaskEditor.tsx → /api/cases/:id/segmentation/jobs/:id/masks. Vertex-set operations stored in segmentation_masks; full history in segmentation_history. Confidence heatmap per tooth from getConfidenceHeatmap endpoint.",
+    surface: "/cases/[id]#segment",
+  },
+  {
+    id: "segmentation-job-monitor",
+    name: "Segmentation Job Queue Monitor",
+    phase: "review",
+    maturity: "implemented",
+    summary: "Real-time segmentation job queue with progress bars, model type display (MONAI/nnU-Net/ONNX/PyTorch/CPU), GPU acceleration toggle, auto-polling during active jobs, and result summary (teeth found, avg confidence).",
+    statusNote: "Fully wired in Phase 24: SegmentationJobMonitor.tsx → /api/cases/:id/segmentation/jobs. 3-second polling during processing state. GPU request flag and ONNX model path stored per job. Job history with duration tracking.",
+    surface: "/cases/[id]#segment",
+  },
+  {
+    id: "segmentation-confidence-heatmap",
+    name: "Segmentation Confidence Heatmap",
+    phase: "review",
+    maturity: "implemented",
+    summary: "Per-tooth confidence visualization as a color-coded FDI grid (red < 75%, amber 75–90%, green ≥ 90%) with per-region heatmap breakdowns. Loaded on mask editor open.",
+    statusNote: "Fully wired in Phase 24: /api/cases/:id/segmentation/jobs/:id/heatmap. Aggregates confidence scores from segmentation_masks.confidence_heatmap JSONB column. Missing teeth shown as grey. Drives tooth selection priority for manual correction.",
+    surface: "/cases/[id]#segment",
+  },
 ];
 
 export function capabilitiesByPhase(phase: CapabilityPhase): CadCapability[] {

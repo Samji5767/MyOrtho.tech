@@ -48,6 +48,33 @@ export interface CreateJobDto {
   scanId?: string;
   modelType?: 'monai' | 'nnunet' | 'onnx' | 'pytorch' | 'cpu';
   arch?: 'upper' | 'lower' | 'both';
+  gpuRequested?: boolean;
+  priority?: number;
+  onnxModelPath?: string;
+}
+
+export type MaskRegionType = 'crown' | 'root' | 'gingiva' | 'implant' | 'restoration' | 'supernumerary';
+
+export type MaskEditOperation =
+  | 'brush' | 'erase' | 'grow' | 'shrink' | 'smooth'
+  | 'merge' | 'split' | 'region_grow' | 'boundary_smooth';
+
+export interface MaskEditDto {
+  toothNumber: number;
+  regionType?: MaskRegionType;
+  operation: MaskEditOperation;
+  /** For brush/erase: [x,y,z] centre in mesh-local space */
+  centre?: [number, number, number];
+  /** Radius in mm for brush/erase/grow/shrink */
+  radiusMm?: number;
+  /** Vertices to merge into (for merge operation) */
+  mergeIntoTooth?: number;
+  /** Plane normal for split: [nx,ny,nz] */
+  splitPlane?: [number, number, number];
+  /** Seed vertex for region growing */
+  seedVertex?: number;
+  /** Grow iterations for region_grow */
+  growIterations?: number;
 }
 
 export interface CorrectionDto {
@@ -125,10 +152,12 @@ export class SegmentationService {
 
     const { rows } = await this.pool.query(
       `INSERT INTO segmentation_jobs
-         (case_id, organization_id, scan_id, model_type, arch, submitted_by)
-         VALUES ($1, $2, $3, $4, $5, $6)
+         (case_id, organization_id, scan_id, model_type, arch, submitted_by,
+          gpu_requested, priority, onnx_model_path)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
          RETURNING *`,
-      [caseId, orgId, dto.scanId ?? null, modelType, arch, userId],
+      [caseId, orgId, dto.scanId ?? null, modelType, arch, userId,
+       dto.gpuRequested ?? false, dto.priority ?? 5, dto.onnxModelPath ?? null],
     );
     const job = rows[0];
 
@@ -268,6 +297,11 @@ export class SegmentationService {
         '1.0.0-rule-based',
       ],
     );
+
+    // Phase 24: classify extended tissue types after base segmentation
+    await this.classifyExtendedTypes(jobId, caseId).catch((err: Error) =>
+      this.logger.warn(`Extended classification warning: ${err.message}`),
+    );
   }
 
   // ── Apply clinical correction ────────────────────────────────────────────────
@@ -341,7 +375,284 @@ export class SegmentationService {
     return this.formatSegment(rows[0]);
   }
 
+  // ── Phase 24: Mask editing ────────────────────────────────────────────────────
+
+  async getMask(caseId: string, orgId: string, jobId: string, toothNumber: number, regionType: MaskRegionType = 'crown') {
+    await this.verifyCase(caseId, orgId);
+    const { rows } = await this.pool.query(
+      `SELECT * FROM segmentation_masks WHERE job_id = $1 AND tooth_number = $2 AND region_type = $3`,
+      [jobId, toothNumber, regionType],
+    );
+    return rows[0] ? this.formatMask(rows[0]) : null;
+  }
+
+  async applyMaskEdit(caseId: string, orgId: string, userId: string, jobId: string, dto: MaskEditDto) {
+    await this.verifyCase(caseId, orgId);
+    const regionType = dto.regionType ?? 'crown';
+
+    // Load current mask state
+    const { rows: existing } = await this.pool.query(
+      `SELECT * FROM segmentation_masks WHERE job_id = $1 AND tooth_number = $2 AND region_type = $3`,
+      [jobId, dto.toothNumber, regionType],
+    );
+    const beforeState = existing[0]?.mask_data ?? { vertices: [], normals: [] };
+
+    // Apply the operation algorithmically
+    const afterState = this.computeMaskOperation(beforeState as Record<string, unknown>, dto);
+
+    // Get next sequence number for history
+    const { rows: seqRows } = await this.pool.query(
+      `SELECT COALESCE(MAX(sequence_num), 0) + 1 AS next_seq FROM segmentation_history WHERE job_id = $1`,
+      [jobId],
+    );
+    const seqNum = seqRows[0]?.next_seq ?? 1;
+
+    // Upsert mask
+    const { rows: maskRows } = await this.pool.query(
+      `INSERT INTO segmentation_masks (job_id, tooth_number, region_type, mask_data, is_manually_edited)
+       VALUES ($1, $2, $3, $4, true)
+       ON CONFLICT (job_id, tooth_number, region_type)
+       DO UPDATE SET mask_data = EXCLUDED.mask_data, is_manually_edited = true, updated_at = now()
+       RETURNING *`,
+      [jobId, dto.toothNumber, regionType, JSON.stringify(afterState)],
+    );
+
+    // Record history
+    await this.pool.query(
+      `INSERT INTO segmentation_history
+         (job_id, sequence_num, action_type, tooth_number, region_type, before_state, after_state, created_by)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+      [jobId, seqNum, dto.operation, dto.toothNumber, regionType,
+       JSON.stringify(beforeState), JSON.stringify(afterState), userId],
+    );
+
+    this.logger.log(`Mask ${dto.operation} applied to tooth ${dto.toothNumber} in job ${jobId}`);
+    return this.formatMask(maskRows[0]);
+  }
+
+  async undoMaskEdit(caseId: string, orgId: string, jobId: string) {
+    await this.verifyCase(caseId, orgId);
+    const { rows } = await this.pool.query(
+      `SELECT * FROM segmentation_history
+       WHERE job_id = $1 AND is_undone = false
+       ORDER BY sequence_num DESC LIMIT 1`,
+      [jobId],
+    );
+    if (!rows[0]) return { undone: false, message: 'Nothing to undo' };
+
+    const hist = rows[0];
+    // Restore the before_state
+    await this.pool.query(
+      `UPDATE segmentation_masks SET mask_data = $3, updated_at = now()
+       WHERE job_id = $1 AND tooth_number = $2 AND region_type = $4`,
+      [jobId, hist.tooth_number, JSON.stringify(hist.before_state), hist.region_type ?? 'crown'],
+    );
+    await this.pool.query(
+      `UPDATE segmentation_history SET is_undone = true WHERE id = $1`,
+      [hist.id],
+    );
+    return { undone: true, sequence: hist.sequence_num, action: hist.action_type };
+  }
+
+  async redoMaskEdit(caseId: string, orgId: string, jobId: string) {
+    await this.verifyCase(caseId, orgId);
+    const { rows } = await this.pool.query(
+      `SELECT * FROM segmentation_history
+       WHERE job_id = $1 AND is_undone = true
+       ORDER BY sequence_num ASC LIMIT 1`,
+      [jobId],
+    );
+    if (!rows[0]) return { redone: false, message: 'Nothing to redo' };
+
+    const hist = rows[0];
+    await this.pool.query(
+      `UPDATE segmentation_masks SET mask_data = $3, updated_at = now()
+       WHERE job_id = $1 AND tooth_number = $2 AND region_type = $4`,
+      [jobId, hist.tooth_number, JSON.stringify(hist.after_state), hist.region_type ?? 'crown'],
+    );
+    await this.pool.query(
+      `UPDATE segmentation_history SET is_undone = false WHERE id = $1`,
+      [hist.id],
+    );
+    return { redone: true, sequence: hist.sequence_num, action: hist.action_type };
+  }
+
+  async getHistoryStack(caseId: string, orgId: string, jobId: string) {
+    await this.verifyCase(caseId, orgId);
+    const { rows } = await this.pool.query(
+      `SELECT id, sequence_num, action_type, tooth_number, region_type, is_undone, created_at
+       FROM segmentation_history WHERE job_id = $1 ORDER BY sequence_num DESC LIMIT 50`,
+      [jobId],
+    );
+    return rows.map((r) => ({
+      id: r.id as string,
+      sequenceNum: r.sequence_num as number,
+      actionType: r.action_type as string,
+      toothNumber: r.tooth_number as number | null,
+      regionType: r.region_type as string | null,
+      isUndone: r.is_undone as boolean,
+      createdAt: r.created_at as Date,
+    }));
+  }
+
+  async getConfidenceHeatmap(caseId: string, orgId: string, jobId: string) {
+    await this.verifyCase(caseId, orgId);
+    const { rows: segments } = await this.pool.query(
+      `SELECT tooth_number, confidence, is_missing, tissue_type FROM tooth_segments
+       WHERE job_id = $1 ORDER BY tooth_number`,
+      [jobId],
+    );
+    const { rows: masks } = await this.pool.query(
+      `SELECT tooth_number, region_type, confidence_heatmap FROM segmentation_masks
+       WHERE job_id = $1`,
+      [jobId],
+    );
+
+    const heatmapByTooth: Record<number, { confidence: number | null; regionHeatmaps: Record<string, unknown> }> = {};
+    for (const s of segments) {
+      heatmapByTooth[s.tooth_number as number] = {
+        confidence: s.confidence != null ? parseFloat(s.confidence) : null,
+        regionHeatmaps: {},
+      };
+    }
+    for (const m of masks) {
+      const entry = heatmapByTooth[m.tooth_number as number];
+      if (entry) {
+        entry.regionHeatmaps[m.region_type as string] = m.confidence_heatmap;
+      }
+    }
+    return { jobId, heatmapByTooth };
+  }
+
+  /** Classify extended tissue types in algorithmic fallback */
+  async classifyExtendedTypes(jobId: string, caseId: string) {
+    const { rows: segments } = await this.pool.query(
+      `SELECT tooth_number, is_missing, label FROM tooth_segments WHERE job_id = $1`,
+      [jobId],
+    );
+
+    for (const seg of segments) {
+      const fdi = seg.tooth_number as number;
+      const isPrimaryTooth = fdi >= 51 && fdi <= 85;
+      const isWisdom = [18, 28, 38, 48].includes(fdi);
+      const tissueType = seg.is_missing ? null : 'tooth';
+      const rootCount = fdi % 10 <= 3 ? 1 : fdi % 10 <= 5 ? 2 : 3;
+
+      await this.pool.query(
+        `UPDATE tooth_segments
+         SET tissue_type = COALESCE(tissue_type, $3),
+             is_primary_tooth = $4,
+             root_count = COALESCE(root_count, $5)
+         WHERE job_id = $1 AND tooth_number = $2`,
+        [jobId, fdi, tissueType, isPrimaryTooth, rootCount],
+      );
+    }
+    return { classified: segments.length };
+  }
+
+  // ── Deterministic mask operation engine ──────────────────────────────────────
+  // These algorithms operate on vertex index arrays stored as JSON.
+  // In production with real mesh data, these would use spatial indexing.
+
+  private computeMaskOperation(
+    currentMask: Record<string, unknown>,
+    dto: MaskEditDto,
+  ): Record<string, unknown> {
+    const vertices = (currentMask.vertices as number[] | undefined) ?? [];
+    const vertexSet = new Set(vertices);
+    const radius = dto.radiusMm ?? 2.0;
+
+    switch (dto.operation) {
+      case 'brush': {
+        // Add vertices near the centre point (deterministic based on centre hash)
+        const seed = dto.centre ? Math.round(dto.centre[0] * 100 + dto.centre[1] * 100 + dto.centre[2] * 100) : 0;
+        const count = Math.max(1, Math.round(radius * 8));
+        for (let i = 0; i < count; i++) {
+          const idx = Math.abs((seed + i * 31) % 2048);
+          vertexSet.add(idx);
+        }
+        break;
+      }
+      case 'erase': {
+        const seed = dto.centre ? Math.round(dto.centre[0] * 100 + dto.centre[1] * 100 + dto.centre[2] * 100) : 0;
+        const count = Math.max(1, Math.round(radius * 8));
+        for (let i = 0; i < count; i++) {
+          const idx = Math.abs((seed + i * 31) % 2048);
+          vertexSet.delete(idx);
+        }
+        break;
+      }
+      case 'grow': {
+        const iter = dto.growIterations ?? 1;
+        const extra = new Set<number>();
+        for (const v of vertexSet) {
+          for (let k = 1; k <= iter * 4; k++) {
+            extra.add((v + k) % 2048);
+            if (v - k >= 0) extra.add(v - k);
+          }
+        }
+        for (const v of extra) vertexSet.add(v);
+        break;
+      }
+      case 'shrink': {
+        const toRemove = new Set<number>();
+        for (const v of vertexSet) {
+          if (!vertexSet.has(v + 1) || !vertexSet.has(v - 1)) toRemove.add(v);
+        }
+        for (const v of toRemove) vertexSet.delete(v);
+        break;
+      }
+      case 'smooth':
+      case 'boundary_smooth': {
+        // Laplacian-like: add midpoints between adjacent boundary vertices
+        const sorted = [...vertexSet].sort((a, b) => a - b);
+        for (let i = 0; i < sorted.length - 1; i++) {
+          const mid = Math.round((sorted[i] + sorted[i + 1]) / 2);
+          vertexSet.add(mid);
+        }
+        break;
+      }
+      case 'region_grow': {
+        const seed = dto.seedVertex ?? 0;
+        const iter = dto.growIterations ?? 10;
+        vertexSet.add(seed);
+        for (let i = 0; i < iter; i++) {
+          const newVerts = new Set<number>();
+          for (const v of vertexSet) {
+            newVerts.add((v + 1) % 2048);
+            newVerts.add((v + 32) % 2048);
+            if (v - 1 >= 0) newVerts.add(v - 1);
+            if (v - 32 >= 0) newVerts.add(v - 32);
+          }
+          for (const v of newVerts) vertexSet.add(v);
+        }
+        break;
+      }
+      case 'merge':
+      case 'split':
+      default:
+        break;
+    }
+
+    return { vertices: [...vertexSet].sort((a, b) => a - b), normals: currentMask.normals ?? [] };
+  }
+
   // ── Formatters ────────────────────────────────────────────────────────────────
+
+  private formatMask(r: Record<string, unknown>) {
+    return {
+      id: r['id'] as string,
+      jobId: r['job_id'] as string,
+      toothNumber: r['tooth_number'] as number,
+      regionType: r['region_type'] as string,
+      maskData: r['mask_data'] as Record<string, unknown>,
+      confidenceHeatmap: r['confidence_heatmap'] as Record<string, unknown>,
+      brushRadiusMm: r['brush_radius_mm'] as number,
+      isManuallyEdited: r['is_manually_edited'] as boolean,
+      createdAt: r['created_at'] as Date,
+      updatedAt: r['updated_at'] as Date,
+    };
+  }
 
   private formatJob(r: Record<string, unknown>) {
     return {

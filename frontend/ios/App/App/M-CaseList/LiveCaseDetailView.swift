@@ -12,6 +12,7 @@ struct LiveCaseDetailView: View {
     enum DetailTab: String, CaseIterable {
         case scans    = "Scans"
         case plans    = "Plans"
+        case segment  = "AI Segment"
         case analysis = "Analysis"
         case ceph     = "Ceph"
         case photos   = "Photos"
@@ -21,6 +22,7 @@ struct LiveCaseDetailView: View {
             switch self {
             case .scans:    return "cube.box"
             case .plans:    return "list.clipboard"
+            case .segment:  return "sparkle.magnifyingglass"
             case .analysis: return "chart.bar.doc.horizontal"
             case .ceph:     return "scanner"
             case .photos:   return "camera"
@@ -58,6 +60,7 @@ struct LiveCaseDetailView: View {
                 switch selectedTab {
                 case .scans:    LiveScansTab(caseId: caseId)
                 case .plans:    LivePlansTab(caseId: caseId)
+                case .segment:  LiveSegmentTab(caseId: caseId)
                 case .analysis: LiveAnalysisTab(caseId: caseId)
                 case .ceph:     LiveCephTab(caseId: caseId)
                 case .photos:   LivePhotosTab(caseId: caseId)
@@ -1254,6 +1257,128 @@ private struct LiveSurgicalTab: View {
             loadState = .loaded
         } catch {
             loadState = .error(error.localizedDescription)
+        }
+    }
+}
+
+// MARK: - LiveSegmentTab
+
+private struct LiveSegmentTab: View {
+    let caseId: String
+
+    @State private var jobs: [APISegmentationJob] = []
+    @State private var segLoadState: SegLoadState = .loading
+
+    enum SegLoadState { case loading, loaded, error(String) }
+
+    var body: some View {
+        Group {
+            switch segLoadState {
+            case .loading:
+                ProgressView("Loading segmentation jobs…")
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+            case .error(let msg):
+                ContentUnavailableView(
+                    "Error",
+                    systemImage: "exclamationmark.triangle",
+                    description: Text(msg)
+                )
+
+            case .loaded:
+                if jobs.isEmpty {
+                    ContentUnavailableView(
+                        "No segmentation jobs",
+                        systemImage: "sparkle.magnifyingglass",
+                        description: Text("Submit an AI segmentation job from the case's Scan workspace.")
+                    )
+                } else {
+                    List(jobs) { job in
+                        VStack(alignment: .leading, spacing: 6) {
+                            HStack {
+                                Label(job.modelType.uppercased(), systemImage: "cpu")
+                                    .font(.caption.bold())
+                                Spacer()
+                                segStatusPill(job.status)
+                            }
+                            HStack(spacing: 12) {
+                                Label(job.arch.capitalized, systemImage: "mouth")
+                                    .font(.caption2)
+                                    .foregroundColor(.secondary)
+                                if let count = job.toothCount {
+                                    Label("\(count) teeth", systemImage: "number.circle")
+                                        .font(.caption2)
+                                        .foregroundColor(.secondary)
+                                }
+                                if job.status == "processing" {
+                                    ProgressView(value: job.progress / 100)
+                                        .frame(maxWidth: 60)
+                                }
+                            }
+                            if let segments = job.segments, !segments.isEmpty {
+                                ScrollView(.horizontal, showsIndicators: false) {
+                                    HStack(spacing: 4) {
+                                        ForEach(segments) { seg in
+                                            VStack(spacing: 2) {
+                                                Text(seg.isMissing ? "–" : String(seg.toothNumber))
+                                                    .font(.system(size: 10, weight: .bold, design: .monospaced))
+                                                    .foregroundColor(seg.isMissing ? .secondary : .primary)
+                                                if let conf = seg.confidence {
+                                                    Text("\(Int(conf * 100))%")
+                                                        .font(.system(size: 8))
+                                                        .foregroundColor(conf < 0.7 ? .orange : .green)
+                                                }
+                                            }
+                                            .padding(4)
+                                            .background(
+                                                seg.isMissing
+                                                    ? Color(.systemGray6)
+                                                    : (seg.confidence ?? 1) < 0.7
+                                                        ? Color.orange.opacity(0.12)
+                                                        : Color.green.opacity(0.10)
+                                            )
+                                            .cornerRadius(6)
+                                        }
+                                    }
+                                    .padding(.vertical, 4)
+                                }
+                            }
+                            Text(job.createdAt, style: .relative)
+                                .font(.caption2)
+                                .foregroundColor(.secondary)
+                        }
+                        .padding(.vertical, 4)
+                    }
+                    .listStyle(.plain)
+                }
+            }
+        }
+        .task { await load() }
+    }
+
+    private func segStatusPill(_ s: String) -> some View {
+        let color: Color = s == "completed" ? .green
+            : s == "failed" ? .red
+            : s == "processing" ? .blue : .gray
+        return Text(s.replacingOccurrences(of: "_", with: " ").capitalized)
+            .font(.caption2.bold())
+            .padding(.horizontal, 8)
+            .padding(.vertical, 3)
+            .background(color.opacity(0.15))
+            .foregroundColor(color)
+            .clipShape(Capsule())
+    }
+
+    private func load() async {
+        segLoadState = .loading
+        do {
+            jobs = try await MyOrthoAPIClient.shared.get("/api/cases/\(caseId)/segmentation/jobs")
+            segLoadState = .loaded
+        } catch APIClientError.httpError(404, _) {
+            jobs = []
+            segLoadState = .loaded
+        } catch {
+            segLoadState = .error(error.localizedDescription)
         }
     }
 }

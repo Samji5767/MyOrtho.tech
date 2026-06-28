@@ -401,3 +401,85 @@ struct APIPrinter: Decodable, Identifiable {
     let createdAt: Date
     let updatedAt: Date
 }
+
+// MARK: - Phase 21: AI Segmentation
+
+struct APISegmentationJob: Decodable, Identifiable {
+    let id: String
+    let caseId: String
+    let modelType: String
+    let arch: String
+    let status: String
+    let progress: Double
+    let toothCount: Int?
+    let errorMessage: String?
+    let aiVersion: String
+    let startedAt: Date?
+    let completedAt: Date?
+    let createdAt: Date
+    let segments: [APIToothSegment]?
+}
+
+struct APIToothSegment: Decodable, Identifiable {
+    let id: String
+    let toothNumber: Int
+    let universalNumber: Int?
+    let label: String
+    let arch: String?
+    let confidence: Double?
+    let isImpacted: Bool
+    let isMissing: Bool
+    let isSupernumerary: Bool
+    let isLocked: Bool
+    let version: Int
+    let createdAt: Date
+}
+
+// MARK: - Phase 21: AI Treatment Proposal
+
+struct APIAIProposal: Decodable, Identifiable {
+    let id: String
+    let caseId: String
+    let status: String
+    let angleClassification: String?
+    let estimatedStages: Int?
+    let complexityScore: Double?
+    let refinementProbability: Double?
+    let predictedDurationWeeks: Int?
+    let aiNotes: String?
+    let reviewedByEmail: String?
+    let reviewedAt: Date?
+    let reviewNotes: String?
+    let generatedAt: Date
+    let createdAt: Date
+}
+
+// MARK: - Phase 21: Pre-Export QA
+
+struct APIQAReport: Decodable, Identifiable {
+    let id: String
+    let caseId: String
+    let overallStatus: String
+    let passCount: Int
+    let warningCount: Int
+    let failCount: Int
+    let approvedByEmail: String?
+    let approvedAt: Date?
+    let generatedAt: Date
+    let createdAt: Date
+}
+
+// MARK: - Phase 21: Manufacturing Export
+
+struct APIManufactureExport: Decodable, Identifiable {
+    let id: String
+    let caseId: String
+    let exportFormat: String
+    let exportType: String
+    let status: String
+    let fileSizeBytes: Int?
+    let generatedByEmail: String?
+    let generatedAt: Date
+    let completedAt: Date?
+    let createdAt: Date
+}

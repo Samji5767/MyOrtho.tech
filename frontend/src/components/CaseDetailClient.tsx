@@ -7,6 +7,7 @@ import {
   Activity,
   ArrowLeft,
   Box,
+  Brain,
   Camera,
   CheckSquare2,
   ChevronRight,
@@ -16,11 +17,13 @@ import {
   Microscope,
   Ruler,
   ScanLine,
+  ShieldCheck,
   Stethoscope,
   Syringe,
   Target,
   UploadCloud,
 } from "lucide-react";
+import dynamic from "next/dynamic";
 import ScanPanel from "@/components/ScanPanel";
 import TreatmentPlansPanel from "@/components/TreatmentPlansPanel";
 import ToothTransformPanel from "@/components/ToothTransformPanel";
@@ -31,6 +34,13 @@ import AuditTrail from "@/components/AuditTrail";
 import SurgicalPlanningPanel from "@/components/SurgicalPlanningPanel";
 import PatientPhotosPanel from "@/components/PatientPhotosPanel";
 import CephalometricPanel from "@/components/CephalometricPanel";
+import AIProposalPanel from "@/components/AIProposalPanel";
+import PreExportQAPanel from "@/components/PreExportQAPanel";
+
+const AISegmentationCenter = dynamic(
+  () => import("@/components/AISegmentationCenter").then((m) => ({ default: m.AISegmentationCenter })),
+  { ssr: false, loading: () => <div className="h-[400px] animate-skeleton rounded-xl" /> },
+);
 
 // ─── Representative data keyed to case ID ─────────────────────────────────────
 
@@ -175,7 +185,10 @@ const CASE_PROFILES: Record<string, CaseProfile> = {
 
 // ─── Tabs ─────────────────────────────────────────────────────────────────────
 
-type Tab = "summary" | "workflow" | "audit" | "scans" | "plans" | "analysis" | "movements" | "surgical" | "photos" | "ceph";
+type Tab =
+  | "summary" | "workflow" | "scans" | "plans" | "analysis"
+  | "segment" | "proposal" | "export"
+  | "ceph" | "photos" | "surgical" | "movements" | "audit";
 
 const TABS: { key: Tab; label: string; icon: React.ReactNode }[] = [
   { key: "summary",   label: "Summary",   icon: <ClipboardList size={13} /> },
@@ -183,6 +196,9 @@ const TABS: { key: Tab; label: string; icon: React.ReactNode }[] = [
   { key: "scans",     label: "Scans",     icon: <UploadCloud size={13} /> },
   { key: "plans",     label: "Plans",     icon: <ClipboardCheck size={13} /> },
   { key: "analysis",  label: "Analysis",  icon: <Microscope size={13} /> },
+  { key: "segment",   label: "AI Segment",icon: <ScanLine size={13} /> },
+  { key: "proposal",  label: "AI Proposal",icon: <Brain size={13} /> },
+  { key: "export",    label: "QA & Export",icon: <ShieldCheck size={13} /> },
   { key: "ceph",      label: "Ceph",      icon: <ScanLine size={13} /> },
   { key: "photos",    label: "Photos",    icon: <Camera size={13} /> },
   { key: "surgical",  label: "Surgical",  icon: <Syringe size={13} /> },
@@ -192,7 +208,7 @@ const TABS: { key: Tab; label: string; icon: React.ReactNode }[] = [
 
 // ─── Summary tab ──────────────────────────────────────────────────────────────
 
-function SummaryTab({ profile }: { profile: CaseProfile }) {
+function SummaryTab({ profile, caseId }: { profile: CaseProfile; caseId: string }) {
   return (
     <div className="space-y-4">
       {/* Patient profile */}
@@ -259,7 +275,7 @@ function SummaryTab({ profile }: { profile: CaseProfile }) {
             <Ruler size={15} className="text-[color:var(--primary)]" />
             <h3 className="text-sm font-semibold text-[color:var(--foreground)]">Measurements</h3>
           </div>
-          <Link href="/studio" className="text-xs font-semibold text-[color:var(--primary)] hover:underline underline-offset-2">
+          <Link href={`/studio?caseId=${encodeURIComponent(caseId)}`} className="text-xs font-semibold text-[color:var(--primary)] hover:underline underline-offset-2">
             Measure in Viewer →
           </Link>
         </div>
@@ -279,7 +295,7 @@ function SummaryTab({ profile }: { profile: CaseProfile }) {
             <h3 className="text-sm font-semibold text-[color:var(--foreground)]">CAD Studio</h3>
           </div>
           <Link
-            href="/studio"
+            href={`/studio?caseId=${encodeURIComponent(caseId)}`}
             className="inline-flex items-center gap-1.5 rounded-lg border border-[color:var(--border)] bg-[color:var(--card)] px-3 py-1.5 text-xs font-semibold text-[color:var(--foreground)] transition-transform active:scale-95"
           >
             Open <ChevronRight size={11} />
@@ -363,7 +379,7 @@ export default function CaseDetailClient({ id }: { id: string }) {
       </div>
 
       <div className="px-4 pt-4 sm:px-5">
-        {tab === "summary"  && <SummaryTab profile={profile} />}
+        {tab === "summary"  && <SummaryTab profile={profile} caseId={id} />}
         {tab === "workflow" && (
           <ClinicalWorkflow
             caseId={id}
@@ -377,6 +393,9 @@ export default function CaseDetailClient({ id }: { id: string }) {
         {tab === "scans"     && <ScanPanel caseId={id} />}
         {tab === "plans"     && <TreatmentPlansPanel caseId={id} />}
         {tab === "analysis"  && <ClinicalAnalysisPanel caseId={id} />}
+        {tab === "segment"   && <AISegmentationCenter caseId={id} />}
+        {tab === "proposal"  && <AIProposalPanel caseId={id} />}
+        {tab === "export"    && <PreExportQAPanel caseId={id} />}
         {tab === "ceph"      && <CephalometricPanel caseId={id} />}
         {tab === "photos"    && <PatientPhotosPanel caseId={id} />}
         {tab === "surgical"  && <SurgicalPlanningPanel caseId={id} />}

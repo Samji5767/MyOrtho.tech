@@ -49,3 +49,21 @@ export function approvePlan(
 export function listStages(caseId: string, planId: string): Promise<AlignStage[]> {
   return api.get<AlignStage[]>(`/api/cases/${caseId}/plans/${planId}/stages`);
 }
+
+export function generateStages(
+  caseId: string,
+  planId: string,
+  stageCount?: number,
+): Promise<{ generated: number; planId: string; caseId: string }> {
+  return api.post(`/api/cases/${caseId}/plans/${planId}/stages/generate`, {
+    ...(stageCount !== undefined ? { stageCount } : {}),
+  });
+}
+
+export function updatePlan(
+  caseId: string,
+  planId: string,
+  dto: { estimatedStages?: number; aiRecommendationNotes?: string },
+): Promise<TreatmentPlanSummary> {
+  return api.patch<TreatmentPlanSummary>(`/api/cases/${caseId}/plans/${planId}`, dto);
+}

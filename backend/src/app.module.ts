@@ -33,6 +33,7 @@ import { SegmentationModule } from './segmentation/segmentation.module';
 import { AiProposalModule } from './ai-proposal/ai-proposal.module';
 import { PreexportQaModule } from './preexport-qa/preexport-qa.module';
 import { ManufacturePrepModule } from './manufacture-prep/manufacture-prep.module';
+import { AnalyticsModule } from './analytics/analytics.module';
 
 @Module({
   imports: [
@@ -74,6 +75,7 @@ import { ManufacturePrepModule } from './manufacture-prep/manufacture-prep.modul
     AiProposalModule,
     PreexportQaModule,
     ManufacturePrepModule,
+    AnalyticsModule,
   ],
 })
 export class AppModule {}

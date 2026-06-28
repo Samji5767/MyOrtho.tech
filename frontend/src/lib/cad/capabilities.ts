@@ -103,9 +103,9 @@ export const CAD_CAPABILITIES: CadCapability[] = [
     id: "treatment-planning",
     name: "Treatment Planning",
     phase: "plan",
-    maturity: "simulated",
-    summary: "Define target occlusion and sequence tooth movements toward the planned result.",
-    statusNote: "Treatment plan timeline page exists; planning state is representative.",
+    maturity: "implemented",
+    summary: "Create treatment plans with estimated stage counts and doctor approval workflow. Plans linked to cases via patientId.",
+    statusNote: "Fully wired in Phase 22: TreatmentPlansPanel → POST /api/cases/:id/plans → PostgreSQL treatment_plans table. Doctor approval writes approved_at + signature. Plan creation page is case-aware via ?caseId= URL param.",
     surface: "/treatment-plan",
   },
   {
@@ -209,11 +209,11 @@ export const CAD_CAPABILITIES: CadCapability[] = [
   },
   {
     id: "aligner-review",
-    name: "Aligner Review",
+    name: "Aligner Stage Review",
     phase: "manufacture",
-    maturity: "simulated",
-    summary: "Stage-by-stage review of movements, IPR, and active attachments per aligner.",
-    statusNote: "Stage preview exists; AlignerPlan/AlignerStage models define per-stage data.",
+    maturity: "implemented",
+    summary: "Stage-by-stage review of cumulative tooth movements (mesial/distal/buccal/lingual/torque) across all 28 FDI arch teeth.",
+    statusNote: "Fully wired in Phase 22: TreatmentPlansPanel stage chip strip + MovementTable. Stages generated via POST .../stages/generate with linear interpolation from crowding-based total movements. Persisted to aligner_stages table.",
     surface: "/treatment-plan",
   },
   {

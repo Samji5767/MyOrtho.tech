@@ -1,75 +1,55 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   Activity,
   AlertTriangle,
   BarChart3,
   CheckCircle2,
   Clock,
+  Layers3,
+  Loader2,
   TrendingDown,
   TrendingUp,
   Users,
   Zap,
 } from "lucide-react";
 import { Card, MetricCard, ProgressBar, StatusBadge } from "@/components/DesignSystem";
+import { fetchAnalyticsSummary, type AnalyticsSummary } from "@/lib/api/analytics";
 
-// ─── Representative analytics data ────────────────────────────────────────────
-// Never claimed to be live. Shown only when preview mode is enabled.
+// ─── Status display helpers ───────────────────────────────────────────────────
 
-const MONTHLY_THROUGHPUT = [31, 28, 35, 41, 38, 47];
-const MONTH_LABELS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun (MTD)"];
+const STATUS_LABEL: Record<string, string> = {
+  active_treatment: "Active Treatment",
+  pending_records: "Pending Records",
+  scan_review: "Scan Review",
+  clinical_review: "Clinical Review",
+  planning: "Planning",
+  manufacturing: "Manufacturing",
+  completed: "Completed",
+  on_hold: "On Hold",
+  draft: "Draft",
+};
 
-const SLA_METRICS = { onTime: 92, atRisk: 5, breached: 3, total: 100 };
+// ─── Chart components ─────────────────────────────────────────────────────────
 
-const STAGE_DISTRIBUTION = [
-  { label: "Consultation",    count: 9,  pct: 19 },
-  { label: "Scan & Segment",  count: 6,  pct: 13 },
-  { label: "Treatment Plan",  count: 11, pct: 23 },
-  { label: "Manufacturing",   count: 12, pct: 26 },
-  { label: "Delivery",        count: 5,  pct: 11 },
-  { label: "Retention",       count: 4,  pct: 9  },
-];
-
-const APPROVAL_TURNAROUND = [
-  { label: "< 2 h",   count: 18, tone: "success" as const },
-  { label: "2–6 h",   count: 31, tone: "primary" as const },
-  { label: "6–24 h",  count: 28, tone: "warning" as const },
-  { label: "> 24 h",  count: 8,  tone: "danger"  as const },
-];
-
-const PROVIDER_PERFORMANCE = [
-  { name: "Dr. Chen",   cases: 24, approved: 23, sla: 96 },
-  { name: "Dr. Lee",    cases: 18, approved: 17, sla: 94 },
-  { name: "Dr. Park",   cases: 21, approved: 21, sla: 100 },
-  { name: "Dr. Torres", cases: 29, approved: 27, sla: 93 },
-  { name: "Dr. Nguyen", cases: 11, approved: 9,  sla: 82 },
-];
-
-const KPI_DATA = [
-  { label: "Active patients",       value: "312", helper: "+8% MoM",     trend: "up",   icon: Users,        tone: "primary"  as const },
-  { label: "Cases completed (MTD)", value: "47",  helper: "+22% vs plan", trend: "up",   icon: CheckCircle2, tone: "success"  as const },
-  { label: "Avg SLA (days)",        value: "5.1", helper: "Target: 5.0",  trend: "down", icon: Clock,        tone: "success"  as const },
-  { label: "Approval turnaround",   value: "4.2 h", helper: "−1.1 h MoM", trend: "down", icon: Zap,         tone: "info"     as const },
-];
-
-// ─── Chart components (no external library) ───────────────────────────────────
-
-function ThroughputBars({ data, labels }: { data: number[]; labels: string[] }) {
-  const max = Math.max(...data);
+function ThroughputBars({ data }: { data: { month: string; count: number }[] }) {
+  if (data.length === 0) return null;
+  const max = Math.max(...data.map((d) => d.count), 1);
   return (
     <div className="flex items-end gap-1.5 h-28 pt-2">
-      {data.map((val, i) => {
+      {data.map((d, i) => {
         const isLatest = i === data.length - 1;
+        const label = new Date(d.month + "-01").toLocaleString("default", { month: "short" });
         return (
-          <div key={i} className="flex flex-1 flex-col items-center gap-1">
-            <span className="text-[9px] font-semibold tabular-nums text-[color:var(--foreground)]">{val}</span>
+          <div key={d.month} className="flex flex-1 flex-col items-center gap-1">
+            <span className="text-[9px] font-semibold tabular-nums text-[color:var(--foreground)]">{d.count}</span>
             <div
               className={`w-full rounded-t-md transition-all duration-500 ${isLatest ? "bg-[color:var(--primary)]" : "bg-[color:var(--primary)]/40"}`}
-              style={{ height: `${Math.max(8, (val / max) * 80)}px` }}
+              style={{ height: `${Math.max(8, (d.count / max) * 80)}px` }}
             />
             <span className="text-[8px] font-medium text-[color:var(--muted-foreground)] truncate w-full text-center leading-tight">
-              {labels[i].replace(" (MTD)", "")}
+              {label}
             </span>
           </div>
         );
@@ -78,22 +58,29 @@ function ThroughputBars({ data, labels }: { data: number[]; labels: string[] }) 
   );
 }
 
-function ApprovalHistogram({ data }: { data: typeof APPROVAL_TURNAROUND }) {
-  const max = Math.max(...data.map(d => d.count));
-  const total = data.reduce((s, d) => s + d.count, 0);
+function StatusDistribution({ casesByStatus }: { casesByStatus: Record<string, number> }) {
+  const total = Object.values(casesByStatus).reduce((a, b) => a + b, 0);
+  const entries = Object.entries(casesByStatus)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 7);
+  const max = Math.max(...entries.map(([, v]) => v), 1);
+  if (total === 0) return <p className="text-sm text-[color:var(--muted-foreground)]">No case data yet</p>;
   return (
-    <div className="space-y-2">
-      {data.map(d => (
-        <div key={d.label} className="flex items-center gap-3">
-          <span className="w-14 shrink-0 text-xs font-medium text-[color:var(--foreground)]">{d.label}</span>
+    <div className="space-y-2.5">
+      {entries.map(([status, count]) => (
+        <div key={status} className="flex items-center gap-3">
+          <span className="w-32 shrink-0 text-xs font-medium text-[color:var(--foreground)] truncate">
+            {STATUS_LABEL[status] ?? status}
+          </span>
           <div className="flex-1">
-            <ProgressBar value={Math.round((d.count / max) * 100)} tone={d.tone} />
+            <ProgressBar value={Math.round((count / max) * 100)} tone="primary" />
           </div>
-          <span className="w-16 shrink-0 text-right text-xs tabular-nums text-[color:var(--muted-foreground)]">
-            {d.count} · {Math.round((d.count / total) * 100)}%
+          <span className="w-14 shrink-0 text-right text-xs tabular-nums text-[color:var(--muted-foreground)]">
+            {count} · {Math.round((count / total) * 100)}%
           </span>
         </div>
       ))}
+      <p className="pt-1 text-xs text-[color:var(--muted-foreground)]">{total} total cases</p>
     </div>
   );
 }
@@ -101,187 +88,216 @@ function ApprovalHistogram({ data }: { data: typeof APPROVAL_TURNAROUND }) {
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function AnalyticsPage() {
-  const [previewMode, setPreviewMode] = useState(true);
+  const [data, setData] = useState<AnalyticsSummary | null>(null);
+  const [source, setSource] = useState<"api" | "demo" | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    fetchAnalyticsSummary()
+      .then(({ data, source }) => { setData(data); setSource(source); })
+      .catch((e) => setError(e?.message ?? "Failed to load analytics"))
+      .finally(() => setLoading(false));
+  }, []);
+
+  if (loading) {
+    return (
+      <section className="flex min-h-[50vh] items-center justify-center">
+        <Loader2 size={24} className="animate-spin text-[color:var(--muted-foreground)]" />
+      </section>
+    );
+  }
+
+  if (error || !data) {
+    return (
+      <section className="animate-page-enter mx-auto flex w-full max-w-5xl flex-col gap-4 px-4 pt-4 sm:px-5">
+        <div className="flex items-start gap-2 rounded-xl border border-red-200/60 bg-red-50/60 px-3 py-3 text-sm text-red-700 dark:border-red-500/20 dark:bg-red-500/10 dark:text-red-300">
+          <AlertTriangle size={14} className="mt-0.5 shrink-0" />
+          {error ?? "Analytics unavailable"}
+        </div>
+      </section>
+    );
+  }
+
+  // Derived KPIs
+  const completedCases = data.casesByStatus["completed"] ?? 0;
+  const activeCases = (data.casesByStatus["active_treatment"] ?? 0) + (data.casesByStatus["planning"] ?? 0);
+  const latestMonthCount = data.monthlyThroughput.at(-1)?.count ?? 0;
+  const prevMonthCount = data.monthlyThroughput.at(-2)?.count ?? 0;
+  const momDelta = prevMonthCount > 0
+    ? Math.round(((latestMonthCount - prevMonthCount) / prevMonthCount) * 100)
+    : null;
+
+  const KPI_CARDS = [
+    {
+      label: "Total cases",
+      value: String(data.totalCases),
+      helper: `${activeCases} active`,
+      trend: "up" as const,
+      icon: Activity,
+      tone: "primary" as const,
+    },
+    {
+      label: "Total patients",
+      value: String(data.totalPatients),
+      helper: `${completedCases} completed cases`,
+      trend: "up" as const,
+      icon: Users,
+      tone: "success" as const,
+    },
+    {
+      label: "Cases this month",
+      value: String(latestMonthCount),
+      helper: momDelta !== null ? `${momDelta >= 0 ? "+" : ""}${momDelta}% vs last month` : "First month tracked",
+      trend: (momDelta ?? 0) >= 0 ? ("up" as const) : ("down" as const),
+      icon: TrendingUp,
+      tone: "info" as const,
+    },
+    {
+      label: "Plan approval rate",
+      value: data.planApprovalRate !== null ? `${data.planApprovalRate}%` : "—",
+      helper: data.avgEstimatedStages !== null ? `Avg ${data.avgEstimatedStages} stages/plan` : "No plans yet",
+      trend: "up" as const,
+      icon: CheckCircle2,
+      tone: "success" as const,
+    },
+  ];
 
   return (
     <section className="animate-page-enter mx-auto flex w-full max-w-5xl flex-col gap-4 px-4 pb-[calc(var(--tab-bar-height)+var(--sa-bottom)+1.5rem)] pt-4 sm:px-5">
+
       {/* Header */}
       <div className="flex items-start justify-between gap-3">
         <div>
           <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-[color:var(--muted-foreground)]">
-            Enterprise Reporting
+            Practice Reporting
           </p>
           <h1 className="mt-1 text-2xl font-semibold tracking-tight text-[color:var(--foreground)]">
             Analytics
           </h1>
           <p className="mt-1 text-sm text-[color:var(--muted-foreground)]">
-            KPIs, SLA performance, throughput, and clinical metrics
+            Case throughput, status distribution, and treatment plan metrics
           </p>
         </div>
+        <StatusBadge tone={source === "api" ? "success" : "warning"}>
+          {source === "api" ? "Live data" : "Demo data"}
+        </StatusBadge>
       </div>
 
-      {/* Preview toggle */}
-      <div className="flex items-center justify-between rounded-2xl border border-[color:var(--border)] bg-[color:var(--card)] px-4 py-3">
-        <div>
-          <p className="text-sm font-medium text-[color:var(--foreground)]">Preview mode</p>
-          <p className="text-xs text-[color:var(--muted-foreground)]">
-            {previewMode ? "Representative data · not from a live backend" : "Connect backend to see live analytics"}
-          </p>
-        </div>
-        <button
-          type="button"
-          onClick={() => setPreviewMode(v => !v)}
-          role="switch"
-          aria-checked={previewMode}
-          className={["relative h-6 w-11 shrink-0 rounded-full transition-colors", previewMode ? "bg-[color:var(--primary)]" : "bg-[color:var(--border)]"].join(" ")}
-        >
-          <span className={["absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-white shadow-sm transition-transform duration-200", previewMode ? "translate-x-5" : "translate-x-0"].join(" ")} />
-        </button>
-      </div>
-
-      {previewMode && (
+      {source === "demo" && (
         <div className="flex items-center gap-2 rounded-xl border border-amber-200/60 bg-amber-50/60 px-3 py-2 text-xs text-amber-800 dark:border-amber-500/20 dark:bg-amber-500/10 dark:text-amber-300">
           <AlertTriangle size={12} className="shrink-0" />
-          Representative preview data · Not connected to live data
+          Backend unreachable — showing representative demo data
         </div>
       )}
 
-      {previewMode ? (
-        <>
-          {/* KPI row with trend indicators */}
-          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-            {KPI_DATA.map(kpi => {
-              const Icon = kpi.icon;
-              const toneClass: Record<string, string> = {
-                primary: "border-teal-500/20 bg-teal-500/10 text-teal-700 dark:text-teal-300",
-                success: "border-emerald-500/20 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300",
-                info:    "border-blue-500/20 bg-blue-500/10 text-blue-700 dark:text-blue-300",
-                warning: "border-amber-500/20 bg-amber-500/10 text-amber-700 dark:text-amber-300",
-              };
-              return (
-                <Card key={kpi.label} className="p-4">
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0 flex-1">
-                      <p className="text-xs font-medium text-[color:var(--muted-foreground)]">{kpi.label}</p>
-                      <p className="mt-2 text-2xl font-semibold tracking-tight text-[color:var(--foreground)] tabular-nums">{kpi.value}</p>
-                      <div className="mt-2 flex items-center gap-1">
-                        {kpi.trend === "up"
-                          ? <TrendingUp size={11} className="text-emerald-500 shrink-0" />
-                          : <TrendingDown size={11} className="text-emerald-500 shrink-0" />
-                        }
-                        <p className="text-xs text-emerald-600 dark:text-emerald-400">{kpi.helper}</p>
-                      </div>
-                    </div>
-                    <span className={`rounded-lg border p-2 ${toneClass[kpi.tone] ?? toneClass.primary}`}>
-                      <Icon size={18} />
-                    </span>
+      {/* KPI row */}
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        {KPI_CARDS.map((kpi) => {
+          const Icon = kpi.icon;
+          const toneClass: Record<string, string> = {
+            primary: "border-teal-500/20 bg-teal-500/10 text-teal-700 dark:text-teal-300",
+            success: "border-emerald-500/20 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300",
+            info:    "border-blue-500/20 bg-blue-500/10 text-blue-700 dark:text-blue-300",
+            warning: "border-amber-500/20 bg-amber-500/10 text-amber-700 dark:text-amber-300",
+          };
+          return (
+            <Card key={kpi.label} className="p-4">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0 flex-1">
+                  <p className="text-xs font-medium text-[color:var(--muted-foreground)]">{kpi.label}</p>
+                  <p className="mt-2 text-2xl font-semibold tracking-tight text-[color:var(--foreground)] tabular-nums">{kpi.value}</p>
+                  <div className="mt-2 flex items-center gap-1">
+                    {kpi.trend === "up"
+                      ? <TrendingUp size={11} className="text-emerald-500 shrink-0" />
+                      : <TrendingDown size={11} className="text-emerald-500 shrink-0" />
+                    }
+                    <p className="text-xs text-[color:var(--muted-foreground)]">{kpi.helper}</p>
                   </div>
-                </Card>
-              );
-            })}
-          </div>
-
-          {/* Monthly throughput chart */}
-          <Card className="p-5">
-            <div className="mb-3 flex items-center gap-2">
-              <BarChart3 size={15} className="text-[color:var(--primary)]" />
-              <h2 className="text-sm font-semibold text-[color:var(--foreground)]">Monthly Case Throughput</h2>
-              <StatusBadge tone="info">Jan–Jun 2026</StatusBadge>
-            </div>
-            <ThroughputBars data={MONTHLY_THROUGHPUT} labels={MONTH_LABELS} />
-            <p className="mt-3 text-xs text-[color:var(--muted-foreground)]">
-              Jun (MTD) tracking +52% above Jan baseline · Target: 60 cases/month
-            </p>
-          </Card>
-
-          {/* Two-column: Stage distribution + Approval turnaround */}
-          <div className="grid gap-4 xl:grid-cols-2">
-            <Card className="p-5">
-              <div className="mb-4 flex items-center gap-2">
-                <Activity size={15} className="text-[color:var(--primary)]" />
-                <h2 className="text-sm font-semibold text-[color:var(--foreground)]">Cases by Stage</h2>
-                <span className="ml-auto text-xs font-semibold tabular-nums text-[color:var(--muted-foreground)]">47 active</span>
-              </div>
-              <div className="space-y-2.5">
-                {STAGE_DISTRIBUTION.map(s => (
-                  <div key={s.label} className="flex items-center gap-3">
-                    <span className="w-28 shrink-0 text-xs font-medium text-[color:var(--foreground)] truncate">{s.label}</span>
-                    <div className="flex-1">
-                      <ProgressBar value={s.pct * 4} tone="primary" />
-                    </div>
-                    <span className="w-14 shrink-0 text-right text-xs tabular-nums text-[color:var(--muted-foreground)]">
-                      {s.count} · {s.pct}%
-                    </span>
-                  </div>
-                ))}
+                </div>
+                <span className={`rounded-lg border p-2 ${toneClass[kpi.tone] ?? toneClass.primary}`}>
+                  <Icon size={18} />
+                </span>
               </div>
             </Card>
+          );
+        })}
+      </div>
 
-            <Card className="p-5">
-              <div className="mb-4 flex items-center gap-2">
-                <Clock size={15} className="text-[color:var(--primary)]" />
-                <h2 className="text-sm font-semibold text-[color:var(--foreground)]">Approval Turnaround</h2>
-              </div>
-              <ApprovalHistogram data={APPROVAL_TURNAROUND} />
-              <div className="mt-4 grid grid-cols-3 gap-2 rounded-xl border border-[color:var(--border)] p-3">
-                <div className="text-center">
-                  <p className="text-lg font-bold tabular-nums text-emerald-500">{SLA_METRICS.onTime}%</p>
-                  <p className="text-[10px] font-semibold text-[color:var(--muted-foreground)]">On-time</p>
-                </div>
-                <div className="text-center">
-                  <p className="text-lg font-bold tabular-nums text-amber-500">{SLA_METRICS.atRisk}</p>
-                  <p className="text-[10px] font-semibold text-[color:var(--muted-foreground)]">At risk</p>
-                </div>
-                <div className="text-center">
-                  <p className="text-lg font-bold tabular-nums text-rose-500">{SLA_METRICS.breached}</p>
-                  <p className="text-[10px] font-semibold text-[color:var(--muted-foreground)]">Breached</p>
-                </div>
-              </div>
-            </Card>
+      {/* Monthly throughput chart */}
+      {data.monthlyThroughput.length > 0 && (
+        <Card className="p-5">
+          <div className="mb-3 flex items-center gap-2">
+            <BarChart3 size={15} className="text-[color:var(--primary)]" />
+            <h2 className="text-sm font-semibold text-[color:var(--foreground)]">Monthly Case Throughput</h2>
+            <span className="ml-auto text-xs text-[color:var(--muted-foreground)]">last 6 months</span>
           </div>
-
-          {/* Provider performance */}
-          <Card className="overflow-hidden p-0">
-            <div className="flex items-center gap-2 border-b border-[color:var(--border)] px-5 py-4">
-              <Users size={15} className="text-[color:var(--primary)]" />
-              <h2 className="text-sm font-semibold text-[color:var(--foreground)]">Provider Performance — Jun MTD</h2>
-            </div>
-            <div className="divide-y divide-[color:var(--border)]">
-              {PROVIDER_PERFORMANCE.sort((a, b) => b.cases - a.cases).map(p => (
-                <div key={p.name} className="flex items-center gap-4 px-5 py-3">
-                  <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[color:var(--primary-glow)] text-[10px] font-bold text-[color:var(--primary)]">
-                    {p.name.split(" ")[1][0]}
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <p className="text-sm font-semibold text-[color:var(--foreground)]">{p.name}</p>
-                    <div className="mt-1 flex-1">
-                      <ProgressBar value={Math.round((p.approved / p.cases) * 100)} tone="success" />
-                    </div>
-                  </div>
-                  <div className="flex shrink-0 items-center gap-3 text-xs tabular-nums">
-                    <span className="font-medium text-[color:var(--foreground)]">{p.cases} cases</span>
-                    <StatusBadge tone={p.sla >= 95 ? "success" : p.sla >= 90 ? "primary" : "warning"}>
-                      {p.sla}% SLA
-                    </StatusBadge>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </Card>
-        </>
-      ) : (
-        /* Empty state */
-        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-          {[
-            { label: "Active patients", icon: Users, tone: "primary" as const },
-            { label: "Cases completed", icon: CheckCircle2, tone: "success" as const },
-            { label: "Avg SLA (days)",  icon: TrendingDown, tone: "info" as const },
-            { label: "Approval time",   icon: Zap, tone: "warning" as const },
-          ].map(kpi => (
-            <MetricCard key={kpi.label} label={kpi.label} value="—" helper="Connect backend to view" icon={kpi.icon} tone={kpi.tone} />
-          ))}
-        </div>
+          <ThroughputBars data={data.monthlyThroughput} />
+        </Card>
       )}
+
+      {/* Status distribution */}
+      <div className="grid gap-4 xl:grid-cols-2">
+        <Card className="p-5">
+          <div className="mb-4 flex items-center gap-2">
+            <Activity size={15} className="text-[color:var(--primary)]" />
+            <h2 className="text-sm font-semibold text-[color:var(--foreground)]">Cases by Status</h2>
+          </div>
+          <StatusDistribution casesByStatus={data.casesByStatus} />
+        </Card>
+
+        <Card className="p-5">
+          <div className="mb-4 flex items-center gap-2">
+            <Layers3 size={15} className="text-[color:var(--primary)]" />
+            <h2 className="text-sm font-semibold text-[color:var(--foreground)]">Treatment Plans</h2>
+          </div>
+          {data.planApprovalRate !== null ? (
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 gap-3">
+                <div className="rounded-xl border border-[color:var(--border)] bg-[color:var(--card)] p-4 text-center">
+                  <p className="text-2xl font-bold tabular-nums text-[color:var(--foreground)]">
+                    {data.planApprovalRate}%
+                  </p>
+                  <p className="mt-1 text-xs text-[color:var(--muted-foreground)]">Approval rate</p>
+                </div>
+                <div className="rounded-xl border border-[color:var(--border)] bg-[color:var(--card)] p-4 text-center">
+                  <p className="text-2xl font-bold tabular-nums text-[color:var(--foreground)]">
+                    {data.avgEstimatedStages?.toFixed(0) ?? "—"}
+                  </p>
+                  <p className="mt-1 text-xs text-[color:var(--muted-foreground)]">Avg stages</p>
+                </div>
+              </div>
+              <div>
+                <div className="mb-1 flex items-center justify-between text-xs">
+                  <span className="text-[color:var(--muted-foreground)]">Plan approval rate</span>
+                  <span className="font-semibold text-[color:var(--foreground)]">{data.planApprovalRate}%</span>
+                </div>
+                <ProgressBar
+                  value={data.planApprovalRate}
+                  tone={data.planApprovalRate >= 90 ? "success" : data.planApprovalRate >= 70 ? "warning" : "danger"}
+                />
+              </div>
+            </div>
+          ) : (
+            <div className="flex flex-col items-center gap-2 py-6 text-center">
+              <Clock size={20} className="text-[color:var(--muted-foreground)]" />
+              <p className="text-sm text-[color:var(--muted-foreground)]">No treatment plans created yet</p>
+            </div>
+          )}
+        </Card>
+      </div>
+
+      {/* Disclaimer */}
+      <Card className="border-amber-500/20 bg-amber-500/5 p-4">
+        <div className="flex items-start gap-3">
+          <Zap size={14} className="mt-0.5 shrink-0 text-amber-500" />
+          <p className="text-xs leading-5 text-[color:var(--foreground)]">
+            Analytics data is aggregated from your organization&apos;s case records in real time.
+            Throughput counts include all case statuses. Plan approval rate counts plans with
+            doctor_approval = true. Data refreshes on page load.
+          </p>
+        </div>
+      </Card>
     </section>
   );
 }

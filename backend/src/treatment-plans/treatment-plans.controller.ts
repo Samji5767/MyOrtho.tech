@@ -122,6 +122,18 @@ export class TreatmentPlansController {
     return this.service.updatePlan(planId, caseId, user.orgId!, body);
   }
 
+  @Post(':planId/stages/generate')
+  @HttpCode(HttpStatus.OK)
+  generateStages(
+    @Req() req: Request,
+    @Param('caseId') caseId: string,
+    @Param('planId') planId: string,
+    @Body() body: { stageCount?: number },
+  ) {
+    const user = auth(req);
+    return this.service.generateStages(planId, caseId, user.orgId!, body.stageCount);
+  }
+
   @Post(':planId/stages/bulk')
   @HttpCode(HttpStatus.OK)
   bulkUpsertStages(

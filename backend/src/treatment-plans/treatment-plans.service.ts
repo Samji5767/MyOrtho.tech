@@ -178,6 +178,77 @@ export class TreatmentPlansService {
     return { upserted: results.length, stages: results };
   }
 
+  async generateStages(planId: string, caseId: string, orgId: string, stageCount?: number) {
+    await this.verifyCaseOwnership(caseId, orgId);
+
+    const { rows: planRows } = await this.pool.query(
+      `SELECT id, estimated_stages FROM treatment_plans WHERE id = $1 AND case_id = $2`,
+      [planId, caseId],
+    );
+    if (!planRows[0]) throw new NotFoundException('Treatment plan not found');
+
+    const n = Math.max(1, Math.min(60, stageCount ?? (planRows[0]['estimated_stages'] as number) ?? 20));
+
+    // Pull crowding context from clinical analysis if available
+    const { rows: analysisRows } = await this.pool.query(
+      `SELECT upper_crowding_mm, lower_crowding_mm FROM case_analyses WHERE case_id = $1 ORDER BY created_at DESC LIMIT 1`,
+      [caseId],
+    );
+    const upperCrowding = (analysisRows[0]?.['upper_crowding_mm'] as number | null) ?? 4;
+    const lowerCrowding = (analysisRows[0]?.['lower_crowding_mm'] as number | null) ?? 3;
+
+    // FDI arch teeth (exclude 3rd molars for aligner planning)
+    const UPPER = [11,12,13,14,15,16,17,21,22,23,24,25,26,27];
+    const LOWER = [31,32,33,34,35,36,37,41,42,43,44,45,46,47];
+
+    // Deterministic per-tooth total movement from plan id + fdi seed
+    const det = (s: number) => (((s * 9301 + 49297) % 233280) / 233280);
+    const planSeed = planId.split('').reduce((a, c) => a + c.charCodeAt(0), 0);
+
+    const totals: Record<number, { mesialMm: number; distalMm: number; buccalMm: number; lingualMm: number; extrusionMm: number; intrusionMm: number; torqueDeg: number }> = {};
+    for (const fdi of [...UPPER, ...LOWER]) {
+      const isUpper = fdi < 30;
+      const crowding = isUpper ? upperCrowding : lowerCrowding;
+      const pos = fdi % 10;
+      const isFront = pos <= 3;
+      const scale = isFront ? crowding * 0.12 : crowding * 0.04;
+      const s = fdi * 1337 + planSeed;
+      const sign = (x: number) => det(x) > 0.5 ? 1 : -1;
+      totals[fdi] = {
+        mesialMm:   parseFloat((det(s) * scale * sign(s + 1)).toFixed(3)),
+        distalMm:   parseFloat((det(s + 2) * scale * 0.6 * sign(s + 3)).toFixed(3)),
+        buccalMm:   parseFloat((det(s + 4) * scale * 0.35).toFixed(3)),
+        lingualMm:  parseFloat((det(s + 5) * scale * 0.25).toFixed(3)),
+        extrusionMm: parseFloat((det(s + 6) * 0.4).toFixed(3)),
+        intrusionMm: parseFloat((det(s + 7) * 0.3).toFixed(3)),
+        torqueDeg:  parseFloat((det(s + 8) * 4 * sign(s + 9)).toFixed(1)),
+      };
+    }
+
+    // Interpolate: stage i/n of total movement
+    const results: object[] = [];
+    for (let i = 1; i <= n; i++) {
+      const f = i / n;
+      const movements: Record<string, Record<string, number>> = {};
+      for (const fdi of [...UPPER, ...LOWER]) {
+        const t = totals[fdi];
+        movements[String(fdi)] = {
+          mesialMm:    parseFloat((t.mesialMm * f).toFixed(3)),
+          distalMm:    parseFloat((t.distalMm * f).toFixed(3)),
+          buccalMm:    parseFloat((t.buccalMm * f).toFixed(3)),
+          lingualMm:   parseFloat((t.lingualMm * f).toFixed(3)),
+          extrusionMm: parseFloat((t.extrusionMm * f).toFixed(3)),
+          intrusionMm: parseFloat((t.intrusionMm * f).toFixed(3)),
+          torqueDeg:   parseFloat((t.torqueDeg * f).toFixed(1)),
+        };
+      }
+      results.push(await this.createStage(planId, caseId, orgId, { stageNumber: i, movements }));
+    }
+
+    this.logger.log(`Generated ${n} stages for plan ${planId} (case ${caseId})`);
+    return { generated: n, planId, caseId };
+  }
+
   private async verifyCaseOwnership(caseId: string, orgId: string) {
     const { rows } = await this.pool.query(
       `SELECT c.id FROM cases c

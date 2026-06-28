@@ -1,26 +1,139 @@
 "use client";
 
+import { useEffect, useState } from "react";
+import { useSearchParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import {
-  ArrowRight,
   CheckCircle2,
-  ClipboardList,
+  FolderKanban,
   Layers3,
-  Wand2,
+  Loader2,
+  Search,
 } from "lucide-react";
-import { Button, Card, StatusBadge } from "@/components/DesignSystem";
+import { Card } from "@/components/DesignSystem";
+import TreatmentPlansPanel from "@/components/TreatmentPlansPanel";
+import { fetchCases, type CaseListItem } from "@/lib/api/cases";
 
-const WORKFLOW_STEPS = [
-  { n: 1, label: "Upload scan", detail: "Import STL, PLY, or OBJ for the patient's dentition." },
-  { n: 2, label: "Run segmentation", detail: "AI pipeline detects and labels each tooth with FDI notation." },
-  { n: 3, label: "Review CAD setup", detail: "Validate mesh quality, attachments, and IPR positions." },
-  { n: 4, label: "Generate treatment plan", detail: "AI proposes stage movements; clinician adjusts as needed." },
-  { n: 5, label: "Doctor approval", detail: "Licensed orthodontist reviews and digitally approves the plan." },
-];
+// ─── Status label map ─────────────────────────────────────────────────────────
+
+const STATUS_LABEL: Record<string, string> = {
+  active_treatment: "Active",
+  pending_records: "Pending Records",
+  scan_review: "Scan Review",
+  clinical_review: "Clinical Review",
+  planning: "Planning",
+  manufacturing: "Manufacturing",
+  completed: "Completed",
+  on_hold: "On Hold",
+  draft: "Draft",
+};
+
+// ─── Case selector ────────────────────────────────────────────────────────────
+
+function CaseSelector({ onSelect }: { onSelect: (c: CaseListItem) => void }) {
+  const [cases, setCases] = useState<CaseListItem[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState("");
+
+  useEffect(() => {
+    fetchCases()
+      .then(({ cases }) => setCases(cases))
+      .finally(() => setLoading(false));
+  }, []);
+
+  const filtered = cases.filter((c) => {
+    const q = search.toLowerCase();
+    const patientName = `${c.patient.firstName} ${c.patient.lastName}`.toLowerCase();
+    return (
+      patientName.includes(q) ||
+      (c.chiefComplaint ?? "").toLowerCase().includes(q) ||
+      c.id.toLowerCase().includes(q)
+    );
+  });
+
+  return (
+    <div className="space-y-3">
+      <div className="relative">
+        <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-[color:var(--muted-foreground)]" />
+        <input
+          className={[
+            "h-10 w-full rounded-xl border border-[color:var(--border)] bg-[color:var(--card)]",
+            "pl-8 pr-3 text-sm text-[color:var(--foreground)]",
+            "placeholder:text-[color:var(--muted-foreground)]",
+            "focus:border-[color:var(--primary)] focus:outline-none focus:ring-2 focus:ring-[color:var(--primary)]/20",
+          ].join(" ")}
+          placeholder="Search by patient or complaint…"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+        />
+      </div>
+
+      {loading ? (
+        <div className="flex justify-center py-8">
+          <Loader2 size={18} className="animate-spin text-[color:var(--muted-foreground)]" />
+        </div>
+      ) : filtered.length === 0 ? (
+        <div className="rounded-xl border border-dashed border-[color:var(--border)] py-8 text-center text-sm text-[color:var(--muted-foreground)]">
+          {search ? `No cases matching "${search}"` : "No cases yet"}
+          <Link href="/cases/new" className="ml-1 font-medium text-[color:var(--primary)] hover:underline">
+            Create one
+          </Link>
+        </div>
+      ) : (
+        <div className="rounded-xl border border-[color:var(--border)] divide-y divide-[color:var(--border)] overflow-hidden">
+          {filtered.map((c) => (
+            <button
+              key={c.id}
+              type="button"
+              onClick={() => onSelect(c)}
+              className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left text-sm hover:bg-[color:var(--muted)]/30 transition-colors"
+            >
+              <div className="min-w-0">
+                <p className="font-semibold text-[color:var(--foreground)]">
+                  {c.patient.firstName} {c.patient.lastName}
+                </p>
+                {c.chiefComplaint && (
+                  <p className="truncate text-xs text-[color:var(--muted-foreground)]">{c.chiefComplaint}</p>
+                )}
+              </div>
+              <span className="shrink-0 rounded-full bg-[color:var(--primary-glow)] px-2.5 py-0.5 text-[10px] font-semibold text-[color:var(--primary)]">
+                {STATUS_LABEL[c.status] ?? c.status}
+              </span>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function TreatmentPlanPage() {
+  const searchParams = useSearchParams();
+  const router = useRouter();
+  const caseId = searchParams?.get("caseId") ?? null;
+  const [selectedCase, setSelectedCase] = useState<CaseListItem | null>(null);
+
+  // If caseId is in URL, load the case
+  useEffect(() => {
+    if (!caseId) return;
+    fetchCases().then(({ cases }) => {
+      const found = cases.find((c) => c.id === caseId);
+      if (found) setSelectedCase(found);
+    });
+  }, [caseId]);
+
+  function handleSelect(c: CaseListItem) {
+    setSelectedCase(c);
+    router.replace(`/treatment-plan?caseId=${encodeURIComponent(c.id)}`);
+  }
+
+  const effectiveCaseId = caseId ?? selectedCase?.id ?? null;
+
   return (
     <section className="animate-page-enter mx-auto flex w-full max-w-4xl flex-col gap-4 px-4 pb-[calc(var(--tab-bar-height)+var(--sa-bottom)+1.5rem)] pt-4 sm:px-5">
+
       {/* Header */}
       <div className="flex items-start justify-between gap-3">
         <div>
@@ -28,84 +141,73 @@ export default function TreatmentPlanPage() {
             Treatment Planning
           </p>
           <h1 className="mt-1 text-2xl font-semibold tracking-tight text-[color:var(--foreground)]">
-            Treatment Plan
+            Treatment Plans
           </h1>
           <p className="mt-1 text-sm text-[color:var(--muted-foreground)]">
-            Stage generation, movement adjustment, and plan approval
-          </p>
-        </div>
-        <Button variant="primary" size="sm">
-          <Wand2 size={15} /> Generate plan
-        </Button>
-      </div>
-
-      {/* Empty state */}
-      <Card className="flex flex-col items-center gap-4 p-10 text-center">
-        <span className="grid h-16 w-16 place-items-center rounded-3xl bg-[color:var(--primary-glow)] text-[color:var(--primary)]">
-          <Layers3 size={28} />
-        </span>
-        <div>
-          <p className="text-base font-semibold text-[color:var(--foreground)]">No treatment plan yet</p>
-          <p className="mt-1 text-sm text-[color:var(--muted-foreground)]">
-            Treatment plans are generated after scan validation, segmentation, and CAD setup.
+            Stage generation, movement adjustment, and doctor approval
           </p>
         </div>
         <Link
-          href="/studio"
-          className="inline-flex h-10 items-center gap-2 rounded-full bg-[color:var(--primary)] px-5 text-sm font-semibold text-[color:var(--primary-foreground)] transition-transform active:scale-95"
+          href="/cases"
+          className="flex items-center gap-1.5 rounded-xl border border-[color:var(--border)] bg-[color:var(--card)] px-3 py-2 text-xs font-medium text-[color:var(--foreground)] hover:border-[color:var(--primary)]/40 transition-colors"
         >
-          <ArrowRight size={15} />
-          Start with a scan
+          <FolderKanban size={13} /> Cases
         </Link>
-      </Card>
+      </div>
 
-      {/* Workflow steps */}
-      <Card className="p-4">
-        <div className="mb-4 flex items-center gap-2">
-          <ClipboardList size={17} className="text-[color:var(--primary)]" />
-          <h2 className="text-base font-semibold text-[color:var(--foreground)]">Treatment plan workflow</h2>
-          <span className="ml-auto">
-            <StatusBadge tone="neutral">5 steps</StatusBadge>
-          </span>
-        </div>
-
-        <div className="space-y-2">
-          {WORKFLOW_STEPS.map((step) => (
-            <div
-              key={step.n}
-              className="ios-chip flex items-start gap-3 px-4 py-3"
-            >
-              <span className="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-[color:var(--card)] text-xs font-bold text-[color:var(--muted-foreground)] border border-[color:var(--border)]">
-                {step.n}
-              </span>
-              <div className="min-w-0 flex-1">
-                <p className="text-sm font-semibold text-[color:var(--foreground)]">{step.label}</p>
-                <p className="mt-0.5 text-xs text-[color:var(--muted-foreground)]">{step.detail}</p>
-              </div>
-              <StatusBadge tone="neutral">Pending</StatusBadge>
+      {/* Case context banner */}
+      {selectedCase && (
+        <div className="flex items-center justify-between gap-3 rounded-xl border border-[color:var(--border)] bg-[color:var(--card)] px-4 py-2.5">
+          <div className="flex items-center gap-2.5">
+            <div className="flex h-7 w-7 items-center justify-center rounded-full bg-[color:var(--primary-glow)] text-[10px] font-bold text-[color:var(--primary)]">
+              {selectedCase.patient.firstName[0]}{selectedCase.patient.lastName[0]}
             </div>
-          ))}
+            <div>
+              <p className="text-sm font-semibold text-[color:var(--foreground)]">
+                {selectedCase.patient.firstName} {selectedCase.patient.lastName}
+              </p>
+              {selectedCase.chiefComplaint && (
+                <p className="text-xs text-[color:var(--muted-foreground)]">{selectedCase.chiefComplaint}</p>
+              )}
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <Link
+              href={`/cases/${selectedCase.id}`}
+              className="text-xs font-medium text-[color:var(--primary)] hover:underline"
+            >
+              View case →
+            </Link>
+            <button
+              type="button"
+              onClick={() => { setSelectedCase(null); router.replace("/treatment-plan"); }}
+              className="text-xs text-[color:var(--muted-foreground)] hover:text-[color:var(--foreground)] transition-colors"
+            >
+              Change
+            </button>
+          </div>
         </div>
-      </Card>
+      )}
 
-      {/* Disclaimer */}
-      <Card className="border-amber-500/20 bg-amber-500/5 p-4">
-        <div className="flex items-start gap-3">
-          <CheckCircle2 size={16} className="mt-0.5 shrink-0 text-amber-500" />
-          <p className="text-xs leading-5 text-[color:var(--foreground)]">
-            AI-generated treatment recommendations, staging plans, and movement predictions are advisory only.
-            Final treatment planning and clinical decisions remain the sole responsibility of the licensed orthodontist.
-          </p>
-        </div>
-      </Card>
+      {/* AI disclaimer */}
+      <div className="flex items-start gap-2 rounded-xl border border-amber-200/60 bg-amber-50/60 px-3 py-2 text-xs text-amber-800 dark:border-amber-500/20 dark:bg-amber-500/10 dark:text-amber-300">
+        <CheckCircle2 size={12} className="mt-0.5 shrink-0" />
+        AI-generated treatment recommendations are clinical decision support only.
+        Final planning decisions are the responsibility of the licensed orthodontist.
+      </div>
 
-      <Link
-        href="/desktop"
-        className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-[color:var(--primary)] px-4 text-sm font-semibold text-[color:var(--primary-foreground)] shadow-[var(--shadow-sm)] transition-transform active:scale-95"
-      >
-        Open full CAD planning workspace
-        <ArrowRight size={16} />
-      </Link>
+      {/* Main content */}
+      {effectiveCaseId ? (
+        <TreatmentPlansPanel caseId={effectiveCaseId} />
+      ) : (
+        <Card className="p-6">
+          <div className="mb-4 flex items-center gap-2">
+            <Layers3 size={15} className="text-[color:var(--primary)]" />
+            <h2 className="text-sm font-semibold text-[color:var(--foreground)]">Select a case to view treatment plans</h2>
+          </div>
+          <CaseSelector onSelect={handleSelect} />
+        </Card>
+      )}
     </section>
   );
 }

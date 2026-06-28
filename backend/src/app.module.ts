@@ -29,6 +29,10 @@ import { PhotosModule } from './photos/photos.module';
 import { CephModule } from './ceph/ceph.module';
 import { StagesModule } from './stages/stages.module';
 import { QcModule } from './qc/qc.module';
+import { SegmentationModule } from './segmentation/segmentation.module';
+import { AiProposalModule } from './ai-proposal/ai-proposal.module';
+import { PreexportQaModule } from './preexport-qa/preexport-qa.module';
+import { ManufacturePrepModule } from './manufacture-prep/manufacture-prep.module';
 
 @Module({
   imports: [
@@ -66,6 +70,10 @@ import { QcModule } from './qc/qc.module';
     CephModule,
     StagesModule,
     QcModule,
+    SegmentationModule,
+    AiProposalModule,
+    PreexportQaModule,
+    ManufacturePrepModule,
   ],
 })
 export class AppModule {}

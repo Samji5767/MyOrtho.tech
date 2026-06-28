@@ -1,469 +1,646 @@
 "use client";
 
-import { useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
-  Activity,
   AlertTriangle,
   CheckCircle2,
   ChevronDown,
   ChevronRight,
   ChevronUp,
-  CircleDot,
-  Crosshair,
-  Eye,
+  Clock,
+  Cpu,
   Layers3,
+  Lock,
   Loader2,
+  RefreshCw,
   RotateCcw,
   Scan,
+  Scissors,
   Sparkles,
-  Target,
+  Unlock,
+  Wand2,
+  X,
   Zap,
 } from "lucide-react";
 import { MedicalDisclaimer } from "@/components/MedicalDisclaimer";
-import type { SegmentationResult, ToothSegment } from "@/types/orthodontic";
-import { FDI_LOWER, FDI_UPPER, toothClassName } from "@/types/orthodontic";
+import {
+  type SegmentationJob,
+  type ToothSegment,
+  type CorrectionType,
+  type SegmentationModel,
+  type SegmentationArch,
+  CORRECTION_LABELS,
+  MODEL_LABELS,
+  listSegmentationJobs,
+  submitSegmentationJob,
+  getSegmentationJob,
+  applyCorrection,
+  updateSegment,
+} from "@/lib/api/segmentation";
 
-// ─── Deterministic mock data (seeded by FDI to avoid hydration issues) ────────
+// ─── Tooth map ────────────────────────────────────────────────────────────────
 
-function seeded(fdi: number, range: number): number {
-  return ((fdi * 9301 + 49297) % 233280) / 233280 * range;
+const FDI_UPPER = [18, 17, 16, 15, 14, 13, 12, 11, 21, 22, 23, 24, 25, 26, 27, 28];
+const FDI_LOWER = [48, 47, 46, 45, 44, 43, 42, 41, 31, 32, 33, 34, 35, 36, 37, 38];
+
+function confidenceColor(c: number | null) {
+  if (c == null) return "text-slate-400";
+  if (c >= 0.9) return "text-emerald-600";
+  if (c >= 0.8) return "text-teal-600";
+  if (c >= 0.7) return "text-amber-600";
+  return "text-rose-500";
 }
 
-const FLAGGED_FDIS = new Set([14, 21]);
-const MISSING_FDIS = new Set([18, 28, 38, 48]);
-const ATTACHMENT_FDIS = new Set([13, 23, 43, 33]);
-const IPR_FDIS = new Set([12, 11, 22, 21]);
-
-function makeTooth(fdi: number): ToothSegment {
-  const isUpper = FDI_UPPER.includes(fdi);
-  return {
-    fdi,
-    arch: isUpper ? "maxillary" : "mandibular",
-    toothClass: toothClassName(fdi),
-    confidence: FLAGGED_FDIS.has(fdi) ? 68 + Math.round(seeded(fdi, 15)) : 88 + Math.round(seeded(fdi, 11)),
-    isPresent: !MISSING_FDIS.has(fdi),
-    isMissing: MISSING_FDIS.has(fdi),
-    isExtracted: false,
-    hasRootFlag: FLAGGED_FDIS.has(fdi),
-    hasGingivaWarning: seeded(fdi, 10) < 1.5,
-    contactPoints: 2 + Math.round(seeded(fdi, 2)),
-    crownFaces: 4 + Math.round(seeded(fdi, 3)),
-    archWidthMm: 60 + seeded(fdi, 12),
-    iprMm: IPR_FDIS.has(fdi) ? 0.3 + seeded(fdi, 0.4) : undefined,
-    attachments: ATTACHMENT_FDIS.has(fdi) ? ["Rectangular horizontal"] : [],
-    position: { x: seeded(fdi, 40) - 20, y: seeded(fdi, 15), z: isUpper ? 5 : -5 },
-  };
+function confidenceBg(c: number | null) {
+  if (c == null) return "bg-slate-500/10 border-slate-300/30";
+  if (c >= 0.9) return "bg-emerald-500/20 border-emerald-500/30";
+  if (c >= 0.8) return "bg-teal-500/20 border-teal-500/30";
+  if (c >= 0.7) return "bg-amber-500/20 border-amber-500/30";
+  return "bg-rose-500/20 border-rose-500/40";
 }
 
-const ALL_TEETH: ToothSegment[] = [...FDI_UPPER, ...FDI_LOWER].map(makeTooth);
+// ─── Arch map ─────────────────────────────────────────────────────────────────
 
-const MOCK_RESULT: SegmentationResult = {
-  id: "seg-001",
-  caseId: "",
-  scanId: "scn-01",
-  status: "review_needed",
-  overallConfidence: 81.4,
-  teeth: ALL_TEETH,
-  landmarks: [
-    { id: "lm-01", type: "cusp",        fdi: 13, coordinates: { x: -18, y: 8, z: 4  }, confidence: 94 },
-    { id: "lm-02", type: "cusp",        fdi: 23, coordinates: { x: 18,  y: 8, z: 4  }, confidence: 93 },
-    { id: "lm-03", type: "incisal_edge",fdi: 11, coordinates: { x: -2,  y: 12, z: 3 }, confidence: 97 },
-    { id: "lm-04", type: "incisal_edge",fdi: 21, coordinates: { x: 2,   y: 12, z: 3 }, confidence: 91 },
-    { id: "lm-05", type: "contact_point",fdi:12, coordinates: { x: -7,  y: 10, z: 3 }, confidence: 89 },
-    { id: "lm-06", type: "fossa",       fdi: 16, coordinates: { x: -28, y: 2,  z: 2 }, confidence: 85 },
-    { id: "lm-07", type: "fossa",       fdi: 26, coordinates: { x: 28,  y: 2,  z: 2 }, confidence: 86 },
-  ],
-  occlusalPlane: { a: 0.02, b: 0.03, c: 1, d: -4.2 },
-  midlineDeviation: -0.8,
-  arch: { upperWidth: 64.2, lowerWidth: 61.8, overjet: 3.0, overbite: 2.0 },
-  processingTimeMs: 252000,
-  reviewNotes: "Root anatomy flagged on teeth 14 and 21. Manual segmentation correction recommended before proceeding to CAD.",
-  createdAt: "2024-06-21 10:34",
-};
-
-// ─── ToothInspector ───────────────────────────────────────────────────────────
-
-function ToothInspector({ tooth }: { tooth: ToothSegment }) {
-  const conf = tooth.confidence;
-  const confColor = conf >= 90 ? "text-emerald-600" : conf >= 80 ? "text-teal-600" : conf >= 70 ? "text-amber-600" : "text-rose-500";
-
-  return (
-    <div className="rounded-xl border border-[color:var(--border)] bg-[color:var(--card)] p-4">
-      <div className="flex items-center justify-between gap-2 mb-3">
-        <div>
-          <span className="text-xl font-black tabular-nums text-[color:var(--primary)]">{tooth.fdi}</span>
-          <p className="text-xs text-[color:var(--muted-foreground)] capitalize">{tooth.toothClass.replace(/_/g, " ")}</p>
-        </div>
-        <div className="flex flex-col items-end gap-1">
-          {tooth.isMissing && <span className="rounded-md bg-slate-500/10 px-1.5 py-0.5 text-[10px] font-bold text-slate-500">Missing</span>}
-          {tooth.hasRootFlag && <span className="rounded-md bg-rose-500/10 px-1.5 py-0.5 text-[10px] font-bold text-rose-500">Root Flag</span>}
-          {tooth.hasGingivaWarning && <span className="rounded-md bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-bold text-amber-600">Gingiva</span>}
-          {tooth.attachments.length > 0 && <span className="rounded-md bg-violet-500/10 px-1.5 py-0.5 text-[10px] font-bold text-violet-600">Attachment</span>}
-        </div>
-      </div>
-      <div className="space-y-1.5">
-        <div className="flex justify-between text-xs">
-          <span className="text-[color:var(--muted-foreground)]">Confidence</span>
-          <span className={`font-bold ${confColor}`}>{conf.toFixed(1)}%</span>
-        </div>
-        <div className="h-1.5 rounded-full bg-[color:var(--border)]">
-          <div className={`h-full rounded-full transition-all ${conf >= 90 ? "bg-emerald-500" : conf >= 80 ? "bg-teal-500" : conf >= 70 ? "bg-amber-500" : "bg-rose-500"}`} style={{ width: `${conf}%` }} />
-        </div>
-        {tooth.iprMm != null && <p className="text-xs text-amber-600"><span className="font-bold">IPR:</span> {tooth.iprMm.toFixed(2)} mm</p>}
-        {tooth.attachments.length > 0 && <p className="text-xs text-violet-600"><span className="font-bold">Att:</span> {tooth.attachments[0]}</p>}
-        <p className="text-xs text-[color:var(--muted-foreground)]">Crown faces: {tooth.crownFaces} · Contact pts: {tooth.contactPoints}</p>
-      </div>
-    </div>
-  );
-}
-
-// ─── Arch map (visual tooth grid) ────────────────────────────────────────────
-
-function ArchMap({ teeth, onSelect, selectedFdi }: { teeth: ToothSegment[]; onSelect: (t: ToothSegment) => void; selectedFdi: number | null }) {
-  const upper = [...FDI_UPPER].reverse();
-  const lower = FDI_LOWER;
-
-  function toothCell(fdi: number) {
-    const tooth = teeth.find(t => t.fdi === fdi);
-    if (!tooth) return null;
-    const conf = tooth.confidence;
-    let cellColor = "bg-emerald-500/20 border-emerald-500/30 hover:bg-emerald-500/30";
-    if (!tooth.isPresent) cellColor = "bg-slate-500/10 border-slate-300/30 hover:bg-slate-500/20";
-    else if (tooth.hasRootFlag) cellColor = "bg-rose-500/20 border-rose-500/40 hover:bg-rose-500/30";
-    else if (tooth.hasGingivaWarning || conf < 80) cellColor = "bg-amber-500/20 border-amber-500/30 hover:bg-amber-500/30";
-    const isSelected = selectedFdi === fdi;
-
+function ArchMap({
+  segments,
+  selectedFdi,
+  onSelect,
+}: {
+  segments: ToothSegment[];
+  selectedFdi: number | null;
+  onSelect: (s: ToothSegment) => void;
+}) {
+  function cell(fdi: number) {
+    const seg = segments.find(s => s.toothNumber === fdi);
+    const hasFlag = seg?.landmarkData?.flags?.includes("root_flag");
+    const bg = seg
+      ? seg.isMissing
+        ? "bg-slate-500/10 border-slate-300/30"
+        : hasFlag
+          ? "bg-rose-500/20 border-rose-500/40"
+          : confidenceBg(seg.confidence)
+      : "bg-[color:var(--muted)]/40 border-[color:var(--border)]";
+    const selected = selectedFdi === fdi ? "ring-2 ring-[color:var(--primary)]" : "";
     return (
       <button
         key={fdi}
         type="button"
-        onClick={() => onSelect(tooth)}
-        title={`FDI ${fdi} — Confidence ${conf.toFixed(0)}%`}
-        className={`relative flex h-9 w-9 flex-col items-center justify-center rounded-lg border text-[10px] font-black transition-all ${cellColor} ${isSelected ? "ring-2 ring-[color:var(--primary)] ring-offset-1" : ""}`}
+        onClick={() => seg && onSelect(seg)}
+        title={seg?.label ?? `FDI ${fdi}`}
+        className={`w-8 h-8 rounded-md border text-[10px] font-bold tabular-nums transition-all ${bg} ${selected} hover:opacity-80`}
       >
-        <span className={tooth.isPresent ? "text-[color:var(--foreground)]" : "text-slate-400"}>{fdi}</span>
-        {tooth.attachments.length > 0 && <span className="absolute -bottom-0.5 h-1 w-1 rounded-full bg-violet-500" />}
+        {fdi}
       </button>
     );
   }
-
   return (
-    <div className="rounded-xl border border-[color:var(--border)] bg-[color:var(--card)] p-4">
-      <p className="mb-3 text-xs font-bold uppercase tracking-wider text-[color:var(--muted-foreground)]">Arch Map — FDI Notation</p>
-      {/* Upper arch */}
-      <p className="text-[10px] font-semibold text-[color:var(--muted-foreground)] mb-1.5">Maxillary (Upper)</p>
-      <div className="flex flex-wrap gap-1 mb-3">
-        {upper.map(fdi => toothCell(fdi))}
-      </div>
-      <div className="my-2 h-px bg-[color:var(--border)]" />
-      {/* Lower arch */}
-      <p className="text-[10px] font-semibold text-[color:var(--muted-foreground)] mb-1.5">Mandibular (Lower)</p>
-      <div className="flex flex-wrap gap-1">
-        {lower.map(fdi => toothCell(fdi))}
-      </div>
-      {/* Legend */}
-      <div className="mt-3 flex flex-wrap gap-3">
-        {[
-          { color: "bg-emerald-500/30", label: "Segmented" },
-          { color: "bg-amber-500/30",   label: "Low confidence / Gingiva" },
-          { color: "bg-rose-500/30",    label: "Root flag" },
-          { color: "bg-slate-500/10",   label: "Missing" },
-        ].map(l => (
-          <div key={l.label} className="flex items-center gap-1.5">
-            <span className={`h-3 w-3 rounded-sm border border-[color:var(--border)] ${l.color}`} />
-            <span className="text-[10px] text-[color:var(--muted-foreground)]">{l.label}</span>
-          </div>
-        ))}
-      </div>
+    <div className="space-y-1.5">
+      <div className="flex gap-1 justify-center flex-wrap">{FDI_UPPER.map(cell)}</div>
+      <div className="h-px bg-[color:var(--border)]" />
+      <div className="flex gap-1 justify-center flex-wrap">{FDI_LOWER.map(cell)}</div>
     </div>
   );
 }
 
-// ─── LandmarkViewer ───────────────────────────────────────────────────────────
+// ─── Tooth inspector ──────────────────────────────────────────────────────────
 
-function LandmarkViewer({ result }: { result: SegmentationResult }) {
-  const LANDMARK_LABELS: Record<string, string> = {
-    cusp: "Cusp tip",
-    incisal_edge: "Incisal edge",
-    contact_point: "Contact point",
-    fossa: "Central fossa",
-    marginal_ridge: "Marginal ridge",
+function ToothInspector({
+  segment,
+  caseId,
+  jobId,
+  onCorrected,
+}: {
+  segment: ToothSegment;
+  caseId: string;
+  jobId: string;
+  onCorrected: () => void;
+}) {
+  const [busy, setBusy] = useState<string | null>(null);
+
+  const REPAIR_OPS: CorrectionType[] = [
+    "fix_geometry", "improve_segmentation", "repair_mesh",
+    "recalculate_landmarks", "rebuild_tooth",
+  ];
+  const EDIT_OPS: CorrectionType[] = [
+    "fill_hole", "smooth_boundary", "smart_grow", "smart_shrink",
+    "split_tooth", "merge_teeth",
+  ];
+
+  const doCorrect = async (type: CorrectionType) => {
+    setBusy(type);
+    try {
+      await applyCorrection(caseId, jobId, { toothNumber: segment.toothNumber, correctionType: type });
+      onCorrected();
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const toggleLock = async () => {
+    setBusy("lock");
+    try {
+      await updateSegment(caseId, jobId, segment.toothNumber, { isLocked: !segment.isLocked });
+      onCorrected();
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const conf = segment.confidence;
+  const hasFlag = segment.landmarkData?.flags?.includes("root_flag");
+
+  return (
+    <div className="rounded-xl border border-[color:var(--border)] bg-[color:var(--card)] p-4 space-y-3">
+      <div className="flex items-start justify-between gap-2">
+        <div>
+          <div className="flex items-baseline gap-2">
+            <span className="text-2xl font-black text-[color:var(--primary)]">{segment.toothNumber}</span>
+            {segment.universalNumber && (
+              <span className="text-xs text-[color:var(--muted-foreground)]">#{segment.universalNumber}</span>
+            )}
+          </div>
+          <p className="text-xs text-[color:var(--muted-foreground)] mt-0.5">{segment.label}</p>
+        </div>
+        <div className="flex flex-col items-end gap-1">
+          {segment.isMissing && <span className="rounded-full bg-slate-500/10 px-2 py-0.5 text-[10px] font-bold text-slate-500">Missing</span>}
+          {hasFlag && <span className="rounded-full bg-rose-500/10 px-2 py-0.5 text-[10px] font-bold text-rose-500">Root Flag</span>}
+          {segment.isImpacted && <span className="rounded-full bg-orange-500/10 px-2 py-0.5 text-[10px] font-bold text-orange-600">Impacted</span>}
+          {segment.isSupernumerary && <span className="rounded-full bg-purple-500/10 px-2 py-0.5 text-[10px] font-bold text-purple-600">Supernumerary</span>}
+          {segment.isLocked && <span className="rounded-full bg-slate-500/10 px-2 py-0.5 text-[10px] font-bold text-slate-600">Locked</span>}
+        </div>
+      </div>
+
+      {/* Confidence bar */}
+      {conf != null && (
+        <div className="space-y-1">
+          <div className="flex justify-between text-xs">
+            <span className="text-[color:var(--muted-foreground)]">Confidence</span>
+            <span className={`font-bold ${confidenceColor(conf)}`}>{(conf * 100).toFixed(1)}%</span>
+          </div>
+          <div className="h-1.5 rounded-full bg-[color:var(--border)]">
+            <div
+              className={`h-full rounded-full transition-all ${conf >= 0.9 ? "bg-emerald-500" : conf >= 0.8 ? "bg-teal-500" : conf >= 0.7 ? "bg-amber-500" : "bg-rose-500"}`}
+              style={{ width: `${conf * 100}%` }}
+            />
+          </div>
+        </div>
+      )}
+
+      {segment.landmarkData?.warning && (
+        <p className="text-xs text-amber-600 flex items-start gap-1.5">
+          <AlertTriangle size={11} className="mt-0.5 shrink-0" />
+          {segment.landmarkData.warning}
+        </p>
+      )}
+
+      {/* Repair tools */}
+      {!segment.isMissing && !segment.isLocked && (
+        <>
+          <div>
+            <p className="text-[10px] font-bold uppercase tracking-wider text-[color:var(--muted-foreground)] mb-1.5">Repair</p>
+            <div className="flex flex-wrap gap-1">
+              {REPAIR_OPS.map(op => (
+                <button
+                  key={op}
+                  type="button"
+                  onClick={() => doCorrect(op)}
+                  disabled={!!busy}
+                  className="flex items-center gap-1 rounded-lg border border-[color:var(--border)] bg-[color:var(--background)] px-2 py-1 text-[10px] font-semibold text-[color:var(--muted-foreground)] hover:text-[color:var(--primary)] hover:border-[color:var(--primary)] disabled:opacity-50 transition-colors"
+                >
+                  {busy === op ? <Loader2 size={9} className="animate-spin" /> : <Wand2 size={9} />}
+                  {CORRECTION_LABELS[op]}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div>
+            <p className="text-[10px] font-bold uppercase tracking-wider text-[color:var(--muted-foreground)] mb-1.5">Edit</p>
+            <div className="flex flex-wrap gap-1">
+              {EDIT_OPS.map(op => (
+                <button
+                  key={op}
+                  type="button"
+                  onClick={() => doCorrect(op)}
+                  disabled={!!busy}
+                  className="flex items-center gap-1 rounded-lg border border-[color:var(--border)] bg-[color:var(--background)] px-2 py-1 text-[10px] font-semibold text-[color:var(--muted-foreground)] hover:text-[color:var(--primary)] hover:border-[color:var(--primary)] disabled:opacity-50 transition-colors"
+                >
+                  {busy === op ? <Loader2 size={9} className="animate-spin" /> : <Scissors size={9} />}
+                  {CORRECTION_LABELS[op]}
+                </button>
+              ))}
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* Lock toggle */}
+      {!segment.isMissing && (
+        <button
+          type="button"
+          onClick={toggleLock}
+          disabled={busy === "lock"}
+          className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors disabled:opacity-50 ${segment.isLocked ? "bg-amber-500/10 text-amber-700 hover:bg-amber-500/20" : "border border-[color:var(--border)] text-[color:var(--muted-foreground)] hover:text-[color:var(--foreground)]"}`}
+        >
+          {segment.isLocked ? <Unlock size={11} /> : <Lock size={11} />}
+          {segment.isLocked ? "Unlock Region" : "Lock Region"}
+        </button>
+      )}
+    </div>
+  );
+}
+
+// ─── Job card ─────────────────────────────────────────────────────────────────
+
+function JobCard({
+  job,
+  isActive,
+  onSelect,
+}: {
+  job: SegmentationJob;
+  isActive: boolean;
+  onSelect: () => void;
+}) {
+  const statusIcon = job.status === "completed"
+    ? <CheckCircle2 size={13} className="text-emerald-500" />
+    : job.status === "failed"
+      ? <X size={13} className="text-rose-500" />
+      : job.status === "processing"
+        ? <Loader2 size={13} className="animate-spin text-blue-500" />
+        : <Clock size={13} className="text-slate-400" />;
+
+  return (
+    <button
+      type="button"
+      onClick={onSelect}
+      className={`w-full flex items-center gap-3 rounded-xl border px-3 py-2.5 text-left transition-all ${isActive ? "border-[color:var(--primary)] bg-[color:var(--primary)]/5" : "border-[color:var(--border)] bg-[color:var(--card)] hover:bg-[color:var(--muted)]"}`}
+    >
+      {statusIcon}
+      <div className="flex-1 min-w-0">
+        <p className="text-xs font-semibold text-[color:var(--foreground)] truncate">
+          {MODEL_LABELS[job.modelType]} · {job.arch}
+        </p>
+        <p className="text-[10px] text-[color:var(--muted-foreground)]">
+          {new Date(job.createdAt).toLocaleString()}
+          {job.toothCount != null ? ` · ${job.toothCount} teeth` : ""}
+        </p>
+      </div>
+      {job.status === "processing" && (
+        <span className="text-[10px] font-bold text-blue-500">{job.progress}%</span>
+      )}
+      {isActive && <ChevronRight size={12} className="text-[color:var(--primary)]" />}
+    </button>
+  );
+}
+
+// ─── Submit modal ─────────────────────────────────────────────────────────────
+
+function SubmitModal({ caseId, onSubmitted, onClose }: {
+  caseId: string;
+  onSubmitted: (job: SegmentationJob) => void;
+  onClose: () => void;
+}) {
+  const [model, setModel] = useState<SegmentationModel>("cpu");
+  const [arch, setArch] = useState<SegmentationArch>("both");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+
+  const submit = async () => {
+    setBusy(true); setError("");
+    try {
+      const job = await submitSegmentationJob(caseId, { modelType: model, arch });
+      onSubmitted(job);
+    } catch (e: any) {
+      setError(e.message ?? "Failed");
+    } finally {
+      setBusy(false);
+    }
   };
 
   return (
-    <div className="ios-card p-5">
-      <div className="flex items-center gap-2 mb-4">
-        <Target size={16} className="text-indigo-500" />
-        <h3 className="font-bold text-[color:var(--foreground)]">Landmark Detection</h3>
-        <span className="ml-auto text-xs text-[color:var(--muted-foreground)]">{result.landmarks.length} landmarks</span>
-      </div>
-      <div className="space-y-2">
-        {result.landmarks.map((lm) => (
-          <div key={lm.id} className="flex items-center gap-3 rounded-lg border border-[color:var(--border)] bg-[color:var(--card)] px-3 py-2">
-            <span className="h-2 w-2 rounded-full bg-indigo-500 shrink-0" />
-            <div className="min-w-0 flex-1">
-              <div className="flex items-baseline gap-1.5">
-                <span className="text-xs font-bold text-[color:var(--primary)]">FDI {lm.fdi}</span>
-                <span className="text-sm font-semibold text-[color:var(--foreground)]">{LANDMARK_LABELS[lm.type] ?? lm.type}</span>
-              </div>
-              <p className="text-xs text-[color:var(--muted-foreground)]">
-                x:{lm.coordinates.x.toFixed(1)} y:{lm.coordinates.y.toFixed(1)} z:{lm.coordinates.z.toFixed(1)}
-              </p>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+      <div className="w-full max-w-sm mx-4 rounded-2xl border border-[color:var(--border)] bg-[color:var(--card)] p-5 space-y-4">
+        <div className="flex items-center justify-between">
+          <h3 className="font-bold text-[color:var(--foreground)]">New Segmentation Job</h3>
+          <button type="button" onClick={onClose}><X size={16} className="text-[color:var(--muted-foreground)]" /></button>
+        </div>
+
+        <div className="space-y-3">
+          <div>
+            <label className="text-xs font-semibold text-[color:var(--muted-foreground)] mb-1.5 block">AI Model</label>
+            <select
+              value={model}
+              onChange={e => setModel(e.target.value as SegmentationModel)}
+              className="w-full rounded-xl border border-[color:var(--border)] bg-[color:var(--background)] px-3 py-2 text-sm text-[color:var(--foreground)] outline-none"
+            >
+              {(Object.entries(MODEL_LABELS) as [SegmentationModel, string][]).map(([k, v]) => (
+                <option key={k} value={k}>{v}</option>
+              ))}
+            </select>
+            <p className="mt-1 text-[10px] text-[color:var(--muted-foreground)]">
+              GPU models require AI_SEGMENTATION_URL configuration. CPU uses rule-based segmentation.
+            </p>
+          </div>
+          <div>
+            <label className="text-xs font-semibold text-[color:var(--muted-foreground)] mb-1.5 block">Arch</label>
+            <div className="flex gap-2">
+              {(["upper", "lower", "both"] as SegmentationArch[]).map(a => (
+                <button
+                  key={a}
+                  type="button"
+                  onClick={() => setArch(a)}
+                  className={`flex-1 rounded-lg border px-3 py-1.5 text-xs font-semibold capitalize transition-all ${arch === a ? "border-[color:var(--primary)] bg-[color:var(--primary)]/10 text-[color:var(--primary)]" : "border-[color:var(--border)] text-[color:var(--muted-foreground)]"}`}
+                >
+                  {a}
+                </button>
+              ))}
             </div>
-            <span className={`text-xs font-bold ${lm.confidence >= 90 ? "text-emerald-600" : lm.confidence >= 80 ? "text-amber-600" : "text-rose-500"}`}>
-              {lm.confidence}%
-            </span>
-          </div>
-        ))}
-      </div>
-
-      {/* Arch measurements */}
-      <div className="mt-4 grid grid-cols-2 gap-3">
-        {[
-          { label: "Upper Arch Width",   value: `${result.arch.upperWidth} mm` },
-          { label: "Lower Arch Width",   value: `${result.arch.lowerWidth} mm` },
-          { label: "Overjet",            value: `${result.arch.overjet} mm` },
-          { label: "Overbite",           value: `${result.arch.overbite} mm` },
-          { label: "Midline Deviation",  value: `${Math.abs(result.midlineDeviation)} mm ${result.midlineDeviation < 0 ? "(L)" : "(R)"}` },
-          { label: "Occlusal Plane",     value: "Detected" },
-        ].map(({ label, value }) => (
-          <div key={label} className="rounded-lg border border-[color:var(--border)] bg-[color:var(--background)] p-2.5">
-            <p className="text-[10px] font-semibold text-[color:var(--muted-foreground)]">{label}</p>
-            <p className="mt-0.5 text-sm font-bold text-[color:var(--foreground)]">{value}</p>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-// ─── QualityAssessmentPanel ───────────────────────────────────────────────────
-
-function QualityAssessmentPanel({ result }: { result: SegmentationResult }) {
-  const conf = result.overallConfidence;
-  const flagCount = result.teeth.filter(t => t.hasRootFlag).length;
-  const missingCount = result.teeth.filter(t => t.isMissing).length;
-  const gingivaWarnings = result.teeth.filter(t => t.hasGingivaWarning).length;
-  const presentTeeth = result.teeth.filter(t => t.isPresent).length;
-
-  return (
-    <div className="ios-card p-5">
-      <div className="flex items-center gap-2 mb-4">
-        <Activity size={16} className="text-violet-500" />
-        <h3 className="font-bold text-[color:var(--foreground)]">Segmentation Quality</h3>
-        <span className={`ml-auto inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-bold ${result.status === "review_needed" ? "bg-amber-500/10 text-amber-600" : result.status === "complete" ? "bg-emerald-500/10 text-emerald-600" : "bg-slate-500/10 text-slate-500"}`}>
-          {result.status === "review_needed" ? "Review Required" : result.status === "complete" ? "Approved" : result.status}
-        </span>
-      </div>
-
-      {/* Overall confidence */}
-      <div className="rounded-xl border border-[color:var(--border)] bg-[color:var(--background)] p-4 mb-4">
-        <div className="flex items-center justify-between mb-2">
-          <p className="text-sm font-semibold text-[color:var(--foreground)]">Overall Confidence Score</p>
-          <span className={`text-2xl font-black tabular-nums ${conf >= 90 ? "text-emerald-600" : conf >= 80 ? "text-teal-600" : conf >= 70 ? "text-amber-600" : "text-rose-500"}`}>
-            {conf.toFixed(1)}%
-          </span>
-        </div>
-        <div className="h-2.5 rounded-full bg-[color:var(--border)]">
-          <div className={`h-full rounded-full transition-all ${conf >= 90 ? "bg-emerald-500" : conf >= 80 ? "bg-teal-500" : conf >= 70 ? "bg-amber-500" : "bg-rose-500"}`} style={{ width: `${conf}%` }} />
-        </div>
-        <p className="mt-2 text-xs text-[color:var(--muted-foreground)]">
-          Processing time: {(result.processingTimeMs / 1000 / 60).toFixed(1)} min
-        </p>
-      </div>
-
-      {/* Detection metrics */}
-      <div className="grid grid-cols-2 gap-3 mb-4">
-        {[
-          { label: "Teeth Detected",  value: presentTeeth,      color: "text-emerald-600" },
-          { label: "Missing Teeth",   value: missingCount,      color: "text-slate-500" },
-          { label: "Root Flags",      value: flagCount,         color: flagCount > 0 ? "text-rose-500" : "text-emerald-600" },
-          { label: "Gingiva Warnings",value: gingivaWarnings,   color: gingivaWarnings > 0 ? "text-amber-600" : "text-emerald-600" },
-          { label: "Landmarks",       value: result.landmarks.length, color: "text-indigo-600" },
-          { label: "Attachments",     value: result.teeth.filter(t => t.attachments.length > 0).length, color: "text-violet-600" },
-        ].map(({ label, value, color }) => (
-          <div key={label} className="rounded-lg border border-[color:var(--border)] bg-[color:var(--card)] p-3">
-            <p className="text-[10px] font-semibold text-[color:var(--muted-foreground)]">{label}</p>
-            <p className={`mt-1 text-xl font-black tabular-nums ${color}`}>{value}</p>
-          </div>
-        ))}
-      </div>
-
-      {/* Review notes */}
-      {result.reviewNotes && (
-        <div className="rounded-lg border border-amber-300/50 bg-amber-50/60 px-3 py-3 dark:border-amber-700/40 dark:bg-amber-900/10 mb-4">
-          <div className="flex items-start gap-2">
-            <AlertTriangle size={14} className="mt-0.5 shrink-0 text-amber-600" />
-            <p className="text-xs leading-relaxed text-amber-800 dark:text-amber-300">{result.reviewNotes}</p>
           </div>
         </div>
-      )}
 
-      {/* Actions */}
-      <div className="flex gap-2 flex-wrap">
-        {result.status === "review_needed" && (
-          <>
-            <button type="button" className="flex-1 flex items-center justify-center gap-1.5 rounded-xl bg-[color:var(--primary)] px-3 py-2.5 text-sm font-bold text-white">
-              <CheckCircle2 size={14} /> Approve Segmentation
-            </button>
-            <button type="button" className="flex items-center gap-1.5 rounded-xl border border-[color:var(--border)] bg-[color:var(--card)] px-3 py-2.5 text-sm font-bold text-[color:var(--foreground)]">
-              <RotateCcw size={14} /> Re-run AI
-            </button>
-          </>
-        )}
-        {result.status !== "review_needed" && (
-          <button type="button" className="flex items-center gap-1.5 rounded-xl bg-violet-500 px-4 py-2.5 text-sm font-bold text-white">
-            <Zap size={14} /> Proceed to CAD
+        {error && <p className="text-xs text-rose-600">{error}</p>}
+
+        <div className="flex gap-2">
+          <button type="button" onClick={onClose} className="flex-1 rounded-xl border border-[color:var(--border)] px-4 py-2 text-sm text-[color:var(--muted-foreground)] hover:bg-[color:var(--muted)]">Cancel</button>
+          <button
+            type="button"
+            onClick={submit}
+            disabled={busy}
+            className="flex-1 flex items-center justify-center gap-1.5 rounded-xl bg-[color:var(--primary)] px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
+          >
+            {busy ? <Loader2 size={13} className="animate-spin" /> : <Zap size={13} />}
+            Run Segmentation
           </button>
-        )}
+        </div>
       </div>
     </div>
   );
 }
 
-// ─── Pipeline status bar ──────────────────────────────────────────────────────
+// ─── Main component ───────────────────────────────────────────────────────────
 
-const PIPELINE_STEPS = [
-  "Scan Analysis", "Mesh Validation", "AI Tooth Detection", "FDI Assignment",
-  "Gingiva Detection", "Crown Extraction", "Contact Points", "Arch Curve",
-  "Midline", "Occlusion Map", "Quality Check",
-];
+interface Props { caseId: string }
 
-function PipelineStatus({ currentStep = 11 }: { currentStep?: number }) {
+export function AISegmentationCenter({ caseId }: Props) {
+  const [jobs, setJobs] = useState<SegmentationJob[]>([]);
+  const [activeJob, setActiveJob] = useState<SegmentationJob | null>(null);
+  const [selectedFdi, setSelectedFdi] = useState<number | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [loadingJob, setLoadingJob] = useState(false);
+  const [showSubmit, setShowSubmit] = useState(false);
+  const [error, setError] = useState("");
+  const [showHistory, setShowHistory] = useState(false);
+
+  const loadJobs = useCallback(async () => {
+    setLoading(true); setError("");
+    try {
+      const list = await listSegmentationJobs(caseId);
+      setJobs(list);
+      // Auto-select first completed job
+      if (!activeJob) {
+        const completed = list.find(j => j.status === "completed");
+        if (completed) loadJob(completed.id);
+      }
+    } catch (e: any) {
+      setError(e.message ?? "Failed to load");
+    } finally {
+      setLoading(false);
+    }
+  }, [caseId]);
+
+  const loadJob = useCallback(async (jobId: string) => {
+    setLoadingJob(true); setSelectedFdi(null);
+    try {
+      const job = await getSegmentationJob(caseId, jobId);
+      setActiveJob(job);
+    } finally {
+      setLoadingJob(false);
+    }
+  }, [caseId]);
+
+  useEffect(() => { loadJobs(); }, [loadJobs]);
+
+  // Poll processing jobs
+  useEffect(() => {
+    const processing = jobs.filter(j => j.status === "pending" || j.status === "processing");
+    if (!processing.length) return;
+    const interval = setInterval(() => {
+      loadJobs();
+      if (activeJob && (activeJob.status === "pending" || activeJob.status === "processing")) {
+        loadJob(activeJob.id);
+      }
+    }, 2500);
+    return () => clearInterval(interval);
+  }, [jobs, activeJob, loadJobs, loadJob]);
+
+  const selectedSegment = activeJob?.segments?.find(s => s.toothNumber === selectedFdi) ?? null;
+  const segments = activeJob?.segments ?? [];
+
+  const presentCount = segments.filter(s => !s.isMissing).length;
+  const flaggedCount = segments.filter(s => s.landmarkData?.flags?.includes("root_flag")).length;
+  const avgConf = segments.length
+    ? segments.filter(s => s.confidence != null).reduce((a, s) => a + (s.confidence ?? 0), 0) /
+      Math.max(1, segments.filter(s => s.confidence != null).length)
+    : null;
+
   return (
-    <div className="ios-card p-5">
-      <div className="flex items-center gap-2 mb-4">
-        <Zap size={15} className="text-violet-500" />
-        <h3 className="font-bold text-[color:var(--foreground)]">AI Segmentation Pipeline</h3>
-        <span className="ml-auto rounded-full bg-emerald-500/10 px-2 py-0.5 text-xs font-bold text-emerald-600">Complete</span>
-      </div>
-      <div className="space-y-2">
-        {PIPELINE_STEPS.map((step, i) => {
-          const done = i < currentStep;
-          return (
-            <div key={step} className="flex items-center gap-2.5">
-              <span className={`grid h-5 w-5 shrink-0 place-items-center rounded-full text-[9px] font-black ${done ? "bg-emerald-500 text-white" : "border border-[color:var(--border)] text-[color:var(--muted-foreground)]"}`}>
-                {done ? "✓" : i + 1}
-              </span>
-              <span className={`text-sm ${done ? "font-medium text-[color:var(--foreground)]" : "text-[color:var(--muted-foreground)]"}`}>{step}</span>
-              {done && <CheckCircle2 size={13} className="ml-auto text-emerald-500" />}
-            </div>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
-// ─── Main Component ───────────────────────────────────────────────────────────
-
-export function AISegmentationCenter() {
-  const [selectedTooth, setSelectedTooth] = useState<ToothSegment | null>(null);
-  const [activeTab, setActiveTab] = useState<"analysis" | "landmarks" | "quality" | "edit">("analysis");
-
-  const result = MOCK_RESULT;
-  const conf = result.overallConfidence;
-
-  return (
-    <div className="space-y-6">
+    <div className="space-y-5">
       {/* Header */}
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div>
-          <p className="text-xs font-semibold uppercase tracking-widest text-[color:var(--muted-foreground)]">AI Segmentation Center</p>
-          <h2 className="mt-1 text-2xl font-bold text-[color:var(--foreground)]">Segmentation Workspace</h2>
-          <p className="mt-1 text-sm text-[color:var(--muted-foreground)]">
-            Case {result.caseId} · Confidence{" "}
-            <span className={`font-bold ${conf >= 90 ? "text-emerald-600" : conf >= 80 ? "text-teal-600" : "text-amber-600"}`}>{conf.toFixed(1)}%</span>
-          </p>
+          <p className="text-xs font-semibold uppercase tracking-widest text-[color:var(--muted-foreground)]">Phase 21A</p>
+          <h2 className="mt-1 text-2xl font-bold text-[color:var(--foreground)]">AI Tooth Segmentation</h2>
+          <p className="mt-1 text-sm text-[color:var(--muted-foreground)]">Automatic detection · FDI/Universal numbering · Confidence scoring · Manual correction</p>
         </div>
         <div className="flex gap-2">
-          <button type="button" className="flex items-center gap-1.5 rounded-xl border border-[color:var(--border)] bg-[color:var(--card)] px-3 py-2 text-xs font-semibold text-[color:var(--foreground)]">
-            <Eye size={13} /> 3D View
+          <button onClick={loadJobs} disabled={loading} className="flex items-center gap-1.5 rounded-xl border border-[color:var(--border)] bg-[color:var(--card)] px-3 py-2 text-sm text-[color:var(--muted-foreground)] hover:text-[color:var(--foreground)] disabled:opacity-50">
+            <RefreshCw size={13} className={loading ? "animate-spin" : ""} />
           </button>
-          <button type="button" className="flex items-center gap-1.5 rounded-xl bg-[color:var(--primary)] px-3 py-2 text-xs font-bold text-white">
-            <Sparkles size={13} /> Re-run AI
-          </button>
-        </div>
-      </div>
-
-      <MedicalDisclaimer variant="inline" />
-
-      {/* Tab bar */}
-      <div className="flex gap-2 overflow-x-auto no-scrollbar">
-        {(["analysis", "landmarks", "quality", "edit"] as const).map((tab) => (
           <button
-            key={tab}
-            type="button"
-            onClick={() => setActiveTab(tab)}
-            className={`shrink-0 rounded-full px-4 py-2 text-sm font-semibold transition-all capitalize ${activeTab === tab ? "bg-[color:var(--primary)] text-white" : "border border-[color:var(--border)] bg-[color:var(--card)] text-[color:var(--muted-foreground)]"}`}
+            onClick={() => setShowSubmit(true)}
+            className="flex items-center gap-1.5 rounded-xl bg-[color:var(--primary)] px-4 py-2 text-sm font-semibold text-white hover:opacity-90"
           >
-            {tab === "analysis" ? "Tooth Analysis" : tab === "landmarks" ? "Landmarks" : tab === "quality" ? "Quality" : "Manual Edit"}
+            <Sparkles size={13} /> New Job
           </button>
-        ))}
+        </div>
       </div>
 
-      {/* Analysis tab */}
-      {activeTab === "analysis" && (
-        <div className="space-y-5">
-          <ArchMap teeth={result.teeth} onSelect={setSelectedTooth} selectedFdi={selectedTooth?.fdi ?? null} />
+      <MedicalDisclaimer variant="compact" />
 
-          {/* Selected tooth inspector */}
-          {selectedTooth ? (
-            <div>
-              <div className="flex items-center gap-2 mb-3">
-                <Target size={15} className="text-[color:var(--primary)]" />
-                <h3 className="font-bold text-[color:var(--foreground)]">Tooth Inspector — FDI {selectedTooth.fdi}</h3>
-                <button type="button" onClick={() => setSelectedTooth(null)} className="ml-auto text-xs text-[color:var(--muted-foreground)]">
-                  ✕ Clear
-                </button>
-              </div>
-              <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-4">
-                {[selectedTooth, ...result.teeth.filter(t => t.fdi !== selectedTooth.fdi && t.arch === selectedTooth.arch).slice(0, 7)].map(t => (
-                  <ToothInspector key={t.fdi} tooth={t} />
-                ))}
-              </div>
-            </div>
-          ) : (
-            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-4">
-              {result.teeth.filter(t => t.hasRootFlag || t.hasGingivaWarning).map(t => (
-                <ToothInspector key={t.fdi} tooth={t} />
-              ))}
-            </div>
-          )}
-          <PipelineStatus />
+      {error && <div className="rounded-xl border border-rose-200 bg-rose-50 p-3 text-sm text-rose-600">{error}</div>}
+
+      {loading && !activeJob && (
+        <div className="flex items-center justify-center py-12">
+          <Loader2 size={20} className="animate-spin text-[color:var(--primary)]" />
         </div>
       )}
 
-      {/* Landmarks tab */}
-      {activeTab === "landmarks" && <LandmarkViewer result={result} />}
-
-      {/* Quality tab */}
-      {activeTab === "quality" && (
-        <div className="grid gap-5 xl:grid-cols-[1fr_380px]">
-          <QualityAssessmentPanel result={result} />
-          <PipelineStatus />
+      {!loading && jobs.length === 0 && (
+        <div className="flex flex-col items-center gap-3 rounded-xl border border-[color:var(--border)] bg-[color:var(--card)] py-16 text-center">
+          <Scan size={32} strokeWidth={1.5} className="text-[color:var(--muted-foreground)]" />
+          <div>
+            <p className="text-sm font-semibold text-[color:var(--foreground)]">No segmentation jobs yet</p>
+            <p className="mt-1 text-xs text-[color:var(--muted-foreground)]">Submit a new job to detect and number teeth automatically</p>
+          </div>
+          <button onClick={() => setShowSubmit(true)} className="flex items-center gap-1.5 rounded-xl bg-[color:var(--primary)] px-4 py-2 text-sm font-semibold text-white hover:opacity-90">
+            <Zap size={13} /> Submit First Job
+          </button>
         </div>
       )}
 
-      {/* Manual edit tab */}
-      {activeTab === "edit" && (
-        <div className="ios-card p-6 text-center">
-          <Scan size={32} className="mx-auto mb-3 text-[color:var(--muted-foreground)]" />
-          <h3 className="font-bold text-[color:var(--foreground)] mb-2">Manual Segmentation Editor</h3>
-          <p className="text-sm text-[color:var(--muted-foreground)] mb-4">
-            Use brush, split, and merge tools to correct AI segmentation on flagged teeth.
-          </p>
-          <div className="flex justify-center gap-2">
-            {["Brush", "Split", "Merge"].map(tool => (
-              <button key={tool} type="button" className="rounded-xl border border-[color:var(--border)] bg-[color:var(--card)] px-4 py-2 text-sm font-semibold text-[color:var(--foreground)] hover:bg-[color:var(--primary-glow)]">
-                {tool}
+      {jobs.length > 0 && (
+        <div className="grid gap-4 xl:grid-cols-[280px_1fr]">
+          {/* Job list */}
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <p className="text-xs font-bold uppercase tracking-wider text-[color:var(--muted-foreground)]">Jobs</p>
+              <button
+                type="button"
+                onClick={() => setShowHistory(h => !h)}
+                className="text-[10px] text-[color:var(--muted-foreground)] flex items-center gap-0.5"
+              >
+                History {showHistory ? <ChevronUp size={10} /> : <ChevronDown size={10} />}
               </button>
+            </div>
+            {(showHistory ? jobs : jobs.slice(0, 3)).map(job => (
+              <JobCard
+                key={job.id}
+                job={job}
+                isActive={activeJob?.id === job.id}
+                onSelect={() => loadJob(job.id)}
+              />
             ))}
           </div>
-          <p className="mt-4 text-xs text-[color:var(--muted-foreground)]">
-            3D mesh editor requires desktop Chrome or Safari. Load the desktop workspace for full editing capabilities.
-          </p>
+
+          {/* Active job detail */}
+          <div className="space-y-4">
+            {loadingJob && (
+              <div className="flex items-center justify-center py-10">
+                <Loader2 size={18} className="animate-spin text-[color:var(--primary)]" />
+              </div>
+            )}
+
+            {activeJob && !loadingJob && (
+              <>
+                {/* Stats row */}
+                {activeJob.status === "completed" && (
+                  <div className="grid grid-cols-3 gap-3">
+                    {[
+                      { label: "Detected", value: presentCount, icon: CheckCircle2, color: "text-emerald-600" },
+                      { label: "Flagged",  value: flaggedCount, icon: AlertTriangle, color: flaggedCount > 0 ? "text-rose-500" : "text-emerald-600" },
+                      { label: "Avg. Conf.", value: avgConf != null ? `${(avgConf * 100).toFixed(1)}%` : "—", icon: Cpu, color: avgConf != null && avgConf >= 0.85 ? "text-emerald-600" : "text-amber-600" },
+                    ].map(s => (
+                      <div key={s.label} className="rounded-xl border border-[color:var(--border)] bg-[color:var(--card)] p-3 flex flex-col items-center gap-1">
+                        <s.icon size={15} className={s.color} />
+                        <p className={`text-xl font-bold ${s.color}`}>{s.value}</p>
+                        <p className="text-[10px] text-[color:var(--muted-foreground)]">{s.label}</p>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* Processing state */}
+                {(activeJob.status === "pending" || activeJob.status === "processing") && (
+                  <div className="rounded-xl border border-blue-200 bg-blue-50/60 p-4 space-y-3 dark:border-blue-900 dark:bg-blue-900/10">
+                    <div className="flex items-center gap-2">
+                      <Loader2 size={15} className="animate-spin text-blue-500" />
+                      <p className="text-sm font-semibold text-blue-700 dark:text-blue-400">
+                        {activeJob.status === "pending" ? "Queued — waiting to start…" : `Segmenting teeth… ${activeJob.progress}%`}
+                      </p>
+                    </div>
+                    <div className="h-2 rounded-full bg-blue-200 dark:bg-blue-900">
+                      <div className="h-full rounded-full bg-blue-500 transition-all" style={{ width: `${activeJob.progress}%` }} />
+                    </div>
+                  </div>
+                )}
+
+                {activeJob.status === "failed" && (
+                  <div className="rounded-xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-600">
+                    <strong>Failed:</strong> {activeJob.errorMessage ?? "Unknown error"}
+                  </div>
+                )}
+
+                {/* Tooth arch map */}
+                {activeJob.status === "completed" && segments.length > 0 && (
+                  <div className="rounded-xl border border-[color:var(--border)] bg-[color:var(--card)] p-4 space-y-4">
+                    <div className="flex items-center gap-2">
+                      <Layers3 size={14} className="text-[color:var(--primary)]" />
+                      <h3 className="text-sm font-bold text-[color:var(--foreground)]">Arch Map</h3>
+                      <span className="text-xs text-[color:var(--muted-foreground)]">Click a tooth to inspect</span>
+                    </div>
+                    <ArchMap segments={segments} selectedFdi={selectedFdi} onSelect={s => setSelectedFdi(s.toothNumber)} />
+                    <div className="flex flex-wrap gap-3 text-[10px] text-[color:var(--muted-foreground)]">
+                      <span className="flex items-center gap-1"><span className="h-2 w-2 rounded bg-emerald-500/50" />≥90%</span>
+                      <span className="flex items-center gap-1"><span className="h-2 w-2 rounded bg-teal-500/50" />80–90%</span>
+                      <span className="flex items-center gap-1"><span className="h-2 w-2 rounded bg-amber-500/50" />70–80%</span>
+                      <span className="flex items-center gap-1"><span className="h-2 w-2 rounded bg-rose-500/50" />&lt;70% / Flag</span>
+                      <span className="flex items-center gap-1"><span className="h-2 w-2 rounded bg-slate-300/50" />Missing</span>
+                    </div>
+                  </div>
+                )}
+
+                {/* Tooth inspector */}
+                {selectedSegment && (
+                  <div className="space-y-2">
+                    <p className="text-xs font-bold uppercase tracking-wider text-[color:var(--muted-foreground)]">Tooth Inspector — FDI {selectedSegment.toothNumber}</p>
+                    <ToothInspector
+                      segment={selectedSegment}
+                      caseId={caseId}
+                      jobId={activeJob.id}
+                      onCorrected={() => loadJob(activeJob.id)}
+                    />
+                  </div>
+                )}
+
+                {/* Corrections history */}
+                {activeJob.corrections && activeJob.corrections.length > 0 && (
+                  <div className="space-y-2">
+                    <p className="text-xs font-bold uppercase tracking-wider text-[color:var(--muted-foreground)]">Correction History</p>
+                    <div className="divide-y divide-[color:var(--border)] rounded-xl border border-[color:var(--border)] overflow-hidden">
+                      {activeJob.corrections.map(c => (
+                        <div key={c.id} className="bg-[color:var(--card)] px-3 py-2">
+                          <div className="flex items-center gap-2">
+                            <RotateCcw size={11} className="text-[color:var(--muted-foreground)]" />
+                            <span className="text-xs font-semibold text-[color:var(--foreground)]">
+                              {CORRECTION_LABELS[c.correctionType as CorrectionType] ?? c.correctionType}
+                            </span>
+                            {c.toothNumber && <span className="text-xs text-[color:var(--muted-foreground)]">FDI {c.toothNumber}</span>}
+                            {c.afterConfidence != null && c.beforeConfidence != null && (
+                              <span className="ml-auto text-[10px] text-emerald-600 font-bold">
+                                {(c.beforeConfidence * 100).toFixed(1)}% → {(c.afterConfidence * 100).toFixed(1)}%
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-[10px] text-[color:var(--muted-foreground)] mt-0.5">
+                            {c.appliedByEmail ?? "system"} · {new Date(c.createdAt).toLocaleString()}
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* AI version note */}
+                <div className="flex items-center gap-1.5 text-[10px] text-[color:var(--muted-foreground)]">
+                  <Cpu size={10} />
+                  AI version: {activeJob.aiVersion} · Model: {MODEL_LABELS[activeJob.modelType]}
+                  {(activeJob.resultSummary as any)?.fallback && " · Rule-based fallback (configure AI_SEGMENTATION_URL for ML inference)"}
+                </div>
+              </>
+            )}
+          </div>
         </div>
+      )}
+
+      {showSubmit && (
+        <SubmitModal
+          caseId={caseId}
+          onSubmitted={job => {
+            setJobs(prev => [job, ...prev]);
+            setShowSubmit(false);
+            loadJob(job.id);
+          }}
+          onClose={() => setShowSubmit(false)}
+        />
       )}
     </div>
   );

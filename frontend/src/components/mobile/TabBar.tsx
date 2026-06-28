@@ -6,13 +6,10 @@ import {
   BarChart3,
   Box,
   Brain,
-  ClipboardList,
   Factory,
   FolderKanban,
-  GitBranch,
-  LayoutDashboard,
+  Home,
   Layers3,
-  MessageCircle,
   ScanLine,
   Settings,
   Shield,
@@ -32,11 +29,11 @@ type TabItem = {
 };
 
 const TABS: TabItem[] = [
-  { href: '/',         label: 'Inbox',    icon: MessageCircle },
-  { href: '/cases',    label: 'Cases',    icon: FolderKanban  },
-  { href: '/patients', label: 'Patients', icon: Users },
-  { href: '/studio',   label: 'Studio',   icon: Box },
-  { href: '/settings', label: 'Settings', icon: Settings },
+  { href: '/',         label: 'Overview', icon: Home         },
+  { href: '/cases',    label: 'Cases',    icon: FolderKanban },
+  { href: '/patients', label: 'Patients', icon: Users        },
+  { href: '/studio',   label: 'Studio',   icon: Box          },
+  { href: '/settings', label: 'Settings', icon: Settings     },
 ];
 
 function isActive(pathname: string, tab: TabItem): boolean {
@@ -114,27 +111,24 @@ type SidebarGroup = {
 
 const SIDEBAR_GROUPS: SidebarGroup[] = [
   {
-    label: 'Command',
+    label: 'Overview',
     items: [
-      { href: '/',           label: 'Inbox',     icon: MessageCircle    },
-      { href: '/dashboard',  label: 'Dashboard', icon: LayoutDashboard  },
+      { href: '/', label: 'Overview', icon: Home },
     ],
   },
   {
     label: 'Clinical',
     items: [
       { href: '/cases',          label: 'Cases',          icon: FolderKanban },
-      { href: '/patients',       label: 'Patients',       icon: Users },
-      { href: '/treatment-plan', label: 'Treatment Plan', icon: ClipboardList },
-      { href: '/workflow',       label: 'Workflow',       icon: GitBranch },
+      { href: '/patients',       label: 'Patients',       icon: Users        },
+      { href: '/treatment-plan', label: 'Treatment Plan', icon: Layers3      },
     ],
   },
   {
     label: 'Studio',
     items: [
-      { href: '/studio',      label: 'Studio',         icon: Box },
-      { href: '/ai-analysis', label: 'Scan & Segment', icon: ScanLine },
-      { href: '/desktop',     label: 'CAD Workspace',  icon: Layers3 },
+      { href: '/studio',      label: 'CAD Design Studio', icon: Box     },
+      { href: '/ai-analysis', label: 'Scan & Segment',    icon: ScanLine },
     ],
   },
   {
@@ -146,8 +140,8 @@ const SIDEBAR_GROUPS: SidebarGroup[] = [
   {
     label: 'Intelligence',
     items: [
-      { href: '/analytics',     label: 'Analytics',      icon: BarChart3 },
-      { href: '/ai-readiness',  label: 'AI Readiness',   icon: Brain     },
+      { href: '/analytics',    label: 'Analytics',   icon: BarChart3 },
+      { href: '/ai-readiness', label: 'AI Readiness', icon: Brain    },
     ],
   },
   {

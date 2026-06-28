@@ -1,166 +1,250 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   AlertTriangle,
-  Camera,
   CheckCircle2,
   ChevronDown,
-  ChevronRight,
   ChevronUp,
-  ClipboardList,
-  Download,
   Eye,
-  FileText,
+  Info,
   Layers,
   Loader2,
   Microscope,
   Package,
   Printer,
+  RefreshCw,
   Shield,
   ShieldCheck,
   ThumbsDown,
   ThumbsUp,
-  Timer,
-  User,
-  X,
+  Zap,
 } from "lucide-react";
-import type { QCCheck, QCReport, AuditLogEntry } from "@/types/orthodontic";
-import { qcStatusTone } from "@/types/orthodontic";
+import {
+  type QCJobSummary,
+  type QCCheck,
+  type QCCheckType,
+  type QCCheckStatus,
+  CHECK_TYPE_LABELS,
+  listQCJobs,
+  initQCChecks,
+  updateQCCheck,
+} from "@/lib/api/qc";
 
-// ─── Mock data ────────────────────────────────────────────────────────────────
+// ─── Status config ────────────────────────────────────────────────────────────
 
-const MOCK_QC_CHECKS: QCCheck[] = [];
-
-const MOCK_QC_REPORTS: QCReport[] = [];
-
-const MOCK_AUDIT_LOG: AuditLogEntry[] = [];
-
-// ─── QC Check row ─────────────────────────────────────────────────────────────
-
-const CHECK_ICONS: Record<QCCheck["checkType"], React.ElementType> = {
-  print_quality:         Layers,
-  model_integrity:       Shield,
-  thickness_verification:Microscope,
-  fit_verification:      Eye,
-  surface_finish:        Layers,
-  dimensional_accuracy:  Layers,
-  material_compliance:   CheckCircle2,
+const STATUS_CFG: Record<QCCheckStatus, { label: string; bg: string; text: string; icon: React.ElementType }> = {
+  pass:    { label: "Pass",    bg: "bg-emerald-500/10", text: "text-emerald-600", icon: CheckCircle2 },
+  fail:    { label: "Fail",    bg: "bg-rose-500/10",    text: "text-rose-500",    icon: AlertTriangle },
+  warning: { label: "Warning", bg: "bg-amber-500/10",   text: "text-amber-600",   icon: AlertTriangle },
+  pending: { label: "Pending", bg: "bg-slate-500/10",   text: "text-slate-500",   icon: Layers },
 };
 
-const STATUS_CONFIG = {
-  pass:             { label: "Pass",             bg: "bg-emerald-500/10", text: "text-emerald-600", border: "border-emerald-300/50" },
-  fail:             { label: "Fail",             bg: "bg-rose-500/10",    text: "text-rose-500",    border: "border-rose-300/50" },
-  conditional_pass: { label: "Conditional Pass", bg: "bg-amber-500/10",   text: "text-amber-600",   border: "border-amber-300/50" },
-  rework_required:  { label: "Rework Required",  bg: "bg-orange-500/10",  text: "text-orange-600",  border: "border-orange-300/50" },
-  pending:          { label: "Pending",          bg: "bg-slate-500/10",   text: "text-slate-500",   border: "border-slate-300/50" },
+const CHECK_ICONS: Record<QCCheckType, React.ElementType> = {
+  print_quality:          Layers,
+  model_integrity:        Shield,
+  thickness_verification: Microscope,
+  fit_verification:       Eye,
+  surface_finish:         Layers,
+  dimensional_accuracy:   Layers,
+  material_compliance:    CheckCircle2,
 };
 
-function QCCheckRow({ check }: { check: QCCheck }) {
-  const cfg = STATUS_CONFIG[check.status];
+// ─── Score gauge ──────────────────────────────────────────────────────────────
+
+function ScoreGauge({ score }: { score: number | null }) {
+  if (score == null) return <span className="text-[color:var(--muted-foreground)] text-sm">Pending</span>;
+  const color = score >= 90 ? "text-green-600" : score >= 70 ? "text-amber-600" : "text-rose-600";
+  return <span className={`text-2xl font-bold tabular-nums ${color}`}>{score}%</span>;
+}
+
+// ─── Check row ────────────────────────────────────────────────────────────────
+
+function CheckRow({
+  check,
+  jobId,
+  onUpdate,
+}: {
+  check: QCCheck;
+  jobId: string;
+  onUpdate: (updated: QCCheck) => void;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [measured, setMeasured] = useState(check.measuredValue?.toString() ?? "");
+  const [notes, setNotes] = useState(check.notes ?? "");
+  const [expanded, setExpanded] = useState(false);
+  const cfg = STATUS_CFG[check.status];
   const Icon = CHECK_ICONS[check.checkType];
 
+  const submit = async (status: QCCheckStatus) => {
+    setBusy(true);
+    try {
+      const updated = await updateQCCheck(jobId, check.id, {
+        status,
+        measuredValue: measured ? parseFloat(measured) : undefined,
+        notes: notes || undefined,
+      });
+      onUpdate(updated);
+      setExpanded(false);
+    } finally {
+      setBusy(false);
+    }
+  };
+
   return (
-    <div className={`flex items-start gap-3 rounded-xl border px-4 py-3.5 ${check.status === "fail" || check.status === "rework_required" ? "border-rose-300/50 bg-rose-50/30 dark:border-rose-700/40 dark:bg-rose-900/5" : check.status === "conditional_pass" ? "border-amber-300/40 bg-amber-50/30 dark:border-amber-700/40 dark:bg-amber-900/5" : "border-[color:var(--border)] bg-[color:var(--card)]"}`}>
-      <span className={`mt-0.5 grid h-8 w-8 shrink-0 place-items-center rounded-xl ${cfg.bg} ${cfg.text}`}>
-        <Icon size={15} />
-      </span>
-      <div className="min-w-0 flex-1">
-        <div className="flex items-start justify-between gap-2">
-          <p className="text-sm font-bold text-[color:var(--foreground)]">{check.label}</p>
-          <span className={`shrink-0 inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-bold ${cfg.bg} ${cfg.text}`}>
-            {cfg.label}
-          </span>
-        </div>
-        <div className="mt-1 flex flex-wrap gap-3 text-xs text-[color:var(--muted-foreground)]">
-          {check.measuredValue && <span><strong className="text-[color:var(--foreground)]">Measured:</strong> {check.measuredValue}</span>}
-          {check.expectedRange && <span><strong className="text-[color:var(--foreground)]">Expected:</strong> {check.expectedRange}</span>}
-          {check.tolerance && <span><strong className="text-[color:var(--foreground)]">Tolerance:</strong> {check.tolerance}</span>}
-        </div>
-        {check.notes && (
-          <p className="mt-1.5 text-xs text-amber-700 dark:text-amber-400">{check.notes}</p>
+    <div className={`rounded-xl border px-4 py-3 ${check.status === "fail" ? "border-rose-300/50 bg-rose-50/30 dark:border-rose-700/40" : "border-[color:var(--border)] bg-[color:var(--card)]"}`}>
+      <button type="button" onClick={() => setExpanded(x => !x)} className="w-full flex items-center gap-3 text-left">
+        <span className={`grid h-8 w-8 shrink-0 place-items-center rounded-xl ${cfg.bg} ${cfg.text}`}>
+          <Icon size={14} />
+        </span>
+        <span className="flex-1 text-sm font-semibold text-[color:var(--foreground)]">{CHECK_TYPE_LABELS[check.checkType]}</span>
+        {check.measuredValue != null && check.unit && (
+          <span className="text-xs text-[color:var(--muted-foreground)] font-mono">{check.measuredValue} {check.unit}</span>
         )}
-        {check.inspectedAt && (
-          <p className="mt-0.5 text-[10px] text-[color:var(--muted-foreground)]">Inspected at {check.inspectedAt}</p>
-        )}
-      </div>
+        <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-bold ${cfg.bg} ${cfg.text}`}>
+          {cfg.label}
+        </span>
+        {expanded ? <ChevronUp size={13} className="text-[color:var(--muted-foreground)]" /> : <ChevronDown size={13} className="text-[color:var(--muted-foreground)]" />}
+      </button>
+
+      {expanded && (
+        <div className="mt-3 space-y-2 border-t border-[color:var(--border)] pt-3">
+          {check.expectedMin != null && (
+            <p className="text-xs text-[color:var(--muted-foreground)]">
+              Expected: {check.expectedMin}–{check.expectedMax} {check.unit}
+            </p>
+          )}
+          <div className="flex gap-2">
+            <input
+              type="number"
+              step="0.01"
+              value={measured}
+              onChange={e => setMeasured(e.target.value)}
+              placeholder={`Value (${check.unit ?? ""})`}
+              className="w-32 rounded-lg border border-[color:var(--border)] bg-[color:var(--background)] px-2 py-1.5 text-sm text-[color:var(--foreground)]"
+            />
+            <input
+              type="text"
+              value={notes}
+              onChange={e => setNotes(e.target.value)}
+              placeholder="Notes…"
+              className="flex-1 rounded-lg border border-[color:var(--border)] bg-[color:var(--background)] px-2 py-1.5 text-sm text-[color:var(--foreground)]"
+            />
+          </div>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={() => submit("pass")}
+              disabled={busy}
+              className="flex items-center gap-1.5 rounded-lg bg-emerald-500 px-3 py-1.5 text-xs font-bold text-white hover:bg-emerald-600 disabled:opacity-50"
+            >
+              {busy ? <Loader2 size={11} className="animate-spin" /> : <ThumbsUp size={11} />} Pass
+            </button>
+            <button
+              type="button"
+              onClick={() => submit("warning")}
+              disabled={busy}
+              className="flex items-center gap-1.5 rounded-lg bg-amber-500 px-3 py-1.5 text-xs font-bold text-white hover:bg-amber-600 disabled:opacity-50"
+            >
+              <AlertTriangle size={11} /> Warning
+            </button>
+            <button
+              type="button"
+              onClick={() => submit("fail")}
+              disabled={busy}
+              className="flex items-center gap-1.5 rounded-lg bg-rose-500 px-3 py-1.5 text-xs font-bold text-white hover:bg-rose-600 disabled:opacity-50"
+            >
+              <ThumbsDown size={11} /> Fail
+            </button>
+          </div>
+          {check.checkedByEmail && (
+            <p className="text-[10px] text-[color:var(--muted-foreground)]">
+              Last checked by {check.checkedByEmail}
+              {check.checkedAt ? ` · ${new Date(check.checkedAt).toLocaleString()}` : ""}
+            </p>
+          )}
+        </div>
+      )}
     </div>
   );
 }
 
-// ─── QC Report card ───────────────────────────────────────────────────────────
+// ─── Job card ─────────────────────────────────────────────────────────────────
 
-function QCReportCard({ report, selected, onSelect }: { report: QCReport; selected: boolean; onSelect: () => void }) {
-  const cfg = STATUS_CONFIG[report.overallStatus];
-  const passCount = report.checks.filter(c => c.status === "pass").length;
+function JobCard({ job, onRefresh }: { job: QCJobSummary; onRefresh: (j: QCJobSummary) => void }) {
+  const [expanded, setExpanded] = useState(false);
+  const [initBusy, setInitBusy] = useState(false);
+
+  const handleUpdateCheck = (updated: QCCheck) => {
+    const next = { ...job, checks: job.checks.map(c => c.id === updated.id ? updated : c) };
+    next.passCount = next.checks.filter(c => c.status === "pass").length;
+    next.failCount = next.checks.filter(c => c.status === "fail").length;
+    next.pendingCount = next.checks.filter(c => c.status === "pending").length;
+    onRefresh(next);
+  };
+
+  const handleInit = async () => {
+    setInitBusy(true);
+    try {
+      const checks = await initQCChecks(job.id);
+      onRefresh({ ...job, checks, pendingCount: checks.length, passCount: 0, failCount: 0 });
+      setExpanded(true);
+    } finally {
+      setInitBusy(false);
+    }
+  };
+
+  const statusColor = job.status === "completed" ? "text-green-600" : job.status === "failed" ? "text-rose-600" : "text-amber-600";
 
   return (
-    <button
-      type="button"
-      onClick={onSelect}
-      className={`w-full text-left rounded-xl border p-4 transition-all ${selected ? "border-[color:var(--primary)] bg-[color:var(--primary-glow)]" : "border-[color:var(--border)] bg-[color:var(--card)] hover:border-[color:var(--primary)]/40"}`}
-    >
-      <div className="flex items-start justify-between gap-2 mb-2">
-        <div>
-          <p className="text-xs font-bold text-[color:var(--primary)]">{report.batchLabel}</p>
-          <p className="text-sm font-bold text-[color:var(--foreground)]">{report.patientName}</p>
-          <p className="text-xs text-[color:var(--muted-foreground)]">{report.caseId}</p>
+    <div className="rounded-xl border border-[color:var(--border)] bg-[color:var(--card)] overflow-hidden">
+      <button type="button" onClick={() => setExpanded(x => !x)} className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-[color:var(--muted)]">
+        <Printer size={15} className="text-[color:var(--muted-foreground)] shrink-0" />
+        <div className="flex-1 min-w-0">
+          <p className="text-sm font-semibold text-[color:var(--foreground)] truncate">
+            {job.printerName ?? "Unassigned"} · {job.id.slice(-8)}
+          </p>
+          <p className="text-xs text-[color:var(--muted-foreground)]">
+            {new Date(job.createdAt).toLocaleDateString()}
+          </p>
         </div>
-        <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-bold ${cfg.bg} ${cfg.text}`}>
-          {cfg.label}
-        </span>
-      </div>
-      <div className="flex items-center justify-between text-xs text-[color:var(--muted-foreground)]">
-        <span>{passCount}/{report.checks.length} checks passed</span>
-        <span>{report.photosAttached} photos</span>
-      </div>
-      <p className="mt-1.5 text-xs text-[color:var(--muted-foreground)]">By {report.inspectorName} · {report.inspectedAt}</p>
-    </button>
-  );
-}
-
-// ─── Audit log ────────────────────────────────────────────────────────────────
-
-const ROLE_LABELS: Record<string, string> = {
-  super_admin: "Admin", clinic_admin: "Clinic Admin", orthodontist: "Orthodontist",
-  dentist: "Dentist", treatment_planner: "Planner", lab_technician: "Lab Tech",
-  reviewer: "Reviewer", read_only: "Read-only",
-};
-
-function AuditLog() {
-  return (
-    <div className="ios-card p-5">
-      <div className="flex items-center gap-2 mb-4">
-        <ClipboardList size={15} className="text-[color:var(--primary)]" />
-        <h3 className="font-bold text-[color:var(--foreground)]">Audit Log</h3>
-        <span className="ml-auto text-xs text-[color:var(--muted-foreground)]">HIPAA-compliant</span>
-      </div>
-      <div className="space-y-2">
-        {MOCK_AUDIT_LOG.map(entry => (
-          <div key={entry.id} className="flex items-start gap-3 rounded-lg border border-[color:var(--border)] bg-[color:var(--card)] px-3 py-2.5">
-            <span className="mt-0.5 grid h-7 w-7 shrink-0 place-items-center rounded-full bg-[color:var(--primary-glow)] text-[color:var(--primary)] text-[10px] font-black">
-              {entry.actorName.split(" ").map(n => n[0]).join("").slice(0, 2)}
-            </span>
-            <div className="min-w-0 flex-1">
-              <p className="text-sm text-[color:var(--foreground)]">{entry.action}</p>
-              <div className="flex flex-wrap items-center gap-2 mt-0.5">
-                <span className="text-xs font-semibold text-[color:var(--muted-foreground)]">{entry.actorName}</span>
-                <span className="rounded-md bg-[color:var(--primary-glow)] px-1.5 py-0.5 text-[10px] font-bold text-[color:var(--primary)]">{ROLE_LABELS[entry.actorRole] ?? entry.actorRole}</span>
-                <span className="text-xs text-[color:var(--muted-foreground)]">{entry.timestamp}</span>
-              </div>
-              {entry.details && (
-                <div className="mt-1.5 flex flex-wrap gap-1">
-                  {Object.entries(entry.details).map(([k, v]) => (
-                    <span key={k} className="rounded-md border border-[color:var(--border)] px-1.5 py-0.5 text-[10px] text-[color:var(--muted-foreground)]">
-                      <span className="font-semibold text-[color:var(--foreground)]">{k}:</span> {v}
-                    </span>
-                  ))}
-                </div>
-              )}
-            </div>
+        <div className="flex items-center gap-3">
+          <ScoreGauge score={job.qualityScore} />
+          <div className="flex gap-1 text-xs">
+            <span className="text-green-600 font-bold">{job.passCount}✓</span>
+            {job.failCount > 0 && <span className="text-rose-600 font-bold">{job.failCount}✗</span>}
+            {job.pendingCount > 0 && <span className="text-[color:var(--muted-foreground)]">{job.pendingCount}?</span>}
           </div>
-        ))}
-      </div>
+          <span className={`text-xs font-semibold capitalize ${statusColor}`}>{job.status}</span>
+        </div>
+        {expanded ? <ChevronUp size={13} className="text-[color:var(--muted-foreground)]" /> : <ChevronDown size={13} className="text-[color:var(--muted-foreground)]" />}
+      </button>
+
+      {expanded && (
+        <div className="px-4 pb-4 border-t border-[color:var(--border)] space-y-2 pt-3">
+          {job.checks.length === 0 ? (
+            <div className="flex items-center gap-3">
+              <p className="text-sm text-[color:var(--muted-foreground)]">No QC checks initialised.</p>
+              <button
+                type="button"
+                onClick={handleInit}
+                disabled={initBusy}
+                className="flex items-center gap-1.5 rounded-lg bg-[color:var(--primary)] px-3 py-1.5 text-xs font-medium text-[color:var(--primary-foreground)] hover:opacity-90 disabled:opacity-50"
+              >
+                {initBusy ? <Loader2 size={11} className="animate-spin" /> : <Zap size={11} />}
+                Init 7 Checks
+              </button>
+            </div>
+          ) : (
+            job.checks.map(check => (
+              <CheckRow key={check.id} check={check} jobId={job.id} onUpdate={handleUpdateCheck} />
+            ))
+          )}
+          {job.qcNotes && (
+            <p className="text-xs text-[color:var(--muted-foreground)] mt-2 italic">{job.qcNotes}</p>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -168,140 +252,102 @@ function AuditLog() {
 // ─── Main Component ───────────────────────────────────────────────────────────
 
 export function QualityControlCenter() {
-  const [activeTab, setActiveTab] = useState<"inspection" | "reports" | "audit">("inspection");
-  const [selectedReport, setSelectedReport] = useState<QCReport>(MOCK_QC_REPORTS[0]);
-  const [approved, setApproved] = useState(selectedReport.approvedForShipping);
+  const [jobs, setJobs] = useState<QCJobSummary[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
 
-  const passCount = selectedReport.checks.filter(c => c.status === "pass").length;
-  const failCount = selectedReport.checks.filter(c => c.status === "fail").length;
-  const condCount = selectedReport.checks.filter(c => c.status === "conditional_pass").length;
+  const load = async () => {
+    setLoading(true); setError("");
+    try {
+      setJobs(await listQCJobs(50));
+    } catch (e: any) {
+      setError(e.message ?? "Failed to load QC jobs");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => { load(); }, []);
+
+  const handleRefreshJob = (updated: QCJobSummary) => {
+    setJobs(prev => prev.map(j => j.id === updated.id ? updated : j));
+  };
+
+  const totalJobs = jobs.length;
+  const pendingJobs = jobs.filter(j => j.pendingCount > 0).length;
+  const failedJobs = jobs.filter(j => j.failCount > 0).length;
 
   return (
     <div className="space-y-6">
       {/* Header */}
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div>
-          <p className="text-xs font-semibold uppercase tracking-widest text-[color:var(--muted-foreground)]">Quality Control Center</p>
-          <h2 className="mt-1 text-2xl font-bold text-[color:var(--foreground)]">QC Inspection Workflow</h2>
-          <p className="mt-1 text-sm text-[color:var(--muted-foreground)]">Validate print quality, model integrity, thickness, and fit for each batch.</p>
+          <p className="text-xs font-semibold uppercase tracking-widest text-[color:var(--muted-foreground)]">Manufacturing QC</p>
+          <h2 className="mt-1 text-2xl font-bold text-[color:var(--foreground)]">Quality Control Center</h2>
+          <p className="mt-1 text-sm text-[color:var(--muted-foreground)]">Print quality · Thickness · Fit verification · Material compliance</p>
         </div>
-        <div className="flex gap-2">
-          <button type="button" className="flex items-center gap-1.5 rounded-xl border border-[color:var(--border)] bg-[color:var(--card)] px-3 py-2 text-sm font-bold text-[color:var(--foreground)]">
-            <Download size={14} /> Export Report
-          </button>
-        </div>
+        <button
+          type="button"
+          onClick={load}
+          disabled={loading}
+          className="flex items-center gap-1.5 rounded-xl border border-[color:var(--border)] bg-[color:var(--card)] px-3 py-2 text-sm font-medium text-[color:var(--foreground)] hover:bg-[color:var(--muted)] disabled:opacity-50"
+        >
+          <RefreshCw size={13} className={loading ? "animate-spin" : ""} /> Refresh
+        </button>
       </div>
 
-      {/* Tab bar */}
-      <div className="flex gap-2">
-        {(["inspection", "reports", "audit"] as const).map(tab => (
-          <button
-            key={tab}
-            type="button"
-            onClick={() => setActiveTab(tab)}
-            className={`shrink-0 rounded-full px-4 py-2 text-sm font-semibold transition-all capitalize ${activeTab === tab ? "bg-[color:var(--primary)] text-white" : "border border-[color:var(--border)] bg-[color:var(--card)] text-[color:var(--muted-foreground)]"}`}
-          >
-            {tab === "audit" ? "Audit Log" : tab.charAt(0).toUpperCase() + tab.slice(1)}
-          </button>
+      {/* Stats row */}
+      <div className="grid grid-cols-3 gap-3">
+        {[
+          { label: "Print Jobs", value: totalJobs, icon: Package, tone: "text-[color:var(--foreground)]" },
+          { label: "Pending Review", value: pendingJobs, icon: Loader2, tone: pendingJobs > 0 ? "text-amber-600" : "text-green-600" },
+          { label: "Issues Found", value: failedJobs, icon: AlertTriangle, tone: failedJobs > 0 ? "text-rose-600" : "text-green-600" },
+        ].map(s => (
+          <div key={s.label} className="ios-card flex flex-col items-center gap-1 p-4">
+            <s.icon size={18} className={s.tone} />
+            <p className={`text-2xl font-bold ${s.tone}`}>{s.value}</p>
+            <p className="text-xs text-[color:var(--muted-foreground)]">{s.label}</p>
+          </div>
         ))}
       </div>
 
-      {/* Inspection tab */}
-      {activeTab === "inspection" && (
-        <div className="grid gap-5 xl:grid-cols-[280px_1fr]">
-          {/* Report selector */}
-          <div className="space-y-3">
-            <h4 className="text-sm font-bold text-[color:var(--foreground)]">Batches for Inspection</h4>
-            {MOCK_QC_REPORTS.map(r => (
-              <QCReportCard
-                key={r.id}
-                report={r}
-                selected={r.id === selectedReport.id}
-                onSelect={() => { setSelectedReport(r); setApproved(r.approvedForShipping); }}
-              />
-            ))}
-          </div>
+      {/* Content */}
+      {loading && (
+        <div className="flex items-center justify-center py-12 text-[color:var(--muted-foreground)]">
+          <Loader2 size={20} className="animate-spin mr-2" />
+          <span className="text-sm">Loading QC queue…</span>
+        </div>
+      )}
 
-          {/* QC checks */}
-          <div className="space-y-4">
-            {/* Batch header */}
-            <div className="ios-card p-4">
-              <div className="flex items-start justify-between gap-3 flex-wrap">
-                <div>
-                  <p className="text-xs font-bold text-[color:var(--primary)]">{selectedReport.batchLabel} · {selectedReport.caseId}</p>
-                  <h3 className="text-lg font-bold text-[color:var(--foreground)]">{selectedReport.patientName}</h3>
-                  <p className="text-xs text-[color:var(--muted-foreground)]">Inspector: {selectedReport.inspectorName} · {selectedReport.inspectedAt}</p>
-                </div>
-                <div className="flex items-center gap-2 flex-wrap">
-                  <div className="flex gap-2">
-                    <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 px-2.5 py-1 text-xs font-bold text-emerald-600">{passCount} Pass</span>
-                    {condCount > 0 && <span className="inline-flex items-center gap-1 rounded-full bg-amber-500/10 px-2.5 py-1 text-xs font-bold text-amber-600">{condCount} Conditional</span>}
-                    {failCount > 0 && <span className="inline-flex items-center gap-1 rounded-full bg-rose-500/10 px-2.5 py-1 text-xs font-bold text-rose-500">{failCount} Fail</span>}
-                  </div>
-                </div>
-              </div>
+      {error && (
+        <div className="rounded-xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-600 dark:border-rose-900 dark:bg-rose-950/20 dark:text-rose-400">
+          {error}
+        </div>
+      )}
 
-              {/* Overall status + shipping approval */}
-              <div className="mt-4 flex items-center gap-3 flex-wrap">
-                <div className={`flex items-center gap-2 rounded-xl border px-3 py-2.5 ${STATUS_CONFIG[selectedReport.overallStatus].border} ${STATUS_CONFIG[selectedReport.overallStatus].bg}`}>
-                  {selectedReport.overallStatus === "pass" ? <CheckCircle2 size={15} className="text-emerald-600" /> : <AlertTriangle size={15} className="text-amber-600" />}
-                  <span className={`text-sm font-bold ${STATUS_CONFIG[selectedReport.overallStatus].text}`}>{STATUS_CONFIG[selectedReport.overallStatus].label}</span>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setApproved(v => !v)}
-                  className={`flex items-center gap-2 rounded-xl border px-4 py-2.5 text-sm font-bold transition-all ${approved ? "border-emerald-400 bg-emerald-50 text-emerald-700 dark:bg-emerald-900/20 dark:text-emerald-300" : "border-[color:var(--border)] bg-[color:var(--card)] text-[color:var(--muted-foreground)]"}`}
-                >
-                  {approved ? <CheckCircle2 size={15} className="text-emerald-600" /> : <ThumbsUp size={15} />}
-                  {approved ? "Approved for Shipping" : "Approve for Shipping"}
-                </button>
-              </div>
-
-              {selectedReport.auditNotes && (
-                <div className="mt-3 flex items-start gap-2 rounded-lg border border-amber-300/50 bg-amber-50/60 px-3 py-2 dark:border-amber-700/40 dark:bg-amber-900/10">
-                  <AlertTriangle size={13} className="mt-0.5 shrink-0 text-amber-600" />
-                  <p className="text-xs text-amber-800 dark:text-amber-300">{selectedReport.auditNotes}</p>
-                </div>
-              )}
-            </div>
-
-            {/* Checks list */}
-            <div className="space-y-2">
-              {selectedReport.checks.map(check => (
-                <QCCheckRow key={check.id} check={check} />
-              ))}
-            </div>
+      {!loading && !error && jobs.length === 0 && (
+        <div className="flex flex-col items-center gap-3 rounded-xl border border-[color:var(--border)] bg-[color:var(--card)] py-16 text-center">
+          <ShieldCheck size={32} strokeWidth={1.5} className="text-[color:var(--muted-foreground)]" />
+          <div>
+            <p className="text-sm font-semibold text-[color:var(--foreground)]">No print jobs in QC queue</p>
+            <p className="mt-1 text-xs text-[color:var(--muted-foreground)]">Print jobs will appear here once created in Manufacturing</p>
           </div>
         </div>
       )}
 
-      {/* Reports tab */}
-      {activeTab === "reports" && (
-        <div className="ios-card p-6 text-center">
-          <FileText size={32} className="mx-auto mb-3 text-[color:var(--muted-foreground)]" />
-          <h3 className="font-bold text-[color:var(--foreground)] mb-2">QC Reports Archive</h3>
-          <p className="text-sm text-[color:var(--muted-foreground)] mb-5">
-            All QC inspection reports are stored with full audit trails, inspector signatures, pass/fail status, and batch photos.
-          </p>
-          <div className="flex justify-center gap-3 flex-wrap">
-            {MOCK_QC_REPORTS.map(r => (
-              <div key={r.id} className="flex items-center gap-2 rounded-xl border border-[color:var(--border)] bg-[color:var(--card)] px-4 py-3">
-                <span className={`h-2.5 w-2.5 rounded-full ${r.overallStatus === "pass" ? "bg-emerald-500" : r.overallStatus === "conditional_pass" ? "bg-amber-500" : "bg-rose-500"}`} />
-                <div className="text-left">
-                  <p className="text-xs font-bold text-[color:var(--foreground)]">{r.batchLabel}</p>
-                  <p className="text-[10px] text-[color:var(--muted-foreground)]">{r.patientName}</p>
-                </div>
-                <button type="button" className="ml-2 text-[color:var(--primary)]"><Download size={13} /></button>
-              </div>
-            ))}
+      {!loading && jobs.length > 0 && (
+        <div className="space-y-3">
+          <div className="flex items-center gap-2">
+            <Info size={13} className="text-[color:var(--muted-foreground)]" />
+            <p className="text-xs text-[color:var(--muted-foreground)]">
+              Click a job to expand checks. Use <strong>Init 7 Checks</strong> to create standard QC checklist for unreviewed jobs.
+            </p>
           </div>
+          {jobs.map(job => (
+            <JobCard key={job.id} job={job} onRefresh={handleRefreshJob} />
+          ))}
         </div>
       )}
-
-      {/* Audit log */}
-      {activeTab === "audit" && <AuditLog />}
     </div>
   );
 }
-
-export default QualityControlCenter;

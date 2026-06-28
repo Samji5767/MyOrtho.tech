@@ -113,6 +113,107 @@ export class AdminService {
     return rows;
   }
 
+  // ─── Feature flags ──────────────────────────────────────────────────────────
+
+  async listFeatureFlags() {
+    const { rows } = await this.pool.query(
+      `SELECT id, flag_key, enabled, description, rollout_percentage, allowed_org_ids, created_at
+       FROM feature_flags ORDER BY flag_key ASC`,
+    );
+    return rows.map(r => ({
+      id: r.id,
+      flagKey: r.flag_key,
+      enabled: r.enabled,
+      description: r.description ?? null,
+      rolloutPercentage: r.rollout_percentage,
+      allowedOrgIds: r.allowed_org_ids ?? [],
+      createdAt: r.created_at,
+    }));
+  }
+
+  async upsertFeatureFlag(
+    flagKey: string,
+    dto: { enabled?: boolean; description?: string; rolloutPercentage?: number; allowedOrgIds?: string[] },
+  ) {
+    const { rows } = await this.pool.query(
+      `INSERT INTO feature_flags (flag_key, enabled, description, rollout_percentage, allowed_org_ids)
+       VALUES ($1, $2, $3, $4, $5)
+       ON CONFLICT (flag_key) DO UPDATE SET
+         enabled             = COALESCE($2, feature_flags.enabled),
+         description         = COALESCE($3, feature_flags.description),
+         rollout_percentage  = COALESCE($4, feature_flags.rollout_percentage),
+         allowed_org_ids     = COALESCE($5, feature_flags.allowed_org_ids)
+       RETURNING id, flag_key, enabled, description, rollout_percentage, allowed_org_ids, created_at`,
+      [
+        flagKey,
+        dto.enabled ?? null,
+        dto.description ?? null,
+        dto.rolloutPercentage ?? null,
+        dto.allowedOrgIds ? `{${dto.allowedOrgIds.map(id => `"${id}"`).join(',')}}` : null,
+      ],
+    );
+    const r = rows[0];
+    return {
+      id: r.id,
+      flagKey: r.flag_key,
+      enabled: r.enabled,
+      description: r.description ?? null,
+      rolloutPercentage: r.rollout_percentage,
+      allowedOrgIds: r.allowed_org_ids ?? [],
+      createdAt: r.created_at,
+    };
+  }
+
+  // ─── Revenue dashboard ───────────────────────────────────────────────────────
+
+  async getRevenueDashboard() {
+    const [sub, payg, mrr, topOrgs] = await Promise.all([
+      this.pool.query(
+        `SELECT sp.slug, sp.name, sp.price_cents, COUNT(os.id)::int AS subscriber_count
+         FROM subscription_plans sp
+         LEFT JOIN organization_subscriptions os ON os.plan_id = sp.id AND os.status = 'active'
+         GROUP BY sp.id, sp.slug, sp.name, sp.price_cents
+         ORDER BY sp.price_cents DESC`,
+      ),
+      this.pool.query(
+        `SELECT COUNT(*)::int AS total_exports,
+                COALESCE(SUM(amount_cents),0)::bigint AS total_revenue_cents
+         FROM usage_events
+         WHERE metric_type = 'case_export' AND recorded_at >= now() - interval '30 days'`,
+      ),
+      this.pool.query(
+        `SELECT COALESCE(SUM(sp.price_cents),0)::bigint AS mrr_cents
+         FROM organization_subscriptions os
+         JOIN subscription_plans sp ON sp.id = os.plan_id
+         WHERE os.status = 'active'`,
+      ),
+      this.pool.query(
+        `SELECT o.name, oc.balance AS credits, COUNT(c.id)::int AS case_count
+         FROM organizations o
+         LEFT JOIN organization_credits oc ON oc.organization_id = o.id
+         LEFT JOIN cases c ON c.organization_id = o.id
+         GROUP BY o.id, o.name, oc.balance
+         ORDER BY case_count DESC LIMIT 10`,
+      ),
+    ]);
+
+    const mrrCents = Number(mrr.rows[0]?.mrr_cents ?? 0);
+    return {
+      mrrCents,
+      arrCents: mrrCents * 12,
+      paygRevenueCents: Number(payg.rows[0]?.total_revenue_cents ?? 0),
+      totalExports: payg.rows[0]?.total_exports ?? 0,
+      plans: sub.rows.map(r => ({
+        slug: r.slug,
+        name: r.name,
+        priceCents: r.price_cents,
+        subscriberCount: r.subscriber_count,
+        mrrCents: r.price_cents * r.subscriber_count,
+      })),
+      topOrgs: topOrgs.rows,
+    };
+  }
+
   async getPlatformStats() {
     const [users, orgs, cases, credits] = await Promise.all([
       this.pool.query(`SELECT COUNT(*)::int AS total, COUNT(*) FILTER (WHERE is_active) ::int AS active FROM auth_users`),

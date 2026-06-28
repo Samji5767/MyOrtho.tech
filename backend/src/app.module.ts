@@ -28,6 +28,7 @@ import { NotificationsModule } from './notifications/notifications.module';
 import { PhotosModule } from './photos/photos.module';
 import { CephModule } from './ceph/ceph.module';
 import { StagesModule } from './stages/stages.module';
+import { QcModule } from './qc/qc.module';
 
 @Module({
   imports: [
@@ -64,6 +65,7 @@ import { StagesModule } from './stages/stages.module';
     PhotosModule,
     CephModule,
     StagesModule,
+    QcModule,
   ],
 })
 export class AppModule {}

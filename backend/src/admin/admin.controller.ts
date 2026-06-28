@@ -91,6 +91,28 @@ export class AdminController {
     return this.adminService.grantCredits(orgId, amount, admin.email, notes);
   }
 
+  @Get('revenue')
+  getRevenue(@Req() req: Request) {
+    requireSuperAdmin(req);
+    return this.adminService.getRevenueDashboard();
+  }
+
+  @Get('feature-flags')
+  listFlags(@Req() req: Request) {
+    requireSuperAdmin(req);
+    return this.adminService.listFeatureFlags();
+  }
+
+  @Post('feature-flags/:key')
+  upsertFlag(
+    @Req() req: Request,
+    @Param('key') key: string,
+    @Body() dto: { enabled?: boolean; description?: string; rolloutPercentage?: number; allowedOrgIds?: string[] },
+  ) {
+    requireSuperAdmin(req);
+    return this.adminService.upsertFeatureFlag(key, dto);
+  }
+
   @Get('audit')
   listAudit(
     @Req() req: Request,

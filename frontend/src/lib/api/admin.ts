@@ -44,6 +44,33 @@ export interface PlatformStats {
   credits: { total: number };
 }
 
+export interface FeatureFlag {
+  id: string;
+  flagKey: string;
+  enabled: boolean;
+  description: string | null;
+  rolloutPercentage: number;
+  allowedOrgIds: string[];
+  createdAt: string;
+}
+
+export interface RevenuePlan {
+  slug: string;
+  name: string;
+  priceCents: number;
+  subscriberCount: number;
+  mrrCents: number;
+}
+
+export interface RevenueDashboard {
+  mrrCents: number;
+  arrCents: number;
+  paygRevenueCents: number;
+  totalExports: number;
+  plans: RevenuePlan[];
+  topOrgs: { name: string; credits: number; case_count: number }[];
+}
+
 function qs(params: Record<string, string | number | undefined>): string {
   const entries = Object.entries(params).filter(([, v]) => v !== undefined);
   if (!entries.length) return '';
@@ -69,3 +96,12 @@ export const grantCredits = (orgId: string, amount: number, notes?: string) =>
 
 export const listAdminAudit = (params?: { orgId?: string; limit?: number; offset?: number }) =>
   api.get<AdminAuditEvent[]>(`/api/admin/audit${qs(params ?? {})}`);
+
+export const getRevenueDashboard = () => api.get<RevenueDashboard>('/api/admin/revenue');
+
+export const listFeatureFlags = () => api.get<FeatureFlag[]>('/api/admin/feature-flags');
+
+export const upsertFeatureFlag = (
+  flagKey: string,
+  dto: { enabled?: boolean; description?: string; rolloutPercentage?: number },
+) => api.post<FeatureFlag>(`/api/admin/feature-flags/${flagKey}`, dto);

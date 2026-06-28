@@ -4,15 +4,21 @@ import { useCallback, useEffect, useState } from "react";
 import {
   Activity,
   AlertTriangle,
+  ArrowUpRight,
   Building2,
   CheckCircle2,
   ClipboardList,
+  DollarSign,
+  Flag,
   KeyRound,
   Loader2,
   RefreshCw,
   Search,
   ShieldCheck,
   Stethoscope,
+  ToggleLeft,
+  ToggleRight,
+  TrendingUp,
   UserCog,
   Users,
   X,
@@ -26,10 +32,15 @@ import {
   updateUserRole,
   setUserActive,
   grantCredits,
+  getRevenueDashboard,
+  listFeatureFlags,
+  upsertFeatureFlag,
   type AdminUser,
   type AdminOrg,
   type AdminAuditEvent,
   type PlatformStats,
+  type FeatureFlag,
+  type RevenueDashboard,
 } from "@/lib/api/admin";
 import type { OrthoRole } from "@/types/orthodontic";
 
@@ -398,9 +409,209 @@ function AuditTab() {
   );
 }
 
+// ─── Revenue tab ─────────────────────────────────────────────────────────────
+
+function RevenueTab() {
+  const [data, setData] = useState<RevenueDashboard | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const load = useCallback(() => {
+    setLoading(true); setError(null);
+    getRevenueDashboard()
+      .then(setData)
+      .catch((e: Error) => setError(e.message))
+      .finally(() => setLoading(false));
+  }, []);
+
+  useEffect(() => { load(); }, [load]);
+
+  if (loading) return <div className="flex justify-center py-16"><Loader2 size={22} className="animate-spin text-[color:var(--primary)]" /></div>;
+  if (error || !data) return <div className="rounded-xl border border-red-200/60 bg-red-50/60 p-4 text-sm text-red-600 dark:border-red-700/30 dark:bg-red-900/10 dark:text-red-400">{error ?? "No data"}</div>;
+
+  const fmt = (cents: number) => `$${(cents / 100).toLocaleString("en-US", { minimumFractionDigits: 2 })}`;
+
+  return (
+    <div className="space-y-5">
+      <div className="flex justify-end">
+        <button onClick={load} className="flex items-center gap-1.5 rounded-xl border border-[color:var(--border)] bg-[color:var(--card)] px-3 py-2 text-sm text-[color:var(--muted-foreground)] hover:text-[color:var(--foreground)]">
+          <RefreshCw size={13} /> Refresh
+        </button>
+      </div>
+
+      {/* KPIs */}
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        {[
+          { label: "MRR",         value: fmt(data.mrrCents),         icon: DollarSign,  color: "text-emerald-600" },
+          { label: "ARR",         value: fmt(data.arrCents),         icon: TrendingUp,  color: "text-blue-600" },
+          { label: "PAYG Revenue",value: fmt(data.paygRevenueCents), icon: Zap,         color: "text-amber-500" },
+          { label: "Total Exports",value: String(data.totalExports), icon: ArrowUpRight,color: "text-violet-600" },
+        ].map(s => {
+          const Icon = s.icon;
+          return (
+            <div key={s.label} className="rounded-xl border border-[color:var(--border)] bg-[color:var(--card)] p-4">
+              <div className="flex items-center gap-2 mb-1">
+                <Icon size={13} className={s.color} />
+                <p className="text-[10px] font-semibold uppercase tracking-wider text-[color:var(--muted-foreground)]">{s.label}</p>
+              </div>
+              <p className={`text-xl font-black tabular-nums ${s.color}`}>{s.value}</p>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Plans */}
+      <div className="ios-card p-5">
+        <h3 className="font-bold text-[color:var(--foreground)] mb-3">Subscription Plans</h3>
+        <div className="space-y-2">
+          {data.plans.length === 0 && <p className="text-sm text-[color:var(--muted-foreground)]">No active subscriptions.</p>}
+          {data.plans.map(p => (
+            <div key={p.slug} className="flex items-center gap-3 rounded-lg border border-[color:var(--border)] bg-[color:var(--background)] px-3 py-2.5">
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-semibold text-[color:var(--foreground)]">{p.name}</p>
+                <p className="text-xs text-[color:var(--muted-foreground)]">{p.subscriberCount} subscribers · {fmt(p.priceCents)}/mo</p>
+              </div>
+              <p className="text-sm font-bold text-emerald-600">{fmt(p.mrrCents)} MRR</p>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Top orgs */}
+      <div className="ios-card p-5">
+        <h3 className="font-bold text-[color:var(--foreground)] mb-3">Top Organisations by Case Volume</h3>
+        <div className="space-y-2">
+          {data.topOrgs.length === 0 && <p className="text-sm text-[color:var(--muted-foreground)]">No data yet.</p>}
+          {data.topOrgs.map((o, i) => (
+            <div key={o.name} className="flex items-center gap-3 rounded-lg border border-[color:var(--border)] bg-[color:var(--background)] px-3 py-2.5">
+              <span className="text-[10px] font-black text-[color:var(--muted-foreground)] w-4 text-center">#{i + 1}</span>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-semibold text-[color:var(--foreground)] truncate">{o.name}</p>
+                <p className="text-xs text-[color:var(--muted-foreground)]">{o.credits} credits</p>
+              </div>
+              <p className="text-sm font-bold text-[color:var(--primary)]">{o.case_count} cases</p>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Feature flags tab ────────────────────────────────────────────────────────
+
+function FlagsTab() {
+  const [flags, setFlags] = useState<FeatureFlag[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [updating, setUpdating] = useState<string | null>(null);
+
+  const load = useCallback(() => {
+    setLoading(true); setError(null);
+    listFeatureFlags()
+      .then(setFlags)
+      .catch((e: Error) => setError(e.message))
+      .finally(() => setLoading(false));
+  }, []);
+
+  useEffect(() => { load(); }, [load]);
+
+  const toggle = async (flag: FeatureFlag) => {
+    setUpdating(flag.flagKey);
+    try {
+      const updated = await upsertFeatureFlag(flag.flagKey, { enabled: !flag.enabled });
+      setFlags(prev => prev.map(f => f.flagKey === flag.flagKey ? updated : f));
+    } catch (e: unknown) {
+      alert(e instanceof Error ? e.message : "Update failed");
+    } finally {
+      setUpdating(null);
+    }
+  };
+
+  const setRollout = async (flag: FeatureFlag, pct: number) => {
+    setUpdating(flag.flagKey);
+    try {
+      const updated = await upsertFeatureFlag(flag.flagKey, { rolloutPercentage: pct });
+      setFlags(prev => prev.map(f => f.flagKey === flag.flagKey ? updated : f));
+    } catch (e: unknown) {
+      alert(e instanceof Error ? e.message : "Update failed");
+    } finally {
+      setUpdating(null);
+    }
+  };
+
+  if (loading) return <div className="flex justify-center py-16"><Loader2 size={22} className="animate-spin text-[color:var(--primary)]" /></div>;
+  if (error) return <div className="rounded-xl border border-red-200/60 bg-red-50/60 p-4 text-sm text-red-600">{error}</div>;
+
+  return (
+    <div className="space-y-3">
+      <div className="flex justify-end">
+        <button onClick={load} className="flex items-center gap-1.5 rounded-xl border border-[color:var(--border)] bg-[color:var(--card)] px-3 py-2 text-sm text-[color:var(--muted-foreground)] hover:text-[color:var(--foreground)]">
+          <RefreshCw size={13} /> Refresh
+        </button>
+      </div>
+      {flags.length === 0 && <p className="py-10 text-center text-sm text-[color:var(--muted-foreground)]">No feature flags defined yet.</p>}
+      {flags.map(flag => {
+        const busy = updating === flag.flagKey;
+        return (
+          <div key={flag.flagKey} className="rounded-xl border border-[color:var(--border)] bg-[color:var(--card)] px-4 py-3">
+            <div className="flex items-start gap-3">
+              <button
+                type="button"
+                onClick={() => toggle(flag)}
+                disabled={busy}
+                className="mt-0.5 shrink-0 disabled:opacity-50"
+                title={flag.enabled ? "Disable flag" : "Enable flag"}
+              >
+                {busy
+                  ? <Loader2 size={20} className="animate-spin text-[color:var(--muted-foreground)]" />
+                  : flag.enabled
+                    ? <ToggleRight size={22} className="text-emerald-500" />
+                    : <ToggleLeft size={22} className="text-slate-400" />}
+              </button>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <code className="text-sm font-bold text-[color:var(--foreground)]">{flag.flagKey}</code>
+                  <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${flag.enabled ? "bg-emerald-500/10 text-emerald-600" : "bg-slate-500/10 text-slate-500"}`}>
+                    {flag.enabled ? "Enabled" : "Disabled"}
+                  </span>
+                </div>
+                {flag.description && (
+                  <p className="text-xs text-[color:var(--muted-foreground)] mt-0.5">{flag.description}</p>
+                )}
+                <div className="flex items-center gap-3 mt-2">
+                  <label className="text-xs text-[color:var(--muted-foreground)]">Rollout %</label>
+                  <input
+                    type="range"
+                    min={0}
+                    max={100}
+                    step={5}
+                    value={flag.rolloutPercentage}
+                    onChange={e => setRollout(flag, parseInt(e.target.value, 10))}
+                    disabled={busy}
+                    className="flex-1 h-1.5 accent-[color:var(--primary)]"
+                  />
+                  <span className="w-10 text-right text-xs font-bold text-[color:var(--foreground)] tabular-nums">
+                    {flag.rolloutPercentage}%
+                  </span>
+                </div>
+                {flag.allowedOrgIds.length > 0 && (
+                  <p className="text-[10px] text-[color:var(--muted-foreground)] mt-1">
+                    Org allowlist: {flag.allowedOrgIds.join(", ")}
+                  </p>
+                )}
+              </div>
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 // ─── Main Component ───────────────────────────────────────────────────────────
 
-type Tab = "users" | "orgs" | "roles" | "audit" | "settings";
+type Tab = "users" | "orgs" | "roles" | "audit" | "revenue" | "flags" | "settings";
 
 export function EnterpriseAdmin() {
   const [activeTab, setActiveTab] = useState<Tab>("users");
@@ -449,6 +660,8 @@ export function EnterpriseAdmin() {
           { id: "orgs",     label: "Orgs",     icon: Building2 },
           { id: "roles",    label: "RBAC",     icon: KeyRound },
           { id: "audit",    label: "Audit Log", icon: Activity },
+          { id: "revenue",  label: "Revenue",  icon: DollarSign },
+          { id: "flags",    label: "Flags",    icon: Flag },
           { id: "settings", label: "Settings", icon: ShieldCheck },
         ] as const).map(tab => {
           const Icon = tab.icon;
@@ -490,6 +703,8 @@ export function EnterpriseAdmin() {
         </div>
       )}
       {activeTab === "audit"    && <AuditTab />}
+      {activeTab === "revenue"  && <RevenueTab />}
+      {activeTab === "flags"    && <FlagsTab />}
       {activeTab === "settings" && (
         <div className="grid gap-5 xl:grid-cols-2">
           {[

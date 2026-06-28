@@ -25,6 +25,9 @@ import { AdminModule } from './admin/admin.module';
 import { AnalysisModule } from './analysis/analysis.module';
 import { SurgicalModule } from './surgical/surgical.module';
 import { NotificationsModule } from './notifications/notifications.module';
+import { PhotosModule } from './photos/photos.module';
+import { CephModule } from './ceph/ceph.module';
+import { StagesModule } from './stages/stages.module';
 
 @Module({
   imports: [
@@ -58,6 +61,9 @@ import { NotificationsModule } from './notifications/notifications.module';
     AnalysisModule,
     SurgicalModule,
     NotificationsModule,
+    PhotosModule,
+    CephModule,
+    StagesModule,
   ],
 })
 export class AppModule {}

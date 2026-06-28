@@ -261,6 +261,43 @@ export const CAD_CAPABILITIES: CadCapability[] = [
     statusNote: "BiteRamp model defined; ramp geometry tooling planned for the design phase.",
     surface: null,
   },
+  // ─── Phase 19 additions ───────────────────────────────────────────────────
+  {
+    id: "cephalometric-analysis",
+    name: "Cephalometric Analysis",
+    phase: "review",
+    maturity: "implemented",
+    summary: "Manual landmark entry with SNA, SNB, ANB, Wits, FMA, IMPA + 7 more measurements against population norms.",
+    statusNote: "Fully wired in Phase 19: CephalometricPanel.tsx POSTs to /api/cases/:id/ceph; PostgreSQL cephalometric_analyses table; skeletal class, vertical pattern, and growth pattern auto-classified from ANB/FMA/Facial Axis.",
+    surface: "/cases/[id]#ceph",
+  },
+  {
+    id: "photo-documentation",
+    name: "Photo Documentation",
+    phase: "review",
+    maturity: "implemented",
+    summary: "15-type standardised photo set: facial, intraoral, and radiographic records with before/after comparison.",
+    statusNote: "Fully wired in Phase 19: PatientPhotosPanel.tsx with slot-based photo grid, lightbox, upload modal. REST CRUD via /api/cases/:id/photos backed by patient_photos table.",
+    surface: "/cases/[id]#photos",
+  },
+  {
+    id: "aligner-stage-persistence",
+    name: "Aligner Stage Persistence",
+    phase: "manufacture",
+    maturity: "implemented",
+    summary: "Per-stage tooth movement vectors, attachments, and IPR events stored in DB with doctor approval workflow.",
+    statusNote: "Fully wired in Phase 19: aligner_stages table; POST /api/cases/:id/plans/:id/stages/generate auto-generates N stages with movement interpolation; PATCH .../approve writes approval signature.",
+    surface: "/cases/[id]#plans",
+  },
+  {
+    id: "surgical-implant-planning",
+    name: "Surgical Implant Planning",
+    phase: "plan",
+    maturity: "implemented",
+    summary: "Implant library with pitch/roll safety scoring, TAD root collision risk, and surgical guide STL export.",
+    statusNote: "Fully wired in Phase 18: SurgicalPlanningPanel.tsx → /api/cases/:id/surgical/placements|tads|guides backed by PostgreSQL.",
+    surface: "/cases/[id]#surgical",
+  },
 ];
 
 export function capabilitiesByPhase(phase: CapabilityPhase): CadCapability[] {

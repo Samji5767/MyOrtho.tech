@@ -13,6 +13,8 @@ struct LiveCaseDetailView: View {
         case scans    = "Scans"
         case plans    = "Plans"
         case analysis = "Analysis"
+        case ceph     = "Ceph"
+        case photos   = "Photos"
         case surgical = "Surgical"
 
         var icon: String {
@@ -20,6 +22,8 @@ struct LiveCaseDetailView: View {
             case .scans:    return "cube.box"
             case .plans:    return "list.clipboard"
             case .analysis: return "chart.bar.doc.horizontal"
+            case .ceph:     return "scanner"
+            case .photos:   return "camera"
             case .surgical: return "cross.case"
             }
         }
@@ -55,6 +59,8 @@ struct LiveCaseDetailView: View {
                 case .scans:    LiveScansTab(caseId: caseId)
                 case .plans:    LivePlansTab(caseId: caseId)
                 case .analysis: LiveAnalysisTab(caseId: caseId)
+                case .ceph:     LiveCephTab(caseId: caseId)
+                case .photos:   LivePhotosTab(caseId: caseId)
                 case .surgical: LiveSurgicalTab(caseId: caseId)
                 }
             }
@@ -804,6 +810,239 @@ private struct LiveAnalysisTab: View {
             }
         } catch {
             loadState = .offline(error.localizedDescription)
+        }
+    }
+}
+
+// MARK: - LivePhotosTab
+
+private struct LivePhotosTab: View {
+    let caseId: String
+
+    @State private var photos: [APIPatientPhoto] = []
+    @State private var loadState: LiveLoadState = .idle
+
+    private let groups = ["Facial", "Intraoral", "Radiographic", "Other"]
+
+    var body: some View {
+        ScrollView {
+            LazyVStack(alignment: .leading, spacing: 20) {
+                switch loadState {
+                case .loading:
+                    ProgressView("Loading photos…").padding()
+
+                case .offline(let msg), .error(let msg):
+                    ContentUnavailableView(
+                        "Photos unavailable",
+                        systemImage: "camera.fill",
+                        description: Text(msg)
+                    )
+
+                case .idle, .loaded:
+                    if photos.isEmpty {
+                        ContentUnavailableView(
+                            "No Photos Yet",
+                            systemImage: "camera",
+                            description: Text("Add patient photos from the web portal.")
+                        )
+                    } else {
+                        ForEach(groups, id: \.self) { group in
+                            let groupPhotos = photos.filter { $0.groupLabel == group }
+                            if !groupPhotos.isEmpty {
+                                VStack(alignment: .leading, spacing: 8) {
+                                    HStack(spacing: 6) {
+                                        Image(systemName: groupPhotos.first?.systemIconName ?? "photo")
+                                            .foregroundColor(.accentColor)
+                                            .font(.caption)
+                                        Text(group)
+                                            .font(.headline)
+                                        Text("(\(groupPhotos.count))")
+                                            .font(.caption)
+                                            .foregroundColor(.secondary)
+                                    }
+                                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 100))], spacing: 8) {
+                                        ForEach(groupPhotos) { photo in
+                                            photoCard(photo)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            .padding()
+        }
+        .task { await load() }
+        .refreshable { await load() }
+    }
+
+    @ViewBuilder
+    private func photoCard(_ photo: APIPatientPhoto) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            RoundedRectangle(cornerRadius: 8)
+                .fill(Color(.systemGray5))
+                .frame(height: 80)
+                .overlay {
+                    Image(systemName: photo.systemIconName)
+                        .foregroundColor(.secondary)
+                }
+
+            Text(photo.typeLabel)
+                .font(.caption2)
+                .foregroundColor(.secondary)
+                .lineLimit(1)
+
+            if let taken = photo.takenAt {
+                Text(taken, style: .date)
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+            }
+        }
+    }
+
+    private func load() async {
+        loadState = .loading
+        do {
+            let result: [APIPatientPhoto] = try await MyOrthoAPIClient.shared.get("/api/cases/\(caseId)/photos")
+            photos = result
+            loadState = .loaded
+        } catch APIClientError.httpError(404, _) {
+            photos = []
+            loadState = .loaded
+        } catch {
+            loadState = .error(error.localizedDescription)
+        }
+    }
+}
+
+// MARK: - LiveCephTab
+
+private struct LiveCephTab: View {
+    let caseId: String
+
+    @State private var analyses: [APICephAnalysis] = []
+    @State private var loadState: LiveLoadState = .idle
+
+    var body: some View {
+        ScrollView {
+            LazyVStack(alignment: .leading, spacing: 16) {
+                switch loadState {
+                case .loading:
+                    ProgressView("Loading cephalometric analyses…").padding()
+
+                case .offline(let msg), .error(let msg):
+                    ContentUnavailableView(
+                        "Ceph unavailable",
+                        systemImage: "scanner",
+                        description: Text(msg)
+                    )
+
+                case .idle, .loaded:
+                    if analyses.isEmpty {
+                        ContentUnavailableView(
+                            "No Ceph Analyses",
+                            systemImage: "scanner",
+                            description: Text("Add cephalometric analyses from the web portal.")
+                        )
+                    } else {
+                        ForEach(analyses) { a in
+                            cephCard(a)
+                        }
+                    }
+                }
+            }
+            .padding()
+        }
+        .task { await load() }
+        .refreshable { await load() }
+    }
+
+    @ViewBuilder
+    private func cephCard(_ a: APICephAnalysis) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Cephalometric Analysis")
+                        .font(.subheadline).bold()
+                    Text(a.createdAt, style: .date)
+                        .font(.caption).foregroundColor(.secondary)
+                }
+                Spacer()
+                if let cls = a.skeletalClass {
+                    Text("Class \(cls)")
+                        .font(.caption).bold()
+                        .padding(.horizontal, 8).padding(.vertical, 3)
+                        .background(cls == "I" ? Color.green.opacity(0.15) : cls == "II" ? Color.orange.opacity(0.15) : Color.red.opacity(0.15))
+                        .foregroundColor(cls == "I" ? .green : cls == "II" ? .orange : .red)
+                        .clipShape(Capsule())
+                }
+            }
+
+            // Key measurements grid
+            LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible()), GridItem(.flexible())], spacing: 8) {
+                measureCell("SNA", a.snaDeg, min: 80, max: 84, unit: "°")
+                measureCell("SNB", a.snbDeg, min: 78, max: 82, unit: "°")
+                measureCell("ANB", a.anbDeg, min: 0,  max: 4,  unit: "°")
+                measureCell("FMA", a.fmaDeg, min: 22, max: 28, unit: "°")
+                measureCell("IMPA", a.impaDeg, min: 87, max: 95, unit: "°")
+                measureCell("Wits", a.witsMm, min: -1, max: 3,  unit: "mm")
+            }
+
+            if let vp = a.verticalPattern {
+                HStack(spacing: 4) {
+                    Text("Vertical:")
+                        .font(.caption2).foregroundColor(.secondary)
+                    Text(vp.capitalized.replacingOccurrences(of: "_", with: " "))
+                        .font(.caption2).bold()
+                }
+            }
+
+            if let notes = a.aiNotes {
+                Text(notes)
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                    .lineLimit(3)
+            }
+        }
+        .padding(12)
+        .background(Color(.systemGray6))
+        .clipShape(RoundedRectangle(cornerRadius: 12))
+    }
+
+    @ViewBuilder
+    private func measureCell(_ label: String, _ value: Double?, min minV: Double, max maxV: Double, unit: String) -> some View {
+        VStack(spacing: 2) {
+            Text(label)
+                .font(.caption2).foregroundColor(.secondary)
+            if let v = value {
+                let isNormal = v >= minV && v <= maxV
+                Text(String(format: "%.1f\(unit)", v))
+                    .font(.caption).bold()
+                    .foregroundColor(isNormal ? .green : .orange)
+            } else {
+                Text("—")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 6)
+        .background(Color(.systemGray5))
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+    }
+
+    private func load() async {
+        loadState = .loading
+        do {
+            let result: [APICephAnalysis] = try await MyOrthoAPIClient.shared.get("/api/cases/\(caseId)/ceph")
+            analyses = result
+            loadState = .loaded
+        } catch APIClientError.httpError(404, _) {
+            analyses = []
+            loadState = .loaded
+        } catch {
+            loadState = .error(error.localizedDescription)
         }
     }
 }

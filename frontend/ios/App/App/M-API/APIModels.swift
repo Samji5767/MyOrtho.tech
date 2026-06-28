@@ -254,6 +254,104 @@ struct APINotification: Decodable, Identifiable {
     }
 }
 
+// MARK: - Photo Documentation (Phase 19)
+
+struct APIPatientPhoto: Decodable, Identifiable {
+    let id: String
+    let caseId: String
+    let photoType: String
+    let filePath: String
+    let fileSizeBytes: Int
+    let originalFilename: String?
+    let takenAt: Date?
+    let notes: String?
+    let uploadedByEmail: String?
+    let createdAt: Date
+
+    var typeLabel: String {
+        switch photoType {
+        case "frontal_rest":              return "Frontal (Rest)"
+        case "frontal_smile":             return "Frontal (Smile)"
+        case "profile_rest":              return "Profile (Rest)"
+        case "profile_smile":             return "Profile (Smile)"
+        case "three_quarter":             return "3/4 View (Rest)"
+        case "three_quarter_smile":       return "3/4 View (Smile)"
+        case "intraoral_frontal":         return "Intraoral Frontal"
+        case "intraoral_upper_occlusal":  return "Upper Occlusal"
+        case "intraoral_lower_occlusal":  return "Lower Occlusal"
+        case "buccal_left":               return "Buccal Left"
+        case "buccal_right":              return "Buccal Right"
+        case "buccal_both":               return "Buccal Both"
+        case "panoramic":                 return "Panoramic OPG"
+        case "lateral_ceph":              return "Lateral Ceph"
+        default:                          return "Other"
+        }
+    }
+
+    var groupLabel: String {
+        switch photoType {
+        case "frontal_rest", "frontal_smile", "profile_rest", "profile_smile",
+             "three_quarter", "three_quarter_smile":
+            return "Facial"
+        case "intraoral_frontal", "intraoral_upper_occlusal", "intraoral_lower_occlusal",
+             "buccal_left", "buccal_right", "buccal_both":
+            return "Intraoral"
+        case "panoramic", "lateral_ceph":
+            return "Radiographic"
+        default:
+            return "Other"
+        }
+    }
+
+    var systemIconName: String {
+        switch groupLabel {
+        case "Facial":       return "person.fill"
+        case "Intraoral":    return "mouth.fill"
+        case "Radiographic": return "rays"
+        default:             return "photo"
+        }
+    }
+}
+
+// MARK: - Cephalometric Analysis (Phase 19)
+
+struct APICephAnalysis: Decodable, Identifiable {
+    let id: String
+    let caseId: String
+    let snaDeg: Double?
+    let snbDeg: Double?
+    let anbDeg: Double?
+    let witsMm: Double?
+    let fmaDeg: Double?
+    let impaDeg: Double?
+    let facialAxisDeg: Double?
+    let gonialAngleDeg: Double?
+    let skeletalClass: String?   // I | II | III
+    let verticalPattern: String? // hypodivergent | normodivergent | hyperdivergent
+    let growthPattern: String?   // horizontal | average | vertical
+    let aiNotes: String?
+    let createdAt: Date
+
+    var skeletalClassLabel: String {
+        guard let c = skeletalClass else { return "—" }
+        return "Class \(c)"
+    }
+}
+
+// MARK: - Aligner Stages (Phase 19)
+
+struct APIAlignerStage: Decodable, Identifiable {
+    let id: String
+    let treatmentPlanId: String
+    let stageNumber: Int
+    let velocityMmPerWeek: Double?
+    let isApproved: Bool
+    let approvedByEmail: String?
+    let approvedAt: Date?
+    let createdAt: Date
+    // Note: movementData/attachmentData/iprData are jsonb — decoded lazily if needed
+}
+
 // MARK: - Manufacturing
 //
 // Backend returns arrays directly (not wrapped).

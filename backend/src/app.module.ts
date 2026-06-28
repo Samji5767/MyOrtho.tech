@@ -34,6 +34,10 @@ import { AiProposalModule } from './ai-proposal/ai-proposal.module';
 import { PreexportQaModule } from './preexport-qa/preexport-qa.module';
 import { ManufacturePrepModule } from './manufacture-prep/manufacture-prep.module';
 import { AnalyticsModule } from './analytics/analytics.module';
+import { BiomechanicsModule } from './biomechanics/biomechanics.module';
+import { AttachmentPlannerModule } from './attachment-planner/attachment-planner.module';
+import { IprPlannerModule } from './ipr-planner/ipr-planner.module';
+import { RefinementModule } from './refinement/refinement.module';
 
 @Module({
   imports: [
@@ -76,6 +80,10 @@ import { AnalyticsModule } from './analytics/analytics.module';
     PreexportQaModule,
     ManufacturePrepModule,
     AnalyticsModule,
+    BiomechanicsModule,
+    AttachmentPlannerModule,
+    IprPlannerModule,
+    RefinementModule,
   ],
 })
 export class AppModule {}

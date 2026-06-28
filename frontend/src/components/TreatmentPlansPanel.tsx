@@ -1,14 +1,20 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import dynamic from "next/dynamic";
 import {
+  Activity,
   AlertTriangle,
   CheckCircle2,
   ChevronDown,
   ChevronUp,
   ClipboardCheck,
+  Layers3,
   Loader2,
+  Paperclip,
   Plus,
+  RefreshCw,
+  Scissors,
   Sparkles,
   XCircle,
 } from "lucide-react";
@@ -23,6 +29,14 @@ import {
   type AlignStage,
 } from "@/lib/api/treatmentPlans";
 import { ApiError } from "@/lib/api/client";
+
+// Dynamic imports to avoid SSR issues with the clinical sub-panels
+const BiomechanicsPanel = dynamic(() => import("@/components/BiomechanicsPanel"), { ssr: false });
+const AttachmentPlanner = dynamic(() => import("@/components/AttachmentPlanner"), { ssr: false });
+const IPRPlanner = dynamic(() => import("@/components/IPRPlanner"), { ssr: false });
+const RefinementPanel = dynamic(() => import("@/components/RefinementPanel"), { ssr: false });
+
+type PlanTab = "stages" | "biomechanics" | "attachments" | "ipr" | "refinement";
 
 // ─── Stage movement detail ────────────────────────────────────────────────────
 
@@ -125,6 +139,7 @@ function PlanRow({
   onApproved: (p: TreatmentPlanSummary) => void;
 }) {
   const [expanded, setExpanded] = useState(false);
+  const [activeTab, setActiveTab] = useState<PlanTab>("stages");
   const [stages, setStages] = useState<AlignStage[]>([]);
   const [stagesLoading, setStagesLoading] = useState(false);
   const [activeStage, setActiveStage] = useState<number | null>(null);
@@ -231,58 +246,103 @@ function PlanRow({
           </div>
         </div>
 
-        {/* Stage detail */}
+        {/* Expanded plan details with sub-tabs */}
         {expanded && (
-          <div className="mt-3 rounded-xl border border-[color:var(--border)] bg-[color:var(--background)]">
-            {stagesLoading ? (
-              <div className="flex justify-center py-6">
-                <Loader2 size={16} className="animate-spin text-[color:var(--muted-foreground)]" />
-              </div>
-            ) : stages.length === 0 ? (
-              <div className="flex flex-col items-center gap-3 px-4 py-6 text-center">
-                <p className="text-xs text-[color:var(--muted-foreground)]">
-                  No stages yet · Generate {plan.estimatedStages} stages from this plan
-                </p>
-                <Button
-                  variant="primary"
-                  size="sm"
-                  onClick={handleGenerate}
-                  disabled={generating}
+          <div className="mt-3 rounded-xl border border-[color:var(--border)] bg-[color:var(--background)] overflow-hidden">
+            {/* Sub-tab bar */}
+            <div className="flex overflow-x-auto border-b border-[color:var(--border)] bg-[color:var(--card)]">
+              {([
+                { key: "stages" as PlanTab, label: "Stages", icon: Layers3 },
+                { key: "biomechanics" as PlanTab, label: "Biomechanics", icon: Activity },
+                { key: "attachments" as PlanTab, label: "Attachments", icon: Paperclip },
+                { key: "ipr" as PlanTab, label: "IPR", icon: Scissors },
+                { key: "refinement" as PlanTab, label: "Refinement", icon: RefreshCw },
+              ] as const).map(({ key, label, icon: Icon }) => (
+                <button
+                  key={key}
+                  type="button"
+                  onClick={() => setActiveTab(key)}
+                  className={[
+                    "flex shrink-0 items-center gap-1.5 px-3 py-2.5 text-xs font-medium transition-colors whitespace-nowrap",
+                    activeTab === key
+                      ? "border-b-2 border-[color:var(--primary)] text-[color:var(--primary)]"
+                      : "text-[color:var(--muted-foreground)] hover:text-[color:var(--foreground)]",
+                  ].join(" ")}
                 >
-                  {generating
-                    ? <><Loader2 size={13} className="animate-spin" /> Generating…</>
-                    : <><Sparkles size={13} /> Generate {plan.estimatedStages} stages</>
-                  }
-                </Button>
-                {generateError && (
-                  <p className="text-xs text-red-500">{generateError}</p>
-                )}
-              </div>
-            ) : (
-              <div className="p-3">
-                <div className="mb-2 flex items-center justify-between">
-                  <span className="text-xs font-semibold text-[color:var(--foreground)]">
-                    {stages.length} aligner stages
-                  </span>
-                  <span className="text-xs text-[color:var(--muted-foreground)]">
-                    Select a stage to see movements
-                  </span>
-                </div>
+                  <Icon size={11} />
+                  {label}
+                </button>
+              ))}
+            </div>
 
-                <StageStrip stages={stages} activeStage={activeStage} onSelect={setActiveStage} />
-
-                {activeStageData && (
-                  <div className="mt-3 rounded-lg border border-[color:var(--border)] bg-[color:var(--card)] p-3">
-                    <p className="mb-2 text-xs font-semibold text-[color:var(--foreground)]">
-                      Stage {activeStageData.stageNumber} — cumulative tooth positions
-                    </p>
-                    <MovementTable
-                      movements={activeStageData.movements as Record<string, Record<string, number>>}
-                    />
+            {/* Tab content */}
+            <div className="p-3">
+              {activeTab === "stages" && (
+                stagesLoading ? (
+                  <div className="flex justify-center py-6">
+                    <Loader2 size={16} className="animate-spin text-[color:var(--muted-foreground)]" />
                   </div>
-                )}
-              </div>
-            )}
+                ) : stages.length === 0 ? (
+                  <div className="flex flex-col items-center gap-3 py-6 text-center">
+                    <p className="text-xs text-[color:var(--muted-foreground)]">
+                      No stages yet · Generate {plan.estimatedStages} stages from this plan
+                    </p>
+                    <Button
+                      variant="primary"
+                      size="sm"
+                      onClick={handleGenerate}
+                      disabled={generating}
+                    >
+                      {generating
+                        ? <><Loader2 size={13} className="animate-spin" /> Generating…</>
+                        : <><Sparkles size={13} /> Generate {plan.estimatedStages} stages</>
+                      }
+                    </Button>
+                    {generateError && (
+                      <p className="text-xs text-red-500">{generateError}</p>
+                    )}
+                  </div>
+                ) : (
+                  <>
+                    <div className="mb-2 flex items-center justify-between">
+                      <span className="text-xs font-semibold text-[color:var(--foreground)]">
+                        {stages.length} aligner stages
+                      </span>
+                      <span className="text-xs text-[color:var(--muted-foreground)]">
+                        Select a stage to see movements
+                      </span>
+                    </div>
+                    <StageStrip stages={stages} activeStage={activeStage} onSelect={setActiveStage} />
+                    {activeStageData && (
+                      <div className="mt-3 rounded-lg border border-[color:var(--border)] bg-[color:var(--card)] p-3">
+                        <p className="mb-2 text-xs font-semibold text-[color:var(--foreground)]">
+                          Stage {activeStageData.stageNumber} — cumulative tooth positions
+                        </p>
+                        <MovementTable
+                          movements={activeStageData.movements as Record<string, Record<string, number>>}
+                        />
+                      </div>
+                    )}
+                  </>
+                )
+              )}
+
+              {activeTab === "biomechanics" && (
+                <BiomechanicsPanel caseId={caseId} planId={plan.id} />
+              )}
+
+              {activeTab === "attachments" && (
+                <AttachmentPlanner caseId={caseId} planId={plan.id} />
+              )}
+
+              {activeTab === "ipr" && (
+                <IPRPlanner caseId={caseId} planId={plan.id} />
+              )}
+
+              {activeTab === "refinement" && (
+                <RefinementPanel caseId={caseId} planId={plan.id} />
+              )}
+            </div>
           </div>
         )}
       </div>

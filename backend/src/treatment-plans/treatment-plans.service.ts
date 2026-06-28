@@ -101,24 +101,21 @@ export class TreatmentPlansService {
   async listStages(planId: string, caseId: string, orgId: string) {
     await this.verifyCaseOwnership(caseId, orgId);
     const { rows } = await this.pool.query(
-      `SELECT id, plan_id, stage_number, maxillary_mesh_path, mandibular_mesh_path, movements, created_at
-       FROM aligner_stages WHERE plan_id = $1 ORDER BY stage_number`,
+      `SELECT id, treatment_plan_id, stage_number, movement_data, created_at
+       FROM aligner_stages WHERE treatment_plan_id = $1 ORDER BY stage_number`,
       [planId],
     );
     return rows.map((r) => ({
       id: r['id'] as string,
-      planId: r['plan_id'] as string,
+      planId: r['treatment_plan_id'] as string,
       stageNumber: r['stage_number'] as number,
-      maxillaryMeshPath: r['maxillary_mesh_path'] as string | null,
-      mandibularMeshPath: r['mandibular_mesh_path'] as string | null,
-      movements: r['movements'] as Record<string, unknown>,
+      movements: r['movement_data'] as Record<string, unknown>,
       createdAt: r['created_at'] as Date,
     }));
   }
 
   async createStage(planId: string, caseId: string, orgId: string, dto: CreateStageDto) {
     await this.verifyCaseOwnership(caseId, orgId);
-    // verify plan belongs to case
     const { rows: planRows } = await this.pool.query(
       `SELECT id FROM treatment_plans WHERE id = $1 AND case_id = $2`,
       [planId, caseId],
@@ -127,18 +124,15 @@ export class TreatmentPlansService {
 
     const { rows } = await this.pool.query(
       `INSERT INTO aligner_stages
-         (plan_id, stage_number, maxillary_mesh_path, mandibular_mesh_path, movements)
-       VALUES ($1, $2, $3, $4, $5)
-       ON CONFLICT (plan_id, stage_number) DO UPDATE
-         SET maxillary_mesh_path = EXCLUDED.maxillary_mesh_path,
-             mandibular_mesh_path = EXCLUDED.mandibular_mesh_path,
-             movements = EXCLUDED.movements
+         (treatment_plan_id, case_id, stage_number, movement_data)
+       VALUES ($1, $2, $3, $4)
+       ON CONFLICT (treatment_plan_id, stage_number) DO UPDATE
+         SET movement_data = EXCLUDED.movement_data
        RETURNING id, stage_number, created_at`,
       [
         planId,
+        caseId,
         dto.stageNumber,
-        dto.maxillaryMeshPath ?? null,
-        dto.mandibularMeshPath ?? null,
         JSON.stringify(dto.movements ?? {}),
       ],
     );

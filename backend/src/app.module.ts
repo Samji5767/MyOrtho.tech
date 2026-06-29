@@ -43,6 +43,7 @@ import { AlignerGenerationModule } from './aligner-generation/aligner-generation
 import { AttachmentIntelligenceModule } from './attachment-intelligence/attachment-intelligence.module';
 import { IprIntelligenceModule } from './ipr-intelligence/ipr-intelligence.module';
 import { TreatmentSimulationModule } from './treatment-simulation/treatment-simulation.module';
+import { CopilotModule } from './copilot/copilot.module';
 
 @Module({
   imports: [
@@ -94,6 +95,7 @@ import { TreatmentSimulationModule } from './treatment-simulation/treatment-simu
     AttachmentIntelligenceModule,
     IprIntelligenceModule,
     TreatmentSimulationModule,
+    CopilotModule,
   ],
 })
 export class AppModule {}

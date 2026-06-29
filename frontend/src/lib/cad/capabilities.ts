@@ -496,6 +496,16 @@ export const CAD_CAPABILITIES: CadCapability[] = [
     statusNote: "Fully wired in Phase 30: treatment_simulations, simulation_frames tables. TreatmentSimulationPlayer.tsx: generate button, 3-score bars, overjet/overbite delta, stage slider with play/pause, FDI tooth grid with movement magnitude color coding, frame metrics panel, arch coordination summary.",
     surface: "/treatment-plan#simulation",
   },
+  // ── Phase 31: AI Copilot 2.0 ───────────────────────────────────────────────
+  {
+    id: "clinical-copilot",
+    name: "Clinical Copilot 2.0",
+    phase: "plan",
+    maturity: "implemented",
+    summary: "Context-aware clinical assistant that scans prescriptions (Kravitz violations), IPR (Sheridan enamel safety), simulation (arch coordination, occlusion score), attachments (collisions), and PDL (Yoshida stress) to answer questions and surface proactive suggestions. Rule-based deterministic responses — no external AI required. All outputs clearly labeled as automated suggestions; clinician approval required for clinical decisions.",
+    statusNote: "Fully wired in Phase 31: copilot_conversations, copilot_messages, copilot_suggestions tables. ClinicalCopilot.tsx: chat panel with quick prompts, suggestion panel with per-suggestion acknowledge/apply/dismiss + clinician notes. 6 proactive scan categories with dedup logic. Intent classifier (question/command/feedback/acknowledgement).",
+    surface: "/cases/[id]#copilot",
+  },
 ];
 
 export function capabilitiesByPhase(phase: CapabilityPhase): CadCapability[] {

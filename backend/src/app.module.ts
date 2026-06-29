@@ -38,6 +38,7 @@ import { BiomechanicsModule } from './biomechanics/biomechanics.module';
 import { AttachmentPlannerModule } from './attachment-planner/attachment-planner.module';
 import { IprPlannerModule } from './ipr-planner/ipr-planner.module';
 import { RefinementModule } from './refinement/refinement.module';
+import { ToothMovementModule } from './tooth-movement/tooth-movement.module';
 
 @Module({
   imports: [
@@ -84,6 +85,7 @@ import { RefinementModule } from './refinement/refinement.module';
     AttachmentPlannerModule,
     IprPlannerModule,
     RefinementModule,
+    ToothMovementModule,
   ],
 })
 export class AppModule {}

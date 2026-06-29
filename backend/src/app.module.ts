@@ -39,6 +39,7 @@ import { AttachmentPlannerModule } from './attachment-planner/attachment-planner
 import { IprPlannerModule } from './ipr-planner/ipr-planner.module';
 import { RefinementModule } from './refinement/refinement.module';
 import { ToothMovementModule } from './tooth-movement/tooth-movement.module';
+import { AlignerGenerationModule } from './aligner-generation/aligner-generation.module';
 
 @Module({
   imports: [
@@ -86,6 +87,7 @@ import { ToothMovementModule } from './tooth-movement/tooth-movement.module';
     IprPlannerModule,
     RefinementModule,
     ToothMovementModule,
+    AlignerGenerationModule,
   ],
 })
 export class AppModule {}

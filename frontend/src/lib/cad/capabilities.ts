@@ -420,6 +420,16 @@ export const CAD_CAPABILITIES: CadCapability[] = [
     surface: "/cases/[id]#segment",
   },
   // ─── Phase 26 additions ───────────────────────────────────────────────────
+  // ─── Phase 27 additions ───────────────────────────────────────────────────
+  {
+    id: "aligner-generation-engine",
+    name: "Aligner Generation Engine",
+    phase: "plan",
+    maturity: "implemented",
+    summary: "4 staging strategies (balanced, anterior-first, posterior-first, arch-coordinated). Distributes 12-axis movement prescriptions across N stages at Kravitz per-stage limits. Auto-schedules attachment window, IPR pairs, and Class II/III elastic stages. Passive and retention stage counts configurable.",
+    statusNote: "Fully wired in Phase 27: AlignerGenerationPanel.tsx → /api/cases/:id/plans/:id/aligner-generation/generate. Stores per-tooth per-stage allocation rows in aligner_stage_allocations. Color-coded stage timeline strip. IPR and elastic schedules derived from prescription data.",
+    surface: "/treatment-plan",
+  },
   {
     id: "tooth-movement-engine",
     name: "Complete Tooth Movement Engine",

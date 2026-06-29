@@ -13,15 +13,19 @@ import {
   ChevronRight,
   ClipboardCheck,
   ClipboardList,
+  FileText,
+  FilePlus,
   GitBranch,
   Microscope,
   Ruler,
   ScanLine,
+  ScrollText,
   ShieldCheck,
   Stethoscope,
   Syringe,
   Target,
   UploadCloud,
+  Users,
 } from "lucide-react";
 import dynamic from "next/dynamic";
 import ScanPanel from "@/components/ScanPanel";
@@ -39,6 +43,11 @@ import PreExportQAPanel from "@/components/PreExportQAPanel";
 import ScanProcessingPanel from "@/components/ScanProcessingPanel";
 import TreatmentMonitoringPanel from "@/components/TreatmentMonitoringPanel";
 import CbctFusionPanel from "@/components/CbctFusionPanel";
+import ConsentFormsPanel from "@/components/ConsentFormsPanel";
+import AppointmentsPanel from "@/components/AppointmentsPanel";
+import ClinicalReportsPanel from "@/components/ClinicalReportsPanel";
+import LabOrdersPanel from "@/components/LabOrdersPanel";
+import ReferralsPanel from "@/components/ReferralsPanel";
 
 const AISegmentationCenter = dynamic(
   () => import("@/components/AISegmentationCenter").then((m) => ({ default: m.AISegmentationCenter })),
@@ -195,7 +204,8 @@ type Tab =
   | "summary" | "workflow" | "scans" | "plans" | "analysis"
   | "segment" | "proposal" | "export"
   | "ceph" | "photos" | "surgical" | "movements" | "audit"
-  | "processing" | "monitoring" | "cbct";
+  | "processing" | "monitoring" | "cbct"
+  | "consents" | "appointments" | "reports" | "lab-orders" | "referrals";
 
 const TABS: { key: Tab; label: string; icon: React.ReactNode }[] = [
   { key: "summary",   label: "Summary",   icon: <ClipboardList size={13} /> },
@@ -210,10 +220,15 @@ const TABS: { key: Tab; label: string; icon: React.ReactNode }[] = [
   { key: "photos",    label: "Photos",    icon: <Camera size={13} /> },
   { key: "surgical",  label: "Surgical",  icon: <Syringe size={13} /> },
   { key: "movements",  label: "Movements",  icon: <Ruler size={13} /> },
-  { key: "processing", label: "Processing", icon: <ScanLine size={13} /> },
-  { key: "monitoring", label: "Monitoring", icon: <Activity size={13} /> },
-  { key: "cbct",       label: "CBCT",       icon: <Box size={13} /> },
-  { key: "audit",      label: "Audit",      icon: <Activity size={13} /> },
+  { key: "processing",   label: "Processing",   icon: <ScanLine size={13} /> },
+  { key: "monitoring",   label: "Monitoring",   icon: <Activity size={13} /> },
+  { key: "cbct",         label: "CBCT",         icon: <Box size={13} /> },
+  { key: "consents",     label: "Consents",     icon: <ScrollText size={13} /> },
+  { key: "appointments", label: "Appointments", icon: <FilePlus size={13} /> },
+  { key: "reports",      label: "Reports",      icon: <FileText size={13} /> },
+  { key: "lab-orders",   label: "Lab Orders",   icon: <ClipboardCheck size={13} /> },
+  { key: "referrals",    label: "Referrals",    icon: <Users size={13} /> },
+  { key: "audit",        label: "Audit",        icon: <Activity size={13} /> },
 ];
 
 // ─── Summary tab ──────────────────────────────────────────────────────────────
@@ -410,10 +425,15 @@ export default function CaseDetailClient({ id }: { id: string }) {
         {tab === "photos"    && <PatientPhotosPanel caseId={id} />}
         {tab === "surgical"  && <SurgicalPlanningPanel caseId={id} />}
         {tab === "movements"  && <ToothTransformPanel caseId={id} />}
-        {tab === "processing" && <ScanProcessingPanel caseId={id} scanId={profile.scanId ?? ''} />}
-        {tab === "monitoring" && <TreatmentMonitoringPanel caseId={id} planId={profile.planId ?? ''} />}
-        {tab === "cbct"       && <CbctFusionPanel caseId={id} stlScanId={profile.scanId ?? ''} />}
-        {tab === "audit"      && <AuditTrail caseId={id} isLive={false} />}
+        {tab === "processing"   && <ScanProcessingPanel caseId={id} scanId={profile.scanId ?? ''} />}
+        {tab === "monitoring"   && <TreatmentMonitoringPanel caseId={id} planId={profile.planId ?? ''} />}
+        {tab === "cbct"         && <CbctFusionPanel caseId={id} stlScanId={profile.scanId ?? ''} />}
+        {tab === "consents"     && <ConsentFormsPanel caseId={id} />}
+        {tab === "appointments" && <AppointmentsPanel caseId={id} />}
+        {tab === "reports"      && <ClinicalReportsPanel caseId={id} planId={profile.planId} />}
+        {tab === "lab-orders"   && <LabOrdersPanel caseId={id} />}
+        {tab === "referrals"    && <ReferralsPanel caseId={id} />}
+        {tab === "audit"        && <AuditTrail caseId={id} isLive={false} />}
       </div>
     </section>
   );

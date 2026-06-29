@@ -80,6 +80,17 @@ import { SurveysModule } from './surveys/surveys.module';
 import { FeatureFlagsModule } from './feature-flags/feature-flags.module';
 import { QualityMetricsModule } from './quality-metrics/quality-metrics.module';
 import { RegulatoryComplianceModule } from './regulatory-compliance/regulatory-compliance.module';
+import { DocumentsModule } from './documents/documents.module';
+import { PatientEducationModule } from './patient-education/patient-education.module';
+import { RadiologyModule } from './radiology/radiology.module';
+import { OcclusionAnalysisModule } from './occlusion-analysis/occlusion-analysis.module';
+import { GrowthPredictionModule } from './growth-prediction/growth-prediction.module';
+import { OrgLocationsModule } from './org-locations/org-locations.module';
+import { EmergencyProtocolsModule } from './emergency-protocols/emergency-protocols.module';
+import { AttachmentLibraryModule } from './attachment-library/attachment-library.module';
+import { MovementConstraintsModule } from './movement-constraints/movement-constraints.module';
+import { PrintFarmModule } from './print-farm/print-farm.module';
+import { BatchManufacturingModule } from './batch-manufacturing/batch-manufacturing.module';
 
 @Module({
   imports: [
@@ -174,6 +185,17 @@ import { RegulatoryComplianceModule } from './regulatory-compliance/regulatory-c
     FeatureFlagsModule,
     QualityMetricsModule,
     RegulatoryComplianceModule,
+    DocumentsModule,
+    PatientEducationModule,
+    RadiologyModule,
+    OcclusionAnalysisModule,
+    GrowthPredictionModule,
+    OrgLocationsModule,
+    EmergencyProtocolsModule,
+    AttachmentLibraryModule,
+    MovementConstraintsModule,
+    PrintFarmModule,
+    BatchManufacturingModule,
   ],
   providers: [
     {

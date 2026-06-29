@@ -52,6 +52,12 @@ import InsurancePanel from "@/components/InsurancePanel";
 import PrescriptionsPanel from "@/components/PrescriptionsPanel";
 import RemoteMonitoringPanel from "@/components/RemoteMonitoringPanel";
 import OutcomesPanel from "@/components/OutcomesPanel";
+import ClinicalAlertsPanel from "@/components/ClinicalAlertsPanel";
+import TasksPanel from "@/components/TasksPanel";
+import DocumentsPanel from "@/components/DocumentsPanel";
+import PatientEducationPanel from "@/components/PatientEducationPanel";
+import OcclusionPanel from "@/components/OcclusionPanel";
+import RadiologyPanel from "@/components/RadiologyPanel";
 
 const AISegmentationCenter = dynamic(
   () => import("@/components/AISegmentationCenter").then((m) => ({ default: m.AISegmentationCenter })),
@@ -208,9 +214,10 @@ type Tab =
   | "summary" | "workflow" | "scans" | "plans" | "analysis"
   | "segment" | "proposal" | "export"
   | "ceph" | "photos" | "surgical" | "movements" | "audit"
-  | "processing" | "monitoring" | "cbct"
+  | "processing" | "tx-monitoring" | "cbct"
   | "consents" | "appointments" | "reports" | "lab-orders" | "referrals"
-  | "insurance" | "prescriptions" | "monitoring" | "outcomes";
+  | "insurance" | "prescriptions" | "remote-monitoring" | "outcomes"
+  | "alerts" | "tasks" | "documents" | "education" | "occlusion" | "radiology";
 
 const TABS: { key: Tab; label: string; icon: React.ReactNode }[] = [
   { key: "summary",   label: "Summary",   icon: <ClipboardList size={13} /> },
@@ -225,19 +232,25 @@ const TABS: { key: Tab; label: string; icon: React.ReactNode }[] = [
   { key: "photos",    label: "Photos",    icon: <Camera size={13} /> },
   { key: "surgical",  label: "Surgical",  icon: <Syringe size={13} /> },
   { key: "movements",  label: "Movements",  icon: <Ruler size={13} /> },
-  { key: "processing",   label: "Processing",   icon: <ScanLine size={13} /> },
-  { key: "monitoring",   label: "Monitoring",   icon: <Activity size={13} /> },
-  { key: "cbct",         label: "CBCT",         icon: <Box size={13} /> },
-  { key: "consents",     label: "Consents",     icon: <ScrollText size={13} /> },
-  { key: "appointments", label: "Appointments", icon: <FilePlus size={13} /> },
-  { key: "reports",      label: "Reports",      icon: <FileText size={13} /> },
-  { key: "lab-orders",   label: "Lab Orders",   icon: <ClipboardCheck size={13} /> },
-  { key: "referrals",      label: "Referrals",    icon: <Users size={13} /> },
-  { key: "insurance",      label: "Insurance",    icon: <ShieldCheck size={13} /> },
-  { key: "prescriptions",  label: "Prescriptions",icon: <Syringe size={13} /> },
-  { key: "monitoring",     label: "Compliance",   icon: <Activity size={13} /> },
-  { key: "outcomes",       label: "Outcomes",     icon: <Target size={13} /> },
-  { key: "audit",          label: "Audit",        icon: <Activity size={13} /> },
+  { key: "processing",       label: "Processing",    icon: <ScanLine size={13} /> },
+  { key: "tx-monitoring",    label: "Monitoring",    icon: <Activity size={13} /> },
+  { key: "cbct",             label: "CBCT",          icon: <Box size={13} /> },
+  { key: "consents",         label: "Consents",      icon: <ScrollText size={13} /> },
+  { key: "appointments",     label: "Appointments",  icon: <FilePlus size={13} /> },
+  { key: "reports",          label: "Reports",       icon: <FileText size={13} /> },
+  { key: "lab-orders",       label: "Lab Orders",    icon: <ClipboardCheck size={13} /> },
+  { key: "referrals",        label: "Referrals",     icon: <Users size={13} /> },
+  { key: "insurance",        label: "Insurance",     icon: <ShieldCheck size={13} /> },
+  { key: "prescriptions",    label: "Prescriptions", icon: <Syringe size={13} /> },
+  { key: "remote-monitoring",label: "Compliance",    icon: <Activity size={13} /> },
+  { key: "outcomes",         label: "Outcomes",      icon: <Target size={13} /> },
+  { key: "alerts",           label: "CDS Alerts",    icon: <Activity size={13} /> },
+  { key: "tasks",            label: "Tasks",         icon: <ClipboardCheck size={13} /> },
+  { key: "documents",        label: "Documents",     icon: <FileText size={13} /> },
+  { key: "education",        label: "Education",     icon: <ScrollText size={13} /> },
+  { key: "occlusion",        label: "Occlusion",     icon: <Target size={13} /> },
+  { key: "radiology",        label: "Imaging",       icon: <Camera size={13} /> },
+  { key: "audit",            label: "Audit",         icon: <Activity size={13} /> },
 ];
 
 // ─── Summary tab ──────────────────────────────────────────────────────────────
@@ -434,19 +447,25 @@ export default function CaseDetailClient({ id }: { id: string }) {
         {tab === "photos"    && <PatientPhotosPanel caseId={id} />}
         {tab === "surgical"  && <SurgicalPlanningPanel caseId={id} />}
         {tab === "movements"  && <ToothTransformPanel caseId={id} />}
-        {tab === "processing"   && <ScanProcessingPanel caseId={id} scanId={profile.scanId ?? ''} />}
-        {tab === "monitoring"   && <TreatmentMonitoringPanel caseId={id} planId={profile.planId ?? ''} />}
-        {tab === "cbct"         && <CbctFusionPanel caseId={id} stlScanId={profile.scanId ?? ''} />}
-        {tab === "consents"     && <ConsentFormsPanel caseId={id} />}
-        {tab === "appointments" && <AppointmentsPanel caseId={id} />}
-        {tab === "reports"      && <ClinicalReportsPanel caseId={id} planId={profile.planId} />}
-        {tab === "lab-orders"   && <LabOrdersPanel caseId={id} />}
-        {tab === "referrals"     && <ReferralsPanel caseId={id} />}
-        {tab === "insurance"     && <InsurancePanel caseId={id} />}
-        {tab === "prescriptions" && <PrescriptionsPanel caseId={id} />}
-        {tab === "monitoring"    && <RemoteMonitoringPanel caseId={id} />}
-        {tab === "outcomes"      && <OutcomesPanel caseId={id} />}
-        {tab === "audit"         && <AuditTrail caseId={id} isLive={false} />}
+        {tab === "processing"        && <ScanProcessingPanel caseId={id} scanId={profile.scanId ?? ''} />}
+        {tab === "tx-monitoring"    && <TreatmentMonitoringPanel caseId={id} planId={profile.planId ?? ''} />}
+        {tab === "cbct"             && <CbctFusionPanel caseId={id} stlScanId={profile.scanId ?? ''} />}
+        {tab === "consents"         && <ConsentFormsPanel caseId={id} />}
+        {tab === "appointments"     && <AppointmentsPanel caseId={id} />}
+        {tab === "reports"          && <ClinicalReportsPanel caseId={id} planId={profile.planId} />}
+        {tab === "lab-orders"       && <LabOrdersPanel caseId={id} />}
+        {tab === "referrals"        && <ReferralsPanel caseId={id} />}
+        {tab === "insurance"        && <InsurancePanel caseId={id} />}
+        {tab === "prescriptions"    && <PrescriptionsPanel caseId={id} />}
+        {tab === "remote-monitoring"&& <RemoteMonitoringPanel caseId={id} />}
+        {tab === "outcomes"         && <OutcomesPanel caseId={id} />}
+        {tab === "alerts"           && <ClinicalAlertsPanel caseId={id} token="" />}
+        {tab === "tasks"            && <TasksPanel caseId={id} token="" />}
+        {tab === "documents"        && <DocumentsPanel caseId={id} token="" />}
+        {tab === "education"        && <PatientEducationPanel caseId={id} token="" />}
+        {tab === "occlusion"        && <OcclusionPanel caseId={id} token="" />}
+        {tab === "radiology"        && <RadiologyPanel patientId={id} caseId={id} token="" />}
+        {tab === "audit"            && <AuditTrail caseId={id} isLive={false} />}
       </div>
     </section>
   );

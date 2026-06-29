@@ -91,6 +91,11 @@ import { AttachmentLibraryModule } from './attachment-library/attachment-library
 import { MovementConstraintsModule } from './movement-constraints/movement-constraints.module';
 import { PrintFarmModule } from './print-farm/print-farm.module';
 import { BatchManufacturingModule } from './batch-manufacturing/batch-manufacturing.module';
+import { DeviceTrackingModule } from './device-tracking/device-tracking.module';
+import { MaterialTestingModule } from './material-testing/material-testing.module';
+import { IntakeFormsModule } from './intake-forms/intake-forms.module';
+import { RevenueCycleModule } from './revenue-cycle/revenue-cycle.module';
+import { PlatformHealthModule } from './platform-health/platform-health.module';
 
 @Module({
   imports: [
@@ -196,6 +201,11 @@ import { BatchManufacturingModule } from './batch-manufacturing/batch-manufactur
     MovementConstraintsModule,
     PrintFarmModule,
     BatchManufacturingModule,
+    DeviceTrackingModule,
+    MaterialTestingModule,
+    IntakeFormsModule,
+    RevenueCycleModule,
+    PlatformHealthModule,
   ],
   providers: [
     {

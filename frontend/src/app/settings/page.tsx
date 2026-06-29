@@ -10,6 +10,7 @@ const BIDashboardPanel = dynamic(() => import("@/components/BIDashboardPanel"), 
 const CompliancePanel = dynamic(() => import("@/components/CompliancePanel"), { ssr: false });
 const QualityMetricsPanel = dynamic(() => import("@/components/QualityMetricsPanel"), { ssr: false });
 const FeatureFlagsPanel = dynamic(() => import("@/components/FeatureFlagsPanel"), { ssr: false });
+const PlatformHealthPanel = dynamic(() => import("@/components/PlatformHealthPanel"), { ssr: false });
 import {
   Bell,
   BellRing,
@@ -525,6 +526,17 @@ export default function SettingsPage() {
         <p className="text-xs font-bold uppercase tracking-[0.18em] text-[color:var(--primary)] mb-4">Administration</p>
         <Suspense fallback={<div className="text-sm text-gray-500">Loading feature flags…</div>}>
           <FeatureFlagsPanel token="" />
+        </Suspense>
+      </Card>
+
+      {/* PLATFORM HEALTH */}
+      <Card className="ios-card p-5 sm:p-6">
+        <div className="flex items-center justify-between mb-4">
+          <p className="text-xs font-bold uppercase tracking-[0.18em] text-[color:var(--primary)]">Platform</p>
+          <Link href="/platform-health" className="text-xs text-indigo-600 hover:underline">Full report →</Link>
+        </div>
+        <Suspense fallback={<div className="text-sm text-gray-500">Loading platform health…</div>}>
+          <PlatformHealthPanel token="" />
         </Suspense>
       </Card>
 

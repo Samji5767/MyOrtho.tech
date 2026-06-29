@@ -36,6 +36,9 @@ import PatientPhotosPanel from "@/components/PatientPhotosPanel";
 import CephalometricPanel from "@/components/CephalometricPanel";
 import AIProposalPanel from "@/components/AIProposalPanel";
 import PreExportQAPanel from "@/components/PreExportQAPanel";
+import ScanProcessingPanel from "@/components/ScanProcessingPanel";
+import TreatmentMonitoringPanel from "@/components/TreatmentMonitoringPanel";
+import CbctFusionPanel from "@/components/CbctFusionPanel";
 
 const AISegmentationCenter = dynamic(
   () => import("@/components/AISegmentationCenter").then((m) => ({ default: m.AISegmentationCenter })),
@@ -58,6 +61,9 @@ interface CaseProfile {
   goals: string[];
   measurements: { label: string; value: string }[];
   history: WorkflowEvent[];
+  // Optional IDs wired from the real API when available
+  scanId?: string;
+  planId?: string;
 }
 
 const CASE_PROFILES: Record<string, CaseProfile> = {
@@ -188,7 +194,8 @@ const CASE_PROFILES: Record<string, CaseProfile> = {
 type Tab =
   | "summary" | "workflow" | "scans" | "plans" | "analysis"
   | "segment" | "proposal" | "export"
-  | "ceph" | "photos" | "surgical" | "movements" | "audit";
+  | "ceph" | "photos" | "surgical" | "movements" | "audit"
+  | "processing" | "monitoring" | "cbct";
 
 const TABS: { key: Tab; label: string; icon: React.ReactNode }[] = [
   { key: "summary",   label: "Summary",   icon: <ClipboardList size={13} /> },
@@ -202,8 +209,11 @@ const TABS: { key: Tab; label: string; icon: React.ReactNode }[] = [
   { key: "ceph",      label: "Ceph",      icon: <ScanLine size={13} /> },
   { key: "photos",    label: "Photos",    icon: <Camera size={13} /> },
   { key: "surgical",  label: "Surgical",  icon: <Syringe size={13} /> },
-  { key: "movements", label: "Movements", icon: <Ruler size={13} /> },
-  { key: "audit",     label: "Audit",     icon: <Activity size={13} /> },
+  { key: "movements",  label: "Movements",  icon: <Ruler size={13} /> },
+  { key: "processing", label: "Processing", icon: <ScanLine size={13} /> },
+  { key: "monitoring", label: "Monitoring", icon: <Activity size={13} /> },
+  { key: "cbct",       label: "CBCT",       icon: <Box size={13} /> },
+  { key: "audit",      label: "Audit",      icon: <Activity size={13} /> },
 ];
 
 // ─── Summary tab ──────────────────────────────────────────────────────────────
@@ -399,8 +409,11 @@ export default function CaseDetailClient({ id }: { id: string }) {
         {tab === "ceph"      && <CephalometricPanel caseId={id} />}
         {tab === "photos"    && <PatientPhotosPanel caseId={id} />}
         {tab === "surgical"  && <SurgicalPlanningPanel caseId={id} />}
-        {tab === "movements" && <ToothTransformPanel caseId={id} />}
-        {tab === "audit"     && <AuditTrail caseId={id} isLive={false} />}
+        {tab === "movements"  && <ToothTransformPanel caseId={id} />}
+        {tab === "processing" && <ScanProcessingPanel caseId={id} scanId={profile.scanId ?? ''} />}
+        {tab === "monitoring" && <TreatmentMonitoringPanel caseId={id} planId={profile.planId ?? ''} />}
+        {tab === "cbct"       && <CbctFusionPanel caseId={id} stlScanId={profile.scanId ?? ''} />}
+        {tab === "audit"      && <AuditTrail caseId={id} isLive={false} />}
       </div>
     </section>
   );

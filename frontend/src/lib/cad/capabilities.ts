@@ -526,6 +526,16 @@ export const CAD_CAPABILITIES: CadCapability[] = [
     statusNote: "Fully wired in Phase 33: retention_protocols, retention_wear_schedule, retention_relapse_factors tables. RetentionProtocolPanel.tsx: generate, risk score bar with 4-level color coding, retainer type cards, wear timeline strip, risk factor accordion with weights. Clinician approval gated.",
     surface: "/treatment-plan#retention",
   },
+  // ── Phase 34: Clinical Export Package ──────────────────────────────────────
+  {
+    id: "export-package",
+    name: "Clinical Export Package",
+    phase: "plan",
+    maturity: "implemented",
+    summary: "Structured export bundles for 5 export types (lab_full, aligner_stl, treatment_summary, patient_instructions, insurance_report) with a 14-check validation gate spanning all clinical modules. Checks: plan exists, prescriptions present, Kravitz violations, aligner plan approved, IPR schedule, segmentation complete, attachment MFG valid, no critical collisions, IPR enamel safe, simulation generated, PDL stress, retention approved, arch coordination approved, no open critical copilot suggestions. Clinician approval required before export; SHA-256 checksum recorded.",
+    statusNote: "Fully wired in Phase 34: export_packages, export_checklist_items tables. ExportPackagePanel.tsx: export type selector, create/validate/approve/mark-exported workflow, per-package checklist grouped by module with pass/fail/warning/skipped icons, progress bar, checksum display.",
+    surface: "/treatment-plan#export",
+  },
 ];
 
 export function capabilitiesByPhase(phase: CapabilityPhase): CadCapability[] {

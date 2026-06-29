@@ -46,6 +46,7 @@ import { TreatmentSimulationModule } from './treatment-simulation/treatment-simu
 import { CopilotModule } from './copilot/copilot.module';
 import { ArchCoordinationModule } from './arch-coordination/arch-coordination.module';
 import { RetentionModule } from './retention/retention.module';
+import { ExportPackageModule } from './export-package/export-package.module';
 
 @Module({
   imports: [
@@ -100,6 +101,7 @@ import { RetentionModule } from './retention/retention.module';
     CopilotModule,
     ArchCoordinationModule,
     RetentionModule,
+    ExportPackageModule,
   ],
 })
 export class AppModule {}

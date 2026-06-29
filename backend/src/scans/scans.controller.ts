@@ -52,7 +52,7 @@ export class ScansController {
    */
   @Post()
   @HttpCode(HttpStatus.CREATED)
-  @UseInterceptors(FileInterceptor('file'))
+  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 500 * 1024 * 1024 } }))
   uploadScan(
     @Req() req: Request,
     @Param('caseId') caseId: string,

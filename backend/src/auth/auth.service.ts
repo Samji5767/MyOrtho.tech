@@ -1,7 +1,9 @@
-import { Injectable, OnModuleInit, Logger, UnauthorizedException } from '@nestjs/common';
+import { Injectable, OnModuleInit, Logger, UnauthorizedException, Optional, Inject } from '@nestjs/common';
 import { Pool } from 'pg';
+import Redis from 'ioredis';
 import * as bcrypt from 'bcrypt';
 import * as jwt from 'jsonwebtoken';
+import { REDIS_CLIENT } from '../redis/redis.module';
 
 const BCRYPT_ROUNDS = 12;
 const COOKIE_MAX_AGE_MS = 24 * 60 * 60 * 1000; // 24 h
@@ -31,10 +33,10 @@ export class AuthService implements OnModuleInit {
   private readonly pool: Pool;
   private readonly jwtSecret: string;
 
-  // Simple in-memory rate limiter: max 10 login attempts per IP per minute
-  private readonly loginAttempts = new Map<string, { count: number; resetAt: number }>();
+  // In-memory rate limiter fallback (used when Redis is unavailable)
+  private readonly loginAttemptsFallback = new Map<string, { count: number; resetAt: number }>();
 
-  constructor() {
+  constructor(@Optional() @Inject(REDIS_CLIENT) private readonly redis: Redis | null) {
     this.pool = new Pool({ connectionString: process.env.DATABASE_URL });
     this.jwtSecret = process.env.JWT_SECRET || 'dev-only-change-in-production';
     if (!process.env.JWT_SECRET) {
@@ -67,14 +69,31 @@ export class AuthService implements OnModuleInit {
 
   // ─── Rate limiting ────────────────────────────────────────────────────────
 
-  checkRateLimit(ip: string): boolean {
+  async checkRateLimit(ip: string): Promise<boolean> {
+    const key = `login_ratelimit:${ip}`;
+    const limit = 10;
+
+    if (this.redis) {
+      try {
+        const count = await this.redis.incr(key);
+        if (count === 1) {
+          // First attempt in this window — expire in 60s
+          await this.redis.expire(key, 60);
+        }
+        return count <= limit;
+      } catch {
+        // Redis unavailable — fall through to in-memory
+      }
+    }
+
+    // In-memory fallback
     const now = Date.now();
-    const record = this.loginAttempts.get(ip);
+    const record = this.loginAttemptsFallback.get(ip);
     if (!record || record.resetAt < now) {
-      this.loginAttempts.set(ip, { count: 1, resetAt: now + 60_000 });
+      this.loginAttemptsFallback.set(ip, { count: 1, resetAt: now + 60_000 });
       return true;
     }
-    if (record.count >= 10) return false;
+    if (record.count >= limit) return false;
     record.count++;
     return true;
   }

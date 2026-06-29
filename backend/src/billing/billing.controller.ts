@@ -1,4 +1,10 @@
-import { Controller, Get, Post, Body, UseGuards, Req, ForbiddenException, BadRequestException } from '@nestjs/common';
+import {
+  Controller, Get, Post, Body, UseGuards, Req, Headers,
+  ForbiddenException, BadRequestException, HttpCode, HttpStatus,
+} from '@nestjs/common';
+import type { RawBodyRequest } from '@nestjs/common';
+import type { Request } from 'express';
+import { SkipThrottle } from '@nestjs/throttler';
 import { BillingService } from './billing.service';
 import { AuthGuard } from '../auth/auth.guard';
 
@@ -72,5 +78,37 @@ export class BillingController {
   @Get('plans')
   async listPlans() {
     return this.billingService.listPlans();
+  }
+
+  /** Create a Stripe Checkout Session for the Unlimited Professional plan. */
+  @Post('checkout')
+  async createCheckout(
+    @Req() req,
+    @Body() body: { successUrl?: string; cancelUrl?: string },
+  ) {
+    const orgId = req.user.organizationId;
+    if (!orgId) throw new ForbiddenException('No organization context');
+    const origin = (req.headers?.origin as string | undefined) ?? 'http://localhost:3000';
+    const successUrl = body.successUrl ?? `${origin}/settings/billing?checkout=success`;
+    const cancelUrl  = body.cancelUrl  ?? `${origin}/settings/billing?checkout=canceled`;
+    return this.billingService.createCheckoutSession(orgId, successUrl, cancelUrl);
+  }
+
+  /**
+   * Stripe webhook — receives raw body for signature verification.
+   * No auth guard. Throttle skipped (Stripe IPs are high-frequency).
+   */
+  @Post('webhook/stripe')
+  @SkipThrottle()
+  @HttpCode(HttpStatus.OK)
+  async stripeWebhook(
+    @Req() req: RawBodyRequest<Request>,
+    @Headers('stripe-signature') signature: string,
+  ) {
+    if (!req.rawBody) {
+      throw new BadRequestException('Raw body required for webhook signature verification');
+    }
+    await this.billingService.handleStripeWebhook(req.rawBody, signature);
+    return { received: true };
   }
 }

@@ -314,14 +314,85 @@ function CADScene({
 
 // ─── Main component ───────────────────────────────────────────────────────────
 
+// Undo/redo history for tooth transform overrides
+type OverridesMap = Map<number, { position: THREE.Vector3; rotation: THREE.Euler }>;
+
+function cloneOverrides(m: OverridesMap): OverridesMap {
+  return new Map(Array.from(m.entries()).map(([k, v]) => [k, { position: v.position.clone(), rotation: v.rotation.clone() }]));
+}
+
+const MAX_HISTORY = 50;
+
 export default function CADEngine() {
   const [teeth] = useState<ToothObject[]>(() => buildTeethObjects());
+
+  // Dispose Three.js geometries on unmount to prevent WebGL memory leaks
+  useEffect(() => {
+    return () => {
+      teeth.forEach(t => { t.geometry.dispose(); });
+    };
+  }, [teeth]);
+
   const [selectedFdis, setSelectedFdis] = useState<Set<number>>(new Set());
   const [gizmoMode, setGizmoMode] = useState<GizmoMode>("translate");
   const [showAttachments, setShowAttachments] = useState(true);
   const [showCollision, setShowCollision] = useState(true);
-  const [toothOverrides, setToothOverrides] = useState<Map<number, { position: THREE.Vector3; rotation: THREE.Euler }>>(new Map());
+  const [toothOverrides, setToothOverrides] = useState<OverridesMap>(new Map());
   const [biomechanicsWarning, setBiomechanicsWarning] = useState<string | null>(null);
+
+  // Undo/redo history stack
+  const historyRef = useRef<OverridesMap[]>([new Map()]);
+  const historyIndexRef = useRef(0);
+  const [canUndo, setCanUndo] = useState(false);
+  const [canRedo, setCanRedo] = useState(false);
+
+  const pushHistory = useCallback((overrides: OverridesMap) => {
+    const snapshot = cloneOverrides(overrides);
+    // Discard any redo states beyond current index
+    historyRef.current = historyRef.current.slice(0, historyIndexRef.current + 1);
+    historyRef.current.push(snapshot);
+    if (historyRef.current.length > MAX_HISTORY) {
+      historyRef.current.shift();
+    } else {
+      historyIndexRef.current++;
+    }
+    setCanUndo(historyIndexRef.current > 0);
+    setCanRedo(false);
+  }, []);
+
+  const handleUndo = useCallback(() => {
+    if (historyIndexRef.current <= 0) return;
+    historyIndexRef.current--;
+    const snapshot = historyRef.current[historyIndexRef.current];
+    setToothOverrides(cloneOverrides(snapshot));
+    setBiomechanicsWarning(null);
+    setCanUndo(historyIndexRef.current > 0);
+    setCanRedo(true);
+  }, []);
+
+  const handleRedo = useCallback(() => {
+    if (historyIndexRef.current >= historyRef.current.length - 1) return;
+    historyIndexRef.current++;
+    const snapshot = historyRef.current[historyIndexRef.current];
+    setToothOverrides(cloneOverrides(snapshot));
+    setBiomechanicsWarning(null);
+    setCanUndo(true);
+    setCanRedo(historyIndexRef.current < historyRef.current.length - 1);
+  }, []);
+
+  // Global keyboard shortcuts
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      const ctrl = e.ctrlKey || e.metaKey;
+      if (ctrl && e.key === 'z' && !e.shiftKey) { e.preventDefault(); handleUndo(); }
+      if (ctrl && (e.key === 'y' || (e.key === 'z' && e.shiftKey))) { e.preventDefault(); handleRedo(); }
+      if (!ctrl && e.key === 't') setGizmoMode('translate');
+      if (!ctrl && e.key === 'r') setGizmoMode('rotate');
+      if (!ctrl && e.key === 'Escape') setSelectedFdis(new Set());
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [handleUndo, handleRedo]);
 
   // Cross-section plane
   const [crossSectionEnabled, setCrossSectionEnabled] = useState(false);
@@ -400,8 +471,12 @@ export default function CADEngine() {
       rotation: [drx, dry, drz],
     });
     setBiomechanicsWarning(warning ? warning.message : null);
-    setToothOverrides(prev => new Map(prev).set(fdi, { position: pos, rotation: rot }));
-  }, [teeth]);
+    setToothOverrides(prev => {
+      const next = new Map(prev).set(fdi, { position: pos, rotation: rot });
+      pushHistory(next);
+      return next;
+    });
+  }, [teeth, pushHistory]);
 
   const primaryFdi = selectedFdis.size === 1 ? Array.from(selectedFdis)[0] : null;
   const selectedTooth = teeth.find(t => t.fdi === primaryFdi) ?? null;
@@ -493,10 +568,28 @@ export default function CADEngine() {
             </div>
             <h3 className="mt-2 text-lg font-semibold text-foreground">Dental CAD Workspace</h3>
             <p className="mt-1 text-xs text-secondary">
-              Click tooth to select · Shift+click multi-select · Drag gizmo to move
+              Click tooth to select · Shift+click multi-select · Drag gizmo to move · <kbd className="rounded bg-surface-1 px-1 font-mono text-[10px]">T</kbd> translate · <kbd className="rounded bg-surface-1 px-1 font-mono text-[10px]">R</kbd> rotate · <kbd className="rounded bg-surface-1 px-1 font-mono text-[10px]">⌘Z</kbd> undo
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={handleUndo}
+              disabled={!canUndo}
+              title="Undo (Ctrl+Z / ⌘Z)"
+            >
+              ↩ Undo
+            </Button>
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={handleRedo}
+              disabled={!canRedo}
+              title="Redo (Ctrl+Y / ⌘⇧Z)"
+            >
+              ↪ Redo
+            </Button>
             <Button
               variant={gizmoMode === "translate" ? "primary" : "secondary"}
               size="sm"

@@ -1,0 +1,27 @@
+# Normalize SQL line endings to LF to prevent macOS resource fork corruption
+*.sql text eol=lf
+
+# Shell scripts always LF
+*.sh text eol=lf
+
+# TypeScript / JSON / config files — normalize to LF
+*.ts text eol=lf
+*.tsx text eol=lf
+*.js text eol=lf
+*.jsx text eol=lf
+*.json text eol=lf
+*.md text eol=lf
+*.yaml text eol=lf
+*.yml text eol=lf
+*.env text eol=lf
+
+# Binary files — no line ending transformation
+*.stl binary
+*.obj binary
+*.ply binary
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.pdf binary
+*.zip binary

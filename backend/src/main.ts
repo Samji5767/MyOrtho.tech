@@ -5,35 +5,59 @@ import helmet from 'helmet';
 import { AppModule } from './app.module';
 import { AllExceptionsFilter } from './common/all-exceptions.filter';
 
-async function bootstrap() {
-  const app = await NestFactory.create(AppModule);
+// ─── Startup validation ───────────────────────────────────────────────────────
 
-  // Security headers — applied before any route handler
+function assertRequiredEnv(): void {
+  const secret = process.env.JWT_SECRET ?? '';
+  if (!secret || secret.length < 32) {
+    throw new Error(
+      'JWT_SECRET must be set to a string of at least 32 characters. ' +
+      'Generate one with: openssl rand -hex 32',
+    );
+  }
+  const encKey = process.env.ENCRYPTION_KEY ?? '';
+  if (!encKey || encKey.length < 32) {
+    console.warn(
+      '[WARN] ENCRYPTION_KEY is not set or too short. ' +
+      'PHI encryption will be degraded. Set before production launch.',
+    );
+  }
+}
+
+async function bootstrap() {
+  assertRequiredEnv();
+
+  const app = await NestFactory.create(AppModule, { rawBody: true });
+
+  // Security headers
   app.use(
     helmet({
-      // Allow the embedded Three.js canvas and inline scripts
       contentSecurityPolicy: false,
-      // Allow cross-origin isolation for SharedArrayBuffer if needed for WASM
       crossOriginOpenerPolicy: { policy: 'same-origin-allow-popups' },
     }),
   );
 
-  // Parse cookies before route handlers run (needed for mo_session auth cookie)
   app.use(cookieParser());
 
-  // CORS: allow the configured frontend origin (production) plus localhost for dev.
   const allowedOrigins = [
     process.env.FRONTEND_URL,
     'http://localhost:3000',
     'http://localhost:3005',
   ].filter(Boolean) as string[];
-  app.enableCors({ origin: allowedOrigins, credentials: true });
 
-  // Global input validation — strips unknown fields; transform coerces primitives.
+  app.enableCors({
+    origin: allowedOrigins,
+    credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-CSRF-Token'],
+  });
+
   app.useGlobalPipes(
     new ValidationPipe({
       whitelist: true,
       transform: true,
+      forbidNonWhitelisted: false,
+      forbidUnknownValues: false,
     }),
   );
 
@@ -43,6 +67,7 @@ async function bootstrap() {
   await app.listen(port);
   console.log(`Backend running on: http://localhost:${port}`);
 }
+
 bootstrap().catch(err => {
   console.error('Failed to bootstrap backend:', err);
   process.exit(1);

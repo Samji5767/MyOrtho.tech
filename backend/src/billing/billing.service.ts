@@ -1,5 +1,6 @@
-import { BadRequestException, Inject, Injectable, Logger } from '@nestjs/common';
+import { BadRequestException, Inject, Injectable, Logger, InternalServerErrorException } from '@nestjs/common';
 import type { Pool } from 'pg';
+import Stripe from 'stripe';
 import { PG_POOL } from '../database/database.module';
 
 const PAYG_EXPORT_COST_CENTS = 199; // $1.99 per export for non-subscribers
@@ -43,8 +44,24 @@ export interface RevenueDashboard {
 @Injectable()
 export class BillingService {
   private readonly logger = new Logger(BillingService.name);
+  private readonly stripe: Stripe | null;
 
-  constructor(@Inject(PG_POOL) private readonly pool: Pool) {}
+  constructor(@Inject(PG_POOL) private readonly pool: Pool) {
+    const key = process.env.STRIPE_SECRET_KEY;
+    this.stripe = key
+      ? new Stripe(key, { apiVersion: '2026-06-24.dahlia' })
+      : null;
+    if (!key) {
+      this.logger.warn('STRIPE_SECRET_KEY not set — Stripe features disabled');
+    }
+  }
+
+  private get stripeClient(): Stripe {
+    if (!this.stripe) {
+      throw new InternalServerErrorException('Stripe is not configured. Set STRIPE_SECRET_KEY.');
+    }
+    return this.stripe;
+  }
 
   async listPlans(): Promise<Array<{
     slug: string; name: string; priceUsdCents: number;
@@ -174,6 +191,119 @@ export class BillingService {
       subtotalCents: subtotal,
       totalCents: subtotal,
     };
+  }
+
+  // ─── Stripe: checkout session ─────────────────────────────────────────────
+
+  async createCheckoutSession(
+    orgId: string,
+    successUrl: string,
+    cancelUrl: string,
+  ): Promise<{ url: string; sessionId: string }> {
+    const priceId = process.env.STRIPE_PRICE_ID_UNLIMITED;
+    if (!priceId) {
+      throw new InternalServerErrorException('STRIPE_PRICE_ID_UNLIMITED is not set');
+    }
+    const session = await this.stripeClient.checkout.sessions.create({
+      mode: 'subscription',
+      payment_method_types: ['card'],
+      line_items: [{ price: priceId, quantity: 1 }],
+      success_url: successUrl,
+      cancel_url: cancelUrl,
+      metadata: { orgId },
+      subscription_data: { metadata: { orgId } },
+    });
+    return { url: session.url!, sessionId: session.id };
+  }
+
+  // ─── Stripe: webhook handler ───────────────────────────────────────────────
+
+  async handleStripeWebhook(rawBody: Buffer, signature: string): Promise<void> {
+    const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
+    if (!webhookSecret) {
+      throw new InternalServerErrorException('STRIPE_WEBHOOK_SECRET is not set');
+    }
+    let event: Stripe.Event;
+    try {
+      event = this.stripeClient.webhooks.constructEvent(rawBody, signature, webhookSecret);
+    } catch (err) {
+      throw new BadRequestException(`Stripe webhook signature verification failed: ${String(err)}`);
+    }
+
+    switch (event.type) {
+      case 'checkout.session.completed': {
+        const session = event.data.object as Stripe.Checkout.Session;
+        const orgId = session.metadata?.orgId;
+        if (!orgId || session.mode !== 'subscription') break;
+        const stripeSubId = session.subscription as string;
+        // Copy orgId to subscription metadata for future events
+        await this.stripeClient.subscriptions.update(stripeSubId, { metadata: { orgId } });
+        await this.activateSubscriptionForOrg(orgId, stripeSubId);
+        break;
+      }
+      case 'customer.subscription.updated': {
+        const sub = event.data.object as Stripe.Subscription;
+        const orgId = sub.metadata?.orgId;
+        if (!orgId) break;
+        const status = sub.status === 'active' ? 'active'
+          : sub.status === 'past_due' ? 'past_due'
+          : 'canceled';
+        await this.pool.query(
+          `UPDATE organization_subscriptions
+           SET status = $2, updated_at = now()
+           WHERE organization_id = $1 AND stripe_subscription_id = $3`,
+          [orgId, status, sub.id],
+        );
+        break;
+      }
+      case 'customer.subscription.deleted': {
+        const sub = event.data.object as Stripe.Subscription;
+        const orgId = sub.metadata?.orgId;
+        if (!orgId) break;
+        await this.pool.query(
+          `UPDATE organization_subscriptions
+           SET status = 'canceled', updated_at = now()
+           WHERE organization_id = $1 AND stripe_subscription_id = $2`,
+          [orgId, sub.id],
+        );
+        break;
+      }
+      case 'invoice.payment_failed': {
+        const invoice = event.data.object as Stripe.Invoice;
+        // subscription field location varies across Stripe API versions
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const subId = (invoice as any).subscription as string | null ?? null;
+        if (!subId) break;
+        await this.pool.query(
+          `UPDATE organization_subscriptions
+           SET status = 'past_due', updated_at = now()
+           WHERE stripe_subscription_id = $1`,
+          [subId],
+        );
+        break;
+      }
+      default:
+        this.logger.debug(`Unhandled Stripe event: ${event.type}`);
+    }
+  }
+
+  private async activateSubscriptionForOrg(orgId: string, stripeSubId: string): Promise<void> {
+    const { rows: planRows } = await this.pool.query(
+      `SELECT id FROM subscription_plans WHERE slug = 'unlimited_professional' AND is_active = true`,
+    );
+    if (!planRows[0]) return;
+    const planId = planRows[0].id as string;
+    // Cancel any existing active subscription
+    await this.pool.query(
+      `UPDATE organization_subscriptions SET status = 'canceled' WHERE organization_id = $1 AND status = 'active'`,
+      [orgId],
+    );
+    await this.pool.query(
+      `INSERT INTO organization_subscriptions
+         (organization_id, plan_id, status, stripe_subscription_id, current_period_start, current_period_end)
+       VALUES ($1, $2, 'active', $3, now(), now() + interval '1 month')`,
+      [orgId, planId, stripeSubId],
+    );
   }
 
   async getRevenueAnalytics(): Promise<RevenueDashboard> {

@@ -19,7 +19,7 @@ function cookieOptions(maxAgeMs: number, production: boolean) {
   return {
     httpOnly: true,
     secure: production,
-    sameSite: 'lax' as const,
+    sameSite: 'strict' as const,
     maxAge: maxAgeMs,
     path: '/',
   };
@@ -37,7 +37,7 @@ export class AuthController {
     @Res({ passthrough: true }) res: Response,
   ) {
     const ip = (req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim() ?? req.ip ?? 'unknown';
-    if (!this.authService.checkRateLimit(ip)) {
+    if (!(await this.authService.checkRateLimit(ip))) {
       throw new HttpException('Too many login attempts. Please wait a minute.', HttpStatus.TOO_MANY_REQUESTS);
     }
 

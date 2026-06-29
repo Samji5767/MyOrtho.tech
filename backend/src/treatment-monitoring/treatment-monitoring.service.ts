@@ -295,10 +295,7 @@ export class TreatmentMonitoringService {
       ? parseFloat((weightedSum / totalWeight).toFixed(3))
       : 0.5;
 
-    const grade = overallScore >= 0.90 ? 'A'
-      : overallScore >= 0.80 ? 'B'
-      : overallScore >= 0.70 ? 'C'
-      : overallScore >= 0.60 ? 'D' : 'F';
+    const grade = this.gradeFromScore(overallScore * 100);
 
     const hasCriticalIssues = pdlCritical > 0 || iprUnsafe > 0 || prescriptionViolations > 0;
     const criticalIssueCount = pdlCritical + iprUnsafe + prescriptionViolations;
@@ -395,19 +392,12 @@ export class TreatmentMonitoringService {
 
   // ─── Private ────────────────────────────────────────────────────────────────
 
-  private async detectOffTrack(
-    caseId: string,
-    orgId: string,
-    payload: CheckInPayload,
-    checkInId: string,
-  ): Promise<OffTrackAlert[]> {
-    const alerts: OffTrackAlert[] = [];
+  // ─── Pure helpers (testable without DB) ─────────────────────────────────
+
+  analyzeNoteForAlerts(rawNotes: string): AlertSpec[] {
+    const notes = rawNotes.toLowerCase();
     const specs: AlertSpec[] = [];
 
-    const progress = payload.currentStage / payload.totalStages;
-    const notes = (payload.notes ?? '').toLowerCase();
-
-    // Heuristic off-track signals from check-in data
     if (notes.includes('not seating') || notes.includes('not fitting') || notes.includes('gap')) {
       specs.push({
         type: 'aligner_not_seating',
@@ -447,6 +437,40 @@ export class TreatmentMonitoringService {
         affectedTeeth: [],
       });
     }
+
+    return specs;
+  }
+
+  computeWeightedScore(components: { name: string; score: number; weight: number }[]): number {
+    let weightedSum = 0;
+    let totalWeight = 0;
+    for (const { score, weight } of components) {
+      weightedSum += score * weight;
+      totalWeight += weight;
+    }
+    return totalWeight > 0 ? weightedSum / totalWeight : 0;
+  }
+
+  gradeFromScore(scorePercent: number): 'A' | 'B' | 'C' | 'D' | 'F' {
+    if (scorePercent >= 90) return 'A';
+    if (scorePercent >= 80) return 'B';
+    if (scorePercent >= 70) return 'C';
+    if (scorePercent >= 60) return 'D';
+    return 'F';
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
+
+  private async detectOffTrack(
+    caseId: string,
+    orgId: string,
+    payload: CheckInPayload,
+    checkInId: string,
+  ): Promise<OffTrackAlert[]> {
+    const alerts: OffTrackAlert[] = [];
+    const progress = payload.currentStage / payload.totalStages;
+
+    const specs: AlertSpec[] = this.analyzeNoteForAlerts(payload.notes ?? '');
 
     // Stage-based deviation heuristics
     if (payload.checkInType === 'scan_comparison' && progress > 0.5) {

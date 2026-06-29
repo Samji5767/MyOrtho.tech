@@ -40,6 +40,9 @@ import { IprPlannerModule } from './ipr-planner/ipr-planner.module';
 import { RefinementModule } from './refinement/refinement.module';
 import { ToothMovementModule } from './tooth-movement/tooth-movement.module';
 import { AlignerGenerationModule } from './aligner-generation/aligner-generation.module';
+import { AttachmentIntelligenceModule } from './attachment-intelligence/attachment-intelligence.module';
+import { IprIntelligenceModule } from './ipr-intelligence/ipr-intelligence.module';
+import { TreatmentSimulationModule } from './treatment-simulation/treatment-simulation.module';
 
 @Module({
   imports: [
@@ -88,6 +91,9 @@ import { AlignerGenerationModule } from './aligner-generation/aligner-generation
     RefinementModule,
     ToothMovementModule,
     AlignerGenerationModule,
+    AttachmentIntelligenceModule,
+    IprIntelligenceModule,
+    TreatmentSimulationModule,
   ],
 })
 export class AppModule {}

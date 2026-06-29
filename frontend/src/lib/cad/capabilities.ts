@@ -466,6 +466,36 @@ export const CAD_CAPABILITIES: CadCapability[] = [
     statusNote: "Fully wired in Phase 25: SegmentationAutoCorrector.tsx → repair-all and per-item endpoints. Repairs write to segmentation_masks and segmentation_corrections for full audit trail. Manual-only issues (missing teeth, arch imbalance) are clearly marked and excluded from auto-repair.",
     surface: "/cases/[id]#segment",
   },
+  // ── Phase 28: Attachment Intelligence ──────────────────────────────────────
+  {
+    id: "attachment-intelligence",
+    name: "Attachment Intelligence Engine",
+    phase: "plan",
+    maturity: "implemented",
+    summary: "Per-tooth attachment selection from an 8-type library (horizontal/vertical rectangular, optimized multi-plane, beveled, ellipsoid, diagonal cut, hook, precision cut). Scores each type against movement prescription axes, selects best, computes 3-axis force/moment vectors, detects adjacent collisions, and validates manufacturing tolerances (depth ≥0.3mm, width ≥1.0mm).",
+    statusNote: "Fully wired in Phase 28: attachment_libraries (8 system types seeded), attachment_force_analysis, attachment_collisions tables. AttachmentIntelligencePanel.tsx: library browser, optimization run, force vector table, collision + MFG validation tab.",
+    surface: "/treatment-plan#attachments",
+  },
+  // ── Phase 29: IPR Intelligence ─────────────────────────────────────────────
+  {
+    id: "ipr-intelligence",
+    name: "IPR Intelligence Engine",
+    phase: "plan",
+    maturity: "implemented",
+    summary: "Sheridan 1985 enamel thickness estimates by tooth type (incisors 1.8mm, canines 2.2mm, premolars 2.8mm, molars 3.2mm). Computes available IPR per contact pair, enforces 0.5mm minimum remaining enamel, caps at 0.5mm/session. Clinical warnings: enamel_thin (critical), excessive_removal (>0.8mm), near_pulp (<1.5mm).",
+    statusNote: "Fully wired in Phase 29: ipr_enamel_estimates, ipr_optimization_results tables. IPRIntelligencePanel.tsx: optimization run with safety/warning summary, per-contact enamel table with remaining-enamel progress bars, grouped clinical warning list.",
+    surface: "/treatment-plan#ipr",
+  },
+  // ── Phase 30: Treatment Simulation Player ──────────────────────────────────
+  {
+    id: "treatment-simulation-player",
+    name: "Treatment Simulation Player",
+    phase: "plan",
+    maturity: "implemented",
+    summary: "Linear interpolation simulation across all aligner stages. Generates per-stage frames with per-tooth {tx,ty,tz,rx,ry,rz} positions, arch width, overjet, overbite, and midline deviation. Arch coordination scoring, occlusion score, smile arc score. Keyframes at 0%, 25%, 50%, 75%, 100%. Playback slider and auto-play animation.",
+    statusNote: "Fully wired in Phase 30: treatment_simulations, simulation_frames tables. TreatmentSimulationPlayer.tsx: generate button, 3-score bars, overjet/overbite delta, stage slider with play/pause, FDI tooth grid with movement magnitude color coding, frame metrics panel, arch coordination summary.",
+    surface: "/treatment-plan#simulation",
+  },
 ];
 
 export function capabilitiesByPhase(phase: CapabilityPhase): CadCapability[] {

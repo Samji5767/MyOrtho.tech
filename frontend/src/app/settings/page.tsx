@@ -1,7 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useState, Suspense } from "react";
+import dynamic from "next/dynamic";
+
+const PricingPlansPanel = dynamic(() => import("@/components/PricingPlansPanel"), { ssr: false });
 import {
   Bell,
   BellRing,
@@ -475,6 +478,11 @@ export default function SettingsPage() {
           </Link>
         </div>
       </Card>
+
+      {/* BILLING */}
+      <Suspense fallback={<div className="rounded-lg border border-gray-200 bg-white p-6 text-sm text-gray-500">Loading billing…</div>}>
+        <PricingPlansPanel />
+      </Suspense>
 
       {/* VERSION FOOTER */}
       <div className="flex flex-col items-center gap-1 py-4 text-center">

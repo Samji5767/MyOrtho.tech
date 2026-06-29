@@ -53,6 +53,7 @@ import { ExportPackageModule } from './export-package/export-package.module';
 import { ScanProcessingModule } from './scan-processing/scan-processing.module';
 import { TreatmentMonitoringModule } from './treatment-monitoring/treatment-monitoring.module';
 import { CbctModule } from './cbct/cbct.module';
+import { SystemStatusModule } from './system-status/system-status.module';
 
 @Module({
   imports: [
@@ -120,6 +121,7 @@ import { CbctModule } from './cbct/cbct.module';
     ScanProcessingModule,
     TreatmentMonitoringModule,
     CbctModule,
+    SystemStatusModule,
   ],
   providers: [
     {

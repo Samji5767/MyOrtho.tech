@@ -54,6 +54,18 @@ import { ScanProcessingModule } from './scan-processing/scan-processing.module';
 import { TreatmentMonitoringModule } from './treatment-monitoring/treatment-monitoring.module';
 import { CbctModule } from './cbct/cbct.module';
 import { SystemStatusModule } from './system-status/system-status.module';
+import { ConsentFormsModule } from './consent-forms/consent-forms.module';
+import { AppointmentsModule } from './appointments/appointments.module';
+import { ClinicalReportsModule } from './clinical-reports/clinical-reports.module';
+import { LabOrdersModule } from './lab-orders/lab-orders.module';
+import { ReferralsModule } from './referrals/referrals.module';
+import { PatientPortalModule } from './patient-portal/patient-portal.module';
+import { InsuranceModule } from './insurance/insurance.module';
+import { InventoryModule } from './inventory/inventory.module';
+import { PrescriptionsModule } from './prescriptions/prescriptions.module';
+import { RemoteMonitoringModule } from './remote-monitoring/remote-monitoring.module';
+import { OutcomesModule } from './outcomes/outcomes.module';
+import { TrainingModule } from './training/training.module';
 
 @Module({
   imports: [
@@ -122,6 +134,18 @@ import { SystemStatusModule } from './system-status/system-status.module';
     TreatmentMonitoringModule,
     CbctModule,
     SystemStatusModule,
+    ConsentFormsModule,
+    AppointmentsModule,
+    ClinicalReportsModule,
+    LabOrdersModule,
+    ReferralsModule,
+    PatientPortalModule,
+    InsuranceModule,
+    InventoryModule,
+    PrescriptionsModule,
+    RemoteMonitoringModule,
+    OutcomesModule,
+    TrainingModule,
   ],
   providers: [
     {

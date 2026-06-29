@@ -5,6 +5,7 @@ import { useState, Suspense } from "react";
 import dynamic from "next/dynamic";
 
 const PricingPlansPanel = dynamic(() => import("@/components/PricingPlansPanel"), { ssr: false });
+const TrainingPanel = dynamic(() => import("@/components/TrainingPanel"), { ssr: false });
 import {
   Bell,
   BellRing,
@@ -483,6 +484,14 @@ export default function SettingsPage() {
       <Suspense fallback={<div className="rounded-lg border border-gray-200 bg-white p-6 text-sm text-gray-500">Loading billing…</div>}>
         <PricingPlansPanel />
       </Suspense>
+
+      {/* CPD / TRAINING */}
+      <Card className="ios-card p-5 sm:p-6">
+        <p className="text-xs font-bold uppercase tracking-[0.18em] text-[color:var(--primary)] mb-4">CPD &amp; Training</p>
+        <Suspense fallback={<div className="text-sm text-gray-500">Loading training…</div>}>
+          <TrainingPanel />
+        </Suspense>
+      </Card>
 
       {/* VERSION FOOTER */}
       <div className="flex flex-col items-center gap-1 py-4 text-center">

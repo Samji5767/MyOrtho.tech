@@ -48,6 +48,10 @@ import AppointmentsPanel from "@/components/AppointmentsPanel";
 import ClinicalReportsPanel from "@/components/ClinicalReportsPanel";
 import LabOrdersPanel from "@/components/LabOrdersPanel";
 import ReferralsPanel from "@/components/ReferralsPanel";
+import InsurancePanel from "@/components/InsurancePanel";
+import PrescriptionsPanel from "@/components/PrescriptionsPanel";
+import RemoteMonitoringPanel from "@/components/RemoteMonitoringPanel";
+import OutcomesPanel from "@/components/OutcomesPanel";
 
 const AISegmentationCenter = dynamic(
   () => import("@/components/AISegmentationCenter").then((m) => ({ default: m.AISegmentationCenter })),
@@ -205,7 +209,8 @@ type Tab =
   | "segment" | "proposal" | "export"
   | "ceph" | "photos" | "surgical" | "movements" | "audit"
   | "processing" | "monitoring" | "cbct"
-  | "consents" | "appointments" | "reports" | "lab-orders" | "referrals";
+  | "consents" | "appointments" | "reports" | "lab-orders" | "referrals"
+  | "insurance" | "prescriptions" | "monitoring" | "outcomes";
 
 const TABS: { key: Tab; label: string; icon: React.ReactNode }[] = [
   { key: "summary",   label: "Summary",   icon: <ClipboardList size={13} /> },
@@ -227,8 +232,12 @@ const TABS: { key: Tab; label: string; icon: React.ReactNode }[] = [
   { key: "appointments", label: "Appointments", icon: <FilePlus size={13} /> },
   { key: "reports",      label: "Reports",      icon: <FileText size={13} /> },
   { key: "lab-orders",   label: "Lab Orders",   icon: <ClipboardCheck size={13} /> },
-  { key: "referrals",    label: "Referrals",    icon: <Users size={13} /> },
-  { key: "audit",        label: "Audit",        icon: <Activity size={13} /> },
+  { key: "referrals",      label: "Referrals",    icon: <Users size={13} /> },
+  { key: "insurance",      label: "Insurance",    icon: <ShieldCheck size={13} /> },
+  { key: "prescriptions",  label: "Prescriptions",icon: <Syringe size={13} /> },
+  { key: "monitoring",     label: "Compliance",   icon: <Activity size={13} /> },
+  { key: "outcomes",       label: "Outcomes",     icon: <Target size={13} /> },
+  { key: "audit",          label: "Audit",        icon: <Activity size={13} /> },
 ];
 
 // ─── Summary tab ──────────────────────────────────────────────────────────────
@@ -432,8 +441,12 @@ export default function CaseDetailClient({ id }: { id: string }) {
         {tab === "appointments" && <AppointmentsPanel caseId={id} />}
         {tab === "reports"      && <ClinicalReportsPanel caseId={id} planId={profile.planId} />}
         {tab === "lab-orders"   && <LabOrdersPanel caseId={id} />}
-        {tab === "referrals"    && <ReferralsPanel caseId={id} />}
-        {tab === "audit"        && <AuditTrail caseId={id} isLive={false} />}
+        {tab === "referrals"     && <ReferralsPanel caseId={id} />}
+        {tab === "insurance"     && <InsurancePanel caseId={id} />}
+        {tab === "prescriptions" && <PrescriptionsPanel caseId={id} />}
+        {tab === "monitoring"    && <RemoteMonitoringPanel caseId={id} />}
+        {tab === "outcomes"      && <OutcomesPanel caseId={id} />}
+        {tab === "audit"         && <AuditTrail caseId={id} isLive={false} />}
       </div>
     </section>
   );

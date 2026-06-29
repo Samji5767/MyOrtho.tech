@@ -292,7 +292,66 @@ export class ExportPackageService {
        WHERE id=$4 AND organization_id=$5`,
       [format, fileSizeBytes, checksum, packageId, orgId],
     );
+
+    // Record export transaction for PAYG billing gate
+    await this.recordExportTransaction(orgId, planId, packageId);
+
     return this.loadPackage(packageId, orgId);
+  }
+
+  private async recordExportTransaction(
+    orgId: string,
+    planId: string,
+    packageId: string,
+  ): Promise<void> {
+    const PAYG_EXPORT_CENTS = 199; // $1.99
+
+    // Check subscription type
+    const subRes = await this.db.query(
+      `SELECT sp.is_unlimited, sp.slug
+       FROM organization_subscriptions os
+       JOIN subscription_plans sp ON sp.id=os.plan_id
+       WHERE os.organization_id=$1 AND os.status='active'
+       ORDER BY os.created_at DESC LIMIT 1`,
+      [orgId],
+    );
+    const sub = subRes.rows[0];
+    const isUnlimited = sub?.['is_unlimited'] as boolean ?? false;
+    const planSlug = sub?.['slug'] as string ?? 'none';
+
+    if (isUnlimited) {
+      await this.db.query(
+        `INSERT INTO export_transactions
+           (organization_id, plan_id, export_package_id, transaction_type,
+            amount_cents, description, status)
+         VALUES ($1,$2,$3,'subscription_charge',0,$4,'completed')`,
+        [orgId, planId, packageId, 'Unlimited Professional export — included in subscription'],
+      );
+    } else if (planSlug === 'payg') {
+      // Deduct $1.99 from credit balance
+      const creditRes = await this.db.query(
+        `UPDATE organization_credits
+         SET balance = balance - $2, updated_at = now()
+         WHERE organization_id = $1 AND balance >= $2
+         RETURNING balance`,
+        [orgId, PAYG_EXPORT_CENTS],
+      );
+      const succeeded = (creditRes.rowCount ?? 0) > 0;
+      const balanceAfter = succeeded ? (creditRes.rows[0]?.['balance'] as number) : null;
+
+      await this.db.query(
+        `INSERT INTO export_transactions
+           (organization_id, plan_id, export_package_id, transaction_type,
+            amount_cents, description, credit_balance_after, status)
+         VALUES ($1,$2,$3,'payg_export',$4,$5,$6,$7)`,
+        [
+          orgId, planId, packageId, PAYG_EXPORT_CENTS,
+          'Pay-As-You-Go export package — $1.99',
+          balanceAfter,
+          succeeded ? 'completed' : 'failed',
+        ],
+      );
+    }
   }
 
   // ─── Check runner ──────────────────────────────────────────────────────────

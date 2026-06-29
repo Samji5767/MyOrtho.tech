@@ -46,6 +46,23 @@ export class BillingService {
 
   constructor(@Inject(PG_POOL) private readonly pool: Pool) {}
 
+  async listPlans(): Promise<Array<{
+    slug: string; name: string; priceUsdCents: number;
+    isUnlimited: boolean; maxCasesPerMonth: number | null;
+  }>> {
+    const { rows } = await this.pool.query(
+      `SELECT slug, name, price_usd_cents, is_unlimited, max_cases_per_month
+       FROM subscription_plans WHERE is_active=true ORDER BY price_usd_cents ASC`,
+    );
+    return rows.map(r => ({
+      slug:               r['slug'] as string,
+      name:               r['name'] as string,
+      priceUsdCents:      r['price_usd_cents'] as number,
+      isUnlimited:        r['is_unlimited'] as boolean,
+      maxCasesPerMonth:   r['max_cases_per_month'] as number | null,
+    }));
+  }
+
   async calculateUsageSummary(orgId: string): Promise<UsageSummary> {
     const subRow = await this.pool.query(
       `SELECT os.status, os.cases_this_period, os.current_period_end,

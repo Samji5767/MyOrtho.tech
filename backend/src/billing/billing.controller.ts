@@ -68,4 +68,9 @@ export class BillingController {
     // In production, enforce System Admin role check
     return this.billingService.getRevenueAnalytics();
   }
+
+  @Get('plans')
+  async listPlans() {
+    return this.billingService.listPlans();
+  }
 }

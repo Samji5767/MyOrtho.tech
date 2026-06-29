@@ -47,6 +47,9 @@ import { CopilotModule } from './copilot/copilot.module';
 import { ArchCoordinationModule } from './arch-coordination/arch-coordination.module';
 import { RetentionModule } from './retention/retention.module';
 import { ExportPackageModule } from './export-package/export-package.module';
+import { ScanProcessingModule } from './scan-processing/scan-processing.module';
+import { TreatmentMonitoringModule } from './treatment-monitoring/treatment-monitoring.module';
+import { CbctModule } from './cbct/cbct.module';
 
 @Module({
   imports: [
@@ -102,6 +105,9 @@ import { ExportPackageModule } from './export-package/export-package.module';
     ArchCoordinationModule,
     RetentionModule,
     ExportPackageModule,
+    ScanProcessingModule,
+    TreatmentMonitoringModule,
+    CbctModule,
   ],
 })
 export class AppModule {}

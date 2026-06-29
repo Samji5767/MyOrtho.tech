@@ -66,6 +66,14 @@ import { PrescriptionsModule } from './prescriptions/prescriptions.module';
 import { RemoteMonitoringModule } from './remote-monitoring/remote-monitoring.module';
 import { OutcomesModule } from './outcomes/outcomes.module';
 import { TrainingModule } from './training/training.module';
+import { PrinterMaintenanceModule } from './printer-maintenance/printer-maintenance.module';
+import { FhirModule } from './fhir/fhir.module';
+import { WhiteLabelModule } from './white-label/white-label.module';
+import { BusinessIntelligenceModule } from './business-intelligence/business-intelligence.module';
+import { SupplyChainModule } from './supply-chain/supply-chain.module';
+import { CrmModule } from './crm/crm.module';
+import { WorkflowBuilderModule } from './workflow-builder/workflow-builder.module';
+import { CommandPaletteModule } from './command-palette/command-palette.module';
 
 @Module({
   imports: [
@@ -146,6 +154,14 @@ import { TrainingModule } from './training/training.module';
     RemoteMonitoringModule,
     OutcomesModule,
     TrainingModule,
+    PrinterMaintenanceModule,
+    FhirModule,
+    WhiteLabelModule,
+    BusinessIntelligenceModule,
+    SupplyChainModule,
+    CrmModule,
+    WorkflowBuilderModule,
+    CommandPaletteModule,
   ],
   providers: [
     {

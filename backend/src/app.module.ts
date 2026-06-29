@@ -74,6 +74,12 @@ import { SupplyChainModule } from './supply-chain/supply-chain.module';
 import { CrmModule } from './crm/crm.module';
 import { WorkflowBuilderModule } from './workflow-builder/workflow-builder.module';
 import { CommandPaletteModule } from './command-palette/command-palette.module';
+import { ClinicalDecisionSupportModule } from './clinical-decision-support/cds.module';
+import { TaskManagementModule } from './task-management/task-management.module';
+import { SurveysModule } from './surveys/surveys.module';
+import { FeatureFlagsModule } from './feature-flags/feature-flags.module';
+import { QualityMetricsModule } from './quality-metrics/quality-metrics.module';
+import { RegulatoryComplianceModule } from './regulatory-compliance/regulatory-compliance.module';
 
 @Module({
   imports: [
@@ -162,6 +168,12 @@ import { CommandPaletteModule } from './command-palette/command-palette.module';
     CrmModule,
     WorkflowBuilderModule,
     CommandPaletteModule,
+    ClinicalDecisionSupportModule,
+    TaskManagementModule,
+    SurveysModule,
+    FeatureFlagsModule,
+    QualityMetricsModule,
+    RegulatoryComplianceModule,
   ],
   providers: [
     {

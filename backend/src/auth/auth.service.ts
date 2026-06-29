@@ -96,7 +96,7 @@ export class AuthService implements OnModuleInit {
 
     if (!user) {
       // Constant-time fake compare to prevent username enumeration
-      await bcrypt.compare(password, '$2b$12$invalidhashplaceholder.......');
+      await bcrypt.compare(password, '$2b$12$AAAAAAAAAAAAAAAAAAAAAA.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA');
       throw new UnauthorizedException('Invalid email or password');
     }
 

@@ -167,36 +167,37 @@ export class TreatmentMonitoringService {
       retentionRes,
       exportRes,
     ] = await Promise.all([
-      // movement_safety: check Kravitz violations
+      // movement_safety: check Kravitz per-stage limits
       this.db.query(
         `SELECT COUNT(*) as total,
-                SUM(CASE WHEN translation_mesial > 0.30 OR translation_distal > 0.30
-                         OR translation_buccal > 0.30 OR translation_lingual > 0.30
-                         OR rotation_deg > 3.0 OR torque_deg > 3.5 OR tip_deg > 4.0
+                SUM(CASE WHEN translation_mesial_mm > 0.30 OR translation_distal_mm > 0.30
+                         OR translation_buccal_mm > 0.30 OR translation_lingual_mm > 0.30
+                         OR rotation_deg > 3.0 OR torque_deg > 3.5
+                         OR tip_mesial_deg > 4.0 OR tip_distal_deg > 4.0
                          OR intrusion_mm > 0.40 OR extrusion_mm > 0.75 THEN 1 ELSE 0 END) as violations
-         FROM treatment_prescriptions WHERE plan_id=$1`,
+         FROM movement_prescriptions WHERE plan_id=$1`,
         [planId],
       ),
-      // pdl_safety
+      // pdl_safety (Yoshida 2001 thresholds)
       this.db.query(
         `SELECT COUNT(*) as total,
-                SUM(CASE WHEN pdl_stress_mpa > 0.015 THEN 1 ELSE 0 END) as critical,
-                SUM(CASE WHEN pdl_stress_mpa > 0.008 AND pdl_stress_mpa <= 0.015 THEN 1 ELSE 0 END) as high
-         FROM pdl_stress_analyses WHERE plan_id=$1`,
+                SUM(CASE WHEN stress_mpa > 0.015 THEN 1 ELSE 0 END) as critical,
+                SUM(CASE WHEN stress_mpa > 0.008 AND stress_mpa <= 0.015 THEN 1 ELSE 0 END) as high
+         FROM pdl_simulation_results WHERE plan_id=$1`,
         [planId],
       ),
-      // ipr_safety: enamel remaining
+      // ipr_safety: Sheridan 0.5mm minimum
       this.db.query(
         `SELECT COUNT(*) as total,
                 SUM(CASE WHEN is_safe=false THEN 1 ELSE 0 END) as unsafe
          FROM ipr_enamel_estimates WHERE plan_id=$1`,
         [planId],
       ),
-      // attachment_score
+      // attachment_score: manufacturing validation
       this.db.query(
         `SELECT COUNT(*) as total,
                 SUM(CASE WHEN manufacturing_valid=false THEN 1 ELSE 0 END) as invalid
-         FROM attachment_placements WHERE plan_id=$1`,
+         FROM attachment_force_analysis WHERE plan_id=$1`,
         [planId],
       ),
       // simulation_score
@@ -210,9 +211,9 @@ export class TreatmentMonitoringService {
         `SELECT coordination_score FROM arch_coordination_plans WHERE plan_id=$1`,
         [planId],
       ),
-      // retention_score
+      // retention_score (relapse risk)
       this.db.query(
-        `SELECT risk_score FROM retention_protocols WHERE plan_id=$1`,
+        `SELECT relapse_risk_score FROM retention_protocols WHERE plan_id=$1`,
         [planId],
       ),
       // export_readiness: check if approved export exists
@@ -263,7 +264,7 @@ export class TreatmentMonitoringService {
       : null;
 
     const retentionRow = retentionRes.rows[0];
-    const retentionRisk = retentionRow ? (retentionRow['risk_score'] as number ?? 0.5) : 0.5;
+    const retentionRisk = retentionRow ? (retentionRow['relapse_risk_score'] as number ?? 0.5) : 0.5;
     const retentionScore = parseFloat((1 - retentionRisk * 0.5).toFixed(3));
 
     const approvedExports = parseInt(exportRes.rows[0]?.['approved'] as string ?? '0', 10);
@@ -384,7 +385,7 @@ export class TreatmentMonitoringService {
     await this.verifyCase(caseId, orgId);
     const res = await this.db.query(
       `SELECT tqs.* FROM treatment_quality_scores tqs
-       JOIN aligner_generation_plans agp ON agp.id=tqs.plan_id
+       JOIN aligner_generation_plans agp ON agp.plan_id=tqs.plan_id
        WHERE tqs.plan_id=$1 AND agp.organization_id=$2`,
       [planId, orgId],
     );

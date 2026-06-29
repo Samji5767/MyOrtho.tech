@@ -1,11 +1,22 @@
 import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
 import * as cookieParser from 'cookie-parser';
+import helmet from 'helmet';
 import { AppModule } from './app.module';
 import { AllExceptionsFilter } from './common/all-exceptions.filter';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
+
+  // Security headers — applied before any route handler
+  app.use(
+    helmet({
+      // Allow the embedded Three.js canvas and inline scripts
+      contentSecurityPolicy: false,
+      // Allow cross-origin isolation for SharedArrayBuffer if needed for WASM
+      crossOriginOpenerPolicy: { policy: 'same-origin-allow-popups' },
+    }),
+  );
 
   // Parse cookies before route handlers run (needed for mo_session auth cookie)
   app.use(cookieParser());

@@ -506,6 +506,16 @@ export const CAD_CAPABILITIES: CadCapability[] = [
     statusNote: "Fully wired in Phase 31: copilot_conversations, copilot_messages, copilot_suggestions tables. ClinicalCopilot.tsx: chat panel with quick prompts, suggestion panel with per-suggestion acknowledge/apply/dismiss + clinician notes. 6 proactive scan categories with dedup logic. Intent classifier (question/command/feedback/acknowledgement).",
     surface: "/cases/[id]#copilot",
   },
+  // ── Phase 32: Multi-Arch Treatment Coordinator ─────────────────────────────
+  {
+    id: "arch-coordination",
+    name: "Multi-Arch Treatment Coordinator",
+    phase: "plan",
+    maturity: "implemented",
+    summary: "Cross-arch staging coordination with 4 strategies: simultaneous, upper-first (3-stage offset), lower-first (3-stage offset), alternating. Computes per-arch stage estimates from Kravitz limits, arch width discrepancy from expansion prescriptions, and a 0–1 coordination score. Generates 7 clinical checkpoint types (occlusion, midline, arch width, Bolton, overjet, overbite, expansion sync) at evidence-based stage percentages. Full synchronized movement timeline.",
+    statusNote: "Fully wired in Phase 32: arch_coordination_plans, arch_checkpoints, arch_sync_allocations tables. ArchCoordinationPanel.tsx: strategy selector, coordination results, checkpoint evaluation (pass/fail/defer + clinician note), synchronized stage color-heat timeline strip.",
+    surface: "/treatment-plan#arch",
+  },
 ];
 
 export function capabilitiesByPhase(phase: CapabilityPhase): CadCapability[] {

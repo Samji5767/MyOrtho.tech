@@ -45,6 +45,7 @@ import { IprIntelligenceModule } from './ipr-intelligence/ipr-intelligence.modul
 import { TreatmentSimulationModule } from './treatment-simulation/treatment-simulation.module';
 import { CopilotModule } from './copilot/copilot.module';
 import { ArchCoordinationModule } from './arch-coordination/arch-coordination.module';
+import { RetentionModule } from './retention/retention.module';
 
 @Module({
   imports: [
@@ -98,6 +99,7 @@ import { ArchCoordinationModule } from './arch-coordination/arch-coordination.mo
     TreatmentSimulationModule,
     CopilotModule,
     ArchCoordinationModule,
+    RetentionModule,
   ],
 })
 export class AppModule {}

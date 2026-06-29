@@ -516,6 +516,16 @@ export const CAD_CAPABILITIES: CadCapability[] = [
     statusNote: "Fully wired in Phase 32: arch_coordination_plans, arch_checkpoints, arch_sync_allocations tables. ArchCoordinationPanel.tsx: strategy selector, coordination results, checkpoint evaluation (pass/fail/defer + clinician note), synchronized stage color-heat timeline strip.",
     surface: "/treatment-plan#arch",
   },
+  // ── Phase 33: Retention Protocol Engine ────────────────────────────────────
+  {
+    id: "retention-protocol",
+    name: "Retention Protocol Engine",
+    phase: "plan",
+    maturity: "implemented",
+    summary: "Evidence-based relapse risk scoring from treatment plan data: detects 12 risk factors (severe crowding, large expansion, rotations, Class II/III, open/deep bite, midline shift, skeletal discrepancy, Bolton, young patient, compliance). Weighted per Littlewood 2016 (Cochrane) and Edman-Wallén 2019. Selects upper/lower retainer type (Essix/Vivera/Hawley/Fixed/Combo) and generates multi-phase wear schedule (full-time → night-only) scaled by risk level.",
+    statusNote: "Fully wired in Phase 33: retention_protocols, retention_wear_schedule, retention_relapse_factors tables. RetentionProtocolPanel.tsx: generate, risk score bar with 4-level color coding, retainer type cards, wear timeline strip, risk factor accordion with weights. Clinician approval gated.",
+    surface: "/treatment-plan#retention",
+  },
 ];
 
 export function capabilitiesByPhase(phase: CapabilityPhase): CadCapability[] {

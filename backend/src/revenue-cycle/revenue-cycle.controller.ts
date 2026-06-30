@@ -26,7 +26,11 @@ export class RevenueCycleController {
   }
 
   @Get('summary')
-  summary(@Req() req: Request) { return this.svc.getSummary(getUser(req).orgId); }
+  summary(
+    @Req() req: Request,
+    @Query('caseId') caseId?: string,
+    @Query('patientId') patientId?: string,
+  ) { return this.svc.getSummary(getUser(req).orgId, { caseId, patientId }); }
 
   @Post()
   create(

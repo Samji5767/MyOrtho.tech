@@ -52,14 +52,18 @@ export class RevenueCycleService {
     return this.map(rows[0]);
   }
 
-  async getSummary(orgId: string): Promise<RevenueSummary> {
+  async getSummary(orgId: string, opts?: { caseId?: string; patientId?: string }): Promise<RevenueSummary> {
+    const params: unknown[] = [orgId];
+    let where = 'WHERE organization_id=$1 AND status IN (\'posted\',\'cleared\')';
+    if (opts?.caseId) { params.push(opts.caseId); where += ` AND case_id=$${params.length}`; }
+    if (opts?.patientId) { params.push(opts.patientId); where += ` AND patient_id=$${params.length}`; }
     const { rows } = await this.db.query(
       `SELECT transaction_type,
          COALESCE(SUM(amount_cents),0)::bigint AS total
        FROM revenue_transactions
-       WHERE organization_id=$1 AND status IN ('posted','cleared')
+       ${where}
        GROUP BY transaction_type`,
-      [orgId],
+      params,
     );
     const byType: Record<string, number> = {};
     for (const r of rows) byType[r['transaction_type'] as string] = Number(r['total']);

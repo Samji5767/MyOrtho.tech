@@ -53,18 +53,35 @@ export class InventoryService {
     transactionType: 'receipt' | 'usage' | 'adjustment' | 'waste';
     quantityDelta: number; caseId?: string; notes?: string;
   }): Promise<{ item: InventoryItem; transactionId: string }> {
-    const item = await this.getItemWithStock(orgId, itemId);
-    const newStock = item.currentStock + dto.quantityDelta;
-    if (newStock < 0) throw new BadRequestException('Insufficient stock');
+    const client = await this.db.connect();
+    try {
+      await client.query('BEGIN');
+      // Lock the item row to serialize concurrent stock checks
+      const { rows: locked } = await client.query(
+        `SELECT COALESCE((SELECT SUM(quantity_delta) FROM inventory_transactions t WHERE t.item_id=i.id),0) AS current_stock
+         FROM inventory_items i WHERE i.id=$1 AND i.organization_id=$2 FOR UPDATE`,
+        [itemId, orgId],
+      );
+      if (!locked[0]) throw new NotFoundException('Inventory item not found');
+      const currentStock = Number(locked[0]['current_stock']);
+      const newStock = currentStock + dto.quantityDelta;
+      if (newStock < 0) throw new BadRequestException('Insufficient stock');
 
-    const { rows } = await this.db.query(
-      `INSERT INTO inventory_transactions
-         (organization_id, item_id, transaction_type, quantity_delta, quantity_after, case_id, notes, created_by)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id`,
-      [orgId, itemId, dto.transactionType, dto.quantityDelta, newStock, dto.caseId ?? null, dto.notes ?? null, createdBy],
-    );
-    const updated = await this.getItemWithStock(orgId, itemId);
-    return { item: updated, transactionId: rows[0]['id'] as string };
+      const { rows } = await client.query(
+        `INSERT INTO inventory_transactions
+           (organization_id, item_id, transaction_type, quantity_delta, quantity_after, case_id, notes, created_by)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id`,
+        [orgId, itemId, dto.transactionType, dto.quantityDelta, newStock, dto.caseId ?? null, dto.notes ?? null, createdBy],
+      );
+      await client.query('COMMIT');
+      const updated = await this.getItemWithStock(orgId, itemId);
+      return { item: updated, transactionId: rows[0]['id'] as string };
+    } catch (e) {
+      await client.query('ROLLBACK');
+      throw e;
+    } finally {
+      client.release();
+    }
   }
 
   async getItemHistory(orgId: string, itemId: string): Promise<Record<string, unknown>[]> {

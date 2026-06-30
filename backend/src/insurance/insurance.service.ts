@@ -33,20 +33,30 @@ export class InsuranceService {
     payerName: string; planName?: string; memberId?: string; groupNumber?: string;
     isPrimary?: boolean; effectiveDate?: string; terminationDate?: string;
   }): Promise<InsurancePlan> {
-    if (dto.isPrimary) {
-      await this.db.query(
-        'UPDATE insurance_plans SET is_primary=FALSE WHERE patient_id=$1 AND organization_id=$2',
-        [patientId, orgId],
+    const client = await this.db.connect();
+    try {
+      await client.query('BEGIN');
+      if (dto.isPrimary) {
+        await client.query(
+          'UPDATE insurance_plans SET is_primary=FALSE WHERE patient_id=$1 AND organization_id=$2',
+          [patientId, orgId],
+        );
+      }
+      const { rows } = await client.query(
+        `INSERT INTO insurance_plans
+           (organization_id, patient_id, payer_name, plan_name, member_id, group_number, is_primary, effective_date, termination_date)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *`,
+        [orgId, patientId, dto.payerName, dto.planName ?? null, dto.memberId ?? null,
+         dto.groupNumber ?? null, dto.isPrimary ?? false, dto.effectiveDate ?? null, dto.terminationDate ?? null],
       );
+      await client.query('COMMIT');
+      return this.mapPlan(rows[0]);
+    } catch (e) {
+      await client.query('ROLLBACK');
+      throw e;
+    } finally {
+      client.release();
     }
-    const { rows } = await this.db.query(
-      `INSERT INTO insurance_plans
-         (organization_id, patient_id, payer_name, plan_name, member_id, group_number, is_primary, effective_date, termination_date)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *`,
-      [orgId, patientId, dto.payerName, dto.planName ?? null, dto.memberId ?? null,
-       dto.groupNumber ?? null, dto.isPrimary ?? false, dto.effectiveDate ?? null, dto.terminationDate ?? null],
-    );
-    return this.mapPlan(rows[0]);
   }
 
   // ── Pre-Authorizations ───────────────────────────────────────────────────────
@@ -93,10 +103,10 @@ export class InsuranceService {
       `UPDATE insurance_preauths
          SET status=$2, auth_number=$3, approved_amount_cents=$4, notes=COALESCE($5,notes),
              decision_at=now(), updated_at=now()
-       WHERE id=$1 AND organization_id=$6 RETURNING *`,
+       WHERE id=$1 AND organization_id=$6 AND status='submitted' RETURNING *`,
       [preAuthId, dto.status, dto.authNumber ?? null, dto.approvedAmountCents ?? null, dto.notes ?? null, orgId],
     );
-    if (!rows[0]) throw new NotFoundException('Pre-auth not found');
+    if (!rows[0]) throw new NotFoundException('Pre-auth not found or not in submitted status');
     return this.mapPreAuth(rows[0]);
   }
 

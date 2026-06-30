@@ -8,8 +8,6 @@ export interface ManufacturingBatch {
   notes: string | null; createdBy: string; createdAt: string; updatedAt: string;
 }
 
-let batchSeq = 1;
-
 const VALID_TRANSITIONS: Record<string, string[]> = {
   staging: ['printing', 'cancelled'],
   printing: ['post_processing', 'cancelled'],
@@ -32,11 +30,17 @@ export class BatchManufacturingService {
   async create(orgId: string, createdBy: string, dto: {
     caseIds?: string[]; scheduledDate?: string; notes?: string;
   }): Promise<ManufacturingBatch> {
-    const batchNumber = `BATCH-${String(batchSeq++).padStart(5, '0')}`;
+    // Derive next batch number atomically from DB to survive restarts and concurrent requests
     const { rows } = await this.db.query(
-      `INSERT INTO manufacturing_batches (organization_id, batch_number, case_ids, scheduled_date, notes, created_by)
-       VALUES ($1,$2,$3,$4,$5,$6) RETURNING *`,
-      [orgId, batchNumber, dto.caseIds ?? [], dto.scheduledDate ?? null, dto.notes ?? null, createdBy],
+      `WITH next_seq AS (
+         SELECT COALESCE(MAX(CAST(SUBSTRING(batch_number FROM 7) AS INTEGER)), 0) + 1 AS seq
+         FROM manufacturing_batches
+       )
+       INSERT INTO manufacturing_batches (organization_id, batch_number, case_ids, scheduled_date, notes, created_by)
+       SELECT $1, 'BATCH-' || LPAD(next_seq.seq::text, 5, '0'), $2, $3, $4, $5
+       FROM next_seq
+       RETURNING *`,
+      [orgId, dto.caseIds ?? [], dto.scheduledDate ?? null, dto.notes ?? null, createdBy],
     );
     return this.map(rows[0]);
   }

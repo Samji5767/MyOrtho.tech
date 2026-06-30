@@ -12,8 +12,11 @@ export class FeatureFlagsService {
   constructor(@Inject(PG_POOL) private readonly db: Pool) {}
 
   async listFlags(orgId: string): Promise<FeatureFlag[]> {
+    // DISTINCT ON (flag_name) picks org-specific override over global default when both exist
     const { rows } = await this.db.query(
-      'SELECT * FROM feature_flags WHERE organization_id=$1 OR organization_id IS NULL ORDER BY flag_name',
+      `SELECT DISTINCT ON (flag_name) * FROM feature_flags
+       WHERE organization_id=$1 OR organization_id IS NULL
+       ORDER BY flag_name, organization_id NULLS LAST`,
       [orgId],
     );
     return rows.map(this.map);

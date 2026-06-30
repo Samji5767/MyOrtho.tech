@@ -37,7 +37,7 @@ export default function RevenueCyclePanel({ token, caseId, patientId }: Props) {
       if (patientId) params.set('patientId', patientId);
       const [tRes, sRes] = await Promise.all([
         fetch(`/api/revenue?${params}`, { headers: { Authorization: `Bearer ${token}` } }),
-        fetch('/api/revenue/summary', { headers: { Authorization: `Bearer ${token}` } }),
+        fetch(`/api/revenue/summary?${params}`, { headers: { Authorization: `Bearer ${token}` } }),
       ]);
       if (tRes.ok) setTransactions(await tRes.json());
       if (sRes.ok) setSummary(await sRes.json());

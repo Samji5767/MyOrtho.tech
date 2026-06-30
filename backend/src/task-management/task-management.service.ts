@@ -1,4 +1,4 @@
-import { Injectable, Inject, NotFoundException } from '@nestjs/common';
+import { Injectable, Inject, NotFoundException, BadRequestException } from '@nestjs/common';
 import type { Pool } from 'pg';
 import { PG_POOL } from '../database/database.module';
 
@@ -42,6 +42,10 @@ export class TaskManagementService {
   }
 
   async updateTaskStatus(taskId: string, orgId: string, status: string): Promise<ClinicalTask> {
+    const VALID_STATUSES = ['pending', 'in_progress', 'completed', 'cancelled'];
+    if (!VALID_STATUSES.includes(status)) {
+      throw new BadRequestException(`Invalid status. Must be one of: ${VALID_STATUSES.join(', ')}`);
+    }
     const extra = status === 'completed' ? ', completed_at=now()' : '';
     const { rows } = await this.db.query(
       `UPDATE clinical_tasks SET status=$2${extra}, updated_at=now() WHERE id=$1 AND organization_id=$3 RETURNING *`,
@@ -52,7 +56,7 @@ export class TaskManagementService {
   }
 
   async getMyTasks(orgId: string, userId: string): Promise<ClinicalTask[]> {
-    return this.listTasks(orgId, { assignedTo: userId, status: 'open' });
+    return this.listTasks(orgId, { assignedTo: userId, status: 'pending' });
   }
 
   private map(r: Record<string, unknown>): ClinicalTask {

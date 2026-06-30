@@ -1,4 +1,4 @@
-import { Injectable, Inject, NotFoundException } from '@nestjs/common';
+import { Injectable, Inject, NotFoundException, BadRequestException } from '@nestjs/common';
 import type { Pool } from 'pg';
 import { PG_POOL } from '../database/database.module';
 
@@ -35,7 +35,7 @@ export class WorkflowBuilderService {
     name: string; description?: string; triggerEvent: string; steps: WorkflowStep[];
   }): Promise<WorkflowTemplate> {
     if (!VALID_TRIGGERS.includes(dto.triggerEvent)) {
-      throw new NotFoundException(`Invalid trigger. Valid triggers: ${VALID_TRIGGERS.join(', ')}`);
+      throw new BadRequestException(`Invalid trigger. Valid triggers: ${VALID_TRIGGERS.join(', ')}`);
     }
     const { rows } = await this.db.query(
       `INSERT INTO workflow_templates (organization_id, name, description, trigger_event, steps, created_by)
@@ -61,7 +61,7 @@ export class WorkflowBuilderService {
     if (!t[0]) throw new NotFoundException('Active workflow template not found');
 
     const steps = t[0]['steps'] as WorkflowStep[];
-    const result: Record<string, unknown> = { stepsExecuted: steps.length, actions: steps.map(s => s.type) };
+    const result: Record<string, unknown> = { stepsScheduled: steps.length, actions: steps.map(s => s.type) };
 
     const { rows } = await this.db.query(
       `INSERT INTO workflow_executions (organization_id, template_id, trigger_data, status, current_step, result, completed_at)

@@ -26,12 +26,12 @@ export default function ClinicalAlertsPanel({ caseId, token }: Props) {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const r = await fetch(`/api/cds/alerts?caseId=${caseId}&acknowledged=${showAck}`, {
+      const r = await fetch(`/api/cds/alerts?caseId=${caseId}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       if (r.ok) setAlerts(await r.json());
     } finally { setLoading(false); }
-  }, [caseId, token, showAck]);
+  }, [caseId, token]);
 
   useEffect(() => { load(); }, [load]);
 

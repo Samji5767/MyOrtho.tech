@@ -27,7 +27,7 @@ export default function TasksPanel({ caseId, token }: Props) {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const params = new URLSearchParams({ status: 'pending,in_progress' });
+      const params = new URLSearchParams();
       if (caseId) params.set('caseId', caseId);
       const r = await fetch(`/api/tasks?${params}`, { headers: { Authorization: `Bearer ${token}` } });
       if (r.ok) setTasks(await r.json());
@@ -40,11 +40,12 @@ export default function TasksPanel({ caseId, token }: Props) {
     if (!form.title.trim()) return;
     setSaving(true);
     try {
-      await fetch('/api/tasks', {
+      const r = await fetch('/api/tasks', {
         method: 'POST',
         headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({ ...form, caseId: caseId ?? null, dueDate: form.dueDate || null }),
       });
+      if (!r.ok) return;
       setForm({ title: '', description: '', priority: 'normal', dueDate: '' });
       setShowForm(false);
       await load();

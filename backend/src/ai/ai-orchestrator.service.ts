@@ -3,6 +3,7 @@ import type { Pool } from 'pg';
 import { PG_POOL } from '../database/database.module';
 
 const AI_ENGINE_URL = process.env.AI_ENGINE_URL ?? 'http://ai-engine:8000';
+const INTERNAL_API_SECRET = process.env.INTERNAL_API_SECRET ?? '';
 
 /**
  * Thin wrapper used by other modules to trigger segmentation.
@@ -33,7 +34,10 @@ export class AiOrchestratorService {
     try {
       const res = await fetch(`${AI_ENGINE_URL}/ai/segment`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(INTERNAL_API_SECRET ? { 'X-Internal-Token': INTERNAL_API_SECRET } : {}),
+        },
         body: JSON.stringify({ case_id: caseId, scan_id: scanId, file_path: filePath, jaw_type: jawType }),
         signal: AbortSignal.timeout(12_000),
       });

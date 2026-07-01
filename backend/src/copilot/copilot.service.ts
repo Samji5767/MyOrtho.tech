@@ -1,6 +1,19 @@
-import { Injectable, Inject, NotFoundException, Logger } from '@nestjs/common';
+import { Injectable, Inject, Optional, NotFoundException, Logger } from '@nestjs/common';
 import type { Pool } from 'pg';
 import { PG_POOL } from '../database/database.module';
+import { LlmService } from './rag/llm.service';
+import { AgentRouterService } from './rag/agent-router.service';
+import { ContextBuilderService } from './rag/context-builder.service';
+
+export interface StreamEvent {
+  type: 'meta' | 'delta' | 'done' | 'error';
+  agentType?: string;
+  suggestionCount?: number;
+  content?: string;
+  error?: string;
+  messageId?: string;
+  sources?: Array<{ title: string; source: string }>;
+}
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -333,7 +346,12 @@ function buildResponse(
 export class CopilotService {
   private readonly log = new Logger(CopilotService.name);
 
-  constructor(@Inject(PG_POOL) private readonly db: Pool) {}
+  constructor(
+    @Inject(PG_POOL) private readonly db: Pool,
+    @Optional() private readonly llm: LlmService,
+    @Optional() private readonly agentRouter: AgentRouterService,
+    @Optional() private readonly contextBuilder: ContextBuilderService,
+  ) {}
 
   async startConversation(
     caseId: string,
@@ -464,6 +482,158 @@ export class CopilotService {
     this.log.log(`Copilot message: conv ${conversationId} — ${latencyMs}ms, ${persistedSuggestions.length} suggestions`);
 
     return this.rowToMessage(msgRes.rows[0], persistedSuggestions);
+  }
+
+  // ─── Streaming RAG endpoint ──────────────────────────────────────────────
+  // Yields SSE-style events. Falls back to the rule engine if LLM is not configured.
+
+  async *streamMessage(
+    conversationId: string,
+    orgId: string,
+    dto: SendMessageDto,
+  ): AsyncGenerator<StreamEvent> {
+    const startMs = Date.now();
+
+    // Load conversation and verify org ownership
+    const convRes = await this.db.query(
+      `SELECT * FROM copilot_conversations WHERE id=$1 AND organization_id=$2`,
+      [conversationId, orgId],
+    );
+    if (convRes.rowCount === 0) {
+      yield { type: 'error', error: 'Conversation not found' };
+      return;
+    }
+    const conv = convRes.rows[0];
+    const planId = conv['plan_id'] as string | null;
+
+    // Save user message
+    const intent = classifyIntent(dto.content);
+    const module = detectModule(dto.content);
+
+    await this.db.query(
+      `INSERT INTO copilot_messages
+         (conversation_id, organization_id, role, content, intent, referenced_module)
+       VALUES ($1,$2,'user',$3,$4,$5)`,
+      [conversationId, orgId, dto.content, intent, module],
+    );
+
+    // Run proactive suggestion scanners (same as sendMessage)
+    const rawSuggestions: RawSuggestion[] = [];
+    if (planId) {
+      const [prescSugg, iprSugg, simSugg, attSugg, pdlSugg] = await Promise.all([
+        scanPrescriptions(this.db, planId),
+        scanIpr(this.db, planId),
+        scanSimulation(this.db, planId),
+        scanAttachments(this.db, planId),
+        scanPdl(this.db, planId),
+      ]);
+      rawSuggestions.push(...prescSugg, ...iprSugg, ...simSugg, ...attSugg, ...pdlSugg);
+    }
+
+    // Route to specialist agent
+    const agentConfig = this.agentRouter
+      ? this.agentRouter.route(dto.content, module)
+      : { agentType: 'planning' as const, systemPrompt: '' };
+
+    yield {
+      type: 'meta',
+      agentType: agentConfig.agentType,
+      suggestionCount: rawSuggestions.length,
+    };
+
+    let fullResponse = '';
+
+    if (this.llm?.isConfigured() && this.contextBuilder) {
+      // ── RAG + LLM path ──────────────────────────────────────────────────
+      const ctx = await this.contextBuilder.build(
+        conversationId,
+        orgId,
+        dto.content,
+        agentConfig.agentType,
+      );
+
+      // Emit knowledge sources
+      if (ctx.sources.length > 0) {
+        yield {
+          type: 'meta',
+          sources: ctx.sources.map(s => ({ title: s.title, source: s.source })),
+        };
+      }
+
+      const systemPrompt = agentConfig.systemPrompt +
+        (ctx.systemContext ? `\n\n${ctx.systemContext}` : '');
+
+      try {
+        for await (const chunk of this.llm.stream(ctx.history, systemPrompt)) {
+          fullResponse += chunk;
+          yield { type: 'delta', content: chunk };
+        }
+      } catch (err) {
+        this.log.error('LLM stream error', (err as Error).message);
+        // Fall back to rule engine on LLM failure
+        fullResponse = buildResponse(
+          dto.content, intent, module, rawSuggestions,
+          conv['context_snapshot'] as Record<string, unknown>,
+        );
+        yield { type: 'delta', content: fullResponse };
+      }
+    } else {
+      // ── Rule engine fallback ─────────────────────────────────────────────
+      fullResponse = buildResponse(
+        dto.content, intent, module, rawSuggestions,
+        conv['context_snapshot'] as Record<string, unknown>,
+      );
+      yield { type: 'delta', content: fullResponse };
+    }
+
+    // Persist suggestions
+    const persistedSuggestions: CopilotSuggestion[] = [];
+    for (const s of rawSuggestions) {
+      const existing = await this.db.query(
+        `SELECT id FROM copilot_suggestions WHERE plan_id=$1 AND suggestion_type=$2 AND status='open'`,
+        [planId, s.suggestionType],
+      );
+      if (existing.rowCount && existing.rowCount > 0) {
+        await this.db.query(
+          `UPDATE copilot_suggestions SET body=$1, data=$2 WHERE id=$3`,
+          [s.body, JSON.stringify(s.data), existing.rows[0]['id']],
+        );
+        persistedSuggestions.push(await this.getSuggestionRow(existing.rows[0]['id'] as string));
+      } else {
+        const ins = await this.db.query(
+          `INSERT INTO copilot_suggestions
+             (organization_id, case_id, plan_id, conversation_id, suggestion_type,
+              title, body, severity, module, data)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING *`,
+          [
+            orgId, conv['case_id'], planId, conversationId,
+            s.suggestionType, s.title, s.body, s.severity, s.module,
+            JSON.stringify(s.data),
+          ],
+        );
+        persistedSuggestions.push(this.rowToSuggestion(ins.rows[0]));
+      }
+    }
+
+    // Save completed assistant message
+    const latencyMs = Date.now() - startMs;
+    const msgRes = await this.db.query(
+      `INSERT INTO copilot_messages
+         (conversation_id, organization_id, role, content, intent, referenced_module,
+          suggestions, latency_ms)
+       VALUES ($1,$2,'assistant',$3,$4,$5,$6,$7) RETURNING id`,
+      [
+        conversationId, orgId, fullResponse, intent, module,
+        JSON.stringify(persistedSuggestions), latencyMs,
+      ],
+    );
+    await this.db.query(
+      `UPDATE copilot_conversations SET message_count=message_count+2, updated_at=now() WHERE id=$1`,
+      [conversationId],
+    );
+
+    this.log.log(`Copilot stream: conv ${conversationId} — ${latencyMs}ms, agent=${agentConfig.agentType}`);
+    yield { type: 'done', messageId: msgRes.rows[0]['id'] as string };
   }
 
   async getMessages(conversationId: string, orgId: string): Promise<CopilotMessage[]> {

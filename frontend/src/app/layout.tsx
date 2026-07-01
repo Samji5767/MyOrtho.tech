@@ -4,6 +4,7 @@ import "./globals.css";
 import { ThemeProvider } from "@/components/ThemeContext";
 import { AppShell } from "@/components/mobile/AppShell";
 import { AuthProvider } from "@/context/AuthContext";
+import { RuntimeErrorBoundary } from "@/components/RuntimeErrorBoundary";
 
 const manrope = Manrope({ subsets: ["latin"], variable: "--font-sans" });
 
@@ -124,7 +125,11 @@ export default function RootLayout({
 
         <ThemeProvider>
           <AuthProvider>
-            <AppShell>{children}</AppShell>
+            <AppShell>
+              <RuntimeErrorBoundary>
+                {children}
+              </RuntimeErrorBoundary>
+            </AppShell>
           </AuthProvider>
         </ThemeProvider>
       </body>

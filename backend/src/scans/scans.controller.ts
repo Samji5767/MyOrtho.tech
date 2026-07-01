@@ -18,6 +18,8 @@ import { FileInterceptor } from '@nestjs/platform-express';
 import * as fs from 'fs';
 import type { Request, Response } from 'express';
 import { AuthGuard } from '../auth/auth.guard';
+import { PermissionsGuard } from '../auth/permissions.guard';
+import { RequirePermission } from '../auth/require-permission.decorator';
 import { ScansService } from './scans.service';
 
 interface AuthUser {
@@ -35,7 +37,7 @@ function getUser(req: Request): AuthUser {
 }
 
 @Controller('api/cases/:caseId/scans')
-@UseGuards(AuthGuard)
+@UseGuards(AuthGuard, PermissionsGuard)
 export class ScansController {
   constructor(private readonly scansService: ScansService) {}
 
@@ -52,6 +54,7 @@ export class ScansController {
    */
   @Post()
   @HttpCode(HttpStatus.CREATED)
+  @RequirePermission('cases:write')
   @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 500 * 1024 * 1024 } }))
   uploadScan(
     @Req() req: Request,

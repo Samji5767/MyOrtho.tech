@@ -130,7 +130,7 @@ const DEFAULT_MEASUREMENTS: PlanningMeasurement[] = [
   { id: "crowding_l", label: "Lower Crowding",      value: "3.2",  unit: "mm", note: "Estimated" },
 ];
 
-const INITIAL_STATE: CasePlanningState = {
+export const INITIAL_STATE: CasePlanningState = {
   caseId: null,
   movements: {},
   attachments: [
@@ -167,7 +167,7 @@ function emptyMovement(fdi: number): PlanningMovement {
   return { fdi, tx: 0, ty: 0, tz: 0, tip: 0, torque: 0, rotation: 0 };
 }
 
-function reducer(state: CasePlanningState, action: Action): CasePlanningState {
+export function reducer(state: CasePlanningState, action: Action): CasePlanningState {
   switch (action.type) {
     case "SET_CASE_ID":
       return { ...state, caseId: action.caseId };

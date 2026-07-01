@@ -35,6 +35,22 @@ services:
       timeout: 3s
       retries: 5
 
+  # One-shot migration runner: applies every migration in database/migrations/
+  # in numeric order, then exits 0. Backend waits for this to succeed before
+  # starting. Safe to re-run because every migration is idempotent.
+  migrate:
+    image: postgres:15-alpine
+    container_name: myortho-migrate
+    environment:
+      - DATABASE_URL=${DATABASE_URL:-postgresql://myortho_admin:secret_password@database:5432/myortho_tech}
+    volumes:
+      - ./database:/database:ro
+    command: ["sh", "/database/migrate.sh"]
+    depends_on:
+      database:
+        condition: service_healthy
+    restart: "no"
+
   backend:
     build:
       context: ./backend
@@ -64,13 +80,15 @@ services:
       database:
         condition: service_healthy
       redis:
-        condition: service_started
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://localhost:4000/health || exit 1"]
       interval: 15s
       timeout: 5s
       retries: 5
-      start_period: 20s
+      start_period: 30s
 
   frontend:
     build:
@@ -83,7 +101,14 @@ services:
       - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL:-http://localhost:4000}
       - NEXT_PUBLIC_AI_URL=${NEXT_PUBLIC_AI_URL:-http://localhost:8000}
     depends_on:
-      - backend
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3000/ || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
 
   ai-engine:
     build:
@@ -97,6 +122,12 @@ services:
     volumes:
       - shared_storage:/app/storage
       - uploads_data:/app/uploads:ro
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8000/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
 
 volumes:
   postgres_data:

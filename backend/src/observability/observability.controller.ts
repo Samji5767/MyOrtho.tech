@@ -10,7 +10,7 @@ export class ObservabilityController {
   constructor(private readonly observabilityService: ObservabilityService) {}
 
   @Get('metrics')
-  @RequirePermission('admin:read')
+  @RequirePermission('admin:settings')
   @Header('Content-Type', 'text/plain; version=0.0.4; charset=utf-8')
   getMetrics(): string {
     const metrics = this.observabilityService.getLiveSystemMetrics();

@@ -4,6 +4,32 @@
 -- Enable UUID extension
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
+-- ---------------------------------------------------------------------------
+-- Local Docker Postgres compatibility shim for Supabase's auth.uid().
+-- On Supabase the `auth` schema and auth.uid() are provided natively, so the
+-- RLS policies below resolve fine. On a vanilla PostgreSQL instance (e.g. the
+-- local Docker container used for VPS deployment) they do not exist and schema
+-- init would fail. Create a no-op stub ONLY when it is missing, so this file
+-- stays a no-op on real Supabase and runs cleanly on plain Postgres.
+-- ---------------------------------------------------------------------------
+CREATE SCHEMA IF NOT EXISTS auth;
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1
+        FROM pg_proc p
+        JOIN pg_namespace n ON n.oid = p.pronamespace
+        WHERE n.nspname = 'auth' AND p.proname = 'uid'
+    ) THEN
+        EXECUTE $fn$
+            CREATE FUNCTION auth.uid() RETURNS uuid
+            LANGUAGE sql STABLE
+            AS 'SELECT NULLIF(current_setting(''request.jwt.claim.sub'', true), '''')::uuid';
+        $fn$;
+    END IF;
+END
+$$;
+
 -- Define Custom Enum Types
 CREATE TYPE user_role AS ENUM ('enterprise_admin', 'clinic_admin', 'dentist', 'lab_technician', 'operator', 'patient');
 CREATE TYPE case_status AS ENUM (
@@ -777,4 +803,23 @@ CREATE INDEX idx_erp_po_org ON erp_purchase_orders(organization_id);
 CREATE INDEX idx_cs_tickets_org ON cs_tickets(organization_id);
 CREATE INDEX idx_billing_subs_org ON billing_subscriptions(organization_id);
 CREATE INDEX idx_billing_usage_org ON billing_usage_meters(organization_id);
+
+-- =========================================================================
+-- AUTHENTICATION (VPS-native, no Supabase dependency)
+-- =========================================================================
+
+CREATE TABLE IF NOT EXISTS auth_users (
+  id              uuid        PRIMARY KEY DEFAULT uuid_generate_v4(),
+  email           text        UNIQUE NOT NULL,
+  password_hash   text        NOT NULL,
+  full_name       text,
+  role            text        NOT NULL DEFAULT 'orthodontist',
+  organization_id uuid        REFERENCES organizations(id) ON DELETE SET NULL,
+  is_onboarded    boolean     NOT NULL DEFAULT false,
+  created_at      timestamptz DEFAULT now(),
+  updated_at      timestamptz DEFAULT now(),
+  last_login_at   timestamptz
+);
+
+CREATE INDEX IF NOT EXISTS idx_auth_users_email ON auth_users(email);
 

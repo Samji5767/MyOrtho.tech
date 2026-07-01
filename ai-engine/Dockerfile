@@ -2,11 +2,13 @@ FROM python:3.10-slim
 
 WORKDIR /app
 
-# Install system libraries needed for mesh processing or PyTorch
+# Install system libraries needed for mesh processing or PyTorch.
+# openscad is required for trimesh boolean hollowing (aligner shell offset).
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     libgl1 \
     libglib2.0-0 \
+    openscad \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .

@@ -5,13 +5,13 @@ RUN npm install
 COPY . .
 RUN npm run build
 
+# next.config.js uses output: 'export' with distDir: 'next-build', which means
+# the build produces a static site in next-build/ — not a Next.js server app.
+# 'next start' explicitly errors with static exports; serve the files instead.
 FROM node:22-alpine AS runner
 WORKDIR /app
-COPY --from=builder /app/package*.json ./
-COPY --from=builder /app/node_modules ./node_modules
-COPY --from=builder /app/.next ./.next
-COPY --from=builder /app/public ./public
-COPY --from=builder /app/src ./src
+RUN npm install -g serve
+COPY --from=builder /app/next-build ./next-build
 
 EXPOSE 3000
-CMD ["npm", "run", "start"]
+CMD ["serve", "next-build", "-p", "3000", "--no-clipboard"]

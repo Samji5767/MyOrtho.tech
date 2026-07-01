@@ -29,6 +29,7 @@ interface ToothObject {
 
 type GizmoMode = "translate" | "rotate";
 type CrossSectionAxis = "x" | "y" | "z";
+type PlacementType = "gingival" | "mid" | "incisal";
 
 interface AlignerStageRow {
   stage: number;
@@ -57,7 +58,7 @@ const IPR_AMOUNTS: Record<number, number> = {
 
 const UPPER_FDIS = [11, 12, 13, 14, 15, 16, 17, 21, 22, 23, 24, 25, 26, 27];
 const LOWER_FDIS = [41, 42, 43, 44, 45, 46, 47, 31, 32, 33, 34, 35, 36, 37];
-const ATTACHMENT_FDIS = new Set([13, 23, 33, 43]);
+const ATTACHMENT_FDIS = new Set([12, 13, 14, 21, 22, 23, 24, 31, 32, 33, 41, 42, 43]);
 const IPR_FDIS = new Set([11, 12, 21, 22, 31, 41]);
 
 function buildToothGeom(scaleFactor: number): THREE.BufferGeometry {
@@ -142,6 +143,7 @@ function ToothMesh({
   isColliding,
   showAttachments,
   showIPR,
+  placementType,
   clippingPlanes,
   onSelect,
   onMeshMounted,
@@ -152,6 +154,7 @@ function ToothMesh({
   isColliding: boolean;
   showAttachments: boolean;
   showIPR: boolean;
+  placementType: PlacementType;
   clippingPlanes: THREE.Plane[];
   onSelect: (fdi: number, shift: boolean) => void;
   onMeshMounted: (fdi: number, mesh: THREE.Mesh | null) => void;
@@ -198,13 +201,16 @@ function ToothMesh({
           onSelect(tooth.fdi, e.shiftKey);
         }}
       />
-      {/* Attachment block */}
-      {showAttachments && tooth.hasAttachment && (
-        <mesh position={[0, 0.46, 0]}>
-          <boxGeometry args={[0.18, 0.11, 0.10]} />
-          <meshPhysicalMaterial color="#38bdf8" roughness={0.45} metalness={0} />
-        </mesh>
-      )}
+      {/* Attachment block — Y position driven by placement type */}
+      {showAttachments && tooth.hasAttachment && (() => {
+        const attachY = placementType === "gingival" ? -0.16 : placementType === "mid" ? 0.12 : 0.38;
+        return (
+          <mesh position={[0, attachY, 0.04]}>
+            <boxGeometry args={[0.22, 0.12, 0.09]} />
+            <meshPhysicalMaterial color="#5b8dee" roughness={0.3} metalness={0.1} />
+          </mesh>
+        );
+      })()}
       {/* IPR marker disc */}
       {tooth.iprLeft && (
         <mesh position={[0.42, 0, 0]} rotation={[0, 0, Math.PI / 2]}>
@@ -247,6 +253,7 @@ function CADScene({
   gizmoMode,
   showAttachments,
   showIPR,
+  placementType,
   collisionFdis,
   clippingPlanes,
   onSelectTooth,
@@ -257,6 +264,7 @@ function CADScene({
   gizmoMode: GizmoMode;
   showAttachments: boolean;
   showIPR: boolean;
+  placementType: PlacementType;
   collisionFdis: Set<number>;
   clippingPlanes: THREE.Plane[];
   onSelectTooth: (fdi: number, shift: boolean) => void;
@@ -304,6 +312,7 @@ function CADScene({
           isColliding={collisionFdis.has(tooth.fdi)}
           showAttachments={showAttachments}
           showIPR={showIPR}
+          placementType={placementType}
           clippingPlanes={clippingPlanes}
           onSelect={onSelectTooth}
           onMeshMounted={handleMeshMounted}
@@ -380,6 +389,10 @@ export default function CADEngine() {
   const [jawTransparency, setJawTransparency] = useState(0);
   const [alignmentReps, setAlignmentReps] = useState(10);
   const [orthoStageIndex, setOrthoStageIndex] = useState(0);
+  const [placementType, setPlacementType] = useState<PlacementType>("gingival");
+  const [attachmentsExpanded, setAttachmentsExpanded] = useState(true);
+  const [showInitialPositions, setShowInitialPositions] = useState(false);
+  const [showFinalPositions, setShowFinalPositions] = useState(false);
   const [toothOverrides, setToothOverrides] = useState<OverridesMap>(new Map());
   const [biomechanicsWarning, setBiomechanicsWarning] = useState<string | null>(null);
 
@@ -704,6 +717,7 @@ export default function CADEngine() {
                 gizmoMode={gizmoMode}
                 showAttachments={showAttachments}
                 showIPR={showIPR}
+                placementType={placementType}
                 collisionFdis={collisionFdis}
                 clippingPlanes={clippingPlanes}
                 onSelectTooth={handleSelectTooth}
@@ -725,18 +739,116 @@ export default function CADEngine() {
             <Settings2 size={14} className="text-primary" /> Orthodontics Panel
           </h3>
 
-          {/* Visibility */}
+          {/* ── Add Attachments section ───────────────────────────── */}
+          <button
+            type="button"
+            onClick={() => setAttachmentsExpanded(v => !v)}
+            className="mb-2 flex w-full items-center gap-1.5 text-[11px] font-bold text-[color:var(--foreground)] hover:text-[color:var(--primary)] transition-colors"
+          >
+            {attachmentsExpanded ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
+            Add Attachments
+          </button>
+
+          {attachmentsExpanded && (
+            <div className="mb-3 space-y-3 rounded-xl border border-[color:var(--border)] bg-[color-mix(in_srgb,var(--card)_60%,transparent)] p-3">
+              <p className="text-[10px] leading-relaxed text-[color:var(--muted-foreground)]">
+                Use Right mouse button on model to place attachments.
+              </p>
+
+              {/* Visibility sub-section */}
+              <div>
+                <p className="mb-1.5 text-[10px] font-bold uppercase tracking-widest text-[color:var(--muted-foreground)]">
+                  Visibility
+                </p>
+                <div className="grid grid-cols-2 gap-x-3 gap-y-1.5">
+                  <label className="flex cursor-pointer items-center gap-1.5 text-[11px] text-[color:var(--foreground)]">
+                    <input
+                      type="checkbox"
+                      checked={showInitialPositions}
+                      onChange={e => setShowInitialPositions(e.target.checked)}
+                      className="h-3.5 w-3.5 accent-[color:var(--primary)] cursor-pointer"
+                    />
+                    Initial Teeth Positions
+                  </label>
+                  <label className="flex cursor-pointer items-center gap-1.5 text-[11px] text-[color:var(--foreground)]">
+                    <input
+                      type="checkbox"
+                      checked={showFinalPositions}
+                      onChange={e => setShowFinalPositions(e.target.checked)}
+                      className="h-3.5 w-3.5 accent-[color:var(--primary)] cursor-pointer"
+                    />
+                    Final Teeth Positions
+                  </label>
+                </div>
+              </div>
+
+              {/* Attachments sub-section */}
+              <div>
+                <p className="mb-2 text-[10px] font-bold uppercase tracking-widest text-[color:var(--muted-foreground)]">
+                  Attachments
+                </p>
+                <Button
+                  variant="primary"
+                  size="sm"
+                  className="mb-2 w-full justify-center"
+                  onClick={() => setShowAttachments(true)}
+                >
+                  Automatic Placement
+                </Button>
+                {/* Placement type radios */}
+                <div className="mb-2 flex flex-col gap-1.5">
+                  {([
+                    { value: "gingival", label: "Gingival Placement" },
+                    { value: "mid",      label: "Mid Placement" },
+                    { value: "incisal",  label: "Incisal Placement" },
+                  ] as const).map(({ value, label }) => (
+                    <label key={value} className="flex cursor-pointer items-center gap-2 text-[11px] text-[color:var(--foreground)]">
+                      <span
+                        className={`flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-full border-2 transition-colors ${placementType === value ? "border-[color:var(--primary)] bg-[color:var(--primary)]" : "border-[color:var(--border)]"}`}
+                        onClick={() => setPlacementType(value)}
+                      >
+                        {placementType === value && (
+                          <span className="h-1.5 w-1.5 rounded-full bg-white" />
+                        )}
+                      </span>
+                      <span onClick={() => setPlacementType(value)} className="cursor-pointer">{label}</span>
+                    </label>
+                  ))}
+                </div>
+                <div className="flex flex-col gap-1.5">
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    className="w-full justify-center"
+                    onClick={() => setShowAttachments(false)}
+                  >
+                    Remove All
+                  </Button>
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    className="w-full justify-center"
+                    onClick={() => setShowAttachments(true)}
+                  >
+                    Replace All
+                  </Button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ── Visibility ────────────────────────────────────────── */}
           <p className="mb-2 text-[10px] font-bold uppercase tracking-widest text-[color:var(--muted-foreground)]">
             <Eye size={10} className="inline mr-1" />Visibility
           </p>
           <div className="mb-3 grid grid-cols-2 gap-x-3 gap-y-1.5">
             {([
-              { label: "IPR",                    state: showIPR,        set: setShowIPR },
-              { label: "Diastema",               state: showDiastema,   set: setShowDiastema },
-              { label: "Collisions",             state: showCollision,  set: setShowCollision },
-              { label: "Closeness",              state: showCloseness,  set: setShowCloseness },
-              { label: "Teeth Widths",           state: showTeethWidths, set: setShowTeethWidths },
-              { label: "Attachments",            state: showAttachments, set: setShowAttachments },
+              { label: "IPR",          state: showIPR,          set: setShowIPR },
+              { label: "Diastema",     state: showDiastema,     set: setShowDiastema },
+              { label: "Collisions",   state: showCollision,    set: setShowCollision },
+              { label: "Closeness",    state: showCloseness,    set: setShowCloseness },
+              { label: "Teeth Widths", state: showTeethWidths,  set: setShowTeethWidths },
+              { label: "Attachments",  state: showAttachments,  set: setShowAttachments },
             ] as const).map(({ label, state, set }) => (
               <label key={label} className="flex cursor-pointer items-center gap-1.5 text-[11px] text-[color:var(--foreground)]">
                 <input
@@ -750,7 +862,7 @@ export default function CADEngine() {
             ))}
           </div>
 
-          {/* Transparency */}
+          {/* ── Transparency ──────────────────────────────────────── */}
           <p className="mb-1.5 text-[10px] font-bold uppercase tracking-widest text-[color:var(--muted-foreground)]">
             Model Jaw Transparency
           </p>
@@ -760,10 +872,7 @@ export default function CADEngine() {
               <span className="font-semibold tabular-nums">{jawTransparency.toFixed(2)}</span>
             </div>
             <input
-              type="range"
-              min="0"
-              max="1"
-              step="0.01"
+              type="range" min="0" max="1" step="0.01"
               value={jawTransparency}
               onChange={e => setJawTransparency(parseFloat(e.target.value))}
               className="w-full accent-[color:var(--primary)]"
@@ -773,23 +882,17 @@ export default function CADEngine() {
             </div>
           </div>
 
-          {/* Teeth Setup */}
+          {/* ── Teeth Setup ───────────────────────────────────────── */}
           <p className="mb-2 text-[10px] font-bold uppercase tracking-widest text-[color:var(--muted-foreground)]">
             Teeth Setup
           </p>
           <div className="mb-3 flex flex-col gap-1.5">
-            <Button variant="primary" size="sm" className="w-full justify-center">
-              Automatic
-            </Button>
-            <Button variant="secondary" size="sm" className="w-full justify-center">
-              Snap To Curve
-            </Button>
-            <Button variant="secondary" size="sm" className="w-full justify-center">
-              Align Both Jaws Automatically
-            </Button>
+            <Button variant="primary" size="sm" className="w-full justify-center">Automatic</Button>
+            <Button variant="secondary" size="sm" className="w-full justify-center">Snap To Curve</Button>
+            <Button variant="secondary" size="sm" className="w-full justify-center">Align Both Jaws Automatically</Button>
           </div>
 
-          {/* Advanced */}
+          {/* ── Advanced ──────────────────────────────────────────── */}
           <p className="mb-1.5 text-[10px] font-bold uppercase tracking-widest text-[color:var(--muted-foreground)]">
             Advanced
           </p>
@@ -799,10 +902,7 @@ export default function CADEngine() {
               <span className="font-semibold tabular-nums">{alignmentReps}</span>
             </div>
             <input
-              type="range"
-              min="1"
-              max="20"
-              step="1"
+              type="range" min="1" max="20" step="1"
               value={alignmentReps}
               onChange={e => setAlignmentReps(parseInt(e.target.value, 10))}
               className="w-full accent-[color:var(--primary)]"
@@ -812,7 +912,7 @@ export default function CADEngine() {
             </div>
           </div>
 
-          {/* Navigation */}
+          {/* ── Navigation ────────────────────────────────────────── */}
           <div className="flex items-center gap-1.5">
             <button
               type="button"
@@ -825,10 +925,10 @@ export default function CADEngine() {
             <Button
               variant="primary"
               size="sm"
-              className="flex-1 justify-center"
+              className="flex-1 justify-center text-[10px]"
               onClick={() => setOrthoStageIndex(v => v + 1)}
             >
-              Continue to Edit Steps
+              Continue to Export and Report Generation
             </Button>
             <button
               type="button"

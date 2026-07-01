@@ -540,6 +540,42 @@ export default function SettingsPage() {
         </Suspense>
       </Card>
 
+      {/* WORKSPACE SETUP */}
+      <Card className="ios-card p-5 sm:p-6">
+        <p className="text-xs font-bold uppercase tracking-[0.18em] text-[color:var(--primary)] mb-4">Workspace Setup</p>
+        <div className="space-y-3">
+          <div className="flex items-center justify-between rounded-2xl border border-[color:var(--border)] bg-[color:var(--background)] px-4 py-3">
+            <div>
+              <p className="text-sm font-semibold text-[color:var(--foreground)]">Restart onboarding</p>
+              <p className="mt-0.5 text-xs text-[color:var(--muted-foreground)]">
+                Re-run the workspace configuration wizard to update your role, organization, and workflow preferences.
+              </p>
+            </div>
+            <Link
+              href="/onboarding"
+              className="ml-4 shrink-0 inline-flex h-9 items-center gap-1.5 rounded-xl border border-[color:var(--border)] px-3 text-xs font-semibold text-[color:var(--foreground)] transition-colors hover:border-[color:var(--primary)] hover:text-[color:var(--primary)] active:scale-95"
+            >
+              <RotateCcw size={13} /> Restart
+            </Link>
+          </div>
+          <div className="flex items-center justify-between rounded-2xl border border-[color:var(--border)] bg-[color:var(--background)] px-4 py-3">
+            <div>
+              <p className="text-sm font-semibold text-[color:var(--foreground)]">Reset demo data</p>
+              <p className="mt-0.5 text-xs text-[color:var(--muted-foreground)]">
+                Clear all representative sample cases and events. Your real patient data is unaffected.
+              </p>
+            </div>
+            <button
+              type="button"
+              className="ml-4 shrink-0 inline-flex h-9 items-center gap-1.5 rounded-xl border border-[color:var(--border)] px-3 text-xs font-semibold text-[color:var(--muted-foreground)] transition-colors hover:border-red-400 hover:text-red-500 active:scale-95"
+              onClick={() => { try { localStorage.removeItem("mo_demo_loaded"); } catch {} window.location.reload(); }}
+            >
+              Clear demo
+            </button>
+          </div>
+        </div>
+      </Card>
+
       {/* VERSION FOOTER */}
       <div className="flex flex-col items-center gap-1 py-4 text-center">
         <div className="flex items-center gap-2">

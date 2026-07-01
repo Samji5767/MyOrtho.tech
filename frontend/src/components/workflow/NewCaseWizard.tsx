@@ -7,6 +7,7 @@ import { Button, Card, StatusBadge } from "@/components/DesignSystem";
 import { fetchPatients, createPatient, type PatientListItem } from "@/lib/api/patients";
 import { createCase } from "@/lib/api/cases";
 import { uploadScan } from "@/lib/api/scans";
+import { useToast } from "@/components/ToastContext";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -249,6 +250,7 @@ function ScanFileRow({
 
 export default function NewCaseWizard() {
   const router = useRouter();
+  const { toast } = useToast();
   const [step, setStep] = useState(0);
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
@@ -345,9 +347,12 @@ export default function NewCaseWizard() {
       await Promise.all(uploads);
 
       // 4 — Navigate to new case
+      toast({ title: "Case created", description: "Opening your new case workspace.", type: "success" });
       router.push(`/cases/${caseRecord.id}`);
     } catch (err) {
-      setSubmitError(err instanceof Error ? err.message : "Submission failed — check your backend connection.");
+      const msg = err instanceof Error ? err.message : "Submission failed — check your backend connection.";
+      setSubmitError(msg);
+      toast({ title: "Submission failed", description: msg, type: "error" });
       setSubmitting(false);
     }
   }

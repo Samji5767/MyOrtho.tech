@@ -5,6 +5,7 @@ import { ThemeProvider } from "@/components/ThemeContext";
 import { AppShell } from "@/components/mobile/AppShell";
 import { AuthProvider } from "@/context/AuthContext";
 import { RuntimeErrorBoundary } from "@/components/RuntimeErrorBoundary";
+import { ToastProvider, Toaster } from "@/components/ToastContext";
 
 const manrope = Manrope({ subsets: ["latin"], variable: "--font-sans" });
 
@@ -125,11 +126,14 @@ export default function RootLayout({
 
         <ThemeProvider>
           <AuthProvider>
-            <AppShell>
-              <RuntimeErrorBoundary>
-                {children}
-              </RuntimeErrorBoundary>
-            </AppShell>
+            <ToastProvider>
+              <AppShell>
+                <RuntimeErrorBoundary>
+                  {children}
+                </RuntimeErrorBoundary>
+              </AppShell>
+              <Toaster />
+            </ToastProvider>
           </AuthProvider>
         </ThemeProvider>
       </body>

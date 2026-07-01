@@ -211,9 +211,39 @@ function ViewerTab({ caseData }: { caseData: CaseDetail | null }) {
 
 function CadTab({ caseData }: { caseData: CaseDetail | null }) {
   if (!caseData) return <NoCaseBanner />;
+
+  function saveSnapshot() {
+    const canvas = document.querySelector<HTMLCanvasElement>("canvas");
+    if (!canvas) return;
+    try {
+      const url = canvas.toDataURL("image/png");
+      const a = document.createElement("a");
+      const patientName = `${caseData!.patient.firstName}-${caseData!.patient.lastName}`.replace(/\s+/g, "-");
+      a.download = `myortho-snapshot-${patientName}.png`;
+      a.href = url;
+      a.click();
+    } catch {}
+  }
+
   return (
     <div className="space-y-4">
       <AIDisclaimer />
+      {/* Back to case + snapshot row */}
+      <div className="flex flex-wrap items-center gap-2">
+        <Link
+          href={`/cases/${caseData.id}`}
+          className="inline-flex h-8 items-center gap-1.5 rounded-xl border border-[color:var(--border)] px-3 text-xs font-semibold text-[color:var(--foreground)] transition-colors hover:border-[color:var(--primary)] hover:text-[color:var(--primary)]"
+        >
+          ← Back to Case
+        </Link>
+        <button
+          type="button"
+          onClick={saveSnapshot}
+          className="inline-flex h-8 items-center gap-1.5 rounded-xl border border-[color:var(--border)] px-3 text-xs font-semibold text-[color:var(--foreground)] transition-colors hover:border-[color:var(--primary)] hover:text-[color:var(--primary)]"
+        >
+          <CheckCircle2 size={12} /> Save Snapshot
+        </button>
+      </div>
       <CADCapabilityMatrix />
       <CADEngine />
     </div>

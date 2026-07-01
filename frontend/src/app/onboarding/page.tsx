@@ -189,8 +189,15 @@ export default function OnboardingPage() {
         }),
       });
     } catch {}
+    // Persist completion locally so the skip-gate works even without a live session
+    try { localStorage.setItem("mo_onboarding_done", "1"); } catch {}
     await refresh();
     router.replace(getPrimaryWorkspace(resolvedRole));
+  }
+
+  function skip() {
+    try { localStorage.setItem("mo_onboarding_done", "1"); } catch {}
+    router.replace("/");
   }
 
   const canAdvance = (() => {
@@ -575,6 +582,19 @@ export default function OnboardingPage() {
             )}
           </div>
         </div>
+
+        {/* Skip link — visible on all steps except success */}
+        {step < TOTAL_STEPS - 1 && (
+          <div className="mt-5 text-center">
+            <button
+              type="button"
+              onClick={skip}
+              className="text-xs text-[color:var(--muted-foreground)] hover:text-[color:var(--foreground)] transition-colors underline-offset-2 hover:underline"
+            >
+              Skip for now — set up later in Settings
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );

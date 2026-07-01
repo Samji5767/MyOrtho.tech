@@ -94,7 +94,7 @@ export class WorkflowService {
       committed = true;
     } catch (err) {
       if (!committed) {
-        await client.query('ROLLBACK').catch(() => {});
+        try { await client.query('ROLLBACK'); } catch { /* ignore rollback errors */ }
       }
       throw err;
     } finally {

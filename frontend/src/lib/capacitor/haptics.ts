@@ -17,7 +17,6 @@ export async function haptic(style: HapticStyle = "medium"): Promise<void> {
       const { Haptics, ImpactStyle, NotificationType } =
         // webpackIgnore keeps Next.js from bundling this Capacitor plugin.
         // It only runs inside the native Capacitor shell where the plugin IS available.
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         (await import(/* webpackIgnore: true */ "@capacitor/haptics" as any)) as {
           Haptics: {
             impact: (opts: { style: string }) => Promise<void>;

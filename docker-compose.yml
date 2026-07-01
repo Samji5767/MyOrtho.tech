@@ -9,7 +9,7 @@ services:
     container_name: myortho-db
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-myortho_admin}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-secret_password}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-CHANGE_ME_BEFORE_PRODUCTION}
       POSTGRES_DB: ${POSTGRES_DB:-myortho_tech}
     # Not exposed to the host: only reachable on the internal compose network.
     expose:
@@ -42,7 +42,7 @@ services:
     image: postgres:15-alpine
     container_name: myortho-migrate
     environment:
-      - DATABASE_URL=${DATABASE_URL:-postgresql://myortho_admin:secret_password@database:5432/myortho_tech}
+      - DATABASE_URL=${DATABASE_URL:-postgresql://myortho_admin:CHANGE_ME_BEFORE_PRODUCTION@database:5432/myortho_tech}
     volumes:
       - ./database:/database:ro
     command: ["sh", "/database/migrate.sh"]
@@ -61,7 +61,7 @@ services:
     environment:
       - PORT=4000
       - NODE_ENV=${NODE_ENV:-development}
-      - DATABASE_URL=${DATABASE_URL:-postgresql://myortho_admin:secret_password@database:5432/myortho_tech}
+      - DATABASE_URL=${DATABASE_URL:-postgresql://myortho_admin:CHANGE_ME_BEFORE_PRODUCTION@database:5432/myortho_tech}
       - REDIS_URL=${REDIS_URL:-redis://redis:6379}
       - SUPABASE_URL=${SUPABASE_URL:-https://placeholder.supabase.co}
       - SUPABASE_ANON_KEY=${SUPABASE_ANON_KEY:-placeholder}

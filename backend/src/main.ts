@@ -22,6 +22,13 @@ function assertRequiredEnv(): void {
       'PHI encryption will be degraded. Set before production launch.',
     );
   }
+  const dbUrl = process.env.DATABASE_URL ?? '';
+  if (dbUrl.includes('CHANGE_ME_BEFORE_PRODUCTION')) {
+    console.warn(
+      '[WARN] DATABASE_URL contains the default development password. ' +
+      'Set a strong POSTGRES_PASSWORD in your .env file before deploying to production.',
+    );
+  }
 }
 
 async function bootstrap() {

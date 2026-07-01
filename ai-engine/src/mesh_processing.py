@@ -1,5 +1,4 @@
 import trimesh
-import numpy as np
 import logging
 
 logger = logging.getLogger("ai-engine.mesh_processing")

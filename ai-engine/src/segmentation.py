@@ -1,6 +1,5 @@
 import numpy as np
 import torch
-import torch.nn as nn
 from monai.networks.nets import UNet
 import logging
 import trimesh
@@ -60,8 +59,8 @@ class OrthoSegmentationEngine:
             logger.info("Running PyTorch forward propagation...")
             # Forward propagation
             outputs = self.model(inputs)
-            # Take argmax across channel dim to get labels (0-32)
-            labels = torch.argmax(outputs, dim=1).cpu().numpy()[0]
+            # Take argmax across channel dim to get labels (0-32); reserved for future segmentation mesh extraction
+            _labels = torch.argmax(outputs, dim=1).cpu().numpy()[0]  # noqa: F841
 
         # Extract confidence statistics and separate crowns
         logger.info("Extracting individual tooth objects and gingiva boundaries...")
@@ -79,4 +78,3 @@ class OrthoSegmentationEngine:
             "teeth_confidence_scores": confidence_scores,
             "message": "FDI landmark separation successful"
         }
-Definition: "Teeth segmentation network structure using PyTorch and MONAI."

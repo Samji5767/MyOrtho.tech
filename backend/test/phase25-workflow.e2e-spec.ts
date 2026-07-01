@@ -65,8 +65,10 @@ const SETUP_ROW: Record<string, unknown> = {
   case_id: CASE_ID,
   treatment_goal_id: null,
   name: 'Setup 2026-07-01',
-  tooth_positions: JSON.stringify([]),
-  initial_positions: JSON.stringify([]),
+  // pg driver parses JSONB columns into JS objects/arrays automatically;
+  // mock must reflect that behaviour (not JSON strings)
+  tooth_positions: [],
+  initial_positions: [],
   status: 'draft',
   version: 1,
   created_by: USER_ID,
@@ -244,8 +246,8 @@ describe('Phase 25 — Full Workflow Integration', () => {
 
     const setupRowWithTooth = {
       ...SETUP_ROW,
-      tooth_positions: JSON.stringify(initialPositions),
-      initial_positions: JSON.stringify(initialPositions),
+      tooth_positions: initialPositions,    // pg returns parsed JSONB, not strings
+      initial_positions: initialPositions,
     };
 
     beforeEach(() => {

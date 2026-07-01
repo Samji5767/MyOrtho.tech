@@ -1,7 +1,7 @@
 "use client";
 
 import React, { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Canvas, ThreeEvent, useThree } from "@react-three/fiber";
+import { Canvas, ThreeEvent, useFrame, useThree } from "@react-three/fiber";
 import {
   ContactShadows, Html, OrbitControls,
   PerspectiveCamera, TransformControls,
@@ -9,8 +9,9 @@ import {
 import * as THREE from "three";
 import {
   AlertTriangle, BarChart3, CheckCircle2, ChevronDown, ChevronRight, ChevronUp,
-  ChevronsLeft, ChevronsRight, Download, Eye, Layers, ListOrdered, Move3d,
-  RotateCcw, Ruler, Scissors, Settings2, Target, Zap,
+  ChevronsLeft, ChevronsRight, Download, Eye, EyeOff, Layers, ListOrdered,
+  Lock, LockOpen, Move3d, RotateCcw, Ruler, Scissors, Settings2,
+  Sliders, SunMedium, Target, Zap,
 } from "lucide-react";
 import { Button, Card, DataRow, StatusBadge } from "@/components/DesignSystem";
 import { validateMovements } from "@/lib/biomechanics/vectorMath";
@@ -31,7 +32,42 @@ interface ToothObject {
 type GizmoMode = "translate" | "rotate";
 type CrossSectionAxis = "x" | "y" | "z";
 type PlacementType = "gingival" | "mid" | "incisal";
-type ViewMode = "buccal" | "occlusal";
+type ViewMode = "buccal" | "occlusal"; // kept for panel toggle compat
+type LightingPreset = "clinical" | "studio" | "bright" | "dark" | "lab" | "xray";
+type CameraPresetName = "buccal" | "lingual" | "left" | "right" | "anterior" | "posterior" | "upperOcclusal" | "lowerOcclusal" | "45left" | "45right";
+type EnamelMode = "standard" | "translucent" | "xray";
+type AttachmentShape = "rectangular" | "ellipsoid" | "beveled";
+
+interface LightConfig {
+  ambient: number;
+  key: { pos: [number,number,number]; intensity: number };
+  fill: { pos: [number,number,number]; intensity: number };
+  rim: { pos: [number,number,number]; intensity: number };
+  exposure: number;
+  toneMapping: THREE.ToneMapping;
+}
+const LIGHTING_PRESETS: Record<LightingPreset, LightConfig> = {
+  clinical: { ambient:0.65, key:{pos:[2,10,6],  intensity:2.2}, fill:{pos:[-5,4,4],  intensity:0.8}, rim:{pos:[0,-3,-6],  intensity:0.25}, exposure:1.05, toneMapping:THREE.ACESFilmicToneMapping },
+  studio:   { ambient:0.50, key:{pos:[6,10,4],  intensity:2.6}, fill:{pos:[-8,5,2],  intensity:1.0}, rim:{pos:[-2,-2,-8], intensity:0.40}, exposure:1.10, toneMapping:THREE.ACESFilmicToneMapping },
+  bright:   { ambient:1.10, key:{pos:[0,14,4],  intensity:3.2}, fill:{pos:[-5,8,4],  intensity:1.4}, rim:{pos:[0,-2,-4],  intensity:0.60}, exposure:1.25, toneMapping:THREE.ReinhardToneMapping },
+  dark:     { ambient:0.18, key:{pos:[3,8,4],   intensity:1.6}, fill:{pos:[-3,2,-4], intensity:0.25},rim:{pos:[0,-2,-6],  intensity:0.10}, exposure:0.85, toneMapping:THREE.ACESFilmicToneMapping },
+  lab:      { ambient:0.72, key:{pos:[0,14,2],  intensity:2.4}, fill:{pos:[-8,6,0],  intensity:0.75},rim:{pos:[8,3,-4],   intensity:0.50}, exposure:1.00, toneMapping:THREE.LinearToneMapping },
+  xray:     { ambient:0.12, key:{pos:[0,8,0],   intensity:0.8}, fill:{pos:[0,-4,0],  intensity:0.40},rim:{pos:[0,0,-8],   intensity:0.25}, exposure:0.90, toneMapping:THREE.ACESFilmicToneMapping },
+};
+
+interface CameraConfig { position:[number,number,number]; up:[number,number,number]; fov:number; label:string; shortcut?:string }
+const CAMERA_PRESETS: Record<CameraPresetName, CameraConfig> = {
+  buccal:        { position:[0, 0.2, 10],    up:[0,1,0],   fov:36, label:"Buccal",      shortcut:"B" },
+  lingual:       { position:[0, 0.2,-10],    up:[0,1,0],   fov:36, label:"Lingual",     shortcut:"N" },
+  left:          { position:[-10,0.2,0],     up:[0,1,0],   fov:36, label:"Left",        shortcut:"[" },
+  right:         { position:[10, 0.2,0],     up:[0,1,0],   fov:36, label:"Right",       shortcut:"]" },
+  anterior:      { position:[0, 0, 9],       up:[0,1,0],   fov:36, label:"Anterior" },
+  posterior:     { position:[0, 0,-9],       up:[0,1,0],   fov:36, label:"Posterior" },
+  upperOcclusal: { position:[0, 10, 0.4],    up:[0,0,-1],  fov:40, label:"Upper Occ.",  shortcut:"U" },
+  lowerOcclusal: { position:[0,-10, 0.4],    up:[0,0, 1],  fov:40, label:"Lower Occ.",  shortcut:"I" },
+  "45left":      { position:[-6.5,2.5,7.5],  up:[0,1,0],   fov:36, label:"45° Left" },
+  "45right":     { position:[6.5, 2.5,7.5],  up:[0,1,0],   fov:36, label:"45° Right" },
+};
 
 interface AlignerStageRow {
   stage: number;
@@ -145,9 +181,13 @@ function ToothMesh({
   isSelected,
   isGroupSelected,
   isColliding,
+  isHidden,
+  isLocked,
   showAttachments,
   showIPR,
   placementType,
+  attachmentShape,
+  enamelMode,
   jawOpacity,
   clippingPlanes,
   onSelect,
@@ -157,10 +197,14 @@ function ToothMesh({
   isSelected: boolean;
   isGroupSelected: boolean;
   isColliding: boolean;
+  isHidden: boolean;
+  isLocked: boolean;
   showAttachments: boolean;
   showIPR: boolean;
   placementType: PlacementType;
-  jawOpacity: number; // 0 = fully visible, 1 = fully transparent
+  attachmentShape: AttachmentShape;
+  enamelMode: EnamelMode;
+  jawOpacity: number;
   clippingPlanes: THREE.Plane[];
   onSelect: (fdi: number, shift: boolean) => void;
   onMeshMounted: (fdi: number, mesh: THREE.Mesh | null) => void;
@@ -173,17 +217,36 @@ function ToothMesh({
     return () => onMeshMounted(tooth.fdi, null);
   });
 
-  const mat = useMemo(() => new THREE.MeshPhysicalMaterial({
-    color: isColliding ? "#ef4444" : isSelected ? "#2dd4bf" : isGroupSelected ? "#818cf8" : tooth.color,
-    roughness: 0.38,
-    metalness: 0.02,
-    clearcoat: 0.3,
-    clearcoatRoughness: 0.4,
-    emissive: isColliding ? "#7f1d1d" : isSelected ? "#0f766e" : isGroupSelected ? "#312e81" : "#000000",
-    emissiveIntensity: isSelected || isGroupSelected || isColliding ? 0.12 : 0,
-    transparent: jawOpacity > 0,
-    opacity: Math.max(0, 1 - jawOpacity),
-  }), [isSelected, isGroupSelected, isColliding, tooth.color, jawOpacity]);
+  const mat = useMemo(() => {
+    const baseOpacity = isHidden ? 0.12 : Math.max(0, 1 - jawOpacity);
+    const isTransparent = isHidden || jawOpacity > 0 || enamelMode !== "standard";
+    if (enamelMode === "xray") {
+      return new THREE.MeshPhysicalMaterial({
+        color: "#88ccff", emissive: "#002266", emissiveIntensity: 0.7,
+        roughness: 0.1, metalness: 0, transparent: true, opacity: 0.28,
+        wireframe: false, side: THREE.DoubleSide,
+      });
+    }
+    const color = isHidden ? "#5a7080"
+      : isColliding ? "#ef4444"
+      : isSelected ? "#2dd4bf"
+      : isGroupSelected ? "#818cf8"
+      : tooth.color;
+    return new THREE.MeshPhysicalMaterial({
+      color,
+      roughness: 0.32,
+      metalness: 0.0,
+      clearcoat: enamelMode === "translucent" ? 0.6 : 0.35,
+      clearcoatRoughness: 0.25,
+      transmission: enamelMode === "translucent" ? 0.18 : 0,
+      thickness: enamelMode === "translucent" ? 0.6 : 0,
+      ior: 1.52,
+      emissive: isColliding ? "#7f1d1d" : isSelected ? "#0f766e" : isGroupSelected ? "#312e81" : "#000000",
+      emissiveIntensity: (isSelected || isGroupSelected || isColliding) && !isHidden ? 0.12 : 0,
+      transparent: isTransparent,
+      opacity: baseOpacity,
+    });
+  }, [isSelected, isGroupSelected, isColliding, isHidden, enamelMode, tooth.color, jawOpacity]);
 
   // Dispose material when dependencies change or component unmounts to prevent VRAM leaks
   useEffect(() => {
@@ -202,20 +265,36 @@ function ToothMesh({
         ref={meshRef}
         geometry={tooth.geometry}
         material={mat}
-        castShadow
+        castShadow={!isHidden}
         receiveShadow
         onPointerDown={(e: ThreeEvent<PointerEvent>) => {
+          if (isLocked || isHidden) return;
           e.stopPropagation();
           onSelect(tooth.fdi, e.shiftKey);
         }}
       />
-      {/* Attachment block — Y position driven by placement type */}
-      {showAttachments && tooth.hasAttachment && (() => {
+      {isLocked && !isHidden && (
+        <Html position={[0, 0.65, 0]} center distanceFactor={8}>
+          <span className="pointer-events-none rounded bg-amber-500/90 px-1 py-0.5 text-[9px] font-bold text-white shadow">🔒</span>
+        </Html>
+      )}
+      {/* Attachment — shape and position driven by props */}
+      {showAttachments && tooth.hasAttachment && !isHidden && (() => {
         const attachY = placementType === "gingival" ? -0.16 : placementType === "mid" ? 0.12 : 0.38;
+        const color = enamelMode === "xray" ? "#66aaff" : "#5b8dee";
+        const opacity = enamelMode === "xray" ? 0.5 : 1;
         return (
           <mesh position={[0, attachY, 0.04]}>
-            <boxGeometry args={[0.22, 0.12, 0.09]} />
-            <meshPhysicalMaterial color="#5b8dee" roughness={0.3} metalness={0.1} />
+            {attachmentShape === "ellipsoid"
+              ? <sphereGeometry args={[0.1, 12, 8]} />
+              : attachmentShape === "beveled"
+              ? <cylinderGeometry args={[0.09, 0.11, 0.11, 6]} />
+              : <boxGeometry args={[0.22, 0.12, 0.09]} />
+            }
+            <meshPhysicalMaterial
+              color={color} roughness={0.28} metalness={0.08}
+              transparent={enamelMode === "xray"} opacity={opacity}
+            />
           </mesh>
         );
       })()}
@@ -262,11 +341,17 @@ function CADScene({
   showAttachments,
   showIPR,
   placementType,
-  viewMode,
+  attachmentShape,
+  enamelMode,
+  cameraPreset,
+  lightingPreset,
   showMaxilla,
   showMandible,
   maxillaTransparency,
   mandibleTransparency,
+  hiddenFdis,
+  lockedFdis,
+  isolationMode,
   collisionFdis,
   clippingPlanes,
   onSelectTooth,
@@ -278,11 +363,17 @@ function CADScene({
   showAttachments: boolean;
   showIPR: boolean;
   placementType: PlacementType;
-  viewMode: ViewMode;
+  attachmentShape: AttachmentShape;
+  enamelMode: EnamelMode;
+  cameraPreset: CameraPresetName;
+  lightingPreset: LightingPreset;
   showMaxilla: boolean;
   showMandible: boolean;
   maxillaTransparency: number;
   mandibleTransparency: number;
+  hiddenFdis: Set<number>;
+  lockedFdis: Set<number>;
+  isolationMode: boolean;
   collisionFdis: Set<number>;
   clippingPlanes: THREE.Plane[];
   onSelectTooth: (fdi: number, shift: boolean) => void;
@@ -291,7 +382,39 @@ function CADScene({
   const meshRegistry = useRef<Map<number, THREE.Mesh>>(new Map());
   const [activeMesh, setActiveMesh] = useState<THREE.Mesh | null>(null);
   const [isDragging, setIsDragging] = useState(false);
-  const { gl } = useThree();
+  const { gl, camera } = useThree();
+  const orbitRef = useRef<any>(null);
+
+  // ── Animated camera transitions ───────────────────────────────────────────
+  const prevPreset = useRef<CameraPresetName | null>(null);
+  const camAnimating = useRef(false);
+  const camTarget = useMemo(() => new THREE.Vector3(...CAMERA_PRESETS[cameraPreset].position), [cameraPreset]);
+  const camUpTarget = useMemo(() => new THREE.Vector3(...CAMERA_PRESETS[cameraPreset].up), [cameraPreset]);
+
+  useEffect(() => {
+    if (prevPreset.current !== null && prevPreset.current !== cameraPreset) {
+      camAnimating.current = true;
+    }
+    prevPreset.current = cameraPreset;
+  }, [cameraPreset]);
+
+  useFrame(() => {
+    if (!camAnimating.current) return;
+    camera.position.lerp(camTarget, 0.09);
+    camera.up.lerp(camUpTarget, 0.09);
+    if (orbitRef.current) orbitRef.current.update();
+    if (camera.position.distanceTo(camTarget) < 0.05) {
+      camera.position.copy(camTarget);
+      camera.up.copy(camUpTarget);
+      camAnimating.current = false;
+    }
+  });
+
+  // ── Lighting preset sync ──────────────────────────────────────────────────
+  const lc = LIGHTING_PRESETS[lightingPreset];
+  useEffect(() => {
+    gl.toneMappingExposure = lc.exposure;
+  }, [gl, lc]);
 
   const primaryFdi = selectedFdis.size === 1 ? Array.from(selectedFdis)[0] : null;
 
@@ -300,7 +423,6 @@ function CADScene({
     else meshRegistry.current.delete(fdi);
   }, []);
 
-  // Update activeMesh when selection changes
   useEffect(() => {
     if (primaryFdi != null) {
       const m = meshRegistry.current.get(primaryFdi);
@@ -310,32 +432,49 @@ function CADScene({
     }
   }, [primaryFdi]);
 
-  // Keep localClippingEnabled for any clipping planes
   useEffect(() => {
     gl.localClippingEnabled = true;
   }, [gl]);
 
-  const visibleTeeth = teeth.filter(t =>
-    t.isMaxilla ? showMaxilla : showMandible
-  );
+  // In isolation mode, only selected teeth are fully visible; rest are ghost
+  const visibleTeeth = teeth.filter(t => t.isMaxilla ? showMaxilla : showMandible);
+
+  const gingivaColor = lightingPreset === "xray" ? "#112244" : lightingPreset === "dark" ? "#7a2d3a" : "#c8556a";
+  const gingivaMandColor = lightingPreset === "xray" ? "#0d1e3a" : lightingPreset === "dark" ? "#6a2030" : "#b84e62";
 
   return (
     <>
-      {viewMode === "buccal"
-        ? <PerspectiveCamera makeDefault fov={36} position={[0, 0.2, 10]} up={[0, 1, 0]} />
-        : <PerspectiveCamera makeDefault fov={40} position={[0, 9, 0.4]} up={[0, 0, -1]} />
-      }
-      <ambientLight intensity={0.55} />
-      <directionalLight position={[4, 8, 6]} intensity={2.1} castShadow shadow-mapSize={[2048, 2048]} />
+      {/* Initial camera position — animated to by useFrame on preset change */}
+      <PerspectiveCamera makeDefault fov={CAMERA_PRESETS[cameraPreset].fov} position={[0, 0.2, 10]} up={[0, 1, 0]} />
+
+      {/* Lighting — driven by preset */}
+      <ambientLight intensity={lc.ambient} />
+      <directionalLight
+        position={lc.key.pos}
+        intensity={lc.key.intensity}
+        castShadow
+        shadow-mapSize={[2048, 2048]}
+        shadow-bias={-0.0005}
+      />
+      <directionalLight position={lc.fill.pos} intensity={lc.fill.intensity} />
+      <directionalLight position={lc.rim.pos} intensity={lc.rim.intensity} />
+
+      {/* X-Ray mode: volumetric sphere for backlit effect */}
+      {lightingPreset === "xray" && (
+        <mesh>
+          <sphereGeometry args={[25, 16, 8]} />
+          <meshBasicMaterial color="#001133" side={THREE.BackSide} />
+        </mesh>
+      )}
 
       {/* Maxilla gingival base */}
       {showMaxilla && (
         <mesh position={[0, 0.18, -0.7]} rotation={[Math.PI / 2, 0, 0]}>
           <torusGeometry args={[2.05, 0.52, 10, 28, Math.PI]} />
           <meshPhysicalMaterial
-            color="#c8556a" roughness={0.68} metalness={0}
-            transparent={maxillaTransparency > 0}
-            opacity={Math.max(0, 1 - maxillaTransparency)}
+            color={gingivaColor} roughness={0.68} metalness={0}
+            transparent={maxillaTransparency > 0 || lightingPreset === "xray"}
+            opacity={lightingPreset === "xray" ? 0.15 : Math.max(0, 1 - maxillaTransparency)}
           />
         </mesh>
       )}
@@ -345,31 +484,40 @@ function CADScene({
         <mesh position={[0, -0.18, 0.7]} rotation={[-Math.PI / 2, Math.PI, 0]}>
           <torusGeometry args={[1.95, 0.50, 10, 28, Math.PI]} />
           <meshPhysicalMaterial
-            color="#b84e62" roughness={0.68} metalness={0}
-            transparent={mandibleTransparency > 0}
-            opacity={Math.max(0, 1 - mandibleTransparency)}
+            color={gingivaMandColor} roughness={0.68} metalness={0}
+            transparent={mandibleTransparency > 0 || lightingPreset === "xray"}
+            opacity={lightingPreset === "xray" ? 0.15 : Math.max(0, 1 - mandibleTransparency)}
           />
         </mesh>
       )}
 
-      {visibleTeeth.map(tooth => (
-        <ToothMesh
-          key={tooth.fdi}
-          tooth={tooth}
-          isSelected={selectedFdis.size === 1 && selectedFdis.has(tooth.fdi)}
-          isGroupSelected={selectedFdis.size > 1 && selectedFdis.has(tooth.fdi)}
-          isColliding={collisionFdis.has(tooth.fdi)}
-          showAttachments={showAttachments}
-          showIPR={showIPR}
-          placementType={placementType}
-          jawOpacity={tooth.isMaxilla ? maxillaTransparency : mandibleTransparency}
-          clippingPlanes={clippingPlanes}
-          onSelect={onSelectTooth}
-          onMeshMounted={handleMeshMounted}
-        />
-      ))}
+      {visibleTeeth.map(tooth => {
+        const isHidden = hiddenFdis.has(tooth.fdi) ||
+          (isolationMode && selectedFdis.size > 0 && !selectedFdis.has(tooth.fdi));
+        const isLocked = lockedFdis.has(tooth.fdi);
+        return (
+          <ToothMesh
+            key={tooth.fdi}
+            tooth={tooth}
+            isSelected={selectedFdis.size === 1 && selectedFdis.has(tooth.fdi)}
+            isGroupSelected={selectedFdis.size > 1 && selectedFdis.has(tooth.fdi)}
+            isColliding={collisionFdis.has(tooth.fdi)}
+            isHidden={isHidden}
+            isLocked={isLocked}
+            showAttachments={showAttachments}
+            showIPR={showIPR}
+            placementType={placementType}
+            attachmentShape={attachmentShape}
+            enamelMode={enamelMode}
+            jawOpacity={tooth.isMaxilla ? maxillaTransparency : mandibleTransparency}
+            clippingPlanes={clippingPlanes}
+            onSelect={onSelectTooth}
+            onMeshMounted={handleMeshMounted}
+          />
+        );
+      })}
 
-      {activeMesh && (
+      {activeMesh && !lockedFdis.has(primaryFdi ?? -1) && (
         <TransformControls
           object={activeMesh}
           mode={gizmoMode}
@@ -387,12 +535,12 @@ function CADScene({
         />
       )}
 
-      <ContactShadows opacity={0.28} scale={14} blur={2.4} far={4} position={[0, -1.1, 0]} />
-      {/* Offline lighting: no CDN HDRI fetch */}
-      <ambientLight intensity={0.6} />
-      <directionalLight position={[6, 10, 8]} intensity={1.8} castShadow />
-      <directionalLight position={[-4, 4, -6]} intensity={0.5} />
+      <ContactShadows
+        opacity={lightingPreset === "dark" ? 0.45 : lightingPreset === "xray" ? 0 : 0.28}
+        scale={14} blur={2.4} far={4} position={[0, -1.1, 0]}
+      />
       <OrbitControls
+        ref={orbitRef}
         makeDefault
         enabled={!isDragging}
         enableDamping
@@ -402,7 +550,13 @@ function CADScene({
         minPolarAngle={0.2}
         maxPolarAngle={Math.PI - 0.2}
       />
-      <gridHelper args={[14, 28, "#486072", "#253342"]} position={[0, -1.1, 0]} />
+      <gridHelper
+        args={[14, 28,
+          lightingPreset === "xray" ? "#112244" : "#486072",
+          lightingPreset === "xray" ? "#08102a" : "#253342"
+        ]}
+        position={[0, -1.1, 0]}
+      />
     </>
   );
 }
@@ -442,8 +596,16 @@ export default function CADEngine() {
   const [attachmentsExpanded, setAttachmentsExpanded] = useState(true);
   const [showInitialPositions, setShowInitialPositions] = useState(false);
   const [showFinalPositions, setShowFinalPositions] = useState(false);
+  // Enterprise rendering & camera
+  const [cameraPreset, setCameraPreset] = useState<CameraPresetName>("buccal");
+  const [lightingPreset, setLightingPreset] = useState<LightingPreset>("clinical");
+  const [enamelMode, setEnamelMode] = useState<EnamelMode>("standard");
+  const [attachmentShape, setAttachmentShape] = useState<AttachmentShape>("rectangular");
+  // Tooth visibility/lock
+  const [hiddenFdis, setHiddenFdis] = useState<Set<number>>(new Set());
+  const [lockedFdis, setLockedFdis] = useState<Set<number>>(new Set());
+  const [isolationMode, setIsolationMode] = useState(false);
   // Jaw controls
-  const [viewMode, setViewMode] = useState<ViewMode>("buccal");
   const [showMaxilla, setShowMaxilla] = useState(true);
   const [showMandible, setShowMandible] = useState(true);
   const [maxillaTransparency, setMaxillaTransparency] = useState(0);
@@ -500,6 +662,13 @@ export default function CADEngine() {
       if (!ctrl && e.key === 't') setGizmoMode('translate');
       if (!ctrl && e.key === 'r') setGizmoMode('rotate');
       if (!ctrl && e.key === 'Escape') setSelectedFdis(new Set());
+      // Camera preset shortcuts
+      if (!ctrl && e.key === 'b') setCameraPreset('buccal');
+      if (!ctrl && e.key === 'n') setCameraPreset('lingual');
+      if (!ctrl && e.key === '[') setCameraPreset('left');
+      if (!ctrl && e.key === ']') setCameraPreset('right');
+      if (!ctrl && e.key === 'u') setCameraPreset('upperOcclusal');
+      if (!ctrl && e.key === 'i') setCameraPreset('lowerOcclusal');
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
@@ -588,6 +757,24 @@ export default function CADEngine() {
       return next;
     });
   }, [teeth, pushHistory]);
+
+  const handleHideSelected = useCallback(() => {
+    if (selectedFdis.size === 0) return;
+    setHiddenFdis(prev => {
+      const next = new Set(prev);
+      selectedFdis.forEach(fdi => next.has(fdi) ? next.delete(fdi) : next.add(fdi));
+      return next;
+    });
+  }, [selectedFdis]);
+
+  const handleLockSelected = useCallback(() => {
+    if (selectedFdis.size === 0) return;
+    setLockedFdis(prev => {
+      const next = new Set(prev);
+      selectedFdis.forEach(fdi => next.has(fdi) ? next.delete(fdi) : next.add(fdi));
+      return next;
+    });
+  }, [selectedFdis]);
 
   const primaryFdi = selectedFdis.size === 1 ? Array.from(selectedFdis)[0] : null;
   const selectedTooth = teeth.find(t => t.fdi === primaryFdi) ?? null;
@@ -732,23 +919,113 @@ export default function CADEngine() {
             <Button variant="secondary" size="sm" onClick={exportCADPackage}>
               <Download size={14} /> Export
             </Button>
-            <div className="flex gap-1 rounded-xl border border-[color:var(--border)] p-0.5">
-              <button
-                type="button"
-                onClick={() => setViewMode("buccal")}
-                className={`rounded-lg px-2.5 py-1 text-xs font-semibold transition-colors ${viewMode === "buccal" ? "bg-[color:var(--primary)] text-[color:var(--primary-foreground)]" : "text-[color:var(--muted-foreground)]"}`}
-              >
-                Buccal
-              </button>
-              <button
-                type="button"
-                onClick={() => setViewMode("occlusal")}
-                className={`rounded-lg px-2.5 py-1 text-xs font-semibold transition-colors ${viewMode === "occlusal" ? "bg-[color:var(--primary)] text-[color:var(--primary-foreground)]" : "text-[color:var(--muted-foreground)]"}`}
-              >
-                Occlusal
-              </button>
-            </div>
           </div>
+        </div>
+
+        {/* ── Enterprise toolbar row 2: camera presets + lighting + enamel + tooth ops ── */}
+        <div className="flex flex-wrap items-center gap-2 border-b border-border px-4 py-2">
+          {/* Camera preset bar */}
+          <div className="flex gap-0.5 rounded-xl border border-[color:var(--border)] p-0.5">
+            {(Object.entries(CAMERA_PRESETS) as [CameraPresetName, CameraConfig][]).map(([key, cfg]) => (
+              <button
+                key={key}
+                type="button"
+                title={cfg.shortcut ? `${cfg.label} (${cfg.shortcut})` : cfg.label}
+                onClick={() => setCameraPreset(key)}
+                className={`rounded-lg px-2 py-1 text-[10px] font-semibold transition-colors ${cameraPreset === key ? "bg-[color:var(--primary)] text-[color:var(--primary-foreground)]" : "text-[color:var(--muted-foreground)] hover:text-[color:var(--foreground)]"}`}
+              >
+                {cfg.label}
+              </button>
+            ))}
+          </div>
+
+          <div className="h-5 w-px bg-border" />
+
+          {/* Lighting preset */}
+          <div className="flex items-center gap-1.5">
+            <SunMedium size={13} className="text-muted-foreground" />
+            <select
+              value={lightingPreset}
+              onChange={e => setLightingPreset(e.target.value as LightingPreset)}
+              className="h-7 rounded-lg border border-[color:var(--border)] bg-[color:var(--card)] px-2 text-[11px] text-[color:var(--foreground)] focus:border-[color:var(--primary)] focus:outline-none"
+            >
+              {(["clinical", "studio", "bright", "dark", "lab", "xray"] as LightingPreset[]).map(p => (
+                <option key={p} value={p} className="capitalize">{p.charAt(0).toUpperCase() + p.slice(1)}</option>
+              ))}
+            </select>
+          </div>
+
+          <div className="h-5 w-px bg-border" />
+
+          {/* Enamel mode */}
+          <div className="flex gap-0.5 rounded-xl border border-[color:var(--border)] p-0.5">
+            {(["standard", "translucent", "xray"] as EnamelMode[]).map(m => (
+              <button
+                key={m}
+                type="button"
+                onClick={() => setEnamelMode(m)}
+                className={`rounded-lg px-2 py-1 text-[10px] font-semibold capitalize transition-colors ${enamelMode === m ? "bg-[color:var(--primary)] text-[color:var(--primary-foreground)]" : "text-[color:var(--muted-foreground)] hover:text-[color:var(--foreground)]"}`}
+              >
+                {m}
+              </button>
+            ))}
+          </div>
+
+          <div className="h-5 w-px bg-border" />
+
+          {/* Attachment shape */}
+          <div className="flex gap-0.5 rounded-xl border border-[color:var(--border)] p-0.5">
+            {(["rectangular", "ellipsoid", "beveled"] as AttachmentShape[]).map(s => (
+              <button
+                key={s}
+                type="button"
+                onClick={() => setAttachmentShape(s)}
+                className={`rounded-lg px-2 py-1 text-[10px] font-semibold capitalize transition-colors ${attachmentShape === s ? "bg-[color:var(--primary)] text-[color:var(--primary-foreground)]" : "text-[color:var(--muted-foreground)] hover:text-[color:var(--foreground)]"}`}
+              >
+                {s}
+              </button>
+            ))}
+          </div>
+
+          <div className="h-5 w-px bg-border" />
+
+          {/* Hide / Lock / Isolate */}
+          <Button
+            variant={selectedFdis.size > 0 && Array.from(selectedFdis).some(f => hiddenFdis.has(f)) ? "primary" : "secondary"}
+            size="sm"
+            onClick={handleHideSelected}
+            disabled={selectedFdis.size === 0}
+            title="Toggle hide selected teeth (ghost)"
+          >
+            <EyeOff size={13} /> Hide
+          </Button>
+          <Button
+            variant={selectedFdis.size > 0 && Array.from(selectedFdis).some(f => lockedFdis.has(f)) ? "primary" : "secondary"}
+            size="sm"
+            onClick={handleLockSelected}
+            disabled={selectedFdis.size === 0}
+            title="Toggle lock selected teeth (no gizmo)"
+          >
+            <Lock size={13} /> Lock
+          </Button>
+          <Button
+            variant={isolationMode ? "primary" : "secondary"}
+            size="sm"
+            onClick={() => setIsolationMode(v => !v)}
+            title="Isolate: show only selected teeth"
+          >
+            <Sliders size={13} /> Isolate
+          </Button>
+          {(hiddenFdis.size > 0 || lockedFdis.size > 0 || isolationMode) && (
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => { setHiddenFdis(new Set()); setLockedFdis(new Set()); setIsolationMode(false); }}
+              title="Clear all hide/lock/isolate"
+            >
+              <LockOpen size={13} /> Clear
+            </Button>
+          )}
         </div>
 
         {/* Biomechanics warning */}
@@ -789,11 +1066,17 @@ export default function CADEngine() {
                 showAttachments={showAttachments}
                 showIPR={showIPR}
                 placementType={placementType}
-                viewMode={viewMode}
+                attachmentShape={attachmentShape}
+                enamelMode={enamelMode}
+                cameraPreset={cameraPreset}
+                lightingPreset={lightingPreset}
                 showMaxilla={showMaxilla}
                 showMandible={showMandible}
                 maxillaTransparency={maxillaTransparency}
                 mandibleTransparency={mandibleTransparency}
+                hiddenFdis={hiddenFdis}
+                lockedFdis={lockedFdis}
+                isolationMode={isolationMode}
                 collisionFdis={collisionFdis}
                 clippingPlanes={clippingPlanes}
                 onSelectTooth={handleSelectTooth}
@@ -991,16 +1274,20 @@ export default function CADEngine() {
                 className="w-full accent-[color:var(--primary)] disabled:opacity-40"
               />
             </div>
-            {/* View toggle shortcut */}
+            {/* Quick view toggle */}
             <div className="flex gap-1 rounded-xl border border-[color:var(--border)] p-0.5">
-              {(["buccal", "occlusal"] as ViewMode[]).map(v => (
+              {([
+                { key: "buccal" as CameraPresetName, label: "Buccal" },
+                { key: "upperOcclusal" as CameraPresetName, label: "Upper Occ." },
+                { key: "lowerOcclusal" as CameraPresetName, label: "Lower Occ." },
+              ]).map(({ key, label }) => (
                 <button
-                  key={v}
+                  key={key}
                   type="button"
-                  onClick={() => setViewMode(v)}
-                  className={`flex-1 rounded-lg py-1 text-[10px] font-semibold capitalize transition-colors ${viewMode === v ? "bg-[color:var(--primary)] text-[color:var(--primary-foreground)]" : "text-[color:var(--muted-foreground)]"}`}
+                  onClick={() => setCameraPreset(key)}
+                  className={`flex-1 rounded-lg py-1 text-[10px] font-semibold transition-colors ${cameraPreset === key ? "bg-[color:var(--primary)] text-[color:var(--primary-foreground)]" : "text-[color:var(--muted-foreground)]"}`}
                 >
-                  {v}
+                  {label}
                 </button>
               ))}
             </div>

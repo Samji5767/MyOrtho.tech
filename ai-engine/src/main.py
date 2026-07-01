@@ -2,8 +2,10 @@ from fastapi import FastAPI, HTTPException, BackgroundTasks
 from pydantic import BaseModel
 import logging
 import uuid
+import json
+import os
 from datetime import datetime, timezone
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 import numpy as np
 import torch
 from src.segmentation import OrthoSegmentationEngine
@@ -25,9 +27,47 @@ mesh_processor = MeshProcessor()
 landmark_detector = DentalLandmarkDetector()
 root_predictor = RootPredictorEngine()
 
-# In-memory job store: job_id → status dict.
-# Jobs are lost on restart; use a persistent store (Redis/DB) for production.
-job_store: Dict[str, Dict[str, Any]] = {}
+# ── Job Store: Redis-backed with in-memory fallback ───────────────────────────
+
+_redis_client: Optional[Any] = None
+_memory_fallback: Dict[str, Dict[str, Any]] = {}
+JOB_TTL_SECONDS = 86400 * 7  # 7 days
+
+def _init_redis() -> Optional[Any]:
+    redis_url = os.getenv("REDIS_URL", "redis://redis:6379")
+    try:
+        import redis as redis_lib  # type: ignore
+        client = redis_lib.Redis.from_url(redis_url, socket_connect_timeout=2, socket_timeout=2, decode_responses=True)
+        client.ping()
+        logger.info(f"AI engine connected to Redis at {redis_url}")
+        return client
+    except Exception as exc:
+        logger.warning(f"Redis unavailable ({exc}); falling back to in-memory job store")
+        return None
+
+def _job_set(job_id: str, data: Dict[str, Any]) -> None:
+    if _redis_client:
+        try:
+            _redis_client.setex(f"mo:job:{job_id}", JOB_TTL_SECONDS, json.dumps(data))
+            return
+        except Exception:
+            pass
+    _memory_fallback[job_id] = data
+
+def _job_get(job_id: str) -> Optional[Dict[str, Any]]:
+    if _redis_client:
+        try:
+            raw = _redis_client.get(f"mo:job:{job_id}")
+            if raw:
+                return json.loads(raw)
+        except Exception:
+            pass
+    return _memory_fallback.get(job_id)
+
+@app.on_event("startup")
+async def startup():
+    global _redis_client
+    _redis_client = _init_redis()
 
 class SegmentationRequest(BaseModel):
     case_id: str
@@ -57,12 +97,14 @@ class AutoStageRequest(BaseModel):
     max_step_mm: float = 0.25
 
 def run_segmentation_task(job_id: str, req: SegmentationRequest):
-    job_store[job_id]["status"] = "processing"
-    job_store[job_id]["started_at"] = datetime.now(timezone.utc).isoformat()
+    existing = _job_get(job_id) or {}
+    existing["status"] = "processing"
+    existing["started_at"] = datetime.now(timezone.utc).isoformat()
+    _job_set(job_id, existing)
     logger.info(f"Running tooth segmentation on scan {req.scan_id} for case {req.case_id} (job {job_id})")
     try:
         results = segmentation_engine.segment_mesh(req.file_path, req.jaw_type)
-        job_store[job_id] = {
+        _job_set(job_id, {
             "status": "completed",
             "case_id": req.case_id,
             "scan_id": req.scan_id,
@@ -72,16 +114,16 @@ def run_segmentation_task(job_id: str, req: SegmentationRequest):
             "segmented_mesh_path": results.get("segmented_mesh_path"),
             "completed_at": datetime.now(timezone.utc).isoformat(),
             "disclaimer": "Segmentation is a workflow tool only. Not clinically validated.",
-        }
+        })
         logger.info(f"Segmentation complete for job {job_id}. Missing teeth: {results.get('missing_teeth', [])}")
     except Exception as e:
-        job_store[job_id] = {
+        _job_set(job_id, {
             "status": "failed",
             "case_id": req.case_id,
             "scan_id": req.scan_id,
             "error": str(e),
             "completed_at": datetime.now(timezone.utc).isoformat(),
-        }
+        })
         logger.error(f"Segmentation job {job_id} failed: {str(e)}")
 
 @app.get("/health")
@@ -105,12 +147,12 @@ async def ready():
 @app.post("/ai/segment")
 async def trigger_segmentation(req: SegmentationRequest, background_tasks: BackgroundTasks):
     job_id = str(uuid.uuid4())
-    job_store[job_id] = {
+    _job_set(job_id, {
         "status": "queued",
         "case_id": req.case_id,
         "scan_id": req.scan_id,
         "queued_at": datetime.now(timezone.utc).isoformat(),
-    }
+    })
     background_tasks.add_task(run_segmentation_task, job_id, req)
     return {
         "job_id": job_id,
@@ -121,11 +163,11 @@ async def trigger_segmentation(req: SegmentationRequest, background_tasks: Backg
 
 @app.get("/ai/jobs/{job_id}")
 async def get_job_status(job_id: str):
-    job = job_store.get(job_id)
+    job = _job_get(job_id)
     if not job:
         raise HTTPException(
             status_code=404,
-            detail=f"Job '{job_id}' not found. Jobs are stored in memory and lost on restart."
+            detail=f"Job '{job_id}' not found. Jobs expire after 7 days."
         )
     return {"job_id": job_id, **job}
 

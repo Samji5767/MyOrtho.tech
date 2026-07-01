@@ -102,7 +102,16 @@ export class WorkflowService {
 
   async getHistory(caseId: string) {
     const { rows } = await this.pool.query(
-      `SELECT we.*, au.full_name AS actor_name, au.email AS actor_email
+      `SELECT
+         we.id,
+         we.from_status   AS "fromStatus",
+         we.to_status     AS "toStatus",
+         we.actor_id      AS "actorId",
+         we.actor_role    AS "actorRole",
+         we.notes,
+         we.created_at    AS "createdAt",
+         au.full_name     AS "actorName",
+         au.email         AS "actorEmail"
        FROM workflow_events we
        LEFT JOIN auth_users au ON au.id = we.actor_id
        WHERE we.case_id = $1

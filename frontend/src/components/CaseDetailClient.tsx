@@ -416,6 +416,27 @@ export default function CaseDetailClient({ id }: { id: string }) {
     history: [{ id: "h1", timestamp: "—", actor: "—", actorRole: "—", action: "Case opened", toStatus: "draft" as CaseStatus }],
   };
 
+  // Resolve real resource IDs from live API data; fall back to profile stubs for demo mode.
+  const setupId    = liveData?.linkedResources?.setupId      ?? undefined;
+  const scanId     = liveData?.linkedResources?.latestScanId ?? profile.scanId ?? undefined;
+  const planId     = liveData?.linkedResources?.planId       ?? profile.planId ?? undefined;
+
+  // Derive workflow state from live data when available
+  const workflowStatus = (liveData?.status as CaseStatus | undefined) ?? profile.workflowStatus;
+  const workflowHistory: WorkflowEvent[] = liveData?.workflowHistory?.map(e => ({
+    id:        e.id,
+    timestamp: e.createdAt,
+    actor:     e.actorName ?? '—',
+    actorRole: e.actorRole ?? '—',
+    action:    e.notes ?? `→ ${e.toStatus}`,
+    fromStatus: e.fromStatus as CaseStatus | undefined,
+    toStatus:   e.toStatus as CaseStatus,
+  })) ?? profile.history;
+
+  const patientName = liveData
+    ? `${liveData.patient.firstName} ${liveData.patient.lastName}`
+    : profile.patient;
+
   return (
     <section className="animate-page-enter mx-auto w-full max-w-4xl pb-[calc(var(--tab-bar-height)+var(--sa-bottom)+1.5rem)]">
       {/* Sticky header */}
@@ -432,9 +453,7 @@ export default function CaseDetailClient({ id }: { id: string }) {
             {profile.initials}
           </span>
           <div className="min-w-0 flex-1">
-            <p className="truncate text-sm font-bold text-[color:var(--foreground)]">
-              {liveData ? `${liveData.patient.firstName} ${liveData.patient.lastName}` : profile.patient}
-            </p>
+            <p className="truncate text-sm font-bold text-[color:var(--foreground)]">{patientName}</p>
             <div className="flex items-center gap-2">
               <span className="font-mono text-xs text-[color:var(--muted-foreground)]">{liveData?.id ?? id}</span>
               {dataSource === 'loading' && <StatusBadge tone="neutral">Loading…</StatusBadge>}
@@ -444,22 +463,25 @@ export default function CaseDetailClient({ id }: { id: string }) {
           </div>
         </div>
 
-        <div className="mt-3 flex gap-1">
-          {TABS.map(t => (
-            <button
-              key={t.key}
-              type="button"
-              onClick={() => setTab(t.key)}
-              className={[
-                "flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-semibold transition-all active:scale-95",
-                tab === t.key
-                  ? "bg-[color:var(--primary)] text-[color:var(--primary-foreground)]"
-                  : "border border-[color:var(--border)] bg-[color:var(--card)] text-[color:var(--muted-foreground)] hover:text-[color:var(--foreground)]",
-              ].join(" ")}
-            >
-              {t.icon} {t.label}
-            </button>
-          ))}
+        {/* Horizontally scrollable tab strip */}
+        <div className="mt-3 -mx-4 sm:-mx-5 overflow-x-auto px-4 sm:px-5 scrollbar-none">
+          <div className="flex gap-1 w-max">
+            {TABS.map(t => (
+              <button
+                key={t.key}
+                type="button"
+                onClick={() => setTab(t.key)}
+                className={[
+                  "flex shrink-0 items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-semibold transition-all active:scale-95",
+                  tab === t.key
+                    ? "bg-[color:var(--primary)] text-[color:var(--primary-foreground)]"
+                    : "border border-[color:var(--border)] bg-[color:var(--card)] text-[color:var(--muted-foreground)] hover:text-[color:var(--foreground)]",
+                ].join(" ")}
+              >
+                {t.icon} {t.label}
+              </button>
+            ))}
+          </div>
         </div>
       </div>
 
@@ -468,10 +490,10 @@ export default function CaseDetailClient({ id }: { id: string }) {
         {tab === "workflow" && (
           <ClinicalWorkflow
             caseId={id}
-            caseName={`${profile.patient} — ${profile.malocclusionClass}`}
-            initialStatus={profile.workflowStatus}
-            initialHistory={profile.history}
-            currentActor="Dr. Demo"
+            caseName={`${patientName} — ${liveData?.malocclusionClass ?? profile.malocclusionClass}`}
+            initialStatus={workflowStatus}
+            initialHistory={workflowHistory}
+            currentActor={liveData?.assignedTo?.name ?? "Dr. Demo"}
             currentActorRole="Clinical Director"
           />
         )}
@@ -485,12 +507,12 @@ export default function CaseDetailClient({ id }: { id: string }) {
         {tab === "photos"    && <PatientPhotosPanel caseId={id} />}
         {tab === "surgical"  && <SurgicalPlanningPanel caseId={id} />}
         {tab === "movements"  && <ToothTransformPanel caseId={id} />}
-        {tab === "processing"        && <ScanProcessingPanel caseId={id} scanId={profile.scanId ?? ''} />}
-        {tab === "tx-monitoring"    && <TreatmentMonitoringPanel caseId={id} planId={profile.planId ?? ''} />}
-        {tab === "cbct"             && <CbctFusionPanel caseId={id} stlScanId={profile.scanId ?? ''} />}
+        {tab === "processing"        && <ScanProcessingPanel caseId={id} scanId={scanId ?? ''} />}
+        {tab === "tx-monitoring"    && <TreatmentMonitoringPanel caseId={id} planId={planId ?? ''} />}
+        {tab === "cbct"             && <CbctFusionPanel caseId={id} stlScanId={scanId ?? ''} />}
         {tab === "consents"         && <ConsentFormsPanel caseId={id} />}
         {tab === "appointments"     && <AppointmentsPanel caseId={id} />}
-        {tab === "reports"          && <ClinicalReportsPanel caseId={id} planId={profile.planId} />}
+        {tab === "reports"          && <ClinicalReportsPanel caseId={id} planId={planId} />}
         {tab === "lab-orders"       && <LabOrdersPanel caseId={id} />}
         {tab === "referrals"        && <ReferralsPanel caseId={id} />}
         {tab === "insurance"        && <InsurancePanel caseId={id} />}
@@ -502,20 +524,20 @@ export default function CaseDetailClient({ id }: { id: string }) {
         {tab === "documents"        && <DocumentsPanel caseId={id} token="" />}
         {tab === "education"        && <PatientEducationPanel caseId={id} token="" />}
         {tab === "occlusion"        && <OcclusionPanel caseId={id} token="" />}
-        {tab === "radiology"        && <RadiologyPanel patientId={id} caseId={id} token="" />}
-        {tab === "audit"            && <AuditTrail caseId={id} isLive={false} />}
+        {tab === "radiology"        && <RadiologyPanel patientId={liveData?.patient.id ?? id} caseId={id} token="" />}
+        {tab === "audit"            && <AuditTrail caseId={id} isLive={dataSource === 'api'} />}
         {tab === "pipeline"         && <TreatmentPipelinePanel caseId={id} token="" />}
-        {tab === "scan-validation"  && <ScanValidationPanel caseId={id} uploadId={undefined} token="" />}
-        {tab === "segmentation"     && <ToothSegmentationPanel uploadId="" token="" />}
-        {tab === "clinical-deep"    && <ClinicalAnalysisDeepPanel caseId={id} uploadId={undefined} token="" />}
+        {tab === "scan-validation"  && <ScanValidationPanel caseId={id} uploadId={scanId} token="" />}
+        {tab === "segmentation"     && <ToothSegmentationPanel uploadId={scanId ?? ""} token="" />}
+        {tab === "clinical-deep"    && <ClinicalAnalysisDeepPanel caseId={id} uploadId={scanId} token="" />}
         {tab === "tx-goals"         && <TreatmentGoalsPanel caseId={id} token="" />}
         {tab === "cad-studio"       && <CADWorkspacePanel caseId={id} token="" />}
-        {tab === "biomechanics"     && <BiomechanicsPanel setupId={undefined} token="" />}
-        {tab === "ai-assistant"     && <AIClinicalAssistantPanel setupId={undefined} token="" />}
-        {tab === "stages"           && <TreatmentStagesPanel setupId={undefined} token="" />}
-        {tab === "qa-report"        && <QAReportPanel setupId={undefined} token="" />}
-        {tab === "aligner-preview"  && <AlignerPreviewPanel setupId={undefined} token="" />}
-        {tab === "manufacturing"    && <ManufacturingPackagePanel setupId={undefined} caseId={id} token="" />}
+        {tab === "biomechanics"     && <BiomechanicsPanel setupId={setupId} token="" />}
+        {tab === "ai-assistant"     && <AIClinicalAssistantPanel setupId={setupId} token="" />}
+        {tab === "stages"           && <TreatmentStagesPanel setupId={setupId} token="" />}
+        {tab === "qa-report"        && <QAReportPanel setupId={setupId} token="" />}
+        {tab === "aligner-preview"  && <AlignerPreviewPanel setupId={setupId} token="" />}
+        {tab === "manufacturing"    && <ManufacturingPackagePanel setupId={setupId} caseId={id} token="" />}
       </div>
     </section>
   );

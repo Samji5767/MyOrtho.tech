@@ -23,13 +23,15 @@ interface ToothObject {
   initPosition: THREE.Vector3;
   initRotation: THREE.Euler;
   hasAttachment: boolean;
-  iprLeft: boolean;    // IPR between this tooth and the one mesially
+  iprLeft: boolean;
   color: string;
+  isMaxilla: boolean; // true = upper arch (maxilla), false = lower (mandible)
 }
 
 type GizmoMode = "translate" | "rotate";
 type CrossSectionAxis = "x" | "y" | "z";
 type PlacementType = "gingival" | "mid" | "incisal";
+type ViewMode = "buccal" | "occlusal";
 
 interface AlignerStageRow {
   stage: number;
@@ -87,6 +89,7 @@ function buildTeethObjects(): ToothObject[] {
       hasAttachment: ATTACHMENT_FDIS.has(fdi),
       iprLeft: IPR_FDIS.has(fdi),
       color: "#d1d5db",
+      isMaxilla: true,
     });
   });
 
@@ -107,6 +110,7 @@ function buildTeethObjects(): ToothObject[] {
       hasAttachment: ATTACHMENT_FDIS.has(fdi),
       iprLeft: IPR_FDIS.has(fdi),
       color: "#e2e8f0",
+      isMaxilla: false,
     });
   });
 
@@ -144,6 +148,7 @@ function ToothMesh({
   showAttachments,
   showIPR,
   placementType,
+  jawOpacity,
   clippingPlanes,
   onSelect,
   onMeshMounted,
@@ -155,6 +160,7 @@ function ToothMesh({
   showAttachments: boolean;
   showIPR: boolean;
   placementType: PlacementType;
+  jawOpacity: number; // 0 = fully visible, 1 = fully transparent
   clippingPlanes: THREE.Plane[];
   onSelect: (fdi: number, shift: boolean) => void;
   onMeshMounted: (fdi: number, mesh: THREE.Mesh | null) => void;
@@ -175,7 +181,9 @@ function ToothMesh({
     clearcoatRoughness: 0.4,
     emissive: isColliding ? "#7f1d1d" : isSelected ? "#0f766e" : isGroupSelected ? "#312e81" : "#000000",
     emissiveIntensity: isSelected || isGroupSelected || isColliding ? 0.12 : 0,
-  }), [isSelected, isGroupSelected, isColliding, tooth.color]);
+    transparent: jawOpacity > 0,
+    opacity: Math.max(0, 1 - jawOpacity),
+  }), [isSelected, isGroupSelected, isColliding, tooth.color, jawOpacity]);
 
   // Dispose material when dependencies change or component unmounts to prevent VRAM leaks
   useEffect(() => {
@@ -254,6 +262,11 @@ function CADScene({
   showAttachments,
   showIPR,
   placementType,
+  viewMode,
+  showMaxilla,
+  showMandible,
+  maxillaTransparency,
+  mandibleTransparency,
   collisionFdis,
   clippingPlanes,
   onSelectTooth,
@@ -265,6 +278,11 @@ function CADScene({
   showAttachments: boolean;
   showIPR: boolean;
   placementType: PlacementType;
+  viewMode: ViewMode;
+  showMaxilla: boolean;
+  showMandible: boolean;
+  maxillaTransparency: number;
+  mandibleTransparency: number;
   collisionFdis: Set<number>;
   clippingPlanes: THREE.Plane[];
   onSelectTooth: (fdi: number, shift: boolean) => void;
@@ -297,13 +315,44 @@ function CADScene({
     gl.localClippingEnabled = true;
   }, [gl]);
 
+  const visibleTeeth = teeth.filter(t =>
+    t.isMaxilla ? showMaxilla : showMandible
+  );
+
   return (
     <>
-      <PerspectiveCamera makeDefault fov={40} position={[0, 9, 0.4]} up={[0, 0, -1]} />
+      {viewMode === "buccal"
+        ? <PerspectiveCamera makeDefault fov={36} position={[0, 0.2, 10]} up={[0, 1, 0]} />
+        : <PerspectiveCamera makeDefault fov={40} position={[0, 9, 0.4]} up={[0, 0, -1]} />
+      }
       <ambientLight intensity={0.55} />
       <directionalLight position={[4, 8, 6]} intensity={2.1} castShadow shadow-mapSize={[2048, 2048]} />
 
-      {teeth.map(tooth => (
+      {/* Maxilla gingival base */}
+      {showMaxilla && (
+        <mesh position={[0, 0.18, -0.7]} rotation={[Math.PI / 2, 0, 0]}>
+          <torusGeometry args={[2.05, 0.52, 10, 28, Math.PI]} />
+          <meshPhysicalMaterial
+            color="#c8556a" roughness={0.68} metalness={0}
+            transparent={maxillaTransparency > 0}
+            opacity={Math.max(0, 1 - maxillaTransparency)}
+          />
+        </mesh>
+      )}
+
+      {/* Mandible gingival base */}
+      {showMandible && (
+        <mesh position={[0, -0.18, 0.7]} rotation={[-Math.PI / 2, Math.PI, 0]}>
+          <torusGeometry args={[1.95, 0.50, 10, 28, Math.PI]} />
+          <meshPhysicalMaterial
+            color="#b84e62" roughness={0.68} metalness={0}
+            transparent={mandibleTransparency > 0}
+            opacity={Math.max(0, 1 - mandibleTransparency)}
+          />
+        </mesh>
+      )}
+
+      {visibleTeeth.map(tooth => (
         <ToothMesh
           key={tooth.fdi}
           tooth={tooth}
@@ -313,6 +362,7 @@ function CADScene({
           showAttachments={showAttachments}
           showIPR={showIPR}
           placementType={placementType}
+          jawOpacity={tooth.isMaxilla ? maxillaTransparency : mandibleTransparency}
           clippingPlanes={clippingPlanes}
           onSelect={onSelectTooth}
           onMeshMounted={handleMeshMounted}
@@ -386,13 +436,18 @@ export default function CADEngine() {
   const [showDiastema, setShowDiastema] = useState(true);
   const [showCloseness, setShowCloseness] = useState(false);
   const [showTeethWidths, setShowTeethWidths] = useState(false);
-  const [jawTransparency, setJawTransparency] = useState(0);
   const [alignmentReps, setAlignmentReps] = useState(10);
   const [orthoStageIndex, setOrthoStageIndex] = useState(0);
   const [placementType, setPlacementType] = useState<PlacementType>("gingival");
   const [attachmentsExpanded, setAttachmentsExpanded] = useState(true);
   const [showInitialPositions, setShowInitialPositions] = useState(false);
   const [showFinalPositions, setShowFinalPositions] = useState(false);
+  // Jaw controls
+  const [viewMode, setViewMode] = useState<ViewMode>("buccal");
+  const [showMaxilla, setShowMaxilla] = useState(true);
+  const [showMandible, setShowMandible] = useState(true);
+  const [maxillaTransparency, setMaxillaTransparency] = useState(0);
+  const [mandibleTransparency, setMandibleTransparency] = useState(0);
   const [toothOverrides, setToothOverrides] = useState<OverridesMap>(new Map());
   const [biomechanicsWarning, setBiomechanicsWarning] = useState<string | null>(null);
 
@@ -677,6 +732,22 @@ export default function CADEngine() {
             <Button variant="secondary" size="sm" onClick={exportCADPackage}>
               <Download size={14} /> Export
             </Button>
+            <div className="flex gap-1 rounded-xl border border-[color:var(--border)] p-0.5">
+              <button
+                type="button"
+                onClick={() => setViewMode("buccal")}
+                className={`rounded-lg px-2.5 py-1 text-xs font-semibold transition-colors ${viewMode === "buccal" ? "bg-[color:var(--primary)] text-[color:var(--primary-foreground)]" : "text-[color:var(--muted-foreground)]"}`}
+              >
+                Buccal
+              </button>
+              <button
+                type="button"
+                onClick={() => setViewMode("occlusal")}
+                className={`rounded-lg px-2.5 py-1 text-xs font-semibold transition-colors ${viewMode === "occlusal" ? "bg-[color:var(--primary)] text-[color:var(--primary-foreground)]" : "text-[color:var(--muted-foreground)]"}`}
+              >
+                Occlusal
+              </button>
+            </div>
           </div>
         </div>
 
@@ -718,6 +789,11 @@ export default function CADEngine() {
                 showAttachments={showAttachments}
                 showIPR={showIPR}
                 placementType={placementType}
+                viewMode={viewMode}
+                showMaxilla={showMaxilla}
+                showMandible={showMandible}
+                maxillaTransparency={maxillaTransparency}
+                mandibleTransparency={mandibleTransparency}
                 collisionFdis={collisionFdis}
                 clippingPlanes={clippingPlanes}
                 onSelectTooth={handleSelectTooth}
@@ -862,23 +938,71 @@ export default function CADEngine() {
             ))}
           </div>
 
-          {/* ── Transparency ──────────────────────────────────────── */}
-          <p className="mb-1.5 text-[10px] font-bold uppercase tracking-widest text-[color:var(--muted-foreground)]">
-            Model Jaw Transparency
+          {/* ── Jaw Visibility & Transparency ────────────────────── */}
+          <p className="mb-2 text-[10px] font-bold uppercase tracking-widest text-[color:var(--muted-foreground)]">
+            Jaw Controls
           </p>
-          <div className="mb-3 space-y-1">
-            <div className="flex items-center justify-between text-[10px] text-[color:var(--muted-foreground)]">
-              <span>Opacity</span>
-              <span className="font-semibold tabular-nums">{jawTransparency.toFixed(2)}</span>
+          <div className="mb-3 space-y-3 rounded-xl border border-[color:var(--border)] bg-[color-mix(in_srgb,var(--card)_60%,transparent)] p-3">
+            {/* Maxilla */}
+            <div>
+              <div className="mb-1.5 flex items-center justify-between">
+                <label className="flex cursor-pointer items-center gap-1.5 text-[11px] font-semibold text-[color:var(--foreground)]">
+                  <input
+                    type="checkbox"
+                    checked={showMaxilla}
+                    onChange={e => setShowMaxilla(e.target.checked)}
+                    className="h-3.5 w-3.5 accent-[color:var(--primary)] cursor-pointer"
+                  />
+                  Maxilla (Upper)
+                </label>
+                <span className="text-[10px] tabular-nums text-[color:var(--muted-foreground)]">
+                  {maxillaTransparency.toFixed(2)}
+                </span>
+              </div>
+              <input
+                type="range" min="0" max="1" step="0.01"
+                value={maxillaTransparency}
+                onChange={e => setMaxillaTransparency(parseFloat(e.target.value))}
+                disabled={!showMaxilla}
+                className="w-full accent-[color:var(--primary)] disabled:opacity-40"
+              />
             </div>
-            <input
-              type="range" min="0" max="1" step="0.01"
-              value={jawTransparency}
-              onChange={e => setJawTransparency(parseFloat(e.target.value))}
-              className="w-full accent-[color:var(--primary)]"
-            />
-            <div className="flex justify-between text-[9px] text-[color:var(--muted-foreground)]">
-              <span>Opaque</span><span>Transparent</span>
+            {/* Mandible */}
+            <div>
+              <div className="mb-1.5 flex items-center justify-between">
+                <label className="flex cursor-pointer items-center gap-1.5 text-[11px] font-semibold text-[color:var(--foreground)]">
+                  <input
+                    type="checkbox"
+                    checked={showMandible}
+                    onChange={e => setShowMandible(e.target.checked)}
+                    className="h-3.5 w-3.5 accent-[color:var(--primary)] cursor-pointer"
+                  />
+                  Mandible (Lower)
+                </label>
+                <span className="text-[10px] tabular-nums text-[color:var(--muted-foreground)]">
+                  {mandibleTransparency.toFixed(2)}
+                </span>
+              </div>
+              <input
+                type="range" min="0" max="1" step="0.01"
+                value={mandibleTransparency}
+                onChange={e => setMandibleTransparency(parseFloat(e.target.value))}
+                disabled={!showMandible}
+                className="w-full accent-[color:var(--primary)] disabled:opacity-40"
+              />
+            </div>
+            {/* View toggle shortcut */}
+            <div className="flex gap-1 rounded-xl border border-[color:var(--border)] p-0.5">
+              {(["buccal", "occlusal"] as ViewMode[]).map(v => (
+                <button
+                  key={v}
+                  type="button"
+                  onClick={() => setViewMode(v)}
+                  className={`flex-1 rounded-lg py-1 text-[10px] font-semibold capitalize transition-colors ${viewMode === v ? "bg-[color:var(--primary)] text-[color:var(--primary-foreground)]" : "text-[color:var(--muted-foreground)]"}`}
+                >
+                  {v}
+                </button>
+              ))}
             </div>
           </div>
 

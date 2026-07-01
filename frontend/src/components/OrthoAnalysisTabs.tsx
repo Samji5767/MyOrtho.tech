@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState } from "react";
 import dynamic from "next/dynamic";
 import {
   Activity,
@@ -17,6 +17,12 @@ import {
 } from "lucide-react";
 import { Card, StatusBadge } from "@/components/DesignSystem";
 import { useToast } from "@/components/ToastContext";
+import {
+  useCasePlanning,
+  type PlanningAttachment,
+  type PlanningIPR,
+} from "@/components/CasePlanningContext";
+
 
 // ─── Dynamic imports (heavy) ──────────────────────────────────────────────────
 
@@ -160,28 +166,10 @@ function OverviewTab({ caseId, patientName }: { caseId: string | null; patientNa
 // TAB: MEASUREMENTS
 // ─────────────────────────────────────────────────────────────────────────────
 
-interface Measurement {
-  id: string;
-  label: string;
-  value: string;
-  unit: string;
-  note: string;
-}
-
-const DEFAULT_MEASUREMENTS: Measurement[] = [
-  { id: "overjet",    label: "Overjet",             value: "4.2", unit: "mm", note: "Pre-treatment" },
-  { id: "overbite",   label: "Overbite",            value: "3.1", unit: "mm", note: "Pre-treatment" },
-  { id: "intercan",   label: "Intercanine Width",   value: "32.4",unit: "mm", note: "Upper arch" },
-  { id: "intermol",   label: "Intermolar Width",    value: "51.8",unit: "mm", note: "Upper arch" },
-  { id: "arch_u",     label: "Upper Arch Length",   value: "78.2",unit: "mm", note: "Pre-treatment" },
-  { id: "arch_l",     label: "Lower Arch Length",   value: "75.6",unit: "mm", note: "Pre-treatment" },
-  { id: "crowding_u", label: "Upper Crowding",      value: "4.8", unit: "mm", note: "Estimated" },
-  { id: "crowding_l", label: "Lower Crowding",      value: "3.2", unit: "mm", note: "Estimated" },
-];
-
 function MeasurementsTab() {
   const { toast } = useToast();
-  const [measurements, setMeasurements] = useState<Measurement[]>(DEFAULT_MEASUREMENTS);
+  const { state, dispatch } = useCasePlanning();
+  const measurements = state.measurements;
 
   function exportMeasurements() {
     const blob = new Blob([JSON.stringify(measurements, null, 2)], { type: "application/json" });
@@ -195,7 +183,7 @@ function MeasurementsTab() {
   }
 
   function updateValue(id: string, value: string) {
-    setMeasurements((prev) => prev.map((m) => m.id === id ? { ...m, value } : m));
+    dispatch({ type: "UPDATE_MEASUREMENT", id, value });
   }
 
   return (
@@ -335,52 +323,36 @@ function OcclusionTab() {
 // TAB: TOOTH MOVEMENTS
 // ─────────────────────────────────────────────────────────────────────────────
 
-interface ToothMovement {
-  fdi: number;
-  tx: number; ty: number; tz: number;
-  tip: number; torque: number; rotation: number;
-}
-
-const EMPTY_MOVEMENT = (fdi: number): ToothMovement => ({
-  fdi, tx: 0, ty: 0, tz: 0, tip: 0, torque: 0, rotation: 0,
-});
-
-type MovField = keyof Omit<ToothMovement, "fdi">;
+type MovField = "tx" | "ty" | "tz" | "tip" | "torque" | "rotation";
 
 const MOV_FIELDS: { key: MovField; label: string; unit: string; min: number; max: number; step: number }[] = [
-  { key: "tx",       label: "Mesial/Distal",    unit: "mm", min: -10, max: 10,  step: 0.1 },
-  { key: "ty",       label: "Buccal/Lingual",   unit: "mm", min: -8,  max: 8,   step: 0.1 },
-  { key: "tz",       label: "Intrusion/Extrusion", unit: "mm", min: -5, max: 5,  step: 0.1 },
-  { key: "tip",      label: "Tip",              unit: "°",  min: -30, max: 30,  step: 0.5 },
-  { key: "torque",   label: "Torque",           unit: "°",  min: -30, max: 30,  step: 0.5 },
-  { key: "rotation", label: "Rotation",         unit: "°",  min: -45, max: 45,  step: 0.5 },
+  { key: "tx",       label: "Mesial/Distal",       unit: "mm", min: -10, max: 10, step: 0.1 },
+  { key: "ty",       label: "Buccal/Lingual",      unit: "mm", min: -8,  max: 8,  step: 0.1 },
+  { key: "tz",       label: "Intrusion/Extrusion", unit: "mm", min: -5,  max: 5,  step: 0.1 },
+  { key: "tip",      label: "Tip",                 unit: "°",  min: -30, max: 30, step: 0.5 },
+  { key: "torque",   label: "Torque",              unit: "°",  min: -30, max: 30, step: 0.5 },
+  { key: "rotation", label: "Rotation",            unit: "°",  min: -45, max: 45, step: 0.5 },
 ];
 
 function MovementsTab() {
   const { toast } = useToast();
+  const { state, dispatch } = useCasePlanning();
   const [selectedFdi, setSelectedFdi] = useState<number>(11);
-  const [movements, setMovements] = useState<Record<number, ToothMovement>>({});
 
-  const current = movements[selectedFdi] ?? EMPTY_MOVEMENT(selectedFdi);
+  const movements = state.movements;
+  const current = movements[selectedFdi] ?? { fdi: selectedFdi, tx: 0, ty: 0, tz: 0, tip: 0, torque: 0, rotation: 0 };
 
   function updateField(field: MovField, val: number) {
-    setMovements((prev) => ({
-      ...prev,
-      [selectedFdi]: { ...current, [field]: val },
-    }));
+    dispatch({ type: "UPDATE_MOVEMENT", fdi: selectedFdi, mov: { [field]: val } });
   }
 
   function resetTooth() {
-    setMovements((prev) => {
-      const next = { ...prev };
-      delete next[selectedFdi];
-      return next;
-    });
+    dispatch({ type: "RESET_MOVEMENT", fdi: selectedFdi });
     toast({ title: `FDI ${selectedFdi} reset`, type: "info" });
   }
 
   function exportMovements() {
-    const data = ALL_FDI.map((fdi) => movements[fdi] ?? EMPTY_MOVEMENT(fdi));
+    const data = ALL_FDI.map((fdi) => movements[fdi] ?? { fdi, tx: 0, ty: 0, tz: 0, tip: 0, torque: 0, rotation: 0 });
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -392,7 +364,7 @@ function MovementsTab() {
   }
 
   const movedCount = Object.values(movements).filter(
-    (m) => Object.values(m).some((v, i) => i > 0 && v !== 0)
+    (m) => m.tx !== 0 || m.ty !== 0 || m.tz !== 0 || m.tip !== 0 || m.torque !== 0 || m.rotation !== 0
   ).length;
 
   return (
@@ -414,7 +386,8 @@ function MovementsTab() {
           {[UPPER_FDI, LOWER_FDI].map((row, ri) => (
             <div key={ri} className="flex flex-wrap gap-1">
               {row.map((fdi) => {
-                const hasMov = movements[fdi] && Object.entries(movements[fdi]).some(([k, v]) => k !== "fdi" && v !== 0);
+                const m = movements[fdi];
+                const hasMov = m && (m.tx !== 0 || m.ty !== 0 || m.tz !== 0 || m.tip !== 0 || m.torque !== 0 || m.rotation !== 0);
                 return (
                   <button
                     key={fdi}
@@ -493,14 +466,6 @@ function MovementsTab() {
 // TAB: ATTACHMENTS
 // ─────────────────────────────────────────────────────────────────────────────
 
-interface AttachmentEntry {
-  id: string;
-  fdi: number;
-  type: string;
-  surface: string;
-  stage: number;
-}
-
 const ATTACHMENT_TYPES = [
   "Rectangular",
   "Horizontal Rectangular",
@@ -514,30 +479,26 @@ const ATTACHMENT_TYPES = [
 
 const SURFACES = ["Buccal", "Lingual", "Mesial", "Distal"];
 
-let attId = 0;
-function newAttId() { return `att_${++attId}`; }
+let attCounter = 100;
+function newAttId() { return `att_${++attCounter}`; }
 
 function AttachmentsTab() {
   const { toast } = useToast();
-  const [attachments, setAttachments] = useState<AttachmentEntry[]>([
-    { id: newAttId(), fdi: 13, type: "Rotation",          surface: "Buccal", stage: 1 },
-    { id: newAttId(), fdi: 23, type: "Rotation",          surface: "Buccal", stage: 1 },
-    { id: newAttId(), fdi: 14, type: "Vertical Rectangular", surface: "Buccal", stage: 2 },
-    { id: newAttId(), fdi: 24, type: "Vertical Rectangular", surface: "Buccal", stage: 2 },
-  ]);
+  const { state, dispatch } = useCasePlanning();
+  const attachments = state.attachments;
   const [newFdi, setNewFdi]   = useState<number>(11);
   const [newType, setNewType] = useState(ATTACHMENT_TYPES[0]);
   const [newSurf, setNewSurf] = useState(SURFACES[0]);
   const [newStage, setNewStage] = useState(1);
 
   function addAttachment() {
-    const entry: AttachmentEntry = { id: newAttId(), fdi: newFdi, type: newType, surface: newSurf, stage: newStage };
-    setAttachments((prev) => [...prev, entry]);
+    const entry: PlanningAttachment = { id: newAttId(), fdi: newFdi, type: newType, surface: newSurf, stage: newStage };
+    dispatch({ type: "ADD_ATTACHMENT", entry });
     toast({ title: `Attachment added — FDI ${newFdi}`, type: "success" });
   }
 
   function removeAttachment(id: string) {
-    setAttachments((prev) => prev.filter((a) => a.id !== id));
+    dispatch({ type: "REMOVE_ATTACHMENT", id });
   }
 
   function exportAttachments() {
@@ -635,33 +596,19 @@ function AttachmentsTab() {
 // TAB: IPR
 // ─────────────────────────────────────────────────────────────────────────────
 
-interface IPREntry {
-  id: string;
-  toothA: number;
-  toothB: number;
-  amount: number;
-  stage: number;
-  safety: "safe" | "warning" | "unsafe";
-}
+let iprCounter = 100;
+function newIprId() { return `ipr_${++iprCounter}`; }
 
-let iprId = 0;
-function newIprId() { return `ipr_${++iprId}`; }
-
-const IPR_SAFETY_THRESHOLD = { warning: 0.3, unsafe: 0.5 };
-
-function iprSafety(amount: number): IPREntry["safety"] {
-  if (amount >= IPR_SAFETY_THRESHOLD.unsafe) return "unsafe";
-  if (amount >= IPR_SAFETY_THRESHOLD.warning) return "warning";
+function iprSafety(amount: number): PlanningIPR["safety"] {
+  if (amount >= 0.5) return "unsafe";
+  if (amount >= 0.3) return "warning";
   return "safe";
 }
 
 function IPRTab() {
   const { toast } = useToast();
-  const [entries, setEntries] = useState<IPREntry[]>([
-    { id: newIprId(), toothA: 12, toothB: 13, amount: 0.2, stage: 3, safety: "safe" },
-    { id: newIprId(), toothA: 22, toothB: 23, amount: 0.2, stage: 3, safety: "safe" },
-    { id: newIprId(), toothA: 32, toothB: 33, amount: 0.25, stage: 5, safety: "safe" },
-  ]);
+  const { state, dispatch } = useCasePlanning();
+  const entries = state.iprEntries;
   const [fdiA, setFdiA] = useState<number>(11);
   const [fdiB, setFdiB] = useState<number>(12);
   const [amount, setAmount] = useState(0.2);
@@ -676,12 +623,13 @@ function IPRTab() {
     if (safety === "unsafe") {
       toast({ title: `IPR ${amount} mm may be excessive — review enamel thickness`, type: "warning" });
     }
-    setEntries((prev) => [...prev, { id: newIprId(), toothA: fdiA, toothB: fdiB, amount, stage, safety }]);
+    const entry: PlanningIPR = { id: newIprId(), toothA: fdiA, toothB: fdiB, amount, stage, safety };
+    dispatch({ type: "ADD_IPR", entry });
     toast({ title: `IPR added: ${fdiA}|${fdiB} — ${amount} mm`, type: "success" });
   }
 
   function removeIPR(id: string) {
-    setEntries((prev) => prev.filter((e) => e.id !== id));
+    dispatch({ type: "REMOVE_IPR", id });
   }
 
   function exportIPR() {

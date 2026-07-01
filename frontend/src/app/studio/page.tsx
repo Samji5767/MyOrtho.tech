@@ -24,6 +24,7 @@ import CADCapabilityMatrix from "@/components/CADCapabilityMatrix";
 import { fetchCase, type CaseDetail } from "@/lib/api/cases";
 import OrthoWorkflowRail from "@/components/OrthoWorkflowRail";
 import OrthoAnalysisTabs from "@/components/OrthoAnalysisTabs";
+import { CasePlanningProvider } from "@/components/CasePlanningContext";
 
 // ─── Heavy 3D components — SSR off, load only when tab is active ──────────────
 
@@ -342,6 +343,7 @@ export default function StudioPage() {
   }, [caseId]);
 
   return (
+    <CasePlanningProvider caseId={caseId}>
     <section className="mx-auto flex w-full max-w-5xl flex-col gap-4 px-4 pb-[calc(var(--tab-bar-height)+var(--sa-bottom)+1.5rem)] pt-4 sm:px-5">
       {/* Header */}
       <div>
@@ -407,5 +409,6 @@ export default function StudioPage() {
         {activeTab === "preview" && <PreviewTab caseData={caseData} />}
       </div>
     </section>
+    </CasePlanningProvider>
   );
 }

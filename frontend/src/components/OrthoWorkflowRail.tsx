@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState } from "react";
 import {
   CheckCircle2,
   Circle,
@@ -10,10 +10,14 @@ import {
   ChevronUp,
 } from "lucide-react";
 import { useToast } from "@/components/ToastContext";
+import {
+  useCasePlanning,
+  type WorkflowStepStatus,
+} from "@/components/CasePlanningContext";
 
-// ─── Types ────────────────────────────────────────────────────────────────────
+// ─── Re-export so consumers can still import from here ────────────────────────
 
-export type WorkflowStepStatus = "not_started" | "in_progress" | "complete" | "needs_review";
+export type { WorkflowStepStatus };
 
 interface WorkflowStep {
   id: string;
@@ -68,54 +72,33 @@ interface OrthoWorkflowRailProps {
   collapsed?: boolean;
 }
 
-type StepStateMap = Record<string, WorkflowStepStatus>;
-
 const CYCLE: WorkflowStepStatus[] = ["not_started", "in_progress", "complete", "needs_review"];
 
-export default function OrthoWorkflowRail({ caseId, collapsed: initialCollapsed = false }: OrthoWorkflowRailProps) {
+export default function OrthoWorkflowRail({ caseId: _caseId, collapsed: initialCollapsed = false }: OrthoWorkflowRailProps) {
   const { toast } = useToast();
+  const { state, dispatch } = useCasePlanning();
   const [collapsed, setCollapsed] = useState(initialCollapsed);
-  const [steps, setSteps] = useState<StepStateMap>(() => {
-    const init: StepStateMap = {};
-    WORKFLOW_STEPS.forEach((s) => { init[s.id] = "not_started"; });
-    return init;
-  });
 
-  const storageKey = caseId ? `mo_workflow_${caseId}` : null;
+  const steps = state.workflowSteps;
 
-  // Load persisted state
-  useEffect(() => {
-    if (!storageKey) return;
-    try {
-      const raw = localStorage.getItem(storageKey);
-      if (raw) setSteps(JSON.parse(raw));
-    } catch {}
-  }, [storageKey]);
-
-  // Persist on change
-  const persist = useCallback((next: StepStateMap) => {
-    if (!storageKey) return;
-    try { localStorage.setItem(storageKey, JSON.stringify(next)); } catch {}
-  }, [storageKey]);
-
-  function cycleStatus(stepId: string) {
-    setSteps((prev) => {
-      const current = prev[stepId];
-      const idx = CYCLE.indexOf(current);
-      const next = CYCLE[(idx + 1) % CYCLE.length];
-      const updated = { ...prev, [stepId]: next };
-      persist(updated);
-      const label = WORKFLOW_STEPS.find((s) => s.id === stepId)?.label ?? stepId;
-      if (next === "complete") {
-        toast({ title: `${label} complete`, type: "success" });
-      } else if (next === "in_progress") {
-        toast({ title: `${label} started`, type: "info" });
-      }
-      return updated;
-    });
+  function statusFor(stepId: string): WorkflowStepStatus {
+    return steps[stepId] ?? "not_started";
   }
 
-  const completedCount = Object.values(steps).filter((s) => s === "complete").length;
+  function cycleStatus(stepId: string) {
+    const current = statusFor(stepId);
+    const idx = CYCLE.indexOf(current);
+    const next = CYCLE[(idx + 1) % CYCLE.length];
+    dispatch({ type: "SET_WORKFLOW_STEP", stepId, status: next });
+    const label = WORKFLOW_STEPS.find((s) => s.id === stepId)?.label ?? stepId;
+    if (next === "complete") {
+      toast({ title: `${label} complete`, type: "success" });
+    } else if (next === "in_progress") {
+      toast({ title: `${label} started`, type: "info" });
+    }
+  }
+
+  const completedCount = WORKFLOW_STEPS.filter((s) => statusFor(s.id) === "complete").length;
   const progressPct = Math.round((completedCount / WORKFLOW_STEPS.length) * 100);
 
   return (
@@ -165,7 +148,7 @@ export default function OrthoWorkflowRail({ caseId, collapsed: initialCollapsed 
       {!collapsed && (
         <div className="divide-y divide-[color:var(--border)]">
           {WORKFLOW_STEPS.map((step, i) => {
-            const status = steps[step.id];
+            const status = statusFor(step.id);
             return (
               <div key={step.id} className="flex items-start gap-3 px-4 py-3">
                 {/* Step number */}
@@ -202,7 +185,7 @@ export default function OrthoWorkflowRail({ caseId, collapsed: initialCollapsed 
         <div className="border-t border-[color:var(--border)] px-4 py-2.5">
           <p className="text-[9px] text-[color:var(--muted-foreground)]">
             Click any status icon to cycle: Not started → In progress → Complete → Needs review
-            {!caseId && " · Load a case to persist progress"}
+            {!_caseId && " · Load a case to persist progress"}
           </p>
         </div>
       )}

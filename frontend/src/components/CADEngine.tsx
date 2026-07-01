@@ -9,12 +9,14 @@ import {
 import * as THREE from "three";
 import {
   AlertTriangle, BarChart3, CheckCircle2, ChevronDown, ChevronRight, ChevronUp,
-  ChevronsLeft, ChevronsRight, Download, Eye, EyeOff, Layers, ListOrdered,
+  ChevronsLeft, ChevronsRight, Download, Eye, EyeOff, Ghost, Layers, ListOrdered,
   Lock, LockOpen, Move3d, RotateCcw, Ruler, Scissors, Settings2,
   Sliders, SunMedium, Target, Zap,
 } from "lucide-react";
 import { Button, Card, DataRow, StatusBadge } from "@/components/DesignSystem";
 import { validateMovements } from "@/lib/biomechanics/vectorMath";
+import { useCasePlanning } from "@/components/CasePlanningContext";
+import { MM_TO_SCENE } from "@/lib/meshAnalysis";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -190,6 +192,8 @@ function ToothMesh({
   enamelMode,
   jawOpacity,
   clippingPlanes,
+  hasAttachmentOverride,
+  iprAmountOverride,
   onSelect,
   onMeshMounted,
 }: {
@@ -206,6 +210,8 @@ function ToothMesh({
   enamelMode: EnamelMode;
   jawOpacity: number;
   clippingPlanes: THREE.Plane[];
+  hasAttachmentOverride?: boolean;
+  iprAmountOverride?: number;
   onSelect: (fdi: number, shift: boolean) => void;
   onMeshMounted: (fdi: number, mesh: THREE.Mesh | null) => void;
 }) {
@@ -278,8 +284,8 @@ function ToothMesh({
           <span className="pointer-events-none rounded bg-amber-500/90 px-1 py-0.5 text-[9px] font-bold text-white shadow">🔒</span>
         </Html>
       )}
-      {/* Attachment — shape and position driven by props */}
-      {showAttachments && tooth.hasAttachment && !isHidden && (() => {
+      {/* Attachment — shape and position driven by props; context override takes priority */}
+      {showAttachments && (tooth.hasAttachment || hasAttachmentOverride) && !isHidden && (() => {
         const attachY = placementType === "gingival" ? -0.16 : placementType === "mid" ? 0.12 : 0.38;
         const color = enamelMode === "xray" ? "#66aaff" : "#5b8dee";
         const opacity = enamelMode === "xray" ? 0.5 : 1;
@@ -298,28 +304,32 @@ function ToothMesh({
           </mesh>
         );
       })()}
-      {/* IPR marker disc */}
-      {tooth.iprLeft && (
+      {/* IPR marker disc — show if tooth has IPR entry (built-in or from context) */}
+      {(tooth.iprLeft || iprAmountOverride != null) && (
         <mesh position={[0.42, 0, 0]} rotation={[0, 0, Math.PI / 2]}>
           <cylinderGeometry args={[0.10, 0.10, 0.018, 12]} />
           <meshBasicMaterial color="#f97316" transparent opacity={0.75} />
         </mesh>
       )}
-      {/* IPR measurement label */}
-      {tooth.iprLeft && showIPR && IPR_AMOUNTS[tooth.fdi] != null && (
-        <Html position={[0.52, 0.55, 0]} center distanceFactor={6}>
-          <div
-            className="pointer-events-none select-none whitespace-nowrap rounded px-1.5 py-0.5 text-[11px] font-bold shadow"
-            style={{
-              background: IPR_AMOUNTS[tooth.fdi] > 0.5 ? '#ef4444' : '#fde68a',
-              color: IPR_AMOUNTS[tooth.fdi] > 0.5 ? '#fff' : '#1a1000',
-              border: `1px solid ${IPR_AMOUNTS[tooth.fdi] > 0.5 ? '#b91c1c' : '#d97706'}`,
-            }}
-          >
-            {IPR_AMOUNTS[tooth.fdi].toFixed(2)}mm
-          </div>
-        </Html>
-      )}
+      {/* IPR measurement label — prefer context amount, fall back to built-in */}
+      {(tooth.iprLeft || iprAmountOverride != null) && showIPR && (() => {
+        const displayAmt = iprAmountOverride ?? IPR_AMOUNTS[tooth.fdi];
+        if (displayAmt == null) return null;
+        return (
+          <Html position={[0.52, 0.55, 0]} center distanceFactor={6}>
+            <div
+              className="pointer-events-none select-none whitespace-nowrap rounded px-1.5 py-0.5 text-[11px] font-bold shadow"
+              style={{
+                background: displayAmt > 0.5 ? '#ef4444' : '#fde68a',
+                color: displayAmt > 0.5 ? '#fff' : '#1a1000',
+                border: `1px solid ${displayAmt > 0.5 ? '#b91c1c' : '#d97706'}`,
+              }}
+            >
+              {displayAmt.toFixed(2)}mm
+            </div>
+          </Html>
+        );
+      })()}
       {/* FDI label */}
       {isSelected && (
         <Html position={[0, 0.7, 0]} center>
@@ -330,6 +340,13 @@ function ToothMesh({
       )}
     </group>
   );
+}
+
+// ─── Planning offset type (scene units) ──────────────────────────────────────
+
+interface PlanningOffset {
+  dx: number; dy: number; dz: number;
+  drx: number; dry: number; drz: number;
 }
 
 // ─── 3-D scene ────────────────────────────────────────────────────────────────
@@ -354,6 +371,11 @@ function CADScene({
   isolationMode,
   collisionFdis,
   clippingPlanes,
+  ghostArchVisible,
+  ghostOpacity,
+  contextAttachmentFdis,
+  contextIPRMap,
+  planningOffsets,
   onSelectTooth,
   onTransformChange,
 }: {
@@ -376,6 +398,11 @@ function CADScene({
   isolationMode: boolean;
   collisionFdis: Set<number>;
   clippingPlanes: THREE.Plane[];
+  ghostArchVisible: boolean;
+  ghostOpacity: number;
+  contextAttachmentFdis: Set<number>;
+  contextIPRMap: Map<number, number>;
+  planningOffsets: Map<number, PlanningOffset>;
   onSelectTooth: (fdi: number, shift: boolean) => void;
   onTransformChange: (fdi: number, pos: THREE.Vector3, rot: THREE.Euler) => void;
 }) {
@@ -491,10 +518,56 @@ function CADScene({
         </mesh>
       )}
 
+      {/* Ghost arch — original positions rendered transparently */}
+      {ghostArchVisible && visibleTeeth.map(tooth => (
+        <mesh
+          key={`ghost_${tooth.fdi}`}
+          geometry={tooth.geometry}
+          position={tooth.initPosition}
+          rotation={tooth.initRotation}
+          renderOrder={-1}
+        >
+          <meshPhysicalMaterial
+            color="#88aacc"
+            transparent
+            opacity={ghostOpacity}
+            depthWrite={false}
+            roughness={0.5}
+            metalness={0}
+          />
+        </mesh>
+      ))}
+
+      {/* Planning target positions — wireframe overlay when movement is set */}
+      {Array.from(planningOffsets.entries()).map(([fdi, off]) => {
+        const tooth = visibleTeeth.find(t => t.fdi === fdi);
+        if (!tooth) return null;
+        return (
+          <mesh
+            key={`plan_${fdi}`}
+            geometry={tooth.geometry}
+            position={[
+              tooth.initPosition.x + off.dx,
+              tooth.initPosition.y + off.dy,
+              tooth.initPosition.z + off.dz,
+            ]}
+            rotation={[
+              tooth.initRotation.x + off.drx,
+              tooth.initRotation.y + off.dry,
+              tooth.initRotation.z + off.drz,
+            ]}
+          >
+            <meshBasicMaterial color="#22d3ee" wireframe transparent opacity={0.55} />
+          </mesh>
+        );
+      })}
+
       {visibleTeeth.map(tooth => {
         const isHidden = hiddenFdis.has(tooth.fdi) ||
           (isolationMode && selectedFdis.size > 0 && !selectedFdis.has(tooth.fdi));
         const isLocked = lockedFdis.has(tooth.fdi);
+        const contextHasAttach = contextAttachmentFdis.has(tooth.fdi);
+        const contextIPRAmount = contextIPRMap.get(tooth.fdi);
         return (
           <ToothMesh
             key={tooth.fdi}
@@ -511,6 +584,8 @@ function CADScene({
             enamelMode={enamelMode}
             jawOpacity={tooth.isMaxilla ? maxillaTransparency : mandibleTransparency}
             clippingPlanes={clippingPlanes}
+            hasAttachmentOverride={contextHasAttach}
+            iprAmountOverride={contextIPRAmount}
             onSelect={onSelectTooth}
             onMeshMounted={handleMeshMounted}
           />
@@ -574,6 +649,7 @@ const MAX_HISTORY = 50;
 
 export default function CADEngine() {
   const [teeth] = useState<ToothObject[]>(() => buildTeethObjects());
+  const { state, dispatch } = useCasePlanning();
 
   // Dispose Three.js geometries on unmount to prevent WebGL memory leaks
   useEffect(() => {
@@ -581,6 +657,35 @@ export default function CADEngine() {
       teeth.forEach(t => { t.geometry.dispose(); });
     };
   }, [teeth]);
+
+  // ── Context-derived planning data ──────────────────────────────────────────
+  const contextAttachmentFdis = useMemo<Set<number>>(() => {
+    return new Set(state.attachments.map((a) => a.fdi));
+  }, [state.attachments]);
+
+  const contextIPRMap = useMemo<Map<number, number>>(() => {
+    const m = new Map<number, number>();
+    state.iprEntries.forEach((e) => { m.set(e.toothA, e.amount); });
+    return m;
+  }, [state.iprEntries]);
+
+  const planningOffsets = useMemo<Map<number, PlanningOffset>>(() => {
+    const DEG_TO_RAD = Math.PI / 180;
+    const m = new Map<number, PlanningOffset>();
+    Object.entries(state.movements).forEach(([fdiStr, mov]) => {
+      const fdi = Number(fdiStr);
+      if (mov.tx === 0 && mov.ty === 0 && mov.tz === 0 && mov.tip === 0 && mov.torque === 0 && mov.rotation === 0) return;
+      m.set(fdi, {
+        dx: mov.tx * MM_TO_SCENE,
+        dy: mov.tz * MM_TO_SCENE,
+        dz: mov.ty * MM_TO_SCENE,
+        drx: mov.tip * DEG_TO_RAD,
+        dry: mov.rotation * DEG_TO_RAD,
+        drz: mov.torque * DEG_TO_RAD,
+      });
+    });
+    return m;
+  }, [state.movements]);
 
   const [selectedFdis, setSelectedFdis] = useState<Set<number>>(new Set());
   const [gizmoMode, setGizmoMode] = useState<GizmoMode>("translate");
@@ -919,6 +1024,14 @@ export default function CADEngine() {
             <Button variant="secondary" size="sm" onClick={exportCADPackage}>
               <Download size={14} /> Export
             </Button>
+            <Button
+              variant={state.showGhostArch ? "primary" : "secondary"}
+              size="sm"
+              onClick={() => dispatch({ type: "TOGGLE_GHOST_ARCH" })}
+              title="Toggle ghost arch (original position overlay)"
+            >
+              <Ghost size={14} /> Ghost
+            </Button>
           </div>
         </div>
 
@@ -1079,6 +1192,11 @@ export default function CADEngine() {
                 isolationMode={isolationMode}
                 collisionFdis={collisionFdis}
                 clippingPlanes={clippingPlanes}
+                ghostArchVisible={state.showGhostArch}
+                ghostOpacity={state.ghostOpacity}
+                contextAttachmentFdis={contextAttachmentFdis}
+                contextIPRMap={contextIPRMap}
+                planningOffsets={planningOffsets}
                 onSelectTooth={handleSelectTooth}
                 onTransformChange={handleTransformChange}
               />

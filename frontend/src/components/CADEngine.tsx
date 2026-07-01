@@ -9,7 +9,8 @@ import {
 import * as THREE from "three";
 import {
   AlertTriangle, BarChart3, CheckCircle2, ChevronDown, ChevronRight, ChevronUp,
-  Download, Layers, ListOrdered, Move3d, RotateCcw, Ruler, Scissors, Target, Zap,
+  ChevronsLeft, ChevronsRight, Download, Eye, Layers, ListOrdered, Move3d,
+  RotateCcw, Ruler, Scissors, Settings2, Target, Zap,
 } from "lucide-react";
 import { Button, Card, DataRow, StatusBadge } from "@/components/DesignSystem";
 import { validateMovements } from "@/lib/biomechanics/vectorMath";
@@ -40,6 +41,16 @@ const AXIS_NORMALS: Record<CrossSectionAxis, THREE.Vector3> = {
   x: new THREE.Vector3(1, 0, 0),
   y: new THREE.Vector3(0, 1, 0),
   z: new THREE.Vector3(0, 0, 1),
+};
+
+// Per-contact IPR amounts (FDI of mesial tooth → mm)
+const IPR_AMOUNTS: Record<number, number> = {
+  11: 0.10,
+  12: 0.15,
+  21: 0.25,
+  22: 0.50,
+  31: 0.85,
+  41: 0.30,
 };
 
 // ─── Geometry helpers ─────────────────────────────────────────────────────────
@@ -130,6 +141,7 @@ function ToothMesh({
   isGroupSelected,
   isColliding,
   showAttachments,
+  showIPR,
   clippingPlanes,
   onSelect,
   onMeshMounted,
@@ -139,6 +151,7 @@ function ToothMesh({
   isGroupSelected: boolean;
   isColliding: boolean;
   showAttachments: boolean;
+  showIPR: boolean;
   clippingPlanes: THREE.Plane[];
   onSelect: (fdi: number, shift: boolean) => void;
   onMeshMounted: (fdi: number, mesh: THREE.Mesh | null) => void;
@@ -199,6 +212,21 @@ function ToothMesh({
           <meshBasicMaterial color="#f97316" transparent opacity={0.75} />
         </mesh>
       )}
+      {/* IPR measurement label */}
+      {tooth.iprLeft && showIPR && IPR_AMOUNTS[tooth.fdi] != null && (
+        <Html position={[0.52, 0.55, 0]} center distanceFactor={6}>
+          <div
+            className="pointer-events-none select-none whitespace-nowrap rounded px-1.5 py-0.5 text-[11px] font-bold shadow"
+            style={{
+              background: IPR_AMOUNTS[tooth.fdi] > 0.5 ? '#ef4444' : '#fde68a',
+              color: IPR_AMOUNTS[tooth.fdi] > 0.5 ? '#fff' : '#1a1000',
+              border: `1px solid ${IPR_AMOUNTS[tooth.fdi] > 0.5 ? '#b91c1c' : '#d97706'}`,
+            }}
+          >
+            {IPR_AMOUNTS[tooth.fdi].toFixed(2)}mm
+          </div>
+        </Html>
+      )}
       {/* FDI label */}
       {isSelected && (
         <Html position={[0, 0.7, 0]} center>
@@ -218,6 +246,7 @@ function CADScene({
   selectedFdis,
   gizmoMode,
   showAttachments,
+  showIPR,
   collisionFdis,
   clippingPlanes,
   onSelectTooth,
@@ -227,6 +256,7 @@ function CADScene({
   selectedFdis: Set<number>;
   gizmoMode: GizmoMode;
   showAttachments: boolean;
+  showIPR: boolean;
   collisionFdis: Set<number>;
   clippingPlanes: THREE.Plane[];
   onSelectTooth: (fdi: number, shift: boolean) => void;
@@ -261,7 +291,7 @@ function CADScene({
 
   return (
     <>
-      <PerspectiveCamera makeDefault fov={35} position={[0, 7, 7]} />
+      <PerspectiveCamera makeDefault fov={40} position={[0, 9, 0.4]} up={[0, 0, -1]} />
       <ambientLight intensity={0.55} />
       <directionalLight position={[4, 8, 6]} intensity={2.1} castShadow shadow-mapSize={[2048, 2048]} />
 
@@ -273,6 +303,7 @@ function CADScene({
           isGroupSelected={selectedFdis.size > 1 && selectedFdis.has(tooth.fdi)}
           isColliding={collisionFdis.has(tooth.fdi)}
           showAttachments={showAttachments}
+          showIPR={showIPR}
           clippingPlanes={clippingPlanes}
           onSelect={onSelectTooth}
           onMeshMounted={handleMeshMounted}
@@ -342,6 +373,13 @@ export default function CADEngine() {
   const [gizmoMode, setGizmoMode] = useState<GizmoMode>("translate");
   const [showAttachments, setShowAttachments] = useState(true);
   const [showCollision, setShowCollision] = useState(true);
+  const [showIPR, setShowIPR] = useState(true);
+  const [showDiastema, setShowDiastema] = useState(true);
+  const [showCloseness, setShowCloseness] = useState(false);
+  const [showTeethWidths, setShowTeethWidths] = useState(false);
+  const [jawTransparency, setJawTransparency] = useState(0);
+  const [alignmentReps, setAlignmentReps] = useState(10);
+  const [orthoStageIndex, setOrthoStageIndex] = useState(0);
   const [toothOverrides, setToothOverrides] = useState<OverridesMap>(new Map());
   const [biomechanicsWarning, setBiomechanicsWarning] = useState<string | null>(null);
 
@@ -665,6 +703,7 @@ export default function CADEngine() {
                 selectedFdis={selectedFdis}
                 gizmoMode={gizmoMode}
                 showAttachments={showAttachments}
+                showIPR={showIPR}
                 collisionFdis={collisionFdis}
                 clippingPlanes={clippingPlanes}
                 onSelectTooth={handleSelectTooth}
@@ -680,6 +719,133 @@ export default function CADEngine() {
 
       {/* Side panel */}
       <div className="space-y-4">
+        {/* Orthodontics Panel */}
+        <Card className="p-4">
+          <h3 className="mb-3 text-sm font-semibold text-foreground flex items-center gap-2">
+            <Settings2 size={14} className="text-primary" /> Orthodontics Panel
+          </h3>
+
+          {/* Visibility */}
+          <p className="mb-2 text-[10px] font-bold uppercase tracking-widest text-[color:var(--muted-foreground)]">
+            <Eye size={10} className="inline mr-1" />Visibility
+          </p>
+          <div className="mb-3 grid grid-cols-2 gap-x-3 gap-y-1.5">
+            {([
+              { label: "IPR",                    state: showIPR,        set: setShowIPR },
+              { label: "Diastema",               state: showDiastema,   set: setShowDiastema },
+              { label: "Collisions",             state: showCollision,  set: setShowCollision },
+              { label: "Closeness",              state: showCloseness,  set: setShowCloseness },
+              { label: "Teeth Widths",           state: showTeethWidths, set: setShowTeethWidths },
+              { label: "Attachments",            state: showAttachments, set: setShowAttachments },
+            ] as const).map(({ label, state, set }) => (
+              <label key={label} className="flex cursor-pointer items-center gap-1.5 text-[11px] text-[color:var(--foreground)]">
+                <input
+                  type="checkbox"
+                  checked={state}
+                  onChange={e => (set as (v: boolean) => void)(e.target.checked)}
+                  className="h-3.5 w-3.5 accent-[color:var(--primary)] cursor-pointer"
+                />
+                {label}
+              </label>
+            ))}
+          </div>
+
+          {/* Transparency */}
+          <p className="mb-1.5 text-[10px] font-bold uppercase tracking-widest text-[color:var(--muted-foreground)]">
+            Model Jaw Transparency
+          </p>
+          <div className="mb-3 space-y-1">
+            <div className="flex items-center justify-between text-[10px] text-[color:var(--muted-foreground)]">
+              <span>Opacity</span>
+              <span className="font-semibold tabular-nums">{jawTransparency.toFixed(2)}</span>
+            </div>
+            <input
+              type="range"
+              min="0"
+              max="1"
+              step="0.01"
+              value={jawTransparency}
+              onChange={e => setJawTransparency(parseFloat(e.target.value))}
+              className="w-full accent-[color:var(--primary)]"
+            />
+            <div className="flex justify-between text-[9px] text-[color:var(--muted-foreground)]">
+              <span>Opaque</span><span>Transparent</span>
+            </div>
+          </div>
+
+          {/* Teeth Setup */}
+          <p className="mb-2 text-[10px] font-bold uppercase tracking-widest text-[color:var(--muted-foreground)]">
+            Teeth Setup
+          </p>
+          <div className="mb-3 flex flex-col gap-1.5">
+            <Button variant="primary" size="sm" className="w-full justify-center">
+              Automatic
+            </Button>
+            <Button variant="secondary" size="sm" className="w-full justify-center">
+              Snap To Curve
+            </Button>
+            <Button variant="secondary" size="sm" className="w-full justify-center">
+              Align Both Jaws Automatically
+            </Button>
+          </div>
+
+          {/* Advanced */}
+          <p className="mb-1.5 text-[10px] font-bold uppercase tracking-widest text-[color:var(--muted-foreground)]">
+            Advanced
+          </p>
+          <div className="mb-4 space-y-1">
+            <div className="flex items-center justify-between text-[10px] text-[color:var(--muted-foreground)]">
+              <span>Alignment Repetitions</span>
+              <span className="font-semibold tabular-nums">{alignmentReps}</span>
+            </div>
+            <input
+              type="range"
+              min="1"
+              max="20"
+              step="1"
+              value={alignmentReps}
+              onChange={e => setAlignmentReps(parseInt(e.target.value, 10))}
+              className="w-full accent-[color:var(--primary)]"
+            />
+            <div className="flex justify-between text-[9px] text-[color:var(--muted-foreground)]">
+              <span>1</span><span>20</span>
+            </div>
+          </div>
+
+          {/* Navigation */}
+          <div className="flex items-center gap-1.5">
+            <button
+              type="button"
+              onClick={() => setOrthoStageIndex(v => Math.max(0, v - 1))}
+              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-[color:var(--border)] bg-[color:var(--card)] text-[color:var(--muted-foreground)] transition-colors hover:border-[color:var(--primary)] hover:text-[color:var(--primary)]"
+              title="Previous stage"
+            >
+              <ChevronsLeft size={14} />
+            </button>
+            <Button
+              variant="primary"
+              size="sm"
+              className="flex-1 justify-center"
+              onClick={() => setOrthoStageIndex(v => v + 1)}
+            >
+              Continue to Edit Steps
+            </Button>
+            <button
+              type="button"
+              onClick={() => setOrthoStageIndex(v => v + 1)}
+              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-[color:var(--border)] bg-[color:var(--card)] text-[color:var(--muted-foreground)] transition-colors hover:border-[color:var(--primary)] hover:text-[color:var(--primary)]"
+              title="Next stage"
+            >
+              <ChevronsRight size={14} />
+            </button>
+          </div>
+          {orthoStageIndex > 0 && (
+            <p className="mt-1.5 text-center text-[10px] text-[color:var(--muted-foreground)] tabular-nums">
+              Step {orthoStageIndex}
+            </p>
+          )}
+        </Card>
+
         {/* Selection info */}
         <Card className="p-4">
           <h3 className="mb-3 text-sm font-semibold text-foreground flex items-center gap-2">

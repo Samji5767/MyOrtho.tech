@@ -1,9 +1,9 @@
 import { Module } from '@nestjs/common';
-import { BiomechanicsController } from './biomechanics.controller';
+import { BiomechanicsController, BiomechanicsLegacyController } from './biomechanics.controller';
 import { BiomechanicsService } from './biomechanics.service';
 
 @Module({
-  controllers: [BiomechanicsController],
+  controllers: [BiomechanicsController, BiomechanicsLegacyController],
   providers: [BiomechanicsService],
   exports: [BiomechanicsService],
 })

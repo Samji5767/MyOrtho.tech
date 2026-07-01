@@ -1,302 +1,459 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
   Activity,
+  AlertCircle,
   AlertTriangle,
   CheckCircle2,
-  ChevronDown,
-  ChevronRight,
   Loader2,
   RefreshCw,
   ShieldAlert,
   ShieldCheck,
-  TriangleAlert,
+  XCircle,
   Zap,
 } from "lucide-react";
-import { Card, StatusBadge, ProgressBar } from "@/components/DesignSystem";
-import {
-  fetchBiomechanicsAssessment,
-  runBiomechanicsAssessment,
-  type BiomechanicsAssessment,
-  type BiomechanicsFinding,
-} from "@/lib/api/biomechanics";
+import { Card, EmptyState, ProgressBar, Spinner } from "@/components/DesignSystem";
 
-// ─── Helpers ─────────────────────────────────────────────────────────────────
+// ─── Types ────────────────────────────────────────────────────────────────────
 
-const STATUS_TONE = {
-  safe: "success",
-  warning: "warning",
-  unsafe: "danger",
-  unknown: "neutral",
-} as const;
-
-const STATUS_ICON = {
-  safe: ShieldCheck,
-  warning: TriangleAlert,
-  unsafe: ShieldAlert,
-  unknown: Activity,
-};
-
-function statusTone(s: string) {
-  return STATUS_TONE[s as keyof typeof STATUS_TONE] ?? "neutral";
+interface CollisionPair {
+  tooth_a: number;
+  tooth_b: number;
+  position: string;
+  severity: "minor" | "moderate" | "severe";
 }
 
-function groupByStage(findings: BiomechanicsFinding[]): Map<number, BiomechanicsFinding[]> {
-  const map = new Map<number, BiomechanicsFinding[]>();
-  for (const f of findings) {
-    const list = map.get(f.stageNumber) ?? [];
-    list.push(f);
-    map.set(f.stageNumber, list);
-  }
-  return map;
+interface ExcessiveMovement {
+  tooth_fdi: number;
+  movement_type: string;
+  value: number;
+  limit: number;
+  exceeds: boolean;
 }
 
-// ─── Sub-components ───────────────────────────────────────────────────────────
+interface IprRequirement {
+  contact: string;
+  amount_needed_mm: number;
+  priority: "low" | "medium" | "high";
+}
 
-function ScoreBar({
-  label,
-  score,
-  description,
-}: {
-  label: string;
-  score: number | null;
-  description: string;
-}) {
-  if (score === null) return null;
-  const tone = score < 30 ? "success" : score < 70 ? "warning" : "danger";
+interface AttachmentRequirement {
+  tooth_fdi: number;
+  type: string;
+  reason: string;
+}
+
+interface StagingStep {
+  stage: number;
+  max_movement_mm: number;
+  tooth_count: number;
+}
+
+interface PdlStress {
+  tooth_fdi: number;
+  stress_pct: number;
+  overloaded: boolean;
+}
+
+interface BiomechanicsResult {
+  id: string;
+  setup_id: string;
+  biomechanical_score: number;
+  movement_feasible: boolean;
+  has_collisions: boolean;
+  staging_feasible: boolean;
+  max_pdl_stress_pct: number;
+  pdl_stresses: PdlStress[];
+  collision_pairs: CollisionPair[];
+  excessive_movements: ExcessiveMovement[];
+  anchorage_demand_score: number;
+  anchorage_demand_description: string;
+  ipr_requirements: IprRequirement[];
+  attachment_requirements: AttachmentRequirement[];
+  recommended_staging: StagingStep[];
+  created_at: string;
+}
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+function scoreColor(score: number): string {
+  if (score >= 80) return "text-emerald-600";
+  if (score >= 60) return "text-amber-600";
+  return "text-rose-600";
+}
+
+function scoreBg(score: number): string {
+  if (score >= 80) return "border-emerald-200 bg-emerald-50 dark:border-emerald-800 dark:bg-emerald-950/40";
+  if (score >= 60) return "border-amber-200 bg-amber-50 dark:border-amber-800 dark:bg-amber-950/40";
+  return "border-rose-200 bg-rose-50 dark:border-rose-800 dark:bg-rose-950/40";
+}
+
+function toothLabel(fdi: number): string {
+  const names: Record<number, string> = { 1: "Cent.", 2: "Lat.", 3: "Can.", 4: "1PM", 5: "2PM", 6: "1M", 7: "2M", 8: "3M" };
+  return `${fdi} (${names[fdi % 10] ?? ""})`;
+}
+
+function priorityColor(p: string): string {
+  if (p === "high") return "text-rose-600 bg-rose-50 border-rose-200";
+  if (p === "medium") return "text-amber-600 bg-amber-50 border-amber-200";
+  return "text-slate-600 bg-slate-50 border-slate-200";
+}
+
+function severityColor(s: string): string {
+  if (s === "severe") return "text-rose-600 bg-rose-50 border-rose-200";
+  if (s === "moderate") return "text-amber-600 bg-amber-50 border-amber-200";
+  return "text-blue-600 bg-blue-50 border-blue-200";
+}
+
+// ─── PDL Gauge ────────────────────────────────────────────────────────────────
+
+function PdlGauge({ pct }: { pct: number }) {
+  const clamped = Math.min(100, Math.max(0, pct));
+  const radius = 40;
+  const circumference = Math.PI * radius;
+  const offset = circumference - (clamped / 100) * circumference;
+  const color = pct >= 80 ? "#ef4444" : pct >= 60 ? "#f59e0b" : "#10b981";
+
   return (
-    <div className="space-y-1">
-      <div className="flex items-center justify-between text-xs">
-        <span className="font-medium text-[color:var(--foreground)]">{label}</span>
-        <span className="tabular-nums text-[color:var(--muted-foreground)]">{score}/100</span>
-      </div>
-      <ProgressBar value={score} tone={tone} />
-      <p className="text-[10px] text-[color:var(--muted-foreground)]">{description}</p>
+    <div className="flex flex-col items-center">
+      <svg width={100} height={60} viewBox="0 0 100 55">
+        <path d="M 10 50 A 40 40 0 0 1 90 50" fill="none" stroke="#e2e8f0" strokeWidth={10} strokeLinecap="round" />
+        <path
+          d="M 10 50 A 40 40 0 0 1 90 50"
+          fill="none"
+          stroke={color}
+          strokeWidth={10}
+          strokeLinecap="round"
+          strokeDasharray={circumference}
+          strokeDashoffset={offset}
+        />
+        <text x={50} y={52} textAnchor="middle" fontSize={14} fontWeight="700" fill={color}>{clamped}%</text>
+      </svg>
+      <p className="text-[10px] text-secondary">Max PDL Stress</p>
     </div>
   );
 }
 
-function FindingRow({ finding }: { finding: BiomechanicsFinding }) {
-  const tone = statusTone(finding.status);
-  const toneClass: Record<string, string> = {
-    success: "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300",
-    warning: "bg-amber-500/10 text-amber-700 dark:text-amber-300",
-    danger: "bg-red-500/10 text-red-700 dark:text-red-300",
-    neutral: "bg-[color:var(--muted)] text-[color:var(--muted-foreground)]",
-  };
-  return (
-    <div className={`flex items-start gap-2 rounded-lg px-3 py-2 text-xs ${toneClass[tone] ?? toneClass.neutral}`}>
-      <span className="shrink-0 font-semibold tabular-nums">FDI {finding.fdi}</span>
-      <span className="min-w-0 leading-relaxed">{finding.explanation}</span>
-    </div>
-  );
-}
+// ─── Main Component ───────────────────────────────────────────────────────────
 
-function StageGroup({ stageNumber, findings }: { stageNumber: number; findings: BiomechanicsFinding[] }) {
-  const [open, setOpen] = useState(stageNumber <= 3);
-  const worst = findings.some((f) => f.status === "unsafe")
-    ? "unsafe"
-    : findings.some((f) => f.status === "warning")
-    ? "warning"
-    : "safe";
-  return (
-    <div className="rounded-xl border border-[color:var(--border)] overflow-hidden">
-      <button
-        type="button"
-        onClick={() => setOpen((o) => !o)}
-        className="flex w-full items-center gap-3 px-4 py-2.5 text-left text-sm hover:bg-[color:var(--muted)]/30 transition-colors"
-      >
-        {open ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
-        <span className="font-semibold text-[color:var(--foreground)]">Stage {stageNumber}</span>
-        <StatusBadge tone={statusTone(worst)}>
-          {worst}
-        </StatusBadge>
-        <span className="ml-auto text-xs text-[color:var(--muted-foreground)]">
-          {findings.length} finding{findings.length !== 1 ? "s" : ""}
-        </span>
-      </button>
-      {open && (
-        <div className="space-y-1.5 border-t border-[color:var(--border)] p-3">
-          {findings.map((f, i) => (
-            <FindingRow key={i} finding={f} />
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
-// ─── Main Panel ───────────────────────────────────────────────────────────────
-
-interface Props {
-  caseId: string;
-  planId: string;
-}
-
-export default function BiomechanicsPanel({ caseId, planId }: Props) {
-  const [data, setData] = useState<BiomechanicsAssessment | null>(null);
-  const [loading, setLoading] = useState(true);
+export default function BiomechanicsPanel({ setupId, token }: { setupId?: string; token: string }) {
+  const [result, setResult] = useState<BiomechanicsResult | null>(null);
+  const [loading, setLoading] = useState(false);
   const [running, setRunning] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  async function load() {
+  const authHeaders = { Authorization: `Bearer ${token}`, "Content-Type": "application/json" };
+
+  const fetchResult = useCallback(async () => {
+    if (!setupId) return;
     setLoading(true);
     setError(null);
     try {
-      const result = await fetchBiomechanicsAssessment(caseId, planId);
-      setData(result);
+      const res = await fetch(`/api/biomechanics/${setupId}`, { headers: authHeaders });
+      if (res.status === 404) { setResult(null); return; }
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json() as BiomechanicsResult;
+      setResult(data);
     } catch (e) {
-      setError((e as Error).message);
+      setError(e instanceof Error ? e.message : "Failed to load analysis");
     } finally {
       setLoading(false);
     }
-  }
+  }, [setupId, token]);
 
-  async function runAssessment() {
+  useEffect(() => { fetchResult(); }, [fetchResult]);
+
+  const handleRun = async () => {
+    if (!setupId) return;
     setRunning(true);
     setError(null);
     try {
-      const result = await runBiomechanicsAssessment(caseId, planId);
-      setData(result);
+      const res = await fetch(`/api/biomechanics/${setupId}`, {
+        method: "POST",
+        headers: authHeaders,
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json() as BiomechanicsResult;
+      setResult(data);
     } catch (e) {
-      setError((e as Error).message);
+      setError(e instanceof Error ? e.message : "Failed to run analysis");
     } finally {
       setRunning(false);
     }
-  }
+  };
 
-  useEffect(() => { void load(); }, [caseId, planId]);
-
-  const StatusIcon = data ? STATUS_ICON[data.overallStatus] ?? Activity : Activity;
-
-  if (loading) {
+  if (!setupId) {
     return (
-      <div className="flex justify-center py-10">
-        <Loader2 size={20} className="animate-spin text-[color:var(--muted-foreground)]" />
-      </div>
+      <EmptyState
+        icon={Activity}
+        title="No setup selected"
+        body="Select a digital setup from the CAD Workspace to run biomechanical analysis."
+      />
     );
   }
 
   return (
     <div className="space-y-4">
-      {/* AI disclaimer */}
-      <div className="flex items-start gap-2 rounded-xl border border-amber-200/60 bg-amber-50/60 px-3 py-2 text-xs text-amber-800 dark:border-amber-500/20 dark:bg-amber-500/10 dark:text-amber-300">
-        <AlertTriangle size={12} className="mt-0.5 shrink-0" />
-        Biomechanics assessment is a clinical decision-support tool only. Clinician review required before treatment.
+      {/* Action bar */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <button
+            onClick={handleRun}
+            disabled={running || loading}
+            className="inline-flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-50"
+          >
+            {running ? <Loader2 className="h-4 w-4 animate-spin" /> : <Zap className="h-4 w-4" />}
+            {running ? "Analyzing…" : "Run Biomechanical Analysis"}
+          </button>
+          {result && (
+            <span className="text-xs text-secondary">
+              Last run: {new Date(result.created_at).toLocaleString()}
+            </span>
+          )}
+        </div>
+        <button
+          onClick={fetchResult}
+          disabled={loading}
+          className="rounded-lg border border-border p-2 text-secondary hover:bg-slate-100 dark:hover:bg-slate-900 disabled:opacity-50"
+        >
+          <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
+        </button>
       </div>
 
       {error && (
-        <div className="flex items-start gap-2 rounded-xl border border-red-200/60 bg-red-50/60 px-3 py-2 text-xs text-red-700 dark:border-red-500/20 dark:bg-red-500/10 dark:text-red-300">
-          <AlertTriangle size={12} className="mt-0.5 shrink-0" />
+        <div className="flex items-center gap-2 rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+          <AlertCircle className="h-4 w-4 shrink-0" />
           {error}
         </div>
       )}
 
-      {/* Run / re-run button */}
-      <div className="flex items-center justify-between gap-3">
-        <p className="text-sm text-[color:var(--muted-foreground)]">
-          {data ? "Last run assessment results" : "No assessment yet — run to validate movement limits"}
-        </p>
-        <button
-          type="button"
-          onClick={runAssessment}
-          disabled={running}
-          className="flex items-center gap-1.5 rounded-xl border border-[color:var(--border)] bg-[color:var(--card)] px-3 py-2 text-xs font-medium text-[color:var(--foreground)] hover:border-[color:var(--primary)]/40 transition-colors disabled:opacity-50"
-        >
-          {running ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />}
-          {data ? "Re-run assessment" : "Run assessment"}
-        </button>
-      </div>
+      {loading && !result && (
+        <div className="flex items-center justify-center py-16"><Spinner size={32} /></div>
+      )}
 
-      {data && (
+      {!result && !loading && (
+        <EmptyState
+          icon={Activity}
+          title="No analysis yet"
+          body="Click Run Biomechanical Analysis to evaluate the current setup."
+        />
+      )}
+
+      {result && (
         <>
-          {/* Overall status card */}
-          <Card className="p-5">
-            <div className="flex items-start gap-4">
-              <div
-                className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-xl ${
-                  data.overallStatus === "safe"
-                    ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
-                    : data.overallStatus === "warning"
-                    ? "bg-amber-500/10 text-amber-600 dark:text-amber-400"
-                    : data.overallStatus === "unsafe"
-                    ? "bg-red-500/10 text-red-600 dark:text-red-400"
-                    : "bg-[color:var(--muted)] text-[color:var(--muted-foreground)]"
-                }`}
-              >
-                <StatusIcon size={24} />
+          {/* Score cards */}
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+            <div className={`rounded-xl border p-4 text-center ${scoreBg(result.biomechanical_score)}`}>
+              <p className={`text-4xl font-bold ${scoreColor(result.biomechanical_score)}`}>{result.biomechanical_score}</p>
+              <p className="mt-1 text-[10px] font-semibold uppercase tracking-wide text-secondary">Biomech Score</p>
+            </div>
+            <div className={`rounded-xl border p-4 text-center ${result.movement_feasible ? "border-emerald-200 bg-emerald-50 dark:border-emerald-800 dark:bg-emerald-950/40" : "border-rose-200 bg-rose-50 dark:border-rose-800 dark:bg-rose-950/40"}`}>
+              <div className="flex justify-center">
+                {result.movement_feasible
+                  ? <ShieldCheck className="h-9 w-9 text-emerald-500" />
+                  : <ShieldAlert className="h-9 w-9 text-rose-500" />}
               </div>
-              <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-2">
-                  <h3 className="text-base font-semibold text-[color:var(--foreground)] capitalize">
-                    {data.overallStatus}
-                  </h3>
-                  <StatusBadge tone={statusTone(data.overallStatus)}>
-                    {data.stageCount} stage{data.stageCount !== 1 ? "s" : ""}
-                  </StatusBadge>
-                </div>
-                <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-[color:var(--muted-foreground)]">
-                  <span className="flex items-center gap-1">
-                    <CheckCircle2 size={11} className="text-emerald-500" />
-                    {data.safeStageCount} safe
-                  </span>
-                  <span className="flex items-center gap-1">
-                    <TriangleAlert size={11} className="text-amber-500" />
-                    {data.warningStageCount} warning
-                  </span>
-                  <span className="flex items-center gap-1">
-                    <ShieldAlert size={11} className="text-red-500" />
-                    {data.unsafeStageCount} unsafe
-                  </span>
-                  {data.collisionPairs > 0 && (
-                    <span className="flex items-center gap-1">
-                      <Zap size={11} className="text-amber-500" />
-                      {data.collisionPairs} collision risk{data.collisionPairs !== 1 ? "s" : ""}
-                    </span>
-                  )}
-                </div>
+              <p className="mt-1 text-[10px] font-semibold uppercase tracking-wide text-secondary">Movement Feasible</p>
+            </div>
+            <div className={`rounded-xl border p-4 text-center ${!result.has_collisions ? "border-emerald-200 bg-emerald-50 dark:border-emerald-800 dark:bg-emerald-950/40" : "border-rose-200 bg-rose-50 dark:border-rose-800 dark:bg-rose-950/40"}`}>
+              <div className="flex justify-center">
+                {!result.has_collisions
+                  ? <CheckCircle2 className="h-9 w-9 text-emerald-500" />
+                  : <XCircle className="h-9 w-9 text-rose-500" />}
+              </div>
+              <p className="mt-1 text-[10px] font-semibold uppercase tracking-wide text-secondary">
+                {result.has_collisions ? "Collisions" : "No Collisions"}
+              </p>
+            </div>
+            <div className={`rounded-xl border p-4 text-center ${result.staging_feasible ? "border-emerald-200 bg-emerald-50 dark:border-emerald-800 dark:bg-emerald-950/40" : "border-amber-200 bg-amber-50 dark:border-amber-800 dark:bg-amber-950/40"}`}>
+              <div className="flex justify-center">
+                {result.staging_feasible
+                  ? <CheckCircle2 className="h-9 w-9 text-emerald-500" />
+                  : <AlertTriangle className="h-9 w-9 text-amber-500" />}
+              </div>
+              <p className="mt-1 text-[10px] font-semibold uppercase tracking-wide text-secondary">Staging Feasible</p>
+            </div>
+          </div>
+
+          {/* PDL Stress */}
+          <Card className="p-5">
+            <h3 className="mb-4 text-sm font-semibold text-foreground flex items-center gap-2">
+              <Activity className="h-4 w-4 text-indigo-500" />
+              PDL Stress Analysis
+            </h3>
+            <div className="flex flex-wrap items-start gap-6">
+              <PdlGauge pct={result.max_pdl_stress_pct} />
+              <div className="flex-1 min-w-[200px]">
+                {result.pdl_stresses.filter((s) => s.overloaded).length === 0 ? (
+                  <p className="text-sm text-emerald-600 flex items-center gap-1.5">
+                    <CheckCircle2 className="h-4 w-4" /> No overloaded teeth
+                  </p>
+                ) : (
+                  <div className="space-y-2">
+                    <p className="text-xs font-semibold text-secondary mb-2">Overloaded Teeth</p>
+                    {result.pdl_stresses.filter((s) => s.overloaded).map((s) => (
+                      <div key={s.tooth_fdi} className="flex items-center justify-between text-xs">
+                        <span className="font-medium text-foreground">{toothLabel(s.tooth_fdi)}</span>
+                        <div className="flex items-center gap-2 w-32">
+                          <div className="flex-1 h-1.5 rounded-full bg-slate-200">
+                            <div className="h-1.5 rounded-full bg-rose-500" style={{ width: `${Math.min(100, s.stress_pct)}%` }} />
+                          </div>
+                          <span className="w-10 text-right font-semibold text-rose-600">{s.stress_pct}%</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             </div>
           </Card>
 
-          {/* Clinical scores */}
-          <Card className="p-5">
-            <h3 className="mb-4 text-sm font-semibold text-[color:var(--foreground)]">Clinical Difficulty Scores</h3>
-            <div className="space-y-4">
-              <ScoreBar
-                label="Anchorage Demand"
-                score={data.anchorageScore}
-                description="Higher = greater anchorage requirement. Consider TADs or skeletal anchorage above 70."
-              />
-              <ScoreBar
-                label="Root Control Complexity"
-                score={data.rootControlScore}
-                description="Higher = significant torque/tip movements requiring careful monitoring."
-              />
-              <ScoreBar
-                label="Overall Difficulty"
-                score={data.difficultyScore}
-                description="Composite difficulty index. Values above 70 indicate challenging case mechanics."
-              />
-            </div>
-          </Card>
-
-          {/* Findings by stage */}
-          {data.findings.length > 0 ? (
-            <div className="space-y-2">
-              <h3 className="text-sm font-semibold text-[color:var(--foreground)]">
-                Findings ({data.findings.length})
+          {/* Collision Detection */}
+          {result.collision_pairs.length > 0 && (
+            <Card className="p-5">
+              <h3 className="mb-3 text-sm font-semibold text-foreground flex items-center gap-2">
+                <XCircle className="h-4 w-4 text-rose-500" />
+                Collision Detection ({result.collision_pairs.length})
               </h3>
-              {Array.from(groupByStage(data.findings)).map(([stageNum, findings]) => (
-                <StageGroup key={stageNum} stageNumber={stageNum} findings={findings} />
-              ))}
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                {result.collision_pairs.map((pair, i) => (
+                  <div key={i} className={`flex items-start gap-3 rounded-lg border p-3 ${severityColor(pair.severity)}`}>
+                    <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0" />
+                    <div>
+                      <p className="text-xs font-semibold">Tooth {pair.tooth_a} ↔ Tooth {pair.tooth_b}</p>
+                      <p className="text-[11px] mt-0.5 opacity-80">{pair.position}</p>
+                      <span className={`inline-block mt-1 rounded border px-1.5 py-0.5 text-[10px] font-semibold ${severityColor(pair.severity)}`}>
+                        {pair.severity}
+                      </span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </Card>
+          )}
+
+          {/* Excessive Movements */}
+          {result.excessive_movements.length > 0 && (
+            <Card className="p-5">
+              <h3 className="mb-3 text-sm font-semibold text-foreground">Excessive Movements</h3>
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr className="border-b border-border">
+                      {["Tooth", "Movement", "Value", "Limit", "Status"].map((h) => (
+                        <th key={h} className="pb-2 pr-4 text-left font-semibold text-secondary">{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {result.excessive_movements.map((m, i) => (
+                      <tr key={i} className="border-b border-border/50">
+                        <td className="py-2 pr-4 font-medium">{toothLabel(m.tooth_fdi)}</td>
+                        <td className="py-2 pr-4 text-secondary">{m.movement_type}</td>
+                        <td className={`py-2 pr-4 font-semibold ${m.exceeds ? "text-rose-600" : "text-foreground"}`}>{m.value.toFixed(2)}</td>
+                        <td className="py-2 pr-4 text-secondary">{m.limit.toFixed(2)}</td>
+                        <td className="py-2">
+                          <span className={`inline-block rounded border px-2 py-0.5 text-[10px] font-semibold ${m.exceeds ? "border-rose-200 bg-rose-50 text-rose-700" : "border-emerald-200 bg-emerald-50 text-emerald-700"}`}>
+                            {m.exceeds ? "Exceeds" : "OK"}
+                          </span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </Card>
+          )}
+
+          {/* Anchorage Demand */}
+          <Card className="p-5">
+            <h3 className="mb-3 text-sm font-semibold text-foreground">Anchorage Demand</h3>
+            <div className="space-y-2">
+              <div className="flex items-center justify-between text-xs">
+                <span className="text-secondary">Score</span>
+                <span className={`font-bold text-sm ${scoreColor(100 - result.anchorage_demand_score)}`}>
+                  {result.anchorage_demand_score}/100
+                </span>
+              </div>
+              <ProgressBar
+                value={result.anchorage_demand_score}
+                tone={result.anchorage_demand_score >= 70 ? "danger" : result.anchorage_demand_score >= 40 ? "warning" : "success"}
+              />
+              <p className="text-xs text-secondary mt-1">{result.anchorage_demand_description}</p>
             </div>
-          ) : (
-            <Card className="p-6 text-center">
-              <CheckCircle2 size={24} className="mx-auto mb-2 text-emerald-500" />
-              <p className="text-sm font-semibold text-[color:var(--foreground)]">All movements within safe limits</p>
-              <p className="mt-1 text-xs text-[color:var(--muted-foreground)]">No per-stage findings to report.</p>
+          </Card>
+
+          {/* IPR Requirements */}
+          {result.ipr_requirements.length > 0 && (
+            <Card className="p-5">
+              <h3 className="mb-3 text-sm font-semibold text-foreground">IPR Requirements</h3>
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr className="border-b border-border">
+                      {["Contact", "Amount", "Priority"].map((h) => (
+                        <th key={h} className="pb-2 pr-4 text-left font-semibold text-secondary">{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {result.ipr_requirements.map((req, i) => (
+                      <tr key={i} className="border-b border-border/50">
+                        <td className="py-2 pr-4 font-medium">{req.contact}</td>
+                        <td className="py-2 pr-4">{req.amount_needed_mm.toFixed(2)} mm</td>
+                        <td className="py-2">
+                          <span className={`inline-block rounded border px-2 py-0.5 text-[10px] font-semibold ${priorityColor(req.priority)}`}>
+                            {req.priority}
+                          </span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </Card>
+          )}
+
+          {/* Attachment Requirements */}
+          {result.attachment_requirements.length > 0 && (
+            <Card className="p-5">
+              <h3 className="mb-3 text-sm font-semibold text-foreground">Attachment Requirements</h3>
+              <div className="flex flex-wrap gap-2">
+                {result.attachment_requirements.map((a, i) => (
+                  <div key={i} className="flex items-start gap-2 rounded-lg border border-border bg-card px-3 py-2">
+                    <span className="text-xs font-bold text-foreground mt-0.5">{a.tooth_fdi}</span>
+                    <div>
+                      <span className="block text-[10px] font-semibold text-indigo-600">{a.type}</span>
+                      <span className="block text-[10px] text-secondary">{a.reason}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </Card>
+          )}
+
+          {/* AI Recommended Staging */}
+          {result.recommended_staging.length > 0 && (
+            <Card className="p-5">
+              <h3 className="mb-3 text-sm font-semibold text-foreground">AI Recommended Staging</h3>
+              <p className="mb-3 text-xs text-secondary">{result.recommended_staging.length} estimated stages</p>
+              <div className="space-y-2">
+                {result.recommended_staging.map((step) => {
+                  const pct = Math.min(100, (step.max_movement_mm / 0.5) * 100);
+                  return (
+                    <div key={step.stage} className="flex items-center gap-3 text-xs">
+                      <span className="w-14 shrink-0 font-semibold text-secondary">Stage {step.stage}</span>
+                      <div className="flex-1 h-5 rounded-full bg-slate-100 dark:bg-slate-800 relative overflow-hidden">
+                        <div className="h-full rounded-full bg-indigo-400 transition-all" style={{ width: `${pct}%` }} />
+                        <span className="absolute inset-0 flex items-center px-2 text-[10px] font-semibold text-foreground">
+                          {step.tooth_count} teeth · {step.max_movement_mm.toFixed(2)} mm max
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
             </Card>
           )}
         </>

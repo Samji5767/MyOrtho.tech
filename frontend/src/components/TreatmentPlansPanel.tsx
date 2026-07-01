@@ -328,7 +328,7 @@ function PlanRow({
               )}
 
               {activeTab === "biomechanics" && (
-                <BiomechanicsPanel caseId={caseId} planId={plan.id} />
+                <BiomechanicsPanel setupId={plan.id} token="" />
               )}
 
               {activeTab === "attachments" && (

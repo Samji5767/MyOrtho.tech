@@ -96,6 +96,15 @@ import { MaterialTestingModule } from './material-testing/material-testing.modul
 import { IntakeFormsModule } from './intake-forms/intake-forms.module';
 import { RevenueCycleModule } from './revenue-cycle/revenue-cycle.module';
 import { PlatformHealthModule } from './platform-health/platform-health.module';
+import { StlProcessingModule } from './stl-processing/stl-processing.module';
+import { ToothSegmentationModule } from './tooth-segmentation/tooth-segmentation.module';
+import { ClinicalAnalysisDeepModule } from './clinical-analysis-deep/clinical-analysis-deep.module';
+import { TreatmentGoalsModule } from './treatment-goals/treatment-goals.module';
+import { DigitalSetupModule } from './digital-setup/digital-setup.module';
+import { TreatmentStagesModule } from './treatment-stages/treatment-stages.module';
+import { TreatmentQAModule } from './treatment-qa/treatment-qa.module';
+import { AlignerDesignModule } from './aligner-design/aligner-design.module';
+import { AiSuggestionsModule } from './ai-suggestions/ai-suggestions.module';
 
 @Module({
   imports: [
@@ -206,6 +215,15 @@ import { PlatformHealthModule } from './platform-health/platform-health.module';
     IntakeFormsModule,
     RevenueCycleModule,
     PlatformHealthModule,
+    StlProcessingModule,
+    ToothSegmentationModule,
+    ClinicalAnalysisDeepModule,
+    TreatmentGoalsModule,
+    DigitalSetupModule,
+    TreatmentStagesModule,
+    TreatmentQAModule,
+    AlignerDesignModule,
+    AiSuggestionsModule,
   ],
   providers: [
     {

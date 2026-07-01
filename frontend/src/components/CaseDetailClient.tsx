@@ -6,6 +6,8 @@ import { fetchCase, type CaseDetail } from "@/lib/api/cases";
 import {
   Activity,
   ArrowLeft,
+  BarChart2,
+  Bot,
   Box,
   Brain,
   Camera,
@@ -13,10 +15,16 @@ import {
   ChevronRight,
   ClipboardCheck,
   ClipboardList,
+  Cpu,
+  Factory,
   FileText,
   FilePlus,
   GitBranch,
+  Grid3X3,
+  Layers,
   Microscope,
+  Move3d,
+  Package,
   Ruler,
   ScanLine,
   ScrollText,
@@ -24,8 +32,10 @@ import {
   Stethoscope,
   Syringe,
   Target,
+  Upload,
   UploadCloud,
   Users,
+  Zap,
 } from "lucide-react";
 import dynamic from "next/dynamic";
 import ScanPanel from "@/components/ScanPanel";
@@ -63,6 +73,19 @@ const AISegmentationCenter = dynamic(
   () => import("@/components/AISegmentationCenter").then((m) => ({ default: m.AISegmentationCenter })),
   { ssr: false, loading: () => <div className="h-[400px] animate-skeleton rounded-xl" /> },
 );
+
+const TreatmentPipelinePanel = dynamic(() => import("@/components/TreatmentPipelinePanel"), { ssr: false });
+const ScanValidationPanel = dynamic(() => import("@/components/ScanValidationPanel"), { ssr: false });
+const ToothSegmentationPanel = dynamic(() => import("@/components/ToothSegmentationPanel"), { ssr: false });
+const ClinicalAnalysisDeepPanel = dynamic(() => import("@/components/ClinicalAnalysisDeepPanel"), { ssr: false });
+const TreatmentGoalsPanel = dynamic(() => import("@/components/TreatmentGoalsPanel"), { ssr: false });
+const CADWorkspacePanel = dynamic(() => import("@/components/CADWorkspacePanel"), { ssr: false });
+const BiomechanicsPanel = dynamic(() => import("@/components/BiomechanicsPanel"), { ssr: false });
+const AIClinicalAssistantPanel = dynamic(() => import("@/components/AIClinicalAssistantPanel"), { ssr: false });
+const TreatmentStagesPanel = dynamic(() => import("@/components/TreatmentStagesPanel"), { ssr: false });
+const QAReportPanel = dynamic(() => import("@/components/QAReportPanel"), { ssr: false });
+const AlignerPreviewPanel = dynamic(() => import("@/components/AlignerPreviewPanel"), { ssr: false });
+const ManufacturingPackagePanel = dynamic(() => import("@/components/ManufacturingPackagePanel"), { ssr: false });
 
 // ─── Representative data keyed to case ID ─────────────────────────────────────
 
@@ -217,7 +240,10 @@ type Tab =
   | "processing" | "tx-monitoring" | "cbct"
   | "consents" | "appointments" | "reports" | "lab-orders" | "referrals"
   | "insurance" | "prescriptions" | "remote-monitoring" | "outcomes"
-  | "alerts" | "tasks" | "documents" | "education" | "occlusion" | "radiology";
+  | "alerts" | "tasks" | "documents" | "education" | "occlusion" | "radiology"
+  | "pipeline" | "scan-validation" | "segmentation" | "clinical-deep"
+  | "tx-goals" | "cad-studio" | "biomechanics" | "ai-assistant"
+  | "stages" | "qa-report" | "aligner-preview" | "manufacturing";
 
 const TABS: { key: Tab; label: string; icon: React.ReactNode }[] = [
   { key: "summary",   label: "Summary",   icon: <ClipboardList size={13} /> },
@@ -251,6 +277,18 @@ const TABS: { key: Tab; label: string; icon: React.ReactNode }[] = [
   { key: "occlusion",        label: "Occlusion",     icon: <Target size={13} /> },
   { key: "radiology",        label: "Imaging",       icon: <Camera size={13} /> },
   { key: "audit",            label: "Audit",         icon: <Activity size={13} /> },
+  { key: "pipeline",        label: "AI Pipeline",    icon: <Cpu size={13} /> },
+  { key: "scan-validation", label: "Scan Upload",    icon: <Upload size={13} /> },
+  { key: "segmentation",    label: "Segmentation",   icon: <Grid3X3 size={13} /> },
+  { key: "clinical-deep",   label: "Analysis",       icon: <BarChart2 size={13} /> },
+  { key: "tx-goals",        label: "Tx Goals",       icon: <Target size={13} /> },
+  { key: "cad-studio",      label: "CAD Studio",     icon: <Move3d size={13} /> },
+  { key: "biomechanics",    label: "Biomechanics",   icon: <Zap size={13} /> },
+  { key: "ai-assistant",    label: "AI Assistant",   icon: <Bot size={13} /> },
+  { key: "stages",          label: "Stages",         icon: <Layers size={13} /> },
+  { key: "qa-report",       label: "QA",             icon: <ClipboardCheck size={13} /> },
+  { key: "aligner-preview", label: "Aligners",       icon: <Package size={13} /> },
+  { key: "manufacturing",   label: "Manufacturing",  icon: <Factory size={13} /> },
 ];
 
 // ─── Summary tab ──────────────────────────────────────────────────────────────
@@ -466,6 +504,18 @@ export default function CaseDetailClient({ id }: { id: string }) {
         {tab === "occlusion"        && <OcclusionPanel caseId={id} token="" />}
         {tab === "radiology"        && <RadiologyPanel patientId={id} caseId={id} token="" />}
         {tab === "audit"            && <AuditTrail caseId={id} isLive={false} />}
+        {tab === "pipeline"         && <TreatmentPipelinePanel caseId={id} token="" />}
+        {tab === "scan-validation"  && <ScanValidationPanel caseId={id} uploadId={undefined} token="" />}
+        {tab === "segmentation"     && <ToothSegmentationPanel uploadId="" token="" />}
+        {tab === "clinical-deep"    && <ClinicalAnalysisDeepPanel caseId={id} uploadId={undefined} token="" />}
+        {tab === "tx-goals"         && <TreatmentGoalsPanel caseId={id} token="" />}
+        {tab === "cad-studio"       && <CADWorkspacePanel caseId={id} token="" />}
+        {tab === "biomechanics"     && <BiomechanicsPanel setupId={undefined} token="" />}
+        {tab === "ai-assistant"     && <AIClinicalAssistantPanel setupId={undefined} token="" />}
+        {tab === "stages"           && <TreatmentStagesPanel setupId={undefined} token="" />}
+        {tab === "qa-report"        && <QAReportPanel setupId={undefined} token="" />}
+        {tab === "aligner-preview"  && <AlignerPreviewPanel setupId={undefined} token="" />}
+        {tab === "manufacturing"    && <ManufacturingPackagePanel setupId={undefined} caseId={id} token="" />}
       </div>
     </section>
   );

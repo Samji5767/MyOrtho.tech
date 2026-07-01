@@ -16,7 +16,12 @@ import {
 import { Button, Card, DataRow, StatusBadge } from "@/components/DesignSystem";
 import { validateMovements } from "@/lib/biomechanics/vectorMath";
 import { useCasePlanning } from "@/components/CasePlanningContext";
-import { MM_TO_SCENE } from "@/lib/meshAnalysis";
+import {
+  MM_TO_SCENE,
+  buildToothPositions,
+  computeOcclusionContacts,
+  type OcclusionContact,
+} from "@/lib/meshAnalysis";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -376,6 +381,12 @@ function CADScene({
   contextAttachmentFdis,
   contextIPRMap,
   planningOffsets,
+  occlusionContacts,
+  showOcclusionContacts,
+  showIPROverlay,
+  showAlignerShell,
+  alignerThickness,
+  alignerArch,
   onSelectTooth,
   onTransformChange,
 }: {
@@ -403,6 +414,12 @@ function CADScene({
   contextAttachmentFdis: Set<number>;
   contextIPRMap: Map<number, number>;
   planningOffsets: Map<number, PlanningOffset>;
+  occlusionContacts: OcclusionContact[];
+  showOcclusionContacts: boolean;
+  showIPROverlay: boolean;
+  showAlignerShell: boolean;
+  alignerThickness: number;
+  alignerArch: "upper" | "lower" | "both";
   onSelectTooth: (fdi: number, shift: boolean) => void;
   onTransformChange: (fdi: number, pos: THREE.Vector3, rot: THREE.Euler) => void;
 }) {
@@ -562,6 +579,60 @@ function CADScene({
         );
       })}
 
+      {/* Occlusion contact spheres — color-coded by proximity */}
+      {showOcclusionContacts && occlusionContacts
+        .filter((c) => c.contactType !== "none")
+        .map((c, i) => {
+          const color = c.contactType === "heavy" ? "#ef4444"
+            : c.contactType === "light" ? "#f97316"
+            : "#eab308";
+          return (
+            <mesh key={`occ_${i}`} position={[c.midpoint.x, c.midpoint.y, c.midpoint.z]}>
+              <sphereGeometry args={[0.08, 8, 6]} />
+              <meshBasicMaterial color={color} transparent opacity={0.85} />
+            </mesh>
+          );
+        })
+      }
+
+      {/* IPR overlay — enlarged colored discs at planned IPR sites */}
+      {showIPROverlay && Array.from(contextIPRMap.entries()).map(([fdiA, amount]) => {
+        const tooth = visibleTeeth.find((t) => t.fdi === fdiA);
+        if (!tooth) return null;
+        const color = amount >= 0.5 ? "#ef4444" : amount >= 0.3 ? "#f97316" : "#22c55e";
+        const pos = tooth.initPosition;
+        return (
+          <mesh
+            key={`ipr_ovl_${fdiA}`}
+            position={[pos.x + 0.42, pos.y, pos.z]}
+            rotation={[0, 0, Math.PI / 2]}
+          >
+            <cylinderGeometry args={[0.18, 0.18, 0.03, 16]} />
+            <meshBasicMaterial color={color} transparent opacity={0.78} />
+          </mesh>
+        );
+      })}
+
+      {/* Aligner shell — manufacturing geometry preview (NOT FOR CLINICAL USE) */}
+      {showAlignerShell && (alignerArch === "upper" || alignerArch === "both") && showMaxilla && (
+        <mesh position={[0, 0.18, -0.7]} rotation={[Math.PI / 2, 0, 0]}>
+          <torusGeometry args={[2.05, 0.58 + alignerThickness * MM_TO_SCENE, 10, 28, Math.PI]} />
+          <meshPhysicalMaterial
+            color="#88bbff" transparent opacity={0.22}
+            roughness={0.05} metalness={0} side={THREE.DoubleSide}
+          />
+        </mesh>
+      )}
+      {showAlignerShell && (alignerArch === "lower" || alignerArch === "both") && showMandible && (
+        <mesh position={[0, -0.18, 0.7]} rotation={[-Math.PI / 2, Math.PI, 0]}>
+          <torusGeometry args={[1.95, 0.56 + alignerThickness * MM_TO_SCENE, 10, 28, Math.PI]} />
+          <meshPhysicalMaterial
+            color="#88bbff" transparent opacity={0.22}
+            roughness={0.05} metalness={0} side={THREE.DoubleSide}
+          />
+        </mesh>
+      )}
+
       {visibleTeeth.map(tooth => {
         const isHidden = hiddenFdis.has(tooth.fdi) ||
           (isolationMode && selectedFdis.size > 0 && !selectedFdis.has(tooth.fdi));
@@ -717,6 +788,11 @@ export default function CADEngine() {
   const [mandibleTransparency, setMandibleTransparency] = useState(0);
   const [toothOverrides, setToothOverrides] = useState<OverridesMap>(new Map());
   const [biomechanicsWarning, setBiomechanicsWarning] = useState<string | null>(null);
+
+  const occlusionContacts = useMemo<OcclusionContact[]>(() => {
+    const positions = buildToothPositions(teeth, toothOverrides);
+    return computeOcclusionContacts(positions);
+  }, [teeth, toothOverrides]);
 
   // Undo/redo history stack
   const historyRef = useRef<OverridesMap[]>([new Map()]);
@@ -1197,6 +1273,12 @@ export default function CADEngine() {
                 contextAttachmentFdis={contextAttachmentFdis}
                 contextIPRMap={contextIPRMap}
                 planningOffsets={planningOffsets}
+                occlusionContacts={occlusionContacts}
+                showOcclusionContacts={state.showOcclusionContacts}
+                showIPROverlay={state.showIPROverlay}
+                showAlignerShell={state.showAlignerShell}
+                alignerThickness={state.alignerThickness}
+                alignerArch={state.alignerArch}
                 onSelectTooth={handleSelectTooth}
                 onTransformChange={handleTransformChange}
               />
@@ -1337,6 +1419,25 @@ export default function CADEngine() {
                 {label}
               </label>
             ))}
+            {/* Context-driven overlays */}
+            <label className="flex cursor-pointer items-center gap-1.5 text-[11px] text-[color:var(--foreground)]">
+              <input
+                type="checkbox"
+                checked={state.showOcclusionContacts}
+                onChange={() => dispatch({ type: "TOGGLE_OCCLUSION_CONTACTS" })}
+                className="h-3.5 w-3.5 accent-[color:var(--primary)] cursor-pointer"
+              />
+              Occ. Contacts
+            </label>
+            <label className="flex cursor-pointer items-center gap-1.5 text-[11px] text-[color:var(--foreground)]">
+              <input
+                type="checkbox"
+                checked={state.showIPROverlay}
+                onChange={() => dispatch({ type: "TOGGLE_IPR_OVERLAY" })}
+                className="h-3.5 w-3.5 accent-[color:var(--primary)] cursor-pointer"
+              />
+              IPR Overlay
+            </label>
           </div>
 
           {/* ── Jaw Visibility & Transparency ────────────────────── */}
@@ -1472,6 +1573,64 @@ export default function CADEngine() {
             <p className="mt-1.5 text-center text-[10px] text-[color:var(--muted-foreground)] tabular-nums">
               Step {orthoStageIndex}
             </p>
+          )}
+        </Card>
+
+        {/* Manufacturing Preview */}
+        <Card className="p-4">
+          <h3 className="mb-3 text-sm font-semibold text-foreground flex items-center gap-2">
+            <Zap size={14} className="text-primary" /> Manufacturing Preview
+          </h3>
+          {/* Aligner shell toggle */}
+          <div className="mb-3 flex items-center justify-between">
+            <span className="text-[11px] text-[color:var(--foreground)]">Aligner Shell</span>
+            <button
+              type="button"
+              onClick={() => dispatch({ type: "TOGGLE_ALIGNER_SHELL" })}
+              className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer items-center rounded-full transition-colors duration-200 ${state.showAlignerShell ? "bg-[color:var(--primary)]" : "bg-[color:var(--border)]"}`}
+              aria-pressed={state.showAlignerShell}
+            >
+              <span className={`inline-block h-3.5 w-3.5 rounded-full bg-white shadow transition-transform duration-200 ${state.showAlignerShell ? "translate-x-4" : "translate-x-0.5"}`} />
+            </button>
+          </div>
+          {state.showAlignerShell && (
+            <div className="space-y-3">
+              {/* Arch selector */}
+              <div>
+                <p className="mb-1.5 text-[10px] font-bold uppercase tracking-widest text-[color:var(--muted-foreground)]">Arch</p>
+                <div className="flex gap-1 rounded-xl border border-[color:var(--border)] p-0.5">
+                  {(["upper", "lower", "both"] as const).map(arch => (
+                    <button
+                      key={arch}
+                      type="button"
+                      onClick={() => dispatch({ type: "SET_ALIGNER_ARCH", arch })}
+                      className={`flex-1 rounded-lg py-1 text-[10px] font-semibold capitalize transition-colors ${state.alignerArch === arch ? "bg-[color:var(--primary)] text-[color:var(--primary-foreground)]" : "text-[color:var(--muted-foreground)]"}`}
+                    >
+                      {arch}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              {/* Thickness slider */}
+              <div>
+                <div className="mb-1 flex items-center justify-between">
+                  <p className="text-[10px] font-bold uppercase tracking-widest text-[color:var(--muted-foreground)]">Thickness</p>
+                  <span className="text-[10px] tabular-nums text-[color:var(--muted-foreground)]">{state.alignerThickness.toFixed(1)} mm</span>
+                </div>
+                <input
+                  type="range" min="0.3" max="1.5" step="0.1"
+                  value={state.alignerThickness}
+                  onChange={e => dispatch({ type: "SET_ALIGNER_THICKNESS", thickness: parseFloat(e.target.value) })}
+                  className="w-full accent-[color:var(--primary)]"
+                />
+                <div className="flex justify-between text-[9px] text-[color:var(--muted-foreground)]">
+                  <span>0.3 mm</span><span>1.5 mm</span>
+                </div>
+              </div>
+              <p className="text-[9px] leading-relaxed text-[color:var(--muted-foreground)]">
+                Demo geometry only. Shell is illustrative; not for clinical manufacturing.
+              </p>
+            </div>
           )}
         </Card>
 

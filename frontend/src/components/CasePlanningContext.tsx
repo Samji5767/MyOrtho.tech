@@ -77,6 +77,15 @@ export interface CasePlanningState {
   clippingAxis: "none" | "axial" | "coronal" | "sagittal";
   clippingPosition: number;    // −4 to 4 (scene units)
   showRoots: boolean;
+  // Visualization overlays
+  showOcclusionContacts: boolean;
+  showIPROverlay: boolean;
+  // Manufacturing preview
+  showAlignerShell: boolean;
+  alignerThickness: number;    // mm (0.3–1.5)
+  alignerArch: "upper" | "lower" | "both";
+  // Clinician review
+  reviewNotes: string;
 }
 
 // ─── Actions ──────────────────────────────────────────────────────────────────
@@ -100,6 +109,12 @@ type Action =
   | { type: "SET_CLIPPING_AXIS"; axis: CasePlanningState["clippingAxis"] }
   | { type: "SET_CLIPPING_POSITION"; position: number }
   | { type: "TOGGLE_ROOTS" }
+  | { type: "TOGGLE_OCCLUSION_CONTACTS" }
+  | { type: "TOGGLE_IPR_OVERLAY" }
+  | { type: "TOGGLE_ALIGNER_SHELL" }
+  | { type: "SET_ALIGNER_THICKNESS"; thickness: number }
+  | { type: "SET_ALIGNER_ARCH"; arch: "upper" | "lower" | "both" }
+  | { type: "SET_REVIEW_NOTES"; notes: string }
   | { type: "LOAD_PERSISTED"; partial: Partial<CasePlanningState> };
 
 // ─── Default state ────────────────────────────────────────────────────────────
@@ -138,6 +153,12 @@ const INITIAL_STATE: CasePlanningState = {
   clippingAxis: "none",
   clippingPosition: 0,
   showRoots: false,
+  showOcclusionContacts: false,
+  showIPROverlay: false,
+  showAlignerShell: false,
+  alignerThickness: 0.5,
+  alignerArch: "both",
+  reviewNotes: "",
 };
 
 // ─── Reducer ──────────────────────────────────────────────────────────────────
@@ -218,6 +239,24 @@ function reducer(state: CasePlanningState, action: Action): CasePlanningState {
     case "TOGGLE_ROOTS":
       return { ...state, showRoots: !state.showRoots };
 
+    case "TOGGLE_OCCLUSION_CONTACTS":
+      return { ...state, showOcclusionContacts: !state.showOcclusionContacts };
+
+    case "TOGGLE_IPR_OVERLAY":
+      return { ...state, showIPROverlay: !state.showIPROverlay };
+
+    case "TOGGLE_ALIGNER_SHELL":
+      return { ...state, showAlignerShell: !state.showAlignerShell };
+
+    case "SET_ALIGNER_THICKNESS":
+      return { ...state, alignerThickness: action.thickness };
+
+    case "SET_ALIGNER_ARCH":
+      return { ...state, alignerArch: action.arch };
+
+    case "SET_REVIEW_NOTES":
+      return { ...state, reviewNotes: action.notes };
+
     case "LOAD_PERSISTED":
       return { ...state, ...action.partial };
 
@@ -283,9 +322,15 @@ export function CasePlanningProvider({
           measurements:  state.measurements,
           workflowSteps: state.workflowSteps,
           totalStages:   state.totalStages,
-          showGhostArch: state.showGhostArch,
-          ghostOpacity:  state.ghostOpacity,
-          showRoots:     state.showRoots,
+          showGhostArch:           state.showGhostArch,
+          ghostOpacity:            state.ghostOpacity,
+          showRoots:               state.showRoots,
+          showOcclusionContacts:   state.showOcclusionContacts,
+          showIPROverlay:          state.showIPROverlay,
+          showAlignerShell:        state.showAlignerShell,
+          alignerThickness:        state.alignerThickness,
+          alignerArch:             state.alignerArch,
+          reviewNotes:             state.reviewNotes,
         };
         localStorage.setItem(key, JSON.stringify(toSave));
       } catch {}

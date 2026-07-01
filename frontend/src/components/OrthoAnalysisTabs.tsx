@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import dynamic from "next/dynamic";
 import {
   Activity,
@@ -21,7 +21,14 @@ import {
   useCasePlanning,
   type PlanningAttachment,
   type PlanningIPR,
+  type PlanningMeasurement,
 } from "@/components/CasePlanningContext";
+import {
+  buildDemoToothPositions,
+  computeArchMetrics,
+  computeCrowding,
+  computeOcclusionContacts,
+} from "@/lib/meshAnalysis";
 
 
 // ─── Dynamic imports (heavy) ──────────────────────────────────────────────────
@@ -67,6 +74,7 @@ type AnalysisTab =
   | "attachments"
   | "ipr"
   | "staging"
+  | "review"
   | "export";
 
 const ANALYSIS_TABS: { key: AnalysisTab; label: string }[] = [
@@ -77,6 +85,7 @@ const ANALYSIS_TABS: { key: AnalysisTab; label: string }[] = [
   { key: "attachments", label: "Attachments"},
   { key: "ipr",         label: "IPR"        },
   { key: "staging",     label: "Staging"    },
+  { key: "review",      label: "Review"     },
   { key: "export",      label: "Export"     },
 ];
 
@@ -171,6 +180,25 @@ function MeasurementsTab() {
   const { state, dispatch } = useCasePlanning();
   const measurements = state.measurements;
 
+  function computeFromDemo() {
+    const positions = buildDemoToothPositions();
+    const metrics   = computeArchMetrics(positions);
+    const upperCrow = computeCrowding(positions, "upper");
+    const lowerCrow = computeCrowding(positions, "lower");
+    const computed: PlanningMeasurement[] = [
+      { id: "overjet",    label: "Overjet",            value: "4.2",                                  unit: "mm", note: "Demo value" },
+      { id: "overbite",   label: "Overbite",           value: "3.1",                                  unit: "mm", note: "Demo value" },
+      { id: "intercan",   label: "Intercanine Width",  value: metrics.intercanineWidthMm.toFixed(1),  unit: "mm", note: "Demo geometry" },
+      { id: "intermol",   label: "Intermolar Width",   value: metrics.intermolarWidthMm.toFixed(1),   unit: "mm", note: "Demo geometry" },
+      { id: "arch_u",     label: "Upper Arch Length",  value: metrics.upperArchLengthMm.toFixed(1),   unit: "mm", note: "Demo geometry" },
+      { id: "arch_l",     label: "Lower Arch Length",  value: metrics.lowerArchLengthMm.toFixed(1),   unit: "mm", note: "Demo geometry" },
+      { id: "crowding_u", label: "Upper Crowding",     value: upperCrow.crowdingMm.toFixed(1),        unit: "mm", note: "Demo computed" },
+      { id: "crowding_l", label: "Lower Crowding",     value: lowerCrow.crowdingMm.toFixed(1),        unit: "mm", note: "Demo computed" },
+    ];
+    dispatch({ type: "SET_MEASUREMENTS", measurements: computed });
+    toast({ title: "Computed from demo geometry", description: "Connect real scan for clinical accuracy.", type: "info" });
+  }
+
   function exportMeasurements() {
     const blob = new Blob([JSON.stringify(measurements, null, 2)], { type: "application/json" });
     const url = URL.createObjectURL(blob);
@@ -191,6 +219,13 @@ function MeasurementsTab() {
       <div className="flex items-center gap-2 flex-wrap">
         <p className="text-xs font-bold uppercase tracking-[0.15em] text-[color:var(--primary)]">Arch Measurements</p>
         <EstimatedBadge />
+        <button
+          type="button"
+          onClick={computeFromDemo}
+          className="inline-flex h-7 items-center gap-1.5 rounded-xl border border-[color:var(--border)] px-2.5 text-xs font-semibold text-[color:var(--foreground)] hover:border-[color:var(--primary)] hover:text-[color:var(--primary)] transition-colors"
+        >
+          <Ruler size={11} /> Compute
+        </button>
         <button
           type="button"
           onClick={exportMeasurements}
@@ -241,37 +276,44 @@ function MeasurementsTab() {
 // ─────────────────────────────────────────────────────────────────────────────
 
 function OcclusionTab() {
+  const { dispatch } = useCasePlanning();
   const [showContacts, setShowContacts] = useState(true);
 
-  const indicators = [
-    { label: "Angle Class",      value: "Class II Div 1", tone: "warning" as const },
-    { label: "Overjet",          value: "4.2 mm",         tone: "warning" as const },
-    { label: "Overbite",         value: "3.1 mm",         tone: "info" as const    },
-    { label: "Midline Shift",    value: "1.5 mm (R)",     tone: "warning" as const },
-    { label: "Deep Bite",        value: "Not detected",   tone: "success" as const },
-    { label: "Open Bite",        value: "Not detected",   tone: "success" as const },
-    { label: "Crossbite",        value: "Not detected",   tone: "success" as const },
-  ];
+  const contacts = useMemo(() => {
+    const positions = buildDemoToothPositions();
+    return computeOcclusionContacts(positions);
+  }, []);
 
-  const contacts = [
-    { pair: "16–46", type: "Cusp-to-fossa",  status: "Good" },
-    { pair: "17–47", type: "Cusp-to-fossa",  status: "Good" },
-    { pair: "26–36", type: "Cusp-to-fossa",  status: "Good" },
-    { pair: "13–43", type: "Cusp tip",       status: "Premature" },
-    { pair: "23–33", type: "Cusp tip",       status: "Good" },
+  const activeContacts = contacts.filter((c) => c.contactType !== "none");
+
+  const indicators = [
+    { label: "Angle Class",   value: "Class II Div 1", tone: "warning" as const },
+    { label: "Overjet",       value: "4.2 mm",         tone: "warning" as const },
+    { label: "Overbite",      value: "3.1 mm",         tone: "info"    as const },
+    { label: "Midline Shift", value: "1.5 mm (R)",     tone: "warning" as const },
+    { label: "Deep Bite",     value: "Not detected",   tone: "success" as const },
+    { label: "Open Bite",     value: "Not detected",   tone: "success" as const },
+    { label: "Crossbite",     value: "Not detected",   tone: "success" as const },
   ];
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-2 flex-wrap">
         <p className="text-xs font-bold uppercase tracking-[0.15em] text-[color:var(--primary)]">Bite Relationship</p>
         <DemoBadge />
         <button
           type="button"
-          onClick={() => setShowContacts((v) => !v)}
+          onClick={() => dispatch({ type: "TOGGLE_OCCLUSION_CONTACTS" })}
           className="ml-auto text-[10px] text-[color:var(--primary)] hover:underline"
         >
-          {showContacts ? "Hide" : "Show"} contacts
+          Toggle 3D markers
+        </button>
+        <button
+          type="button"
+          onClick={() => setShowContacts((v) => !v)}
+          className="text-[10px] text-[color:var(--primary)] hover:underline"
+        >
+          {showContacts ? "Hide" : "Show"} table
         </button>
       </div>
 
@@ -286,23 +328,28 @@ function OcclusionTab() {
 
       {showContacts && (
         <Card className="p-4">
-          <p className="text-xs font-bold uppercase tracking-[0.15em] text-[color:var(--primary)] mb-3">Contact Points</p>
+          <p className="text-xs font-bold uppercase tracking-[0.15em] text-[color:var(--primary)] mb-3">
+            Proximity Contacts ({activeContacts.length} active)
+          </p>
           <div className="overflow-x-auto">
             <table className="w-full text-xs">
               <thead>
                 <tr className="border-b border-[color:var(--border)]">
                   <th className="pb-1.5 text-left font-semibold text-[color:var(--foreground)]">Pair</th>
+                  <th className="pb-1.5 text-right font-semibold text-[color:var(--foreground)]">Dist (mm)</th>
                   <th className="pb-1.5 text-left font-semibold text-[color:var(--foreground)]">Type</th>
-                  <th className="pb-1.5 text-left font-semibold text-[color:var(--foreground)]">Status</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-[color:var(--border)]">
-                {contacts.map((c) => (
-                  <tr key={c.pair}>
-                    <td className="py-1.5 font-mono text-[color:var(--foreground)]">{c.pair}</td>
-                    <td className="py-1.5 text-[color:var(--muted-foreground)]">{c.type}</td>
+                {activeContacts.slice(0, 10).map((c) => (
+                  <tr key={`${c.upperFdi}-${c.lowerFdi}`}>
+                    <td className="py-1.5 font-mono text-[color:var(--foreground)]">{c.upperFdi}–{c.lowerFdi}</td>
+                    <td className="py-1.5 text-right tabular-nums text-[color:var(--muted-foreground)]">{c.distanceMm.toFixed(1)}</td>
                     <td className="py-1.5">
-                      <StatusBadge tone={c.status === "Good" ? "success" : "warning"}>{c.status}</StatusBadge>
+                      <StatusBadge tone={
+                        c.contactType === "heavy" ? "danger" :
+                        c.contactType === "light" ? "warning" : "info"
+                      }>{c.contactType}</StatusBadge>
                     </td>
                   </tr>
                 ))}
@@ -313,7 +360,7 @@ function OcclusionTab() {
       )}
 
       <div className="rounded-xl border border-amber-200/60 bg-amber-50/60 px-3 py-2 text-[10px] text-amber-800 dark:border-amber-500/20 dark:bg-amber-500/10 dark:text-amber-300">
-        Occlusion data is demo/estimated. Real contact analysis requires AI mesh intersection computation.
+        Proximity-based contacts from demo geometry. Real occlusal analysis requires AI mesh intersection.
       </div>
     </div>
   );
@@ -765,6 +812,131 @@ function StagingTab({ caseId, patientName }: { caseId: string | null; patientNam
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// TAB: REVIEW
+// ─────────────────────────────────────────────────────────────────────────────
+
+function ReviewTab({ caseId }: { caseId: string | null }) {
+  const { toast } = useToast();
+  const { state, dispatch } = useCasePlanning();
+
+  const workflowCompleted = Object.values(state.workflowSteps).filter((s) => s === "complete").length;
+  const WORKFLOW_TOTAL = 12;
+  const workflowPct = workflowCompleted / WORKFLOW_TOTAL;
+
+  const planChecklist = [
+    { label: "Case loaded",         done: !!caseId },
+    { label: "Movements planned",   done: Object.keys(state.movements).length > 0 },
+    { label: "Attachments planned", done: state.attachments.length > 0 },
+    { label: "IPR mapped",          done: state.iprEntries.length > 0 },
+    { label: "Stages defined",      done: state.totalStages > 0 },
+  ];
+  const planScore = planChecklist.filter((c) => c.done).length / planChecklist.length;
+  const readiness = Math.round((workflowPct * 0.6 + planScore * 0.4) * 100);
+
+  const warnings: string[] = [];
+  if (state.iprEntries.some((e) => e.safety === "unsafe"))
+    warnings.push("One or more IPR entries exceed 0.5 mm.");
+  if (Object.keys(state.movements).length === 0)
+    warnings.push("No tooth movements planned.");
+  if (!caseId)
+    warnings.push("No case loaded — all values are demo only.");
+  if (state.reviewNotes.trim() === "")
+    warnings.push("No clinician review notes added.");
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center gap-2">
+        <p className="text-xs font-bold uppercase tracking-[0.15em] text-[color:var(--primary)]">Treatment Review</p>
+        <DemoBadge />
+      </div>
+
+      {/* Readiness score */}
+      <Card className="p-4">
+        <div className="mb-3 flex items-center justify-between">
+          <p className="text-sm font-semibold text-[color:var(--foreground)]">Plan Readiness</p>
+          <StatusBadge tone={readiness >= 80 ? "success" : readiness >= 50 ? "warning" : "danger"}>
+            {readiness}%
+          </StatusBadge>
+        </div>
+        <div className="mb-3 h-2 w-full overflow-hidden rounded-full bg-[color-mix(in_srgb,var(--border)_60%,transparent)]">
+          <div
+            className={`h-2 rounded-full transition-all duration-500 ${readiness >= 80 ? "bg-emerald-500" : readiness >= 50 ? "bg-amber-500" : "bg-red-500"}`}
+            style={{ width: `${readiness}%` }}
+          />
+        </div>
+        <div className="space-y-1.5">
+          {planChecklist.map((c) => (
+            <div key={c.label} className="flex items-center gap-2.5">
+              {c.done
+                ? <CheckCircle2 size={13} className="shrink-0 text-emerald-500" />
+                : <div className="h-3.5 w-3.5 shrink-0 rounded-full border-2 border-[color:var(--border)]" />
+              }
+              <span className={`text-xs ${c.done ? "text-[color:var(--foreground)]" : "text-[color:var(--muted-foreground)]"}`}>
+                {c.label}
+              </span>
+            </div>
+          ))}
+          <div className="flex items-center gap-2.5">
+            <div className={`h-3.5 w-3.5 shrink-0 rounded-full ${workflowPct >= 1 ? "bg-emerald-500" : workflowPct > 0.4 ? "bg-amber-500" : "bg-[color:var(--border)]"}`} />
+            <span className="text-xs text-[color:var(--foreground)]">
+              Workflow: {workflowCompleted}/{WORKFLOW_TOTAL} steps complete
+            </span>
+          </div>
+        </div>
+      </Card>
+
+      {/* Warnings */}
+      {warnings.length > 0 && (
+        <div className="rounded-xl border border-amber-200/60 bg-amber-50/60 px-3 py-2.5 space-y-1.5 dark:border-amber-500/20 dark:bg-amber-500/10">
+          <p className="text-[10px] font-bold uppercase tracking-wide text-amber-800 dark:text-amber-300">
+            Warnings
+          </p>
+          {warnings.map((w) => (
+            <div key={w} className="flex items-start gap-1.5">
+              <AlertTriangle size={10} className="mt-0.5 shrink-0 text-amber-600 dark:text-amber-400" />
+              <p className="text-xs text-amber-800 dark:text-amber-300">{w}</p>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Clinician notes */}
+      <div>
+        <label className="mb-1.5 block text-[10px] font-bold uppercase tracking-wide text-[color:var(--muted-foreground)]">
+          Clinician Review Notes
+        </label>
+        <textarea
+          rows={4}
+          value={state.reviewNotes}
+          onChange={(e) => dispatch({ type: "SET_REVIEW_NOTES", notes: e.target.value })}
+          placeholder="Add clinical observations, approvals, or concerns..."
+          className="w-full resize-none rounded-xl border border-[color:var(--border)] bg-[color:var(--card)] px-3 py-2 text-xs text-[color:var(--foreground)] placeholder:text-[color:var(--muted-foreground)] focus:border-[color:var(--primary)] focus:outline-none focus:ring-2 focus:ring-[color:var(--primary)]/20 transition-colors"
+        />
+      </div>
+
+      {/* Approve button */}
+      <button
+        type="button"
+        onClick={() => {
+          if (readiness < 50) {
+            toast({ title: "Readiness too low", description: "Complete more planning steps before approving.", type: "warning" });
+            return;
+          }
+          toast({ title: "Review noted", description: "Export plan for full clinical sign-off.", type: "success" });
+        }}
+        className="inline-flex h-9 w-full items-center justify-center gap-2 rounded-xl bg-[color:var(--primary)] px-4 text-sm font-semibold text-[color:var(--primary-foreground)] transition-transform active:scale-95"
+      >
+        <CheckCircle2 size={14} /> Approve Plan (Session Only)
+      </button>
+
+      <div className="rounded-xl border border-amber-200/60 bg-amber-50/60 px-3 py-2 text-[10px] text-amber-800 dark:border-amber-500/20 dark:bg-amber-500/10 dark:text-amber-300">
+        <strong>Disclaimer:</strong> Session approval is for planning reference only and does not constitute clinical authorization. All treatment plans must be reviewed and signed by a licensed clinician before manufacturing or patient treatment.
+      </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // TAB: EXPORT
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -890,6 +1062,7 @@ export default function OrthoAnalysisTabs({ caseId, patientName }: OrthoAnalysis
         {activeTab === "attachments"  && <AttachmentsTab  />}
         {activeTab === "ipr"          && <IPRTab          />}
         {activeTab === "staging"      && <StagingTab      caseId={caseId} patientName={patientName} />}
+        {activeTab === "review"       && <ReviewTab       caseId={caseId} />}
         {activeTab === "export"       && <ExportTab       caseId={caseId} patientName={patientName} />}
       </div>
     </div>

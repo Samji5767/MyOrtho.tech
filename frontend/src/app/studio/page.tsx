@@ -9,6 +9,7 @@ import {
   ArrowRight,
   Box,
   CheckCircle2,
+  ClipboardList,
   FolderKanban,
   Layers3,
   Loader2,
@@ -21,6 +22,8 @@ import {
 import { Button, Card, StatusBadge } from "@/components/DesignSystem";
 import CADCapabilityMatrix from "@/components/CADCapabilityMatrix";
 import { fetchCase, type CaseDetail } from "@/lib/api/cases";
+import OrthoWorkflowRail from "@/components/OrthoWorkflowRail";
+import OrthoAnalysisTabs from "@/components/OrthoAnalysisTabs";
 
 // ─── Heavy 3D components — SSR off, load only when tab is active ──────────────
 
@@ -44,13 +47,14 @@ const CADEngine = dynamic(() => import("@/components/CADEngine"), {
 
 // ─── Workbench tab types ──────────────────────────────────────────────────────
 
-type StudioTab = "import" | "viewer" | "cad" | "preview";
+type StudioTab = "import" | "viewer" | "cad" | "plan" | "preview";
 
 const TABS: { key: StudioTab; label: string; icon: LucideIcon }[] = [
-  { key: "import",  label: "Scan & Import", icon: ScanLine },
-  { key: "viewer",  label: "3D Viewer",     icon: Layers3  },
-  { key: "cad",     label: "CAD Studio",    icon: Box      },
-  { key: "preview", label: "Preview",       icon: Wand2    },
+  { key: "import",  label: "Scan & Import",  icon: ScanLine       },
+  { key: "viewer",  label: "3D Viewer",      icon: Layers3        },
+  { key: "cad",     label: "CAD Studio",     icon: Box            },
+  { key: "plan",    label: "Plan & Analyse", icon: ClipboardList  },
+  { key: "preview", label: "Preview",        icon: Wand2          },
 ];
 
 // ─── No-case-loaded banner ────────────────────────────────────────────────────
@@ -250,6 +254,30 @@ function CadTab({ caseData }: { caseData: CaseDetail | null }) {
   );
 }
 
+// ─── Plan tab ─────────────────────────────────────────────────────────────────
+
+function PlanTab({ caseData }: { caseData: CaseDetail | null }) {
+  const caseId      = caseData?.id      ?? null;
+  const patientName = caseData
+    ? `${caseData.patient.firstName} ${caseData.patient.lastName}`
+    : "";
+
+  return (
+    <div className="space-y-4">
+      <AIDisclaimer />
+      {!caseData && (
+        <div className="rounded-xl border border-dashed border-[color:var(--border)] bg-[color:var(--card)] px-4 py-3 text-sm text-[color:var(--muted-foreground)]">
+          No case loaded — planning tools show demo data. Select a case to persist progress.
+        </div>
+      )}
+      {/* Pronto-style workflow rail */}
+      <OrthoWorkflowRail caseId={caseId} />
+      {/* Analysis / planning tabs */}
+      <OrthoAnalysisTabs caseId={caseId} patientName={patientName} />
+    </div>
+  );
+}
+
 // ─── Preview tab ──────────────────────────────────────────────────────────────
 
 function PreviewTab({ caseData }: { caseData: CaseDetail | null }) {
@@ -364,7 +392,7 @@ export default function StudioPage() {
             <Icon size={14} />
             <span className="hidden sm:inline">{label}</span>
             <span className="sm:hidden">
-              {key === "import" ? "Scan" : key === "viewer" ? "View" : key === "cad" ? "CAD" : "Preview"}
+              {key === "import" ? "Scan" : key === "viewer" ? "View" : key === "cad" ? "CAD" : key === "plan" ? "Plan" : "Preview"}
             </span>
           </button>
         ))}
@@ -375,6 +403,7 @@ export default function StudioPage() {
         {activeTab === "import"  && <ImportTab  caseData={caseData} />}
         {activeTab === "viewer"  && <ViewerTab  caseData={caseData} />}
         {activeTab === "cad"     && <CadTab     caseData={caseData} />}
+        {activeTab === "plan"    && <PlanTab    caseData={caseData} />}
         {activeTab === "preview" && <PreviewTab caseData={caseData} />}
       </div>
     </section>

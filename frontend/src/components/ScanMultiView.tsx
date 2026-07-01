@@ -80,14 +80,18 @@ export default function ScanMultiView({ caseId, scanId, filename, jawType, onClo
     setError(null);
     setBuffer(null);
 
-    fetch(`/api/cases/${caseId}/scans/${scanId}/file`, { credentials: "include" })
+    const ctrl = new AbortController();
+
+    fetch(`/api/cases/${caseId}/scans/${scanId}/file`, { credentials: "include", signal: ctrl.signal })
       .then((r) => {
         if (!r.ok) throw new Error(`HTTP ${r.status} — scan file unavailable`);
         return r.arrayBuffer();
       })
       .then(setBuffer)
-      .catch((e: Error) => setError(e.message))
+      .catch((e: Error) => { if (e.name !== 'AbortError') setError(e.message); })
       .finally(() => setLoading(false));
+
+    return () => ctrl.abort();
   }, [caseId, scanId]);
 
   // Parse once, clone 6 times — each Canvas gets its own geometry object
@@ -107,6 +111,11 @@ export default function ScanMultiView({ caseId, scanId, filename, jawType, onClo
       return null;
     }
   }, [buffer]);
+
+  // Dispose cloned geometries when buffer changes or component unmounts
+  useEffect(() => {
+    return () => { geometries?.forEach((g) => g.dispose()); };
+  }, [geometries]);
 
   const activeViews = focusIdx !== null ? [VIEWS[focusIdx]] : VIEWS;
   const activeGeoms = focusIdx !== null ? [geometries?.[focusIdx] ?? null] : geometries;

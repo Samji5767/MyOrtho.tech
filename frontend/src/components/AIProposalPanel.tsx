@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
   AlertTriangle,
   Brain,
@@ -423,7 +423,7 @@ export default function AIProposalPanel({ caseId }: { caseId: string }) {
   const [selected, setSelected] = useState<AIProposal | null>(null);
   const [showForm, setShowForm] = useState(false);
 
-  async function load() {
+  const load = useCallback(async () => {
     setLoading(true);
     try {
       const list = await listProposals(caseId);
@@ -434,9 +434,9 @@ export default function AIProposalPanel({ caseId }: { caseId: string }) {
     } finally {
       setLoading(false);
     }
-  }
+  }, [caseId]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  useEffect(() => { load(); }, [caseId]);
+  useEffect(() => { void load(); }, [load]);
 
   function handleGenerated(p: AIProposal) {
     setProposals((prev) => [p, ...prev]);

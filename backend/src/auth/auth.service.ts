@@ -38,9 +38,15 @@ export class AuthService implements OnModuleInit {
 
   constructor(@Optional() @Inject(REDIS_CLIENT) private readonly redis: Redis | null) {
     this.pool = new Pool({ connectionString: process.env.DATABASE_URL });
-    this.jwtSecret = process.env.JWT_SECRET || 'dev-only-change-in-production';
-    if (!process.env.JWT_SECRET) {
-      this.logger.warn('JWT_SECRET not set — using insecure dev default. Set JWT_SECRET in .env for production.');
+    const secret = process.env.JWT_SECRET;
+    if (!secret || secret.length < 32) {
+      if (process.env.NODE_ENV === 'production') {
+        throw new Error('JWT_SECRET must be set to at least 32 characters in production.');
+      }
+      this.logger.warn('JWT_SECRET not set or too short — using insecure dev default. NEVER deploy without setting JWT_SECRET.');
+      this.jwtSecret = 'dev-only-change-in-production';
+    } else {
+      this.jwtSecret = secret;
     }
   }
 

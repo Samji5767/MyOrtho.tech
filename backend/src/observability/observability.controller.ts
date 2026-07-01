@@ -1,11 +1,16 @@
-import { Controller, Get, Header } from '@nestjs/common';
+import { Controller, Get, Header, UseGuards } from '@nestjs/common';
 import { ObservabilityService } from './observability.service';
+import { AuthGuard } from '../auth/auth.guard';
+import { PermissionsGuard } from '../auth/permissions.guard';
+import { RequirePermission } from '../auth/require-permission.decorator';
 
 @Controller()
+@UseGuards(AuthGuard, PermissionsGuard)
 export class ObservabilityController {
   constructor(private readonly observabilityService: ObservabilityService) {}
 
   @Get('metrics')
+  @RequirePermission('admin:read')
   @Header('Content-Type', 'text/plain; version=0.0.4; charset=utf-8')
   getMetrics(): string {
     const metrics = this.observabilityService.getLiveSystemMetrics();

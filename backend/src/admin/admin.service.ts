@@ -1,10 +1,14 @@
 import { Injectable, Inject } from '@nestjs/common';
 import type { Pool } from 'pg';
 import { PG_POOL } from '../database/database.module';
+import { AuditService } from '../audit/audit.service';
 
 @Injectable()
 export class AdminService {
-  constructor(@Inject(PG_POOL) private readonly pool: Pool) {}
+  constructor(
+    @Inject(PG_POOL) private readonly pool: Pool,
+    private readonly auditService: AuditService,
+  ) {}
 
   async listUsers(opts: { limit?: number; offset?: number } = {}) {
     const limit = opts.limit ?? 100;
@@ -22,22 +26,40 @@ export class AdminService {
     return rows;
   }
 
-  async updateUserRole(userId: string, role: string) {
+  async updateUserRole(userId: string, role: string, actorId: string, actorEmail?: string) {
     const valid = ['super_admin', 'clinic_admin', 'orthodontist', 'dentist',
                    'treatment_planner', 'lab_technician', 'reviewer', 'read_only'];
     if (!valid.includes(role)) throw new Error(`Invalid role: ${role}`);
-    await this.pool.query(
-      `UPDATE auth_users SET role = $1 WHERE id = $2`,
+    const { rows } = await this.pool.query(
+      `UPDATE auth_users SET role = $1 WHERE id = $2 RETURNING organization_id`,
       [role, userId],
     );
+    await this.auditService.log({
+      organizationId: rows[0]?.organization_id ?? null,
+      actorId,
+      actorEmail,
+      resourceType: 'user',
+      resourceId: userId,
+      action: 'admin.user.role_changed',
+      details: { newRole: role },
+    });
     return { updated: true };
   }
 
-  async setUserActive(userId: string, active: boolean) {
-    await this.pool.query(
-      `UPDATE auth_users SET is_active = $1 WHERE id = $2`,
+  async setUserActive(userId: string, active: boolean, actorId: string, actorEmail?: string) {
+    const { rows } = await this.pool.query(
+      `UPDATE auth_users SET is_active = $1 WHERE id = $2 RETURNING organization_id`,
       [active, userId],
     );
+    await this.auditService.log({
+      organizationId: rows[0]?.organization_id ?? null,
+      actorId,
+      actorEmail,
+      resourceType: 'user',
+      resourceId: userId,
+      action: active ? 'admin.user.activated' : 'admin.user.deactivated',
+      details: { active },
+    });
     return { updated: true };
   }
 
@@ -59,7 +81,7 @@ export class AdminService {
     return rows;
   }
 
-  async grantCredits(orgId: string, amount: number, grantedBy: string, notes?: string) {
+  async grantCredits(orgId: string, amount: number, grantedBy: string, notes?: string, actorEmail?: string) {
     const client = await this.pool.connect();
     try {
       await client.query('BEGIN');
@@ -83,6 +105,15 @@ export class AdminService {
     } finally {
       client.release();
     }
+    await this.auditService.log({
+      organizationId: orgId,
+      actorId: grantedBy,
+      actorEmail,
+      resourceType: 'organization',
+      resourceId: orgId,
+      action: 'admin.credits.granted',
+      details: { amount, notes },
+    });
     return { granted: amount };
   }
 

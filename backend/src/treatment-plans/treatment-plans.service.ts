@@ -219,13 +219,13 @@ export class TreatmentPlansService {
       };
     }
 
-    // Interpolate: stage i/n of total movement
-    const results: object[] = [];
+    // Build all stages in memory then batch-INSERT in a single query
+    const stageDtos: Array<{ stageNumber: number; movementData: string }> = [];
     for (let i = 1; i <= n; i++) {
       const f = i / n;
       const movements: Record<string, Record<string, number>> = {};
       for (const fdi of [...UPPER, ...LOWER]) {
-        const t = totals[fdi];
+        const t = totals[fdi]!;
         movements[String(fdi)] = {
           mesialMm:    parseFloat((t.mesialMm * f).toFixed(3)),
           distalMm:    parseFloat((t.distalMm * f).toFixed(3)),
@@ -236,10 +236,26 @@ export class TreatmentPlansService {
           torqueDeg:   parseFloat((t.torqueDeg * f).toFixed(1)),
         };
       }
-      results.push(await this.createStage(planId, caseId, orgId, { stageNumber: i, movements }));
+      stageDtos.push({ stageNumber: i, movementData: JSON.stringify(movements) });
     }
 
-    this.logger.log(`Generated ${n} stages for plan ${planId} (case ${caseId})`);
+    // Single batch INSERT — replaces N individual queries
+    const valueParams = stageDtos
+      .map((_, idx) => `($1, $2, $${3 + idx * 2}, $${4 + idx * 2})`)
+      .join(', ');
+    const flatValues: unknown[] = [planId, caseId];
+    for (const s of stageDtos) {
+      flatValues.push(s.stageNumber, s.movementData);
+    }
+    await this.pool.query(
+      `INSERT INTO aligner_stages (treatment_plan_id, case_id, stage_number, movement_data)
+       VALUES ${valueParams}
+       ON CONFLICT (treatment_plan_id, stage_number) DO UPDATE
+         SET movement_data = EXCLUDED.movement_data`,
+      flatValues,
+    );
+
+    this.logger.log(`Generated ${n} stages for plan ${planId} (case ${caseId}) via batch INSERT`);
     return { generated: n, planId, caseId };
   }
 

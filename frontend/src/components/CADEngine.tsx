@@ -161,6 +161,11 @@ function ToothMesh({
     emissiveIntensity: isSelected || isGroupSelected || isColliding ? 0.12 : 0,
   }), [isSelected, isGroupSelected, isColliding, tooth.color]);
 
+  // Dispose material when dependencies change or component unmounts to prevent VRAM leaks
+  useEffect(() => {
+    return () => { mat.dispose(); };
+  }, [mat]);
+
   // Update clipping planes without recreating the material
   useEffect(() => {
     mat.clippingPlanes = clippingPlanes;

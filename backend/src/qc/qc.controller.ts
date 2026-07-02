@@ -26,7 +26,7 @@ export class QcController {
   ) {
     return this.qc.updateCheck(jobId, checkId, req.user.orgId, {
       ...body,
-      checkedBy: req.user.sub,
+      checkedBy: req.user.id,
     });
   }
 }

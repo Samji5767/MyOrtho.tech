@@ -194,9 +194,10 @@ export class CasesService {
 
     fields.push(`updated_at = now()`);
     values.push(id);
+    values.push(orgId);
 
     await this.pool.query(
-      `UPDATE cases SET ${fields.join(', ')} WHERE id = $${i}`,
+      `UPDATE cases SET ${fields.join(', ')} WHERE id = $${i} AND patient_id IN (SELECT id FROM patients WHERE organization_id = $${i + 1})`,
       values,
     );
 

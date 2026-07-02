@@ -22,7 +22,7 @@ export class CephController {
   ) {
     return this.ceph.create(caseId, req.user.orgId, {
       ...dto,
-      createdBy: dto.createdBy ?? req.user.sub,
+      createdBy: dto.createdBy ?? req.user.id,
     });
   }
 

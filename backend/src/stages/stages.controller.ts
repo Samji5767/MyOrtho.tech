@@ -45,7 +45,7 @@ export class StagesController {
     @Param('stageId') stageId: string,
     @Request() req: any,
   ) {
-    return this.stages.approve(planId, caseId, req.user.orgId, stageId, req.user.sub);
+    return this.stages.approve(planId, caseId, req.user.orgId, stageId, req.user.id);
   }
 
   @Delete(':stageId')

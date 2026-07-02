@@ -1,6 +1,15 @@
-import { Controller, Get, Post, Body, UseGuards, Req, ForbiddenException, BadRequestException, Query } from '@nestjs/common';
+import { Controller, Get, Post, Body, UseGuards, Req, UnauthorizedException, BadRequestException, Query } from '@nestjs/common';
+import type { Request } from 'express';
 import { ScannerService } from './scanner.service';
 import { AuthGuard } from '../auth/auth.guard';
+
+interface AuthUser { id: string; orgId: string | null }
+
+function getUser(req: Request): { id: string; orgId: string } {
+  const u = (req as Request & { user?: AuthUser }).user;
+  if (!u?.orgId) throw new UnauthorizedException('No organization context');
+  return { id: u.id, orgId: u.orgId };
+}
 
 @Controller('scanner')
 @UseGuards(AuthGuard)
@@ -9,13 +18,10 @@ export class ScannerController {
 
   @Post('sync')
   async syncScan(
-    @Req() req,
+    @Req() req: Request,
     @Body() body: { vendor: string; externalId: string }
   ) {
-    const orgId = req.user.organizationId;
-    if (!orgId) {
-      throw new ForbiddenException('User is not associated with an organization');
-    }
+    const { orgId } = getUser(req);
     const { vendor, externalId } = body;
     if (!vendor || !externalId) {
       throw new BadRequestException('vendor and externalId are required');
@@ -24,11 +30,8 @@ export class ScannerController {
   }
 
   @Get('diagnostics')
-  async getDiagnostics(@Req() req, @Query('vendor') vendor?: string) {
-    const orgId = req.user.organizationId;
-    if (!orgId) {
-      throw new ForbiddenException('User is not associated with an organization');
-    }
+  async getDiagnostics(@Req() req: Request, @Query('vendor') vendor?: string) {
+    getUser(req); // enforce org context; diagnostics are org-scoped
 
     const vendorsToCheck = vendor ? [vendor] : ['3shape', 'medit', 'itero', 'shining3d', 'carestream'];
     const diagnostics: Record<string, { status: string; authenticated: boolean; timestamp: string }> = {};
@@ -42,7 +45,7 @@ export class ScannerController {
           authenticated,
           timestamp: new Date().toISOString()
         };
-      } catch (err) {
+      } catch {
         diagnostics[v] = {
           status: 'error',
           authenticated: false,

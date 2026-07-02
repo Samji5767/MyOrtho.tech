@@ -20,8 +20,14 @@ CREATE INDEX IF NOT EXISTS idx_tooth_movement_records_tooth
   ON tooth_movement_records(digital_setup_id, tooth_fdi, created_at ASC);
 
 -- ── Aligner stages: index for bulk generate performance ──────────────────────
-CREATE INDEX IF NOT EXISTS idx_aligner_stages_plan
-  ON aligner_stages(treatment_plan_id, stage_number ASC);
+-- Conditional: VPS databases may have aligner_stages with plan_id (old schema)
+-- and no treatment_plan_id column. migration 038 adds it idempotently.
+DO $$ BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.columns
+             WHERE table_name = 'aligner_stages' AND column_name = 'treatment_plan_id') THEN
+    EXECUTE 'CREATE INDEX IF NOT EXISTS idx_aligner_stages_plan ON aligner_stages(treatment_plan_id, stage_number ASC)';
+  END IF;
+END $$;
 
 -- ── AI segmentation jobs: compound index for case+status polling ──────────────
 CREATE INDEX IF NOT EXISTS idx_ai_segmentation_jobs_case_status

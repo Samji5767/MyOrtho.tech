@@ -74,7 +74,10 @@ CREATE INDEX IF NOT EXISTS idx_audit_events_resource
 -- ── Manufacturing readiness: ensure aligner_designs table has required columns ─
 -- The manufacturing package panel needs these to generate a complete manifest.
 DO $$ BEGIN
-  IF NOT EXISTS (
+  IF EXISTS (
+    SELECT 1 FROM information_schema.tables
+    WHERE table_name = 'aligner_designs' AND table_schema = 'public'
+  ) AND NOT EXISTS (
     SELECT 1 FROM information_schema.columns
     WHERE table_name = 'aligner_designs'
       AND column_name = 'print_profile'
@@ -176,7 +179,10 @@ END $$;
 
 -- ── Treatment QA reports: ensure completeness score column ────────────────────
 DO $$ BEGIN
-  IF NOT EXISTS (
+  IF EXISTS (
+    SELECT 1 FROM information_schema.tables
+    WHERE table_name = 'treatment_qa_reports' AND table_schema = 'public'
+  ) AND NOT EXISTS (
     SELECT 1 FROM information_schema.columns
     WHERE table_name = 'treatment_qa_reports'
       AND column_name = 'manufacturing_ready'
@@ -208,17 +214,33 @@ DO $$ BEGIN
 END $$;
 
 -- ── Biomechanical analyses: ensure setup FK is indexable ──────────────────────
-CREATE INDEX IF NOT EXISTS idx_biomechanical_analyses_setup
-  ON biomechanical_analyses(digital_setup_id);
+DO $$ BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.columns
+             WHERE table_name = 'biomechanical_analyses' AND column_name = 'digital_setup_id' AND table_schema = 'public') THEN
+    EXECUTE 'CREATE INDEX IF NOT EXISTS idx_biomechanical_analyses_setup ON biomechanical_analyses(digital_setup_id)';
+  END IF;
+END $$;
 
-CREATE INDEX IF NOT EXISTS idx_treatment_stages_setup
-  ON treatment_stages(digital_setup_id);
+DO $$ BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.columns
+             WHERE table_name = 'treatment_stages' AND column_name = 'digital_setup_id' AND table_schema = 'public') THEN
+    EXECUTE 'CREATE INDEX IF NOT EXISTS idx_treatment_stages_setup ON treatment_stages(digital_setup_id)';
+  END IF;
+END $$;
 
-CREATE INDEX IF NOT EXISTS idx_treatment_qa_reports_setup
-  ON treatment_qa_reports(digital_setup_id);
+DO $$ BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.columns
+             WHERE table_name = 'treatment_qa_reports' AND column_name = 'digital_setup_id' AND table_schema = 'public') THEN
+    EXECUTE 'CREATE INDEX IF NOT EXISTS idx_treatment_qa_reports_setup ON treatment_qa_reports(digital_setup_id)';
+  END IF;
+END $$;
 
-CREATE INDEX IF NOT EXISTS idx_aligner_designs_setup
-  ON aligner_designs(digital_setup_id);
+DO $$ BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.columns
+             WHERE table_name = 'aligner_designs' AND column_name = 'digital_setup_id' AND table_schema = 'public') THEN
+    EXECUTE 'CREATE INDEX IF NOT EXISTS idx_aligner_designs_setup ON aligner_designs(digital_setup_id)';
+  END IF;
+END $$;
 
 -- ── Cases: composite index for organization + status (dashboard queries) ──────
 CREATE INDEX IF NOT EXISTS idx_cases_org_status

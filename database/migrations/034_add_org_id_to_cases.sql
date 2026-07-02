@@ -16,9 +16,12 @@ FROM patients p
 WHERE c.patient_id = p.id
   AND c.organization_id IS NULL;
 
--- Make NOT NULL after backfill (safe: every case must have a patient with an org)
-ALTER TABLE cases
-  ALTER COLUMN organization_id SET NOT NULL;
+-- Only enforce NOT NULL if every row was backfilled (guards against orphaned cases).
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM cases WHERE organization_id IS NULL) THEN
+    EXECUTE 'ALTER TABLE cases ALTER COLUMN organization_id SET NOT NULL';
+  END IF;
+END $$;
 
 -- ─── Indexes for cases.organization_id ───────────────────────────────────────
 

@@ -1,38 +1,63 @@
 -- Phase 29: Enterprise Clinical AI Copilot — RAG knowledge base
 -- Requires pgvector extension (postgresql-xx-pgvector on PostgreSQL host).
 -- If vector extension is unavailable the copilot falls back to the rule engine.
+-- This entire migration is idempotent and safe to re-run.
 
-CREATE EXTENSION IF NOT EXISTS vector;
+DO $$
+BEGIN
+  -- Install pgvector if available; skip silently if not installed on this host.
+  CREATE EXTENSION IF NOT EXISTS vector;
+EXCEPTION
+  WHEN OTHERS THEN
+    RAISE NOTICE 'pgvector extension not available on this host — copilot RAG tables will be skipped';
+END $$;
 
--- Clinical knowledge base for Retrieval-Augmented Generation.
--- Each chunk is one retrievable unit (a paragraph, a table, a clinical rule).
-CREATE TABLE IF NOT EXISTS copilot_knowledge_chunks (
-  id          UUID  PRIMARY KEY DEFAULT gen_random_uuid(),
-  chunk_id    TEXT  NOT NULL UNIQUE,   -- deterministic key for idempotent re-indexing
-  source      TEXT  NOT NULL,          -- e.g. 'kravitz_2011', 'sheridan_1985', 'proffit_2018'
-  category    TEXT  NOT NULL,          -- agent category: 'clinical','planning','cad','manufacturing','practice','support'
-  title       TEXT  NOT NULL,
-  content     TEXT  NOT NULL,
-  embedding   vector(1536),            -- OpenAI text-embedding-3-small (1536 dims)
-  metadata    JSONB NOT NULL DEFAULT '{}',
-  created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
-  updated_at  TIMESTAMPTZ NOT NULL DEFAULT now()
-);
+-- Only create RAG tables if the vector type is available.
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM pg_type WHERE typname = 'vector') THEN
 
--- IVFFlat approximate nearest-neighbour index (cosine distance).
--- lists=50 is appropriate for a small knowledge base (< 100k chunks).
-CREATE INDEX IF NOT EXISTS idx_knowledge_chunks_embedding
-  ON copilot_knowledge_chunks USING ivfflat (embedding vector_cosine_ops)
-  WITH (lists = 50);
+    -- Clinical knowledge base for Retrieval-Augmented Generation.
+    -- Each chunk is one retrievable unit (a paragraph, a table, a clinical rule).
+    EXECUTE $sql$
+      CREATE TABLE IF NOT EXISTS copilot_knowledge_chunks (
+        id          UUID  PRIMARY KEY DEFAULT gen_random_uuid(),
+        chunk_id    TEXT  NOT NULL UNIQUE,
+        source      TEXT  NOT NULL,
+        category    TEXT  NOT NULL,
+        title       TEXT  NOT NULL,
+        content     TEXT  NOT NULL,
+        embedding   vector(1536),
+        metadata    JSONB NOT NULL DEFAULT '{}',
+        created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+        updated_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+      )
+    $sql$;
 
-CREATE INDEX IF NOT EXISTS idx_knowledge_chunks_category
-  ON copilot_knowledge_chunks (category);
+    -- IVFFlat approximate nearest-neighbour index (cosine distance).
+    EXECUTE $sql$
+      CREATE INDEX IF NOT EXISTS idx_knowledge_chunks_embedding
+        ON copilot_knowledge_chunks USING ivfflat (embedding vector_cosine_ops)
+        WITH (lists = 50)
+    $sql$;
 
--- Per-message embeddings for conversation-level semantic memory.
--- Enables "find messages like this one" across conversation history.
-CREATE TABLE IF NOT EXISTS copilot_message_embeddings (
-  message_id  UUID  PRIMARY KEY REFERENCES copilot_messages(id) ON DELETE CASCADE,
-  embedding   vector(1536),
-  model       TEXT  NOT NULL,   -- embedding model name used
-  created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
-);
+    EXECUTE $sql$
+      CREATE INDEX IF NOT EXISTS idx_knowledge_chunks_category
+        ON copilot_knowledge_chunks (category)
+    $sql$;
+
+    -- Per-message embeddings: only create if copilot_messages table exists.
+    IF EXISTS (SELECT 1 FROM information_schema.tables
+               WHERE table_name = 'copilot_messages' AND table_schema = 'public') THEN
+      EXECUTE $sql$
+        CREATE TABLE IF NOT EXISTS copilot_message_embeddings (
+          message_id  UUID  PRIMARY KEY REFERENCES copilot_messages(id) ON DELETE CASCADE,
+          embedding   vector(1536),
+          model       TEXT  NOT NULL,
+          created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+        )
+      $sql$;
+    END IF;
+
+  END IF;
+END $$;

@@ -92,171 +92,209 @@ END $$;
 
 -- ── CBCT / fusion ─────────────────────────────────────────────────────────────
 
--- cbct_stl_fusions.reviewed_by → auth_users
-CREATE INDEX IF NOT EXISTS idx_cbct_fusions_reviewed_by
-  ON cbct_stl_fusions(reviewed_by);
-
--- cbct_stl_fusions.created_by → auth_users
-CREATE INDEX IF NOT EXISTS idx_cbct_fusions_created_by
-  ON cbct_stl_fusions(created_by);
+-- cbct_stl_fusions.reviewed_by / created_by → auth_users
+DO $$ BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.tables
+             WHERE table_name = 'cbct_stl_fusions' AND table_schema = 'public') THEN
+    EXECUTE 'CREATE INDEX IF NOT EXISTS idx_cbct_fusions_reviewed_by ON cbct_stl_fusions(reviewed_by)';
+    EXECUTE 'CREATE INDEX IF NOT EXISTS idx_cbct_fusions_created_by ON cbct_stl_fusions(created_by)';
+  END IF;
+END $$;
 
 -- cbct_scans.uploaded_by → auth_users
-CREATE INDEX IF NOT EXISTS idx_cbct_scans_uploaded_by
-  ON cbct_scans(uploaded_by);
+DO $$ BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.tables
+             WHERE table_name = 'cbct_scans' AND table_schema = 'public') THEN
+    EXECUTE 'CREATE INDEX IF NOT EXISTS idx_cbct_scans_uploaded_by ON cbct_scans(uploaded_by)';
+  END IF;
+END $$;
 
 -- ── Scan processing results (ON DELETE CASCADE FKs without indexes) ───────────
 
--- scan_orientation_results.job_id → scan_processing_jobs (ON DELETE CASCADE)
-CREATE INDEX IF NOT EXISTS idx_scan_orient_job_id
-  ON scan_orientation_results(job_id);
+DO $$ BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.tables
+             WHERE table_name = 'scan_orientation_results' AND table_schema = 'public') THEN
+    EXECUTE 'CREATE INDEX IF NOT EXISTS idx_scan_orient_job_id ON scan_orientation_results(job_id)';
+  END IF;
+END $$;
 
--- scan_cleanup_results.job_id → scan_processing_jobs (ON DELETE CASCADE)
-CREATE INDEX IF NOT EXISTS idx_scan_cleanup_job_id
-  ON scan_cleanup_results(job_id);
+DO $$ BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.tables
+             WHERE table_name = 'scan_cleanup_results' AND table_schema = 'public') THEN
+    EXECUTE 'CREATE INDEX IF NOT EXISTS idx_scan_cleanup_job_id ON scan_cleanup_results(job_id)';
+  END IF;
+END $$;
 
 -- ── Off-track / monitoring ────────────────────────────────────────────────────
 
--- off_track_alerts.plan_id → treatment_plans
-CREATE INDEX IF NOT EXISTS idx_off_track_plan_id
-  ON off_track_alerts(plan_id);
-
--- off_track_alerts.check_in_id → treatment_check_ins (ON DELETE SET NULL)
-CREATE INDEX IF NOT EXISTS idx_off_track_check_in_id
-  ON off_track_alerts(check_in_id);
+DO $$ BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.tables
+             WHERE table_name = 'off_track_alerts' AND table_schema = 'public') THEN
+    EXECUTE 'CREATE INDEX IF NOT EXISTS idx_off_track_plan_id ON off_track_alerts(plan_id)';
+    EXECUTE 'CREATE INDEX IF NOT EXISTS idx_off_track_check_in_id ON off_track_alerts(check_in_id)';
+  END IF;
+END $$;
 
 -- ── Supply chain ──────────────────────────────────────────────────────────────
 
--- purchase_orders.vendor_id → vendors
-CREATE INDEX IF NOT EXISTS idx_purchase_orders_vendor_id
-  ON purchase_orders(vendor_id);
+DO $$ BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.tables
+             WHERE table_name = 'purchase_orders' AND table_schema = 'public') THEN
+    EXECUTE 'CREATE INDEX IF NOT EXISTS idx_purchase_orders_vendor_id ON purchase_orders(vendor_id)';
+  END IF;
+END $$;
 
--- purchase_order_items.purchase_order_id → purchase_orders (ON DELETE CASCADE)
-CREATE INDEX IF NOT EXISTS idx_purchase_order_items_po_id
-  ON purchase_order_items(purchase_order_id);
+DO $$ BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.tables
+             WHERE table_name = 'purchase_order_items' AND table_schema = 'public') THEN
+    EXECUTE 'CREATE INDEX IF NOT EXISTS idx_purchase_order_items_po_id ON purchase_order_items(purchase_order_id)';
+    EXECUTE 'CREATE INDEX IF NOT EXISTS idx_purchase_order_items_inv_id ON purchase_order_items(inventory_item_id)';
+  END IF;
+END $$;
 
--- purchase_order_items.inventory_item_id → inventory_items
-CREATE INDEX IF NOT EXISTS idx_purchase_order_items_inv_id
-  ON purchase_order_items(inventory_item_id);
-
--- inventory_transactions.case_id → cases
-CREATE INDEX IF NOT EXISTS idx_inventory_transactions_case_id
-  ON inventory_transactions(case_id);
+DO $$ BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.tables
+             WHERE table_name = 'inventory_transactions' AND table_schema = 'public') THEN
+    EXECUTE 'CREATE INDEX IF NOT EXISTS idx_inventory_transactions_case_id ON inventory_transactions(case_id)';
+  END IF;
+END $$;
 
 -- ── Patient-facing tables ─────────────────────────────────────────────────────
 
--- clinical_alerts.patient_id → patients
-CREATE INDEX IF NOT EXISTS idx_clinical_alerts_patient_id
-  ON clinical_alerts(patient_id);
+DO $$ BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.tables
+             WHERE table_name = 'clinical_alerts' AND table_schema = 'public') THEN
+    EXECUTE 'CREATE INDEX IF NOT EXISTS idx_clinical_alerts_patient_id ON clinical_alerts(patient_id)';
+  END IF;
+END $$;
 
--- radiology_images.patient_id → patients (patient record view)
-CREATE INDEX IF NOT EXISTS idx_radiology_images_patient_id
-  ON radiology_images(patient_id);
+DO $$ BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.tables
+             WHERE table_name = 'radiology_images' AND table_schema = 'public') THEN
+    EXECUTE 'CREATE INDEX IF NOT EXISTS idx_radiology_images_patient_id ON radiology_images(patient_id)';
+  END IF;
+END $$;
 
--- compliance_check_ins.patient_id → patients
-CREATE INDEX IF NOT EXISTS idx_compliance_check_ins_patient_id
-  ON compliance_check_ins(patient_id);
+DO $$ BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.tables
+             WHERE table_name = 'compliance_check_ins' AND table_schema = 'public') THEN
+    EXECUTE 'CREATE INDEX IF NOT EXISTS idx_compliance_check_ins_patient_id ON compliance_check_ins(patient_id)';
+  END IF;
+END $$;
 
 -- ── Insurance / billing ───────────────────────────────────────────────────────
 
--- insurance_preauths.insurance_plan_id → insurance_plans
-CREATE INDEX IF NOT EXISTS idx_insurance_preauths_plan_id
-  ON insurance_preauths(insurance_plan_id);
+DO $$ BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.tables
+             WHERE table_name = 'insurance_preauths' AND table_schema = 'public') THEN
+    EXECUTE 'CREATE INDEX IF NOT EXISTS idx_insurance_preauths_plan_id ON insurance_preauths(insurance_plan_id)';
+    EXECUTE 'CREATE INDEX IF NOT EXISTS idx_insurance_preauths_created_by ON insurance_preauths(created_by)';
+  END IF;
+END $$;
 
--- insurance_preauths.created_by → auth_users
-CREATE INDEX IF NOT EXISTS idx_insurance_preauths_created_by
-  ON insurance_preauths(created_by);
-
--- revenue_transactions.case_id → cases
-CREATE INDEX IF NOT EXISTS idx_revenue_transactions_case_id
-  ON revenue_transactions(case_id);
-
--- revenue_transactions.patient_id → patients
-CREATE INDEX IF NOT EXISTS idx_revenue_transactions_patient_id
-  ON revenue_transactions(patient_id);
+DO $$ BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.tables
+             WHERE table_name = 'revenue_transactions' AND table_schema = 'public') THEN
+    EXECUTE 'CREATE INDEX IF NOT EXISTS idx_revenue_transactions_case_id ON revenue_transactions(case_id)';
+    EXECUTE 'CREATE INDEX IF NOT EXISTS idx_revenue_transactions_patient_id ON revenue_transactions(patient_id)';
+  END IF;
+END $$;
 
 -- ── Scheduling ────────────────────────────────────────────────────────────────
 
--- schedule_slots.location_id → org_locations
-CREATE INDEX IF NOT EXISTS idx_schedule_slots_location_id
-  ON schedule_slots(location_id);
-
--- schedule_slots.booked_for_case → cases
-CREATE INDEX IF NOT EXISTS idx_schedule_slots_booked_case
-  ON schedule_slots(booked_for_case);
+DO $$ BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.tables
+             WHERE table_name = 'schedule_slots' AND table_schema = 'public') THEN
+    EXECUTE 'CREATE INDEX IF NOT EXISTS idx_schedule_slots_location_id ON schedule_slots(location_id)';
+    EXECUTE 'CREATE INDEX IF NOT EXISTS idx_schedule_slots_booked_case ON schedule_slots(booked_for_case)';
+  END IF;
+END $$;
 
 -- ── Intake forms ──────────────────────────────────────────────────────────────
 
--- intake_submissions.patient_id → patients
-CREATE INDEX IF NOT EXISTS idx_intake_submissions_patient_id
-  ON intake_submissions(patient_id);
-
--- intake_submissions.case_id → cases
-CREATE INDEX IF NOT EXISTS idx_intake_submissions_case_id
-  ON intake_submissions(case_id);
+DO $$ BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.tables
+             WHERE table_name = 'intake_submissions' AND table_schema = 'public') THEN
+    EXECUTE 'CREATE INDEX IF NOT EXISTS idx_intake_submissions_patient_id ON intake_submissions(patient_id)';
+    EXECUTE 'CREATE INDEX IF NOT EXISTS idx_intake_submissions_case_id ON intake_submissions(case_id)';
+  END IF;
+END $$;
 
 -- ── FHIR exports ──────────────────────────────────────────────────────────────
 
--- fhir_exports.patient_id → patients
-CREATE INDEX IF NOT EXISTS idx_fhir_exports_patient_id
-  ON fhir_exports(patient_id);
-
--- fhir_exports.case_id → cases
-CREATE INDEX IF NOT EXISTS idx_fhir_exports_case_id
-  ON fhir_exports(case_id);
+DO $$ BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.tables
+             WHERE table_name = 'fhir_exports' AND table_schema = 'public') THEN
+    EXECUTE 'CREATE INDEX IF NOT EXISTS idx_fhir_exports_patient_id ON fhir_exports(patient_id)';
+    EXECUTE 'CREATE INDEX IF NOT EXISTS idx_fhir_exports_case_id ON fhir_exports(case_id)';
+  END IF;
+END $$;
 
 -- ── Lab orders / revisions ────────────────────────────────────────────────────
 
--- lab_revisions.order_id → lab_orders (ON DELETE CASCADE, no index!)
-CREATE INDEX IF NOT EXISTS idx_lab_revisions_order_id
-  ON lab_revisions(order_id);
+DO $$ BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.tables
+             WHERE table_name = 'lab_revisions' AND table_schema = 'public') THEN
+    EXECUTE 'CREATE INDEX IF NOT EXISTS idx_lab_revisions_order_id ON lab_revisions(order_id)';
+  END IF;
+END $$;
 
 -- ── Referrals ─────────────────────────────────────────────────────────────────
 
--- referrals.created_by → auth_users
-CREATE INDEX IF NOT EXISTS idx_referrals_created_by
-  ON referrals(created_by);
+DO $$ BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.tables
+             WHERE table_name = 'referrals' AND table_schema = 'public') THEN
+    EXECUTE 'CREATE INDEX IF NOT EXISTS idx_referrals_created_by ON referrals(created_by)';
+  END IF;
+END $$;
 
 -- ── Patient education ─────────────────────────────────────────────────────────
 
--- patient_education_assignments.patient_id → patients
-CREATE INDEX IF NOT EXISTS idx_edu_assignments_patient_id
-  ON patient_education_assignments(patient_id);
-
--- patient_education_assignments.content_id → education_content
-CREATE INDEX IF NOT EXISTS idx_edu_assignments_content_id
-  ON patient_education_assignments(content_id);
+DO $$ BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.tables
+             WHERE table_name = 'patient_education_assignments' AND table_schema = 'public') THEN
+    EXECUTE 'CREATE INDEX IF NOT EXISTS idx_edu_assignments_patient_id ON patient_education_assignments(patient_id)';
+    EXECUTE 'CREATE INDEX IF NOT EXISTS idx_edu_assignments_content_id ON patient_education_assignments(content_id)';
+  END IF;
+END $$;
 
 -- ── Documents ─────────────────────────────────────────────────────────────────
 
--- documents.uploaded_by → auth_users
-CREATE INDEX IF NOT EXISTS idx_documents_uploaded_by
-  ON documents(uploaded_by);
+DO $$ BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.tables
+             WHERE table_name = 'documents' AND table_schema = 'public') THEN
+    EXECUTE 'CREATE INDEX IF NOT EXISTS idx_documents_uploaded_by ON documents(uploaded_by)';
+  END IF;
+END $$;
 
 -- ── Clinical tasks ────────────────────────────────────────────────────────────
 
--- clinical_tasks.patient_id → patients
-CREATE INDEX IF NOT EXISTS idx_clinical_tasks_patient_id
-  ON clinical_tasks(patient_id);
-
--- clinical_tasks.created_by → auth_users
-CREATE INDEX IF NOT EXISTS idx_clinical_tasks_created_by
-  ON clinical_tasks(created_by);
+DO $$ BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.tables
+             WHERE table_name = 'clinical_tasks' AND table_schema = 'public') THEN
+    EXECUTE 'CREATE INDEX IF NOT EXISTS idx_clinical_tasks_patient_id ON clinical_tasks(patient_id)';
+    EXECUTE 'CREATE INDEX IF NOT EXISTS idx_clinical_tasks_created_by ON clinical_tasks(created_by)';
+  END IF;
+END $$;
 
 -- ── Surveys ───────────────────────────────────────────────────────────────────
 
--- survey_responses.patient_id → patients
-CREATE INDEX IF NOT EXISTS idx_survey_responses_patient_id
-  ON survey_responses(patient_id);
-
--- survey_responses.case_id → cases
-CREATE INDEX IF NOT EXISTS idx_survey_responses_case_id
-  ON survey_responses(case_id);
+DO $$ BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.tables
+             WHERE table_name = 'survey_responses' AND table_schema = 'public') THEN
+    EXECUTE 'CREATE INDEX IF NOT EXISTS idx_survey_responses_patient_id ON survey_responses(patient_id)';
+    EXECUTE 'CREATE INDEX IF NOT EXISTS idx_survey_responses_case_id ON survey_responses(case_id)';
+  END IF;
+END $$;
 
 -- ── Post-processing jobs ──────────────────────────────────────────────────────
 
--- post_processing_jobs.print_job_id
-CREATE INDEX IF NOT EXISTS idx_postproc_print_job_id
-  ON post_processing_jobs(print_job_id);
+DO $$ BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.tables
+             WHERE table_name = 'post_processing_jobs' AND table_schema = 'public') THEN
+    EXECUTE 'CREATE INDEX IF NOT EXISTS idx_postproc_print_job_id ON post_processing_jobs(print_job_id)';
+  END IF;
+END $$;
 
 -- ── Composite indexes for high-volume queries not yet covered ─────────────────
 

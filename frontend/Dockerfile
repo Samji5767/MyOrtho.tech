@@ -1,7 +1,7 @@
 FROM node:22-alpine AS builder
 WORKDIR /app
 COPY package*.json ./
-RUN npm install
+RUN npm ci
 COPY . .
 RUN npm run build
 
@@ -10,8 +10,15 @@ RUN npm run build
 # 'next start' explicitly errors with static exports; serve the files instead.
 FROM node:22-alpine AS runner
 WORKDIR /app
+
+# Run as non-root user
+RUN addgroup -S app && adduser -S app -G app
+
 RUN npm install -g serve
 COPY --from=builder /app/next-build ./next-build
+
+RUN chown -R app:app /app
+USER app
 
 EXPOSE 3000
 CMD ["serve", "next-build", "-p", "3000", "--no-clipboard"]

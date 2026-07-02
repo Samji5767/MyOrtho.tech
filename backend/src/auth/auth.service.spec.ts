@@ -27,31 +27,32 @@ describe('AuthService', () => {
       name: 'Dr Smith',
       orgId: 'org-1',
       isOnboarded: true,
+      jti: 'test-jti-12345',
     };
 
-    it('signs a JWT and verifies it back successfully', () => {
+    it('signs a JWT and verifies it back successfully', async () => {
       const token = service.signToken(payload);
       expect(typeof token).toBe('string');
-      const verified = service.verifyToken(token);
+      const verified = await service.verifyToken(token);
       expect(verified.sub).toBe(payload.sub);
       expect(verified.email).toBe(payload.email);
       expect(verified.orgId).toBe(payload.orgId);
     });
 
-    it('throws UnauthorizedException for a tampered token', () => {
+    it('throws UnauthorizedException for a tampered token', async () => {
       const token = service.signToken(payload);
       const tampered = token.slice(0, -5) + 'XXXXX';
-      expect(() => service.verifyToken(tampered)).toThrow(UnauthorizedException);
+      await expect(service.verifyToken(tampered)).rejects.toThrow(UnauthorizedException);
     });
 
-    it('throws UnauthorizedException for an expired token', () => {
+    it('throws UnauthorizedException for an expired token', async () => {
       const expired = jwt.sign({ ...payload, exp: Math.floor(Date.now() / 1000) - 1 }, SECRET);
-      expect(() => service.verifyToken(expired)).toThrow(UnauthorizedException);
+      await expect(service.verifyToken(expired)).rejects.toThrow(UnauthorizedException);
     });
 
-    it('throws UnauthorizedException for a token signed with a different secret', () => {
+    it('throws UnauthorizedException for a token signed with a different secret', async () => {
       const wrongToken = jwt.sign(payload, 'totally-different-secret-!!!!!!!!!!!');
-      expect(() => service.verifyToken(wrongToken)).toThrow(UnauthorizedException);
+      await expect(service.verifyToken(wrongToken)).rejects.toThrow(UnauthorizedException);
     });
   });
 

@@ -5,36 +5,30 @@
 -- ─── Core entity lookups ──────────────────────────────────────────────────────
 
 -- Cases: primary access patterns
-CREATE INDEX IF NOT EXISTS idx_cases_org_status
-  ON cases (organization_id, status)
-  WHERE deleted_at IS NULL;
+-- NOTE: cases.organization_id does not exist in the base schema.
+-- It is added via migration 034_add_org_id_to_cases.sql.
+-- The idx_cases_org_status and idx_cases_org_created indexes are created there.
 
-CREATE INDEX IF NOT EXISTS idx_cases_org_created
-  ON cases (organization_id, created_at DESC)
-  WHERE deleted_at IS NULL;
-
--- Patients: org-scoped lookup
+-- Patients: org-scoped lookup (patients.organization_id exists; patients has no deleted_at)
 CREATE INDEX IF NOT EXISTS idx_patients_org_id
   ON patients (organization_id);
 
 CREATE INDEX IF NOT EXISTS idx_patients_org_name
-  ON patients (organization_id, last_name, first_name)
-  WHERE deleted_at IS NULL;
+  ON patients (organization_id, last_name, first_name);
 
 -- Scans: case FK with jaw type for filtering
+-- NOTE: scans.organization_id does not exist in the base schema.
+-- scans are org-scoped via case_id → cases.organization_id.
+-- idx_scans_org_case is created in migration 034_add_org_id_to_cases.sql.
 CREATE INDEX IF NOT EXISTS idx_scans_case_id
   ON scans (case_id);
 
-CREATE INDEX IF NOT EXISTS idx_scans_org_case
-  ON scans (organization_id, case_id);
-
 -- ─── Treatment planning ───────────────────────────────────────────────────────
 
+-- NOTE: treatment_plans.organization_id and treatment_plans.status do not exist
+-- in the base schema. Scoped via case_id → cases.
 CREATE INDEX IF NOT EXISTS idx_treatment_plans_case_id
   ON treatment_plans (case_id);
-
-CREATE INDEX IF NOT EXISTS idx_treatment_plans_org_status
-  ON treatment_plans (organization_id, status);
 
 CREATE INDEX IF NOT EXISTS idx_movement_prescriptions_plan_id
   ON movement_prescriptions (plan_id);
@@ -69,8 +63,9 @@ CREATE INDEX IF NOT EXISTS idx_attachment_force_analysis_plan_id
 
 -- ─── IPR ──────────────────────────────────────────────────────────────────────
 
-CREATE INDEX IF NOT EXISTS idx_ipr_contacts_plan_id
-  ON ipr_contacts (plan_id);
+-- ipr_plan_items uses treatment_plan_id (from migration 010_phase_22.sql)
+CREATE INDEX IF NOT EXISTS idx_ipr_plan_items_plan_id
+  ON ipr_plan_items (treatment_plan_id);
 
 CREATE INDEX IF NOT EXISTS idx_ipr_enamel_estimates_plan_id
   ON ipr_enamel_estimates (plan_id);
@@ -94,13 +89,14 @@ CREATE INDEX IF NOT EXISTS idx_cbct_stl_fusions_case_id
 CREATE INDEX IF NOT EXISTS idx_bone_segments_fusion_id
   ON bone_segments (fusion_id);
 
--- ─── Audit log ────────────────────────────────────────────────────────────────
+-- ─── Audit events ─────────────────────────────────────────────────────────────
 
-CREATE INDEX IF NOT EXISTS idx_audit_log_org_created
-  ON audit_log (organization_id, created_at DESC);
+-- Table is audit_events (created in migration 002_vps_core_schema.sql)
+CREATE INDEX IF NOT EXISTS idx_audit_events_org_created
+  ON audit_events (organization_id, created_at DESC);
 
-CREATE INDEX IF NOT EXISTS idx_audit_log_resource
-  ON audit_log (resource_type, resource_id);
+CREATE INDEX IF NOT EXISTS idx_audit_events_resource
+  ON audit_events (resource_type, resource_id);
 
 -- ─── Export / billing ─────────────────────────────────────────────────────────
 
@@ -110,8 +106,9 @@ CREATE INDEX IF NOT EXISTS idx_export_packages_case_id
 CREATE INDEX IF NOT EXISTS idx_export_transactions_org_created
   ON export_transactions (organization_id, created_at DESC);
 
-CREATE INDEX IF NOT EXISTS idx_subscriptions_org_id
-  ON subscriptions (organization_id);
+-- billing_subscriptions (from schema.sql line 678 and migration 002)
+CREATE INDEX IF NOT EXISTS idx_billing_subscriptions_org_id
+  ON billing_subscriptions (organization_id);
 
 -- ─── Notifications ────────────────────────────────────────────────────────────
 

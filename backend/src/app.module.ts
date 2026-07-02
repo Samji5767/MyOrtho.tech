@@ -2,6 +2,7 @@ import { MiddlewareConsumer, Module, NestModule } from '@nestjs/common';
 import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 import { APP_GUARD } from '@nestjs/core';
 import { TimingMiddleware } from './common/timing.middleware';
+import { CommonModule } from './common/common.module';
 import { DatabaseModule } from './database/database.module';
 import { RedisModule } from './redis/redis.module';
 import { HealthModule } from './health/health.module';
@@ -118,6 +119,7 @@ import { AiSuggestionsModule } from './ai-suggestions/ai-suggestions.module';
       },
     ]),
     // Infrastructure (global — available to all modules via @Global())
+    CommonModule,
     DatabaseModule,
     RedisModule,
     // Core

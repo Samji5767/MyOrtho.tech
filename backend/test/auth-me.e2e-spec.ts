@@ -10,6 +10,7 @@ import * as request from 'supertest';
 import * as cookieParser from 'cookie-parser';
 import { AuthController, MeController } from '../src/auth/auth.controller';
 import { AuthService } from '../src/auth/auth.service';
+import { AuditService } from '../src/audit/audit.service';
 import { PG_POOL } from '../src/database/database.module';
 import { REDIS_CLIENT } from '../src/redis/redis.module';
 
@@ -35,6 +36,11 @@ function makeMockPool() {
   };
 }
 
+// Minimal mock AuditService — log() is a no-op in tests
+const mockAuditService = {
+  log: jest.fn().mockResolvedValue(undefined),
+};
+
 describe('Auth — /api/me and /api/auth/session (e2e)', () => {
   let app: INestApplication;
   let authService: AuthService;
@@ -46,8 +52,9 @@ describe('Auth — /api/me and /api/auth/session (e2e)', () => {
       controllers: [AuthController, MeController],
       providers: [
         AuthService,
-        { provide: PG_POOL,      useValue: makeMockPool() },
-        { provide: REDIS_CLIENT, useValue: null },
+        { provide: AuditService,   useValue: mockAuditService },
+        { provide: PG_POOL,        useValue: makeMockPool() },
+        { provide: REDIS_CLIENT,   useValue: null },
       ],
     }).compile();
 
@@ -70,6 +77,7 @@ describe('Auth — /api/me and /api/auth/session (e2e)', () => {
       name: 'Dr. Smith',
       orgId: 'org-001',
       isOnboarded: true,
+      jti: 'test-e2e-jti-001',
     });
   }
 

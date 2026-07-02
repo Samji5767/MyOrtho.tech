@@ -10,28 +10,29 @@ export interface ClinicalAnalysis {
   bolton_anterior_ratio: number;
   bolton_overall_ratio: number;
   bolton_discrepancy_mm: number;
-  arch_length_upper_mm: number;
-  arch_length_lower_mm: number;
-  arch_length_discrepancy_mm: number;
-  crowding_upper_mm: number;
-  crowding_lower_mm: number;
-  spacing_upper_mm: number;
-  spacing_lower_mm: number;
-  overjet_mm: number;
-  overbite_mm: number;
-  overbite_percent: number;
-  curve_of_spee_mm: number;
-  midline_deviation_mm: number;
-  midline_direction: string;
-  angle_class: string;
-  canine_relationship_right: string;
-  canine_relationship_left: string;
-  molar_relationship_right: string;
-  molar_relationship_left: string;
-  upper_arch_width_mm: number;
-  lower_arch_width_mm: number;
-  transverse_discrepancy_mm: number;
+  arch_length_upper_mm: number | null;
+  arch_length_lower_mm: number | null;
+  arch_length_discrepancy_mm: number | null;
+  crowding_upper_mm: number | null;
+  crowding_lower_mm: number | null;
+  spacing_upper_mm: number | null;
+  spacing_lower_mm: number | null;
+  overjet_mm: number | null;
+  overbite_mm: number | null;
+  overbite_percent: number | null;
+  curve_of_spee_mm: number | null;
+  midline_deviation_mm: number | null;
+  midline_direction: string | null;
+  angle_class: string | null;
+  canine_relationship_right: string | null;
+  canine_relationship_left: string | null;
+  molar_relationship_right: string | null;
+  molar_relationship_left: string | null;
+  upper_arch_width_mm: number | null;
+  lower_arch_width_mm: number | null;
+  transverse_discrepancy_mm: number | null;
   occlusal_contacts: Record<string, unknown>;
+  measurement_source: Record<string, string>;
   diagnostic_summary: string;
   confidence: number;
   created_at: string;
@@ -48,7 +49,19 @@ export interface GenerateAnalysisDto {
   crowdingLower?: number;
   overjetMm?: number;
   overbite?: number;
+  /**
+   * Clinician-entered Angle classification.
+   * Accepted values: 'Class I', 'Class II Division 1', 'Class II Division 2', 'Class III'
+   */
   angleClass?: string;
+  /** Midline deviation in mm — positive = left, negative = right */
+  midlineDeviationMm?: number;
+  /** Curve of Spee depth in mm (measured by clinician) */
+  curveOfSpeeMm?: number;
+  /** Upper inter-molar width in mm */
+  upperArchWidthMm?: number;
+  /** Lower inter-molar width in mm */
+  lowerArchWidthMm?: number;
 }
 
 // ─── Bolton Norm Constants ─────────────────────────────────────────────────
@@ -81,7 +94,6 @@ function resolveWidths(
  * Bolton Overall Ratio:
  *   (sum of 12 mandibular widths / sum of 12 maxillary widths) × 100
  * Teeth included: all 12 from canine-to-canine and premolars and first molars
- * (teeth 13-23 and 33-43 plus premolars 14,15,24,25 and 44,45,34,35 plus molars 16,26,36,46)
  * Strictly: FDI 13-23 upper (12 teeth) vs 33-43 lower (12 teeth)
  */
 function computeBoltonOverall(
@@ -124,9 +136,6 @@ function computeBoltonAnterior(
  *
  * For overall: expected lower sum = (upper12 × overall_norm) / 100
  * discrepancy_mm = actual_lower12 - expected_lower12
- *
- * For anterior: expected lower sum = (upper6 × anterior_norm) / 100
- * We return the overall discrepancy as the primary metric.
  */
 function computeBoltonDiscrepancy(
   sumUpper12: number,
@@ -148,39 +157,27 @@ function computeArchLengthDiscrepancy(
   return parseFloat((totalToothWidths - availableArchLength).toFixed(3));
 }
 
-/** Simulate realistic available arch length if not provided */
-function simulateArchLength(isUpper: boolean, widthWidths12: number): number {
-  // Available arch perimeter ≈ 95-98% of total tooth width sum (average adult)
-  const ratio = 0.92 + Math.random() * 0.08; // 92-100% of total width
-  return parseFloat((widthWidths12 * ratio).toFixed(3));
-}
-
-function randBetween(min: number, max: number, decimals = 2): number {
-  const v = min + Math.random() * (max - min);
-  return parseFloat(v.toFixed(decimals));
-}
-
-/** Build clinical diagnostic summary from computed values */
+/** Build clinical diagnostic summary from computed values — handles null fields gracefully */
 function buildDiagnosticSummary(params: {
-  angleClass: string;
-  crowdingUpper: number;
-  crowdingLower: number;
-  spacingUpper: number;
-  spacingLower: number;
-  overjet: number;
-  overbite: number;
-  overbitePercent: number;
+  angleClass: string | null;
+  crowdingUpper: number | null;
+  crowdingLower: number | null;
+  spacingUpper: number | null;
+  spacingLower: number | null;
+  overjet: number | null;
+  overbite: number | null;
+  overbitePercent: number | null;
   boltonAnteriorRatio: number;
   boltonOverallRatio: number;
   boltonDiscrepancyMm: number;
-  midlineDeviation: number;
-  midlineDirection: string;
-  transverseDiscrepancy: number;
-  curveOfSpee: number;
-  canineRight: string;
-  canineLeft: string;
-  molarRight: string;
-  molarLeft: string;
+  midlineDeviation: number | null;
+  midlineDirection: string | null;
+  transverseDiscrepancy: number | null;
+  curveOfSpee: number | null;
+  canineRight: string | null;
+  canineLeft: string | null;
+  molarRight: string | null;
+  molarLeft: string | null;
 }): string {
   const {
     angleClass, crowdingUpper, crowdingLower, spacingUpper, spacingLower,
@@ -192,29 +189,53 @@ function buildDiagnosticSummary(params: {
   const lines: string[] = [];
 
   // Skeletal/Molar class
-  lines.push(`Skeletal and Dental Classification: The patient presents with an ${angleClass} molar relationship bilaterally (right: ${molarRight}, left: ${molarLeft}) with ${canineRight} canine relationship on the right and ${canineLeft} canine relationship on the left.`);
+  if (angleClass !== null) {
+    const molarStr = molarRight && molarLeft ? ` (right: ${molarRight}, left: ${molarLeft})` : '';
+    const canineStr = canineRight && canineLeft
+      ? ` with ${canineRight} canine relationship on the right and ${canineLeft} canine relationship on the left`
+      : '';
+    lines.push(`Skeletal and Dental Classification: The patient presents with an ${angleClass} molar relationship bilaterally${molarStr}${canineStr}.`);
+  } else {
+    lines.push('Skeletal and Dental Classification: Angle classification not recorded — clinician entry required.');
+  }
 
   // Crowding/Spacing
-  const upperArch = crowdingUpper > 0
-    ? `${crowdingUpper.toFixed(1)} mm of crowding`
-    : crowdingLower < 0
-      ? `${Math.abs(spacingUpper).toFixed(1)} mm of generalized spacing`
-      : 'adequate arch length';
-  const lowerArch = crowdingLower > 0
-    ? `${crowdingLower.toFixed(1)} mm of crowding`
-    : spacingLower < 0
-      ? `${Math.abs(spacingLower).toFixed(1)} mm of generalized spacing`
-      : 'adequate arch length';
-  lines.push(`Space Analysis: The maxillary arch demonstrates ${upperArch}. The mandibular arch demonstrates ${lowerArch}.`);
+  if (crowdingUpper !== null || crowdingLower !== null) {
+    const upperArch = crowdingUpper !== null
+      ? (crowdingUpper > 0
+        ? `${crowdingUpper.toFixed(1)} mm of crowding`
+        : (spacingUpper !== null && spacingUpper < 0
+          ? `${Math.abs(spacingUpper).toFixed(1)} mm of generalized spacing`
+          : 'adequate arch length'))
+      : 'not measured';
+    const lowerArch = crowdingLower !== null
+      ? (crowdingLower > 0
+        ? `${crowdingLower.toFixed(1)} mm of crowding`
+        : (spacingLower !== null && spacingLower < 0
+          ? `${Math.abs(spacingLower).toFixed(1)} mm of generalized spacing`
+          : 'adequate arch length'))
+      : 'not measured';
+    lines.push(`Space Analysis: The maxillary arch demonstrates ${upperArch}. The mandibular arch demonstrates ${lowerArch}.`);
+  } else {
+    lines.push('Space Analysis: Arch length and crowding measurements not provided. Bolton analysis completed from tooth width data.');
+  }
 
   // Overjet/Overbite
-  lines.push(`Vertical and Horizontal Assessment: Overjet measures ${overjet.toFixed(1)} mm (norm: 2–3 mm). Overbite measures ${overbite.toFixed(1)} mm (${overbitePercent.toFixed(0)}% of lower incisor height; norm: 20–30%).`);
+  if (overjet !== null && overbite !== null && overbitePercent !== null) {
+    lines.push(`Vertical and Horizontal Assessment: Overjet measures ${overjet.toFixed(1)} mm (norm: 2–3 mm). Overbite measures ${overbite.toFixed(1)} mm (${overbitePercent.toFixed(0)}% of lower incisor height; norm: 20–30%).`);
+  } else {
+    lines.push('Vertical and Horizontal Assessment: Overjet and overbite measurements not provided — clinician measurement required.');
+  }
 
   // Curve of Spee
-  if (curveOfSpee > 2) {
-    lines.push(`Curve of Spee: A deep curve of Spee of ${curveOfSpee.toFixed(1)} mm is noted and will require leveling, increasing arch length demand by approximately ${(curveOfSpee * 0.5).toFixed(1)} mm per quadrant.`);
+  if (curveOfSpee !== null) {
+    if (curveOfSpee > 2) {
+      lines.push(`Curve of Spee: A deep curve of Spee of ${curveOfSpee.toFixed(1)} mm is noted and will require leveling, increasing arch length demand by approximately ${(curveOfSpee * 0.5).toFixed(1)} mm per quadrant.`);
+    } else {
+      lines.push(`Curve of Spee: The curve of Spee measures ${curveOfSpee.toFixed(1)} mm, within the normal range (≤2 mm).`);
+    }
   } else {
-    lines.push(`Curve of Spee: The curve of Spee measures ${curveOfSpee.toFixed(1)} mm, within the normal range (≤2 mm).`);
+    lines.push('Curve of Spee: Not measured — clinician measurement required.');
   }
 
   // Bolton analysis
@@ -228,14 +249,18 @@ function buildDiagnosticSummary(params: {
   }
 
   // Midline
-  if (Math.abs(midlineDeviation) >= 1.0) {
-    lines.push(`Midline Assessment: The dental midline is deviated ${Math.abs(midlineDeviation).toFixed(1)} mm to the ${midlineDirection}. Midline correction should be incorporated into the treatment plan.`);
+  if (midlineDeviation !== null && midlineDirection !== null) {
+    if (Math.abs(midlineDeviation) >= 1.0) {
+      lines.push(`Midline Assessment: The dental midline is deviated ${Math.abs(midlineDeviation).toFixed(1)} mm to the ${midlineDirection}. Midline correction should be incorporated into the treatment plan.`);
+    } else {
+      lines.push(`Midline Assessment: Dental midlines are coincident with the facial midline within clinical tolerance.`);
+    }
   } else {
-    lines.push(`Midline Assessment: Dental midlines are coincident with the facial midline within clinical tolerance.`);
+    lines.push('Midline Assessment: Not measured — clinician measurement required.');
   }
 
   // Transverse
-  if (Math.abs(transverseDiscrepancy) >= 2.0) {
+  if (transverseDiscrepancy !== null && Math.abs(transverseDiscrepancy) >= 2.0) {
     const direction = transverseDiscrepancy > 0 ? 'maxillary constriction' : 'mandibular constriction';
     lines.push(`Transverse Assessment: Inter-arch transverse discrepancy of ${Math.abs(transverseDiscrepancy).toFixed(1)} mm (${direction}). Transverse correction may be required.`);
   }
@@ -280,20 +305,20 @@ export class ClinicalAnalysisDeepService {
     const totalUpperWidths = upperAllKeys.reduce((s, k) => s + (upper[k] ?? 0), 0);
     const totalLowerWidths = lowerAllKeys.reduce((s, k) => s + (lower[k] ?? 0), 0);
 
-    const archLengthUpper = dto.archLengthUpper ?? simulateArchLength(true, totalUpperWidths);
-    const archLengthLower = dto.archLengthLower ?? simulateArchLength(false, totalLowerWidths);
+    // Arch length requires direct clinical measurement; cannot be derived from tooth widths alone.
+    const archLengthUpper: number | null = dto.archLengthUpper ?? null;
+    const archLengthLower: number | null = dto.archLengthLower ?? null;
 
     // ── Crowding / Spacing ──────────────────────────────────────────────────
-    // Provided values take priority; otherwise compute from arch length discrepancy
-    let crowdingUpper: number;
-    let crowdingLower: number;
-    let spacingUpper: number;
-    let spacingLower: number;
+    let crowdingUpper: number | null = null;
+    let crowdingLower: number | null = null;
+    let spacingUpper: number | null = null;
+    let spacingLower: number | null = null;
 
     if (dto.crowdingUpper !== undefined) {
       crowdingUpper = dto.crowdingUpper;
       spacingUpper = 0;
-    } else {
+    } else if (archLengthUpper !== null) {
       const disc = computeArchLengthDiscrepancy(totalUpperWidths, archLengthUpper);
       crowdingUpper = Math.max(0, parseFloat(disc.toFixed(2)));
       spacingUpper  = Math.min(0, parseFloat(disc.toFixed(2)));
@@ -302,76 +327,109 @@ export class ClinicalAnalysisDeepService {
     if (dto.crowdingLower !== undefined) {
       crowdingLower = dto.crowdingLower;
       spacingLower = 0;
-    } else {
+    } else if (archLengthLower !== null) {
       const disc = computeArchLengthDiscrepancy(totalLowerWidths, archLengthLower);
       crowdingLower = Math.max(0, parseFloat(disc.toFixed(2)));
       spacingLower  = Math.min(0, parseFloat(disc.toFixed(2)));
     }
 
-    const archLengthDiscrepancy = parseFloat(
-      (computeArchLengthDiscrepancy(totalUpperWidths, archLengthUpper)
-        + computeArchLengthDiscrepancy(totalLowerWidths, archLengthLower)).toFixed(3),
-    );
+    const archLengthDiscrepancy: number | null =
+      archLengthUpper !== null && archLengthLower !== null
+        ? parseFloat(
+            (computeArchLengthDiscrepancy(totalUpperWidths, archLengthUpper)
+              + computeArchLengthDiscrepancy(totalLowerWidths, archLengthLower)).toFixed(3),
+          )
+        : null;
 
     // ── Overjet / Overbite ──────────────────────────────────────────────────
-    const overjet = dto.overjetMm ?? randBetween(1.5, 4.5, 2);
-    const overbite = dto.overbite ?? randBetween(1.5, 3.5, 2);
-    // Overbite percent: overbite / average lower incisor height × 100
-    // Lower central incisor height norm: 9.0 mm
-    const lowerCentralHeight = 9.0;
-    const overbitePercent = parseFloat(((overbite / lowerCentralHeight) * 100).toFixed(2));
+    // Must be measured clinically; cannot be derived from any provided input.
+    const overjet: number | null = dto.overjetMm ?? null;
+    const overbite: number | null = dto.overbite ?? null;
+    const lowerCentralHeight = 9.0; // norm (mm)
+    const overbitePercent: number | null =
+      overbite !== null ? parseFloat(((overbite / lowerCentralHeight) * 100).toFixed(2)) : null;
 
     // ── Curve of Spee ───────────────────────────────────────────────────────
-    const curveOfSpee = randBetween(0.5, 3.5, 2);
+    // Requires clinical measurement with a brass wire or digital caliper.
+    const curveOfSpee: number | null = dto.curveOfSpeeMm ?? null;
 
     // ── Midline ─────────────────────────────────────────────────────────────
-    const midlineDeviation = randBetween(-3.0, 3.0, 2);
-    const midlineDirection = midlineDeviation > 0.3 ? 'left'
-      : midlineDeviation < -0.3 ? 'right'
-      : 'coincident';
+    const midlineDeviation: number | null = dto.midlineDeviationMm ?? null;
+    const midlineDirection: string | null =
+      midlineDeviation === null ? null
+        : midlineDeviation > 0.3 ? 'left'
+        : midlineDeviation < -0.3 ? 'right'
+        : 'coincident';
 
     // ── Angle Classification ────────────────────────────────────────────────
-    const angleClass = dto.angleClass ?? (() => {
-      const r = Math.random();
-      if (r < 0.55) return 'Class I';
-      if (r < 0.80) return 'Class II Division 1';
-      if (r < 0.90) return 'Class II Division 2';
-      return 'Class III';
-    })();
+    // Must be entered by the clinician via direct examination.
+    const angleClass: string | null = dto.angleClass ?? null;
 
-    // Molar and canine relationships
-    const molRel = (angleClass: string) => {
-      if (angleClass.startsWith('Class I'))   return 'Class I';
-      if (angleClass.startsWith('Class II'))  return 'Class II';
-      if (angleClass.startsWith('Class III')) return 'Class III';
-      return 'Class I';
+    // Molar and canine relationships derived deterministically from Angle class when provided.
+    const molRel = (cls: string | null): string | null => {
+      if (!cls) return null;
+      if (cls.startsWith('Class I'))   return 'Class I';
+      if (cls.startsWith('Class II'))  return 'Class II';
+      if (cls.startsWith('Class III')) return 'Class III';
+      return null;
     };
     const molarRight  = molRel(angleClass);
     const molarLeft   = molRel(angleClass);
-    // Canine can be slightly different (0.5 cusp difference)
-    const canineVariant = Math.random() > 0.8;
-    const canineRight = canineVariant && molarRight === 'Class I' ? 'Class I (tending Class II)' : molRel(angleClass);
-    const canineLeft  = canineVariant && molarLeft  === 'Class I' ? 'Class I (tending Class II)' : molRel(angleClass);
+    const canineRight = molRel(angleClass);
+    const canineLeft  = molRel(angleClass);
 
     // ── Transverse ──────────────────────────────────────────────────────────
-    // Inter-molar width norms: upper ~56 mm, lower ~52 mm (Bolton 1958 averages)
-    const upperArchWidth = randBetween(50, 60, 2);
-    const lowerArchWidth = randBetween(46, 55, 2);
-    // Transverse discrepancy: positive = upper narrow relative to lower
-    const transverseDiscrepancy = parseFloat((upperArchWidth - lowerArchWidth - 4.0).toFixed(3)); // norm ~4 mm expansion needed
+    // Inter-molar widths must be measured clinically with a digital caliper.
+    const upperArchWidth: number | null = dto.upperArchWidthMm ?? null;
+    const lowerArchWidth: number | null = dto.lowerArchWidthMm ?? null;
+    const transverseDiscrepancy: number | null =
+      upperArchWidth !== null && lowerArchWidth !== null
+        ? parseFloat((upperArchWidth - lowerArchWidth - 4.0).toFixed(3))
+        : null;
 
     // ── Occlusal Contacts ───────────────────────────────────────────────────
-    const occlusalContacts = {
-      right_posterior: 'stable',
-      left_posterior: 'stable',
-      anterior: overjet <= 3.0 && overbite >= 1.0 ? 'present' : 'reduced',
-      canine_guidance: canineRight === 'Class I' ? 'functional' : 'absent',
+    const occlusalContacts: Record<string, unknown> =
+      overjet !== null && overbite !== null
+        ? {
+            right_posterior: 'stable',
+            left_posterior: 'stable',
+            anterior: overjet <= 3.0 && overbite >= 1.0 ? 'present' : 'reduced',
+            canine_guidance: canineRight === 'Class I' ? 'functional' : 'absent',
+          }
+        : { note: 'Cannot be determined without overjet/overbite measurements' };
+
+    // ── Measurement Source ──────────────────────────────────────────────────
+    // Records which fields were clinician-provided vs. computed vs. not available.
+    const toothWidthSource = dto.toothWidths && Object.keys(dto.toothWidths).length > 0
+      ? 'clinician_measured' : 'moyers_1988_norms';
+    const measurementSource: Record<string, string> = {
+      bolton_ratios: toothWidthSource,
+      arch_length_upper: archLengthUpper !== null ? 'clinician_measured' : 'not_available',
+      arch_length_lower: archLengthLower !== null ? 'clinician_measured' : 'not_available',
+      crowding_upper: crowdingUpper !== null ? (dto.crowdingUpper !== undefined ? 'clinician_measured' : 'computed_from_arch_length') : 'not_available',
+      crowding_lower: crowdingLower !== null ? (dto.crowdingLower !== undefined ? 'clinician_measured' : 'computed_from_arch_length') : 'not_available',
+      overjet: overjet !== null ? 'clinician_measured' : 'not_available',
+      overbite: overbite !== null ? 'clinician_measured' : 'not_available',
+      curve_of_spee: curveOfSpee !== null ? 'clinician_measured' : 'not_available',
+      midline_deviation: midlineDeviation !== null ? 'clinician_measured' : 'not_available',
+      angle_class: angleClass !== null ? 'clinician_entered' : 'not_available',
+      arch_widths: upperArchWidth !== null ? 'clinician_measured' : 'not_available',
     };
 
     // ── Confidence ──────────────────────────────────────────────────────────
-    const confidence = dto.toothWidths && Object.keys(dto.toothWidths).length >= 12
-      ? parseFloat(randBetween(0.93, 0.98, 3).toFixed(3))
-      : parseFloat(randBetween(0.78, 0.89, 3).toFixed(3));
+    // Computed deterministically from the fraction of measurements actually provided.
+    const measuredFields = [
+      overjet !== null, overbite !== null, curveOfSpee !== null,
+      midlineDeviation !== null, angleClass !== null,
+      archLengthUpper !== null, archLengthLower !== null,
+      upperArchWidth !== null, lowerArchWidth !== null,
+    ];
+    const measuredCount = measuredFields.filter(Boolean).length;
+    const toothWidthCount = dto.toothWidths ? Object.keys(dto.toothWidths).length : 0;
+    const widthBonus = Math.min(toothWidthCount / 28, 1) * 0.15;
+    const confidence = parseFloat(
+      Math.min(0.95, 0.40 + (measuredCount / measuredFields.length) * 0.45 + widthBonus).toFixed(3),
+    );
 
     // ── Diagnostic Summary ──────────────────────────────────────────────────
     const diagnosticSummary = buildDiagnosticSummary({
@@ -408,7 +466,7 @@ export class ClinicalAnalysisDeepService {
          canine_relationship_right, canine_relationship_left,
          molar_relationship_right, molar_relationship_left,
          upper_arch_width_mm, lower_arch_width_mm, transverse_discrepancy_mm,
-         occlusal_contacts, diagnostic_summary, confidence
+         occlusal_contacts, measurement_source, diagnostic_summary, confidence
        ) VALUES (
          $1, $2, $3,
          $4, $5, $6,
@@ -420,7 +478,7 @@ export class ClinicalAnalysisDeepService {
          $21, $22,
          $23, $24,
          $25, $26, $27,
-         $28, $29, $30
+         $28, $29, $30, $31
        )
        RETURNING *`,
       [
@@ -452,13 +510,14 @@ export class ClinicalAnalysisDeepService {
         lowerArchWidth,
         transverseDiscrepancy,
         JSON.stringify(occlusalContacts),
+        JSON.stringify(measurementSource),
         diagnosticSummary,
         confidence,
       ],
     );
 
     this.logger.log(
-      `Clinical analysis generated: case=${dto.caseId} bolton_overall=${boltonOverall} crowding_upper=${crowdingUpper}mm crowding_lower=${crowdingLower}mm`,
+      `Clinical analysis generated: case=${dto.caseId} bolton_overall=${boltonOverall} crowding_upper=${crowdingUpper ?? 'not_measured'}mm crowding_lower=${crowdingLower ?? 'not_measured'}mm`,
     );
     return rows[0];
   }

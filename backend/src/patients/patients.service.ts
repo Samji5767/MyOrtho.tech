@@ -8,6 +8,7 @@ import {
 import type { Pool } from 'pg';
 import { PG_POOL } from '../database/database.module';
 import { AuditService } from '../audit/audit.service';
+import { CryptoService } from '../common/crypto.service';
 
 export interface CreatePatientDto {
   firstName: string;
@@ -32,6 +33,7 @@ export class PatientsService {
   constructor(
     @Inject(PG_POOL) private readonly pool: Pool,
     private readonly auditService: AuditService,
+    private readonly cryptoService: CryptoService,
   ) {}
 
   async findAllByOrg(orgId: string, limit = 100, offset = 0) {
@@ -48,7 +50,7 @@ export class PatientsService {
        LIMIT $2 OFFSET $3`,
       [orgId, limit, offset],
     );
-    return rows.map(this.formatPatient);
+    return rows.map(row => this.formatPatient(row, true));
   }
 
   async findOne(id: string, orgId: string) {
@@ -67,7 +69,7 @@ export class PatientsService {
     if (row.organization_id !== orgId) {
       throw new ForbiddenException('Access denied');
     }
-    return this.formatPatient(row);
+    return this.formatPatient(row, true);
   }
 
   async create(
@@ -83,11 +85,11 @@ export class PatientsService {
        RETURNING id`,
       [
         orgId,
-        dto.firstName,
-        dto.lastName,
+        this.cryptoService.encrypt(dto.firstName),
+        this.cryptoService.encrypt(dto.lastName),
         dto.dateOfBirth ?? null,
-        dto.gender ?? null,
-        dto.clinicalNotes ?? null,
+        this.cryptoService.encrypt(dto.gender ?? null),
+        this.cryptoService.encrypt(dto.clinicalNotes ?? null),
         createdBy,
       ],
     );
@@ -101,7 +103,8 @@ export class PatientsService {
       resourceType: 'patient',
       resourceId: newId,
       action: 'patient.created',
-      details: { firstName: dto.firstName, lastName: dto.lastName },
+      // Audit record must not contain PHI
+      details: { patientId: newId },
       ipAddress: opts.ipAddress,
     });
 
@@ -121,11 +124,11 @@ export class PatientsService {
     const values: unknown[] = [];
     let i = 1;
 
-    if (dto.firstName !== undefined)    { fields.push(`first_name = $${i++}`);    values.push(dto.firstName); }
-    if (dto.lastName !== undefined)     { fields.push(`last_name = $${i++}`);     values.push(dto.lastName); }
+    if (dto.firstName !== undefined)    { fields.push(`first_name = $${i++}`);    values.push(this.cryptoService.encrypt(dto.firstName)); }
+    if (dto.lastName !== undefined)     { fields.push(`last_name = $${i++}`);     values.push(this.cryptoService.encrypt(dto.lastName)); }
     if (dto.dateOfBirth !== undefined)  { fields.push(`dob = $${i++}`);           values.push(dto.dateOfBirth); }
-    if (dto.gender !== undefined)       { fields.push(`gender = $${i++}`);        values.push(dto.gender); }
-    if (dto.clinicalNotes !== undefined){ fields.push(`clinical_notes = $${i++}`); values.push(dto.clinicalNotes); }
+    if (dto.gender !== undefined)       { fields.push(`gender = $${i++}`);        values.push(this.cryptoService.encrypt(dto.gender)); }
+    if (dto.clinicalNotes !== undefined){ fields.push(`clinical_notes = $${i++}`); values.push(this.cryptoService.encrypt(dto.clinicalNotes)); }
 
     if (fields.length === 0) return this.findOne(id, orgId);
 
@@ -144,22 +147,36 @@ export class PatientsService {
       resourceType: 'patient',
       resourceId: id,
       action: 'patient.updated',
-      details: dto,
+      // Audit record must not contain PHI field values
+      details: { fields: Object.keys(dto) },
       ipAddress: opts.ipAddress,
     });
 
     return this.findOne(id, orgId);
   }
 
-  private formatPatient(row: Record<string, unknown>) {
+  private formatPatient(row: Record<string, unknown>, decrypt = false) {
+    const firstName = decrypt
+      ? this.cryptoService.decrypt(row['first_name'] as string | null)
+      : row['first_name'];
+    const lastName = decrypt
+      ? this.cryptoService.decrypt(row['last_name'] as string | null)
+      : row['last_name'];
+    const gender = decrypt
+      ? this.cryptoService.decrypt(row['gender'] as string | null)
+      : row['gender'];
+    const clinicalNotes = decrypt
+      ? this.cryptoService.decrypt(row['clinical_notes'] as string | null)
+      : row['clinical_notes'];
+
     return {
       id: row['id'],
-      firstName: row['first_name'],
-      lastName: row['last_name'],
-      fullName: `${row['first_name'] ?? ''} ${row['last_name'] ?? ''}`.trim(),
+      firstName,
+      lastName,
+      fullName: `${firstName ?? ''} ${lastName ?? ''}`.trim(),
       dateOfBirth: row['date_of_birth'],
-      gender: row['gender'],
-      clinicalNotes: row['clinical_notes'],
+      gender,
+      clinicalNotes,
       caseCount: row['case_count'] ?? 0,
       organizationId: row['organization_id'],
       createdAt: row['created_at'],

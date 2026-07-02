@@ -30,11 +30,19 @@ CREATE INDEX IF NOT EXISTS idx_scans_case_id
 CREATE INDEX IF NOT EXISTS idx_treatment_plans_case_id
   ON treatment_plans (case_id);
 
-CREATE INDEX IF NOT EXISTS idx_movement_prescriptions_plan_id
-  ON movement_prescriptions (plan_id);
+DO $$ BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.tables
+             WHERE table_name = 'movement_prescriptions' AND table_schema = 'public') THEN
+    EXECUTE 'CREATE INDEX IF NOT EXISTS idx_movement_prescriptions_plan_id ON movement_prescriptions (plan_id)';
+  END IF;
+END $$;
 
-CREATE INDEX IF NOT EXISTS idx_aligner_generation_plans_plan_id
-  ON aligner_generation_plans (plan_id);
+DO $$ BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.tables
+             WHERE table_name = 'aligner_generation_plans' AND table_schema = 'public') THEN
+    EXECUTE 'CREATE INDEX IF NOT EXISTS idx_aligner_generation_plans_plan_id ON aligner_generation_plans (plan_id)';
+  END IF;
+END $$;
 
 -- ─── Aligner stages ───────────────────────────────────────────────────────────
 
@@ -59,20 +67,36 @@ CREATE INDEX IF NOT EXISTS idx_treatment_quality_scores_plan_id
 
 -- ─── PDL / biomechanics ───────────────────────────────────────────────────────
 
-CREATE INDEX IF NOT EXISTS idx_pdl_simulation_results_plan_id
-  ON pdl_simulation_results (plan_id);
+DO $$ BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.tables
+             WHERE table_name = 'pdl_simulation_results' AND table_schema = 'public') THEN
+    EXECUTE 'CREATE INDEX IF NOT EXISTS idx_pdl_simulation_results_plan_id ON pdl_simulation_results (plan_id)';
+  END IF;
+END $$;
 
-CREATE INDEX IF NOT EXISTS idx_attachment_force_analysis_plan_id
-  ON attachment_force_analysis (plan_id);
+DO $$ BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.tables
+             WHERE table_name = 'attachment_force_analysis' AND table_schema = 'public') THEN
+    EXECUTE 'CREATE INDEX IF NOT EXISTS idx_attachment_force_analysis_plan_id ON attachment_force_analysis (plan_id)';
+  END IF;
+END $$;
 
 -- ─── IPR ──────────────────────────────────────────────────────────────────────
 
 -- ipr_plan_items uses treatment_plan_id (from migration 010_phase_22.sql)
-CREATE INDEX IF NOT EXISTS idx_ipr_plan_items_plan_id
-  ON ipr_plan_items (treatment_plan_id);
+DO $$ BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.tables
+             WHERE table_name = 'ipr_plan_items' AND table_schema = 'public') THEN
+    EXECUTE 'CREATE INDEX IF NOT EXISTS idx_ipr_plan_items_plan_id ON ipr_plan_items (treatment_plan_id)';
+  END IF;
+END $$;
 
-CREATE INDEX IF NOT EXISTS idx_ipr_enamel_estimates_plan_id
-  ON ipr_enamel_estimates (plan_id);
+DO $$ BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.tables
+             WHERE table_name = 'ipr_enamel_estimates' AND table_schema = 'public') THEN
+    EXECUTE 'CREATE INDEX IF NOT EXISTS idx_ipr_enamel_estimates_plan_id ON ipr_enamel_estimates (plan_id)';
+  END IF;
+END $$;
 
 -- ─── Scan processing ──────────────────────────────────────────────────────────
 
@@ -104,35 +128,60 @@ CREATE INDEX IF NOT EXISTS idx_audit_events_resource
 
 -- ─── Export / billing ─────────────────────────────────────────────────────────
 
-CREATE INDEX IF NOT EXISTS idx_export_packages_case_id
-  ON export_packages (case_id);
+DO $$ BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.tables
+             WHERE table_name = 'export_packages' AND table_schema = 'public') THEN
+    EXECUTE 'CREATE INDEX IF NOT EXISTS idx_export_packages_case_id ON export_packages (case_id)';
+  END IF;
+END $$;
 
 CREATE INDEX IF NOT EXISTS idx_export_transactions_org_created
   ON export_transactions (organization_id, created_at DESC);
 
 -- billing_subscriptions (from schema.sql line 678 and migration 002)
-CREATE INDEX IF NOT EXISTS idx_billing_subscriptions_org_id
-  ON billing_subscriptions (organization_id);
+DO $$ BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.tables
+             WHERE table_name = 'billing_subscriptions' AND table_schema = 'public') THEN
+    EXECUTE 'CREATE INDEX IF NOT EXISTS idx_billing_subscriptions_org_id ON billing_subscriptions (organization_id)';
+  END IF;
+END $$;
 
 -- ─── Notifications ────────────────────────────────────────────────────────────
 
-CREATE INDEX IF NOT EXISTS idx_notifications_user_read
-  ON notifications (user_id, read_at)
-  WHERE read_at IS NULL;
+DO $$ BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.tables
+             WHERE table_name = 'notifications' AND table_schema = 'public') THEN
+    EXECUTE 'CREATE INDEX IF NOT EXISTS idx_notifications_user_read
+      ON notifications (user_id, read_at)
+      WHERE read_at IS NULL';
+  END IF;
+END $$;
 
 -- ─── Manufacturing ────────────────────────────────────────────────────────────
+-- print_jobs is created in migration 026; guard for fresh-database ordering.
 
-CREATE INDEX IF NOT EXISTS idx_print_jobs_org_status
-  ON print_jobs (organization_id, status);
-
-CREATE INDEX IF NOT EXISTS idx_print_jobs_printer_status
-  ON print_jobs (printer_id, status)
-  WHERE status IN ('queued', 'printing');
+DO $$ BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.tables
+             WHERE table_name = 'print_jobs' AND table_schema = 'public') THEN
+    EXECUTE 'CREATE INDEX IF NOT EXISTS idx_print_jobs_org_status ON print_jobs (organization_id, status)';
+    EXECUTE 'CREATE INDEX IF NOT EXISTS idx_print_jobs_printer_status
+      ON print_jobs (printer_id, status)
+      WHERE status IN (''queued'', ''printing'')';
+  END IF;
+END $$;
 
 -- ─── Arch coordination / retention ───────────────────────────────────────────
 
-CREATE INDEX IF NOT EXISTS idx_arch_coordination_plans_plan_id
-  ON arch_coordination_plans (plan_id);
+DO $$ BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.tables
+             WHERE table_name = 'arch_coordination_plans' AND table_schema = 'public') THEN
+    EXECUTE 'CREATE INDEX IF NOT EXISTS idx_arch_coordination_plans_plan_id ON arch_coordination_plans (plan_id)';
+  END IF;
+END $$;
 
-CREATE INDEX IF NOT EXISTS idx_retention_protocols_plan_id
-  ON retention_protocols (plan_id);
+DO $$ BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.tables
+             WHERE table_name = 'retention_protocols' AND table_schema = 'public') THEN
+    EXECUTE 'CREATE INDEX IF NOT EXISTS idx_retention_protocols_plan_id ON retention_protocols (plan_id)';
+  END IF;
+END $$;

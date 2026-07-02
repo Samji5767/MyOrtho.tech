@@ -43,8 +43,21 @@ CREATE INDEX IF NOT EXISTS idx_digital_setups_case_created
 CREATE INDEX IF NOT EXISTS idx_cases_status_updated
   ON cases(status, updated_at DESC);
 
--- ── Feature flags: index for flag_key lookups ─────────────────────────────────
-CREATE UNIQUE INDEX IF NOT EXISTS idx_feature_flags_key
-  ON feature_flags(flag_key);
+-- ── Feature flags: index for flag lookups ─────────────────────────────────────
+-- Column is flag_name in migration 025; guard handles both names defensively.
+DO $$ BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.tables
+             WHERE table_name = 'feature_flags' AND table_schema = 'public') THEN
+    IF EXISTS (SELECT 1 FROM information_schema.columns
+               WHERE table_name = 'feature_flags' AND column_name = 'flag_key'
+               AND table_schema = 'public') THEN
+      EXECUTE 'CREATE UNIQUE INDEX IF NOT EXISTS idx_feature_flags_key ON feature_flags(flag_key)';
+    ELSIF EXISTS (SELECT 1 FROM information_schema.columns
+                  WHERE table_name = 'feature_flags' AND column_name = 'flag_name'
+                  AND table_schema = 'public') THEN
+      EXECUTE 'CREATE UNIQUE INDEX IF NOT EXISTS idx_feature_flags_flag_name ON feature_flags(flag_name)';
+    END IF;
+  END IF;
+END $$;
 
 COMMIT;

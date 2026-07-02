@@ -29,9 +29,15 @@ CREATE INDEX IF NOT EXISTS idx_treatment_goals_case_created
   WHERE case_id IS NOT NULL;
 
 -- treatment_plans are linked via patient_id, not case_id — index for the subquery
-CREATE INDEX IF NOT EXISTS idx_treatment_plans_patient_created
-  ON treatment_plans(patient_id, created_at DESC)
-  WHERE patient_id IS NOT NULL;
+DO $$ BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.columns
+             WHERE table_name = 'treatment_plans' AND column_name = 'patient_id'
+             AND table_schema = 'public') THEN
+    EXECUTE 'CREATE INDEX IF NOT EXISTS idx_treatment_plans_patient_created
+      ON treatment_plans(patient_id, created_at DESC)
+      WHERE patient_id IS NOT NULL';
+  END IF;
+END $$;
 
 -- ── AI Segmentation job tracking table ────────────────────────────────────────
 -- Provides persistent job state that survives AI engine restarts,
@@ -135,30 +141,36 @@ END $$;
 
 -- ── IPR requirements: ensure contact point precision ─────────────────────────
 DO $$ BEGIN
-  IF NOT EXISTS (
-    SELECT 1 FROM information_schema.columns
-    WHERE table_name = 'ipr_points'
-      AND column_name = 'scheduled_at_stage'
-  ) THEN
-    ALTER TABLE ipr_points
-      ADD COLUMN scheduled_at_stage  int,
-      ADD COLUMN completed           boolean NOT NULL DEFAULT false,
-      ADD COLUMN completed_at        timestamptz,
-      ADD COLUMN completed_by        uuid REFERENCES auth_users(id) ON DELETE SET NULL;
+  IF EXISTS (SELECT 1 FROM information_schema.tables
+             WHERE table_name = 'ipr_points' AND table_schema = 'public') THEN
+    IF NOT EXISTS (
+      SELECT 1 FROM information_schema.columns
+      WHERE table_name = 'ipr_points'
+        AND column_name = 'scheduled_at_stage'
+    ) THEN
+      ALTER TABLE ipr_points
+        ADD COLUMN scheduled_at_stage  int,
+        ADD COLUMN completed           boolean NOT NULL DEFAULT false,
+        ADD COLUMN completed_at        timestamptz,
+        ADD COLUMN completed_by        uuid REFERENCES auth_users(id) ON DELETE SET NULL;
+    END IF;
   END IF;
 END $$;
 
 -- ── Attachment records: ensure placement precision ────────────────────────────
 DO $$ BEGIN
-  IF NOT EXISTS (
-    SELECT 1 FROM information_schema.columns
-    WHERE table_name = 'attachment_records'
-      AND column_name = 'placed_at_stage'
-  ) THEN
-    ALTER TABLE attachment_records
-      ADD COLUMN placed_at_stage     int,
-      ADD COLUMN removed_at_stage    int,
-      ADD COLUMN placement_confirmed boolean NOT NULL DEFAULT false;
+  IF EXISTS (SELECT 1 FROM information_schema.tables
+             WHERE table_name = 'attachment_records' AND table_schema = 'public') THEN
+    IF NOT EXISTS (
+      SELECT 1 FROM information_schema.columns
+      WHERE table_name = 'attachment_records'
+        AND column_name = 'placed_at_stage'
+    ) THEN
+      ALTER TABLE attachment_records
+        ADD COLUMN placed_at_stage     int,
+        ADD COLUMN removed_at_stage    int,
+        ADD COLUMN placement_confirmed boolean NOT NULL DEFAULT false;
+    END IF;
   END IF;
 END $$;
 

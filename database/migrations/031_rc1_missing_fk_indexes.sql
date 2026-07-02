@@ -25,14 +25,22 @@ CREATE INDEX IF NOT EXISTS idx_cases_created_by
 -- ── Clinical measurements ─────────────────────────────────────────────────────
 
 -- clinical_measurements.measured_by → auth_users
-CREATE INDEX IF NOT EXISTS idx_clinical_measurements_measured_by
-  ON clinical_measurements(measured_by);
+DO $$ BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.tables
+             WHERE table_name = 'clinical_measurements' AND table_schema = 'public') THEN
+    EXECUTE 'CREATE INDEX IF NOT EXISTS idx_clinical_measurements_measured_by ON clinical_measurements(measured_by)';
+  END IF;
+END $$;
 
 -- ── Subscriptions ─────────────────────────────────────────────────────────────
 
 -- organization_subscriptions.plan_id → subscription_plans
-CREATE INDEX IF NOT EXISTS idx_org_subscriptions_plan_id
-  ON organization_subscriptions(plan_id);
+DO $$ BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.tables
+             WHERE table_name = 'organization_subscriptions' AND table_schema = 'public') THEN
+    EXECUTE 'CREATE INDEX IF NOT EXISTS idx_org_subscriptions_plan_id ON organization_subscriptions(plan_id)';
+  END IF;
+END $$;
 
 -- ── Manufacturing / print jobs ────────────────────────────────────────────────
 
@@ -47,18 +55,33 @@ CREATE INDEX IF NOT EXISTS idx_print_jobs_created_by
 -- ── Treatment stages ──────────────────────────────────────────────────────────
 
 -- treatment_stages.approved_by → auth_users (column added in migration 029)
-CREATE INDEX IF NOT EXISTS idx_treatment_stages_approved_by
-  ON treatment_stages(approved_by);
+DO $$ BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.columns
+             WHERE table_name = 'treatment_stages' AND column_name = 'approved_by'
+             AND table_schema = 'public') THEN
+    EXECUTE 'CREATE INDEX IF NOT EXISTS idx_treatment_stages_approved_by ON treatment_stages(approved_by)';
+  END IF;
+END $$;
 
 -- ── IPR / attachment (columns added by migration 029 DO blocks) ───────────────
 
--- ipr_points.completed_by → auth_users
-CREATE INDEX IF NOT EXISTS idx_ipr_points_completed_by
-  ON ipr_points(completed_by);
+-- ipr_points.completed_by → auth_users (table is legacy VPS; column added by migration 029)
+DO $$ BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.columns
+             WHERE table_name = 'ipr_points' AND column_name = 'completed_by'
+             AND table_schema = 'public') THEN
+    EXECUTE 'CREATE INDEX IF NOT EXISTS idx_ipr_points_completed_by ON ipr_points(completed_by)';
+  END IF;
+END $$;
 
--- digital_setups.parent_setup_id → digital_setups (self-referential)
-CREATE INDEX IF NOT EXISTS idx_digital_setups_parent_id
-  ON digital_setups(parent_setup_id);
+-- digital_setups.parent_setup_id → digital_setups (column added by migration 029)
+DO $$ BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.columns
+             WHERE table_name = 'digital_setups' AND column_name = 'parent_setup_id'
+             AND table_schema = 'public') THEN
+    EXECUTE 'CREATE INDEX IF NOT EXISTS idx_digital_setups_parent_id ON digital_setups(parent_setup_id)';
+  END IF;
+END $$;
 
 -- ── CBCT / fusion ─────────────────────────────────────────────────────────────
 
@@ -231,13 +254,27 @@ CREATE INDEX IF NOT EXISTS idx_postproc_print_job_id
 -- ── Composite indexes for high-volume queries not yet covered ─────────────────
 
 -- cases(patient_id, organization_id): patient case listing filtered by org
--- (idx_cases_patient_id exists but not the composite form)
-CREATE INDEX IF NOT EXISTS idx_cases_patient_org
-  ON cases(patient_id, organization_id);
+-- organization_id is NOT in base schema; added by migration 034.
+DO $$ BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.columns
+             WHERE table_name = 'cases' AND column_name = 'organization_id'
+             AND table_schema = 'public') THEN
+    EXECUTE 'CREATE INDEX IF NOT EXISTS idx_cases_patient_org ON cases(patient_id, organization_id)';
+  END IF;
+END $$;
 
 -- treatment_stages(treatment_plan_id, qa_status): manufacturing QA queries
-CREATE INDEX IF NOT EXISTS idx_treatment_stages_plan_qa
-  ON treatment_stages(treatment_plan_id, qa_status);
+-- Both columns are optional additions; guard each before creating composite index.
+DO $$ BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.columns
+             WHERE table_name = 'treatment_stages' AND column_name = 'treatment_plan_id'
+             AND table_schema = 'public')
+  AND EXISTS (SELECT 1 FROM information_schema.columns
+              WHERE table_name = 'treatment_stages' AND column_name = 'qa_status'
+              AND table_schema = 'public') THEN
+    EXECUTE 'CREATE INDEX IF NOT EXISTS idx_treatment_stages_plan_qa ON treatment_stages(treatment_plan_id, qa_status)';
+  END IF;
+END $$;
 
 -- audit_events(organization_id, resource_type, created_at DESC): resource-type
 -- audit drill-down (narrows the existing idx_audit_events_org)
@@ -248,9 +285,15 @@ CREATE INDEX IF NOT EXISTS idx_audit_events_org_type
 -- Migration 029 intended to create a partial index on cases(patient_id) for
 -- active-only case listing, but used the same name as migration 021's index
 -- idx_cases_org_status, so the IF NOT EXISTS guard silently skipped it.
--- Create the intended index under the correct name.
-CREATE INDEX IF NOT EXISTS idx_cases_patient_active
-  ON cases(patient_id, status)
-  WHERE status NOT IN ('completed', 'canceled');
+-- Guard on cases.status existence for compatibility with older VPS schemas.
+DO $$ BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.columns
+             WHERE table_name = 'cases' AND column_name = 'status'
+             AND table_schema = 'public') THEN
+    EXECUTE 'CREATE INDEX IF NOT EXISTS idx_cases_patient_active
+      ON cases(patient_id, status)
+      WHERE status NOT IN (''completed'', ''canceled'')';
+  END IF;
+END $$;
 
 COMMIT;

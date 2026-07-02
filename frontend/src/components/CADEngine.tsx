@@ -1032,6 +1032,19 @@ export default function CADEngine() {
 
   return (
     <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_320px]">
+      {/* Geometry status — shown because teeth are rendered as scaled-sphere placeholders,
+          not real segmented meshes. Real geometry requires AI segmentation results. */}
+      <div className="col-span-full rounded-lg border border-amber-500/30 bg-amber-500/5 px-4 py-3 flex items-start gap-2">
+        <AlertTriangle size={14} className="mt-0.5 shrink-0 text-amber-400" />
+        <p className="text-xs text-amber-300 leading-relaxed">
+          <span className="font-semibold">Placeholder geometry.</span>{" "}
+          Tooth meshes are scaled-sphere approximations — not real tooth geometry.
+          Real per-tooth meshes require completed AI segmentation (MODEL_CHECKPOINT not loaded).
+          Movement planning and collision detection operate on these placeholders only.
+          Do not use for clinical measurements or manufacturing export.
+        </p>
+      </div>
+
       <Card className="overflow-hidden">
         {/* Toolbar */}
         <div className="flex flex-col gap-3 border-b border-border p-4 lg:flex-row lg:items-center lg:justify-between">

@@ -107,6 +107,7 @@ import { TreatmentStagesModule } from './treatment-stages/treatment-stages.modul
 import { TreatmentQAModule } from './treatment-qa/treatment-qa.module';
 import { AlignerDesignModule } from './aligner-design/aligner-design.module';
 import { AiSuggestionsModule } from './ai-suggestions/ai-suggestions.module';
+import { SsoModule } from './sso/sso.module';
 
 @Module({
   imports: [
@@ -125,6 +126,7 @@ import { AiSuggestionsModule } from './ai-suggestions/ai-suggestions.module';
     // Core
     AuthModule,
     AuditModule,
+    SsoModule,
     WorkflowModule,
     // Clinical data
     CasesModule,

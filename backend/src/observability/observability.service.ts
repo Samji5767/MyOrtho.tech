@@ -1,6 +1,7 @@
 import { Injectable, Logger, OnApplicationShutdown } from '@nestjs/common';
 import * as api from '@opentelemetry/api';
 import { NodeSDK } from '@opentelemetry/sdk-node';
+import { OTLPTraceExporter } from '@opentelemetry/exporter-trace-otlp-http';
 import { resourceFromAttributes } from '@opentelemetry/resources';
 import { ATTR_SERVICE_NAME } from '@opentelemetry/semantic-conventions';
 import * as os from 'os';
@@ -29,15 +30,35 @@ export class ObservabilityService implements OnApplicationShutdown {
   constructor() {
     this.logger.log('Initializing OpenTelemetry instrumentation SDK...');
     try {
-      this.sdk = new NodeSDK({
-        resource: resourceFromAttributes({
-          [ATTR_SERVICE_NAME]: 'myortho-backend',
-        }),
+      const otlpEndpoint = process.env.OTEL_EXPORTER_OTLP_ENDPOINT;
+      const serviceName = process.env.OTEL_SERVICE_NAME ?? 'myortho-backend';
+      const resource = resourceFromAttributes({
+        [ATTR_SERVICE_NAME]: serviceName,
+        'deployment.environment': process.env.NODE_ENV ?? 'development',
       });
+
+      if (otlpEndpoint) {
+        const traceExporter = new OTLPTraceExporter({
+          url: otlpEndpoint.endsWith('/v1/traces')
+            ? otlpEndpoint
+            : `${otlpEndpoint}/v1/traces`,
+        });
+        this.sdk = new NodeSDK({ resource, traceExporter });
+        this.logger.log(
+          `OpenTelemetry OTLP export enabled → ${otlpEndpoint}/v1/traces (service: ${serviceName})`,
+        );
+      } else {
+        this.sdk = new NodeSDK({ resource });
+        this.logger.warn(
+          'OTEL_EXPORTER_OTLP_ENDPOINT is not set — trace export is disabled. ' +
+          'Set this env var to enable OTLP tracing (e.g. http://otel-collector:4318).',
+        );
+      }
+
       this.sdk.start();
-      this.logger.log('OpenTelemetry SDK started successfully.');
+      this.logger.log('OpenTelemetry SDK started.');
     } catch (e) {
-      this.logger.error('Failed to start OpenTelemetry NodeSDK, running with fallback logging mode:', e);
+      this.logger.error('Failed to start OpenTelemetry NodeSDK, running without tracing:', e);
     }
     this.tracer = api.trace.getTracer('myortho-backend-service');
   }

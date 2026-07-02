@@ -75,6 +75,8 @@ services:
       - MYORTHO_ADMIN_NAME=${MYORTHO_ADMIN_NAME:-Platform Admin}
       - UPLOADS_DIR=/app/uploads
       - AI_ENGINE_URL=http://ai-engine:8000
+      - OTEL_EXPORTER_OTLP_ENDPOINT=${OTEL_EXPORTER_OTLP_ENDPOINT:-}
+      - OTEL_SERVICE_NAME=${OTEL_SERVICE_NAME:-myortho-backend}
     volumes:
       - uploads_data:/app/uploads
     depends_on:

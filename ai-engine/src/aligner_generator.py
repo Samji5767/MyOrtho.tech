@@ -18,22 +18,25 @@ class AlignerGenerationEngine:
         logger.info(f"Aligner Generator: Loading target staged model at {staged_mesh_path}")
         logger.info(f"Offsets: extruding surface normals by {thickness_mm}mm")
         
-        # In production, this uses trimesh and scipy:
-        # mesh = trimesh.load(staged_mesh_path)
-        # outer_offset = mesh.copy()
-        # outer_offset.vertices += outer_offset.vertex_normals * thickness_mm
-        
-        # 2. Slice geometry along the gingival trim line
-        logger.info(f"Trimming boundary: cropping border at {trim_line_height_mm}mm above gingiva line")
-        
-        # Output mesh metrics for verification
+        # Not implemented: requires trimesh geometry processing and real staged
+        # tooth mesh files from the AI segmentation pipeline.
+        # Production implementation:
+        #   mesh = trimesh.load(staged_mesh_path)
+        #   outer_offset = mesh.copy()
+        #   outer_offset.vertices += outer_offset.vertex_normals * thickness_mm
+        #   <trim gingival margin, export binary STL>
+        logger.warning(
+            "AlignerGenerationEngine.generate_aligner_shell is not implemented. "
+            "Real aligner geometry requires per-stage tooth mesh files from the "
+            "segmentation pipeline and a loaded MODEL_CHECKPOINT."
+        )
         return {
-            "success": True,
-            "shell_thickness_mm": thickness_mm,
-            "watertight": True,
-            "triangle_count": 182400,
-            "export_paths": {
-                "stl": staged_mesh_path.replace(".obj", "_aligner.stl"),
-                "ply": staged_mesh_path.replace(".obj", "_aligner.ply")
-            }
+            "success": False,
+            "error": "not_implemented",
+            "detail": (
+                "Aligner shell generation requires real per-stage tooth mesh files "
+                "from the AI segmentation pipeline. No MODEL_CHECKPOINT is loaded; "
+                "per-tooth mesh extraction (marching cubes) is not yet implemented. "
+                "Do not use this output for clinical or manufacturing purposes."
+            ),
         }

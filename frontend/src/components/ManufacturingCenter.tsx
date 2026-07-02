@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useMemo, useRef, useState } from "react";
-import { Activity, Boxes, CheckCircle2, Clock, Download, FileText, Layers, Package, Printer, Rotate3D, ShieldCheck, Truck, Wand2, Zap, type LucideIcon } from "lucide-react";
+import { Activity, AlertTriangle, Boxes, CheckCircle2, Clock, Download, FileText, Layers, Package, Printer, Rotate3D, ShieldCheck, Truck, Wand2, Zap, type LucideIcon } from "lucide-react";
 import { usePrintJobs, usePrinters } from "@/hooks/useApi";
 import { Button, Card, DataRow, MetricCard, ProgressBar, SectionHeader, StatusBadge } from "@/components/DesignSystem";
 
@@ -38,22 +38,22 @@ function WorkflowAutomation() {
   const [complete, setComplete] = useState(false);
   const runningRef = useRef(false);
 
-  const launchWorkflow = async () => {
-    if (runningRef.current) return;
-    runningRef.current = true;
-    setRunning(true);
-    setComplete(false);
-    setStageStatuses(Object.fromEntries(WORKFLOW_STAGES.map(s => [s.id, "pending"])));
-
-    for (const stage of WORKFLOW_STAGES) {
-      setStageStatuses(prev => ({ ...prev, [stage.id]: "running" }));
-      await new Promise<void>(resolve => setTimeout(resolve, stage.ms));
-      setStageStatuses(prev => ({ ...prev, [stage.id]: "complete" }));
-    }
-
+  const launchWorkflow = () => {
+    // Stages 2–7 require real per-tooth STL meshes from the AI segmentation
+    // pipeline (MODEL_CHECKPOINT not loaded; per-tooth mesh extraction not
+    // implemented). They cannot execute and must not simulate success.
     setRunning(false);
-    setComplete(true);
-    runningRef.current = false;
+    setComplete(false);
+    setStageStatuses({
+      case_approval:      "complete",  // manual sign-off — no geometry required
+      segmentation:       "error",     // requires AI MODEL_CHECKPOINT + real scan
+      treatment_planning: "error",     // requires segmented tooth meshes
+      stage_generation:   "error",     // requires per-stage mesh geometry
+      mfg_package:        "error",     // requires real STL export from pipeline
+      print_queue:        "error",     // requires valid export package
+      qc_package:         "error",     // requires real geometry for thickness check
+      delivery_package:   "error",     // upstream stages incomplete
+    });
   };
 
   const resetWorkflow = () => {
@@ -81,46 +81,24 @@ function WorkflowAutomation() {
           </p>
         </div>
         <div className="flex gap-2 shrink-0">
-          {!running && !complete && (
-            <Button variant="primary" onClick={() => void launchWorkflow()}>
-              <Zap size={15} /> Launch Workflow
-            </Button>
-          )}
-          {complete && (
-            <>
-              <Button variant="secondary" size="sm" onClick={resetWorkflow}>
-                Reset
-              </Button>
-              <Button variant="primary" size="sm" onClick={() => {
-                const pkg = {
-                  generatedAt: new Date().toISOString(),
-                  stages: WORKFLOW_STAGES.map(s => ({ id: s.id, label: s.label, status: "complete" })),
-                };
-                const blob = new Blob([JSON.stringify(pkg, null, 2)], { type: "application/json" });
-                const url = URL.createObjectURL(blob);
-                const a = document.createElement("a");
-                a.href = url; a.download = "myortho-workflow-package.json"; a.click();
-                URL.revokeObjectURL(url);
-              }}>
-                <Download size={15} /> Export Package
-              </Button>
-            </>
-          )}
+          <Button variant="secondary" onClick={launchWorkflow}>
+            <Zap size={15} /> Check Status
+          </Button>
+          <Button variant="secondary" size="sm" onClick={resetWorkflow}>
+            Reset
+          </Button>
         </div>
       </div>
 
-      {running && (
-        <div className="mb-4">
-          <ProgressBar value={progress} />
-          <p className="text-xs text-secondary mt-1">{progress}% complete</p>
-        </div>
-      )}
-      {complete && (
-        <div className="mb-4">
-          <ProgressBar value={100} tone="success" />
-          <p className="text-xs text-emerald-500 mt-1 font-semibold">All 8 workflow stages complete. Ready for lab handoff.</p>
-        </div>
-      )}
+      <div className="mb-4 rounded-lg border border-amber-500/30 bg-amber-500/5 px-4 py-3 flex items-start gap-2">
+        <AlertTriangle size={15} className="mt-0.5 shrink-0 text-amber-400" />
+        <p className="text-xs text-amber-300 leading-relaxed">
+          <span className="font-semibold">Workflow unavailable.</span>{" "}
+          Stages 2–8 require real per-tooth STL meshes from the AI segmentation pipeline.
+          The AI model checkpoint is not loaded and per-tooth mesh extraction is not yet implemented.
+          Case approval (stage 1) is the only step that does not depend on real geometry.
+        </p>
+      </div>
 
       <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
         {WORKFLOW_STAGES.map((stage, idx) => {

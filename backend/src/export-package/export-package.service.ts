@@ -282,15 +282,15 @@ export class ExportPackageService {
       throw new BadRequestException('Package must be clinician-approved before export');
     }
 
-    // Deterministic checksum stub (sha256 of packageId + timestamp)
-    const checksum = Buffer.from(`${packageId}:${Date.now()}`).toString('base64').slice(0, 43) + '=';
-
+    // checksum_sha256 is null until real file bytes are produced by the
+    // manufacturing pipeline; the caller must supply a real SHA-256 once
+    // actual export files exist.
     await this.db.query(
       `UPDATE export_packages
        SET status='exported', exported_at=now(), export_format=$1,
-           file_size_bytes=$2, checksum_sha256=$3, updated_at=now()
-       WHERE id=$4 AND organization_id=$5`,
-      [format, fileSizeBytes, checksum, packageId, orgId],
+           file_size_bytes=$2, checksum_sha256=NULL, updated_at=now()
+       WHERE id=$3 AND organization_id=$4`,
+      [format, fileSizeBytes, packageId, orgId],
     );
 
     // Record export transaction for PAYG billing gate

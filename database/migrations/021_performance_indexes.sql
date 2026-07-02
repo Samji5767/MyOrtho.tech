@@ -38,8 +38,12 @@ CREATE INDEX IF NOT EXISTS idx_aligner_generation_plans_plan_id
 
 -- ─── Aligner stages ───────────────────────────────────────────────────────────
 
-CREATE INDEX IF NOT EXISTS idx_aligner_stages_plan_id
-  ON aligner_stages (plan_id, stage_number);
+DO $$ BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.columns
+             WHERE table_name = 'aligner_stages' AND column_name = 'plan_id') THEN
+    EXECUTE 'CREATE INDEX IF NOT EXISTS idx_aligner_stages_plan_id ON aligner_stages (plan_id, stage_number)';
+  END IF;
+END $$;
 
 -- ─── Monitoring & quality ─────────────────────────────────────────────────────
 

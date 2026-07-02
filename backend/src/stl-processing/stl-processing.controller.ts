@@ -80,4 +80,16 @@ export class StlProcessingController {
     const { id, orgId } = getUser(req);
     return this.svc.upsertPipeline(orgId, caseId, id, body.uploadId);
   }
+
+  @Post('pipeline/:caseId/advance')
+  advancePipeline(
+    @Req() req: Request,
+    @Param('caseId') caseId: string,
+    @Body() body: { currentStep: number; summary?: string },
+  ) {
+    const { orgId } = getUser(req);
+    const step = body.currentStep ?? 1;
+    const summary = body.summary ?? `Step ${step} completed`;
+    return this.svc.advancePipelineStep(orgId, caseId, step, `step_${step}`, JSON.stringify({ status: 'completed', summary }));
+  }
 }

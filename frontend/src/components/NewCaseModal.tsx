@@ -9,6 +9,7 @@ import {
 import { fetchPatients, createPatient, type PatientListItem } from "@/lib/api/patients";
 import { createCase } from "@/lib/api/cases";
 import { uploadScan } from "@/lib/api/scans";
+import { useToast } from "@/components/ToastContext";
 
 type Step = "patient" | "case" | "scans" | "done";
 
@@ -19,6 +20,7 @@ interface NewCaseModalProps {
 
 export default function NewCaseModal({ onClose, onCreated }: NewCaseModalProps) {
   const router = useRouter();
+  const { toast } = useToast();
   const [step, setStep] = useState<Step>("patient");
 
   // Patient step
@@ -90,9 +92,11 @@ export default function NewCaseModal({ onClose, onCreated }: NewCaseModalProps) 
         notes: notes.trim() || undefined,
       });
       setCaseId(c.id);
+      toast({ title: "Case created", description: "Add scans or proceed to the case dashboard.", type: "success" });
       setStep("scans");
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Failed to create case");
+      toast({ title: "Failed to create case", description: e instanceof Error ? e.message : undefined, type: "error" });
     } finally {
       setWorking(false);
     }

@@ -14,6 +14,14 @@ export interface CaseListItem {
   assignedTo: { id: string; name: string; email: string } | null;
 }
 
+export interface LinkedResources {
+  latestScanId: string | null;
+  setupId:      string | null;
+  planId:       string | null;
+  analysisId:   string | null;
+  goalsId:      string | null;
+}
+
 export interface CaseDetail extends CaseListItem {
   patient: {
     id: string;
@@ -23,6 +31,7 @@ export interface CaseDetail extends CaseListItem {
     gender: string | null;
     clinicalNotes: string | null;
   };
+  linkedResources?: LinkedResources;
   workflowHistory: WorkflowEvent[];
   allowedTransitions: string[];
 }

@@ -95,6 +95,58 @@ export async function listSuggestions(
   return res.json();
 }
 
+// ─── Streaming (SSE) ─────────────────────────────────────────────────────────
+
+export interface StreamEvent {
+  type: 'meta' | 'delta' | 'done' | 'error';
+  agentType?: string;
+  suggestionCount?: number;
+  content?: string;
+  error?: string;
+  messageId?: string;
+  sources?: Array<{ title: string; source: string }>;
+}
+
+export async function* streamMessage(
+  caseId: string,
+  conversationId: string,
+  content: string,
+): AsyncGenerator<StreamEvent> {
+  const res = await fetch(
+    `${BASE}/cases/${caseId}/copilot/conversations/${conversationId}/stream`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ content }),
+    },
+  );
+
+  if (!res.ok) throw new Error(await res.text());
+  if (!res.body) throw new Error('No response body');
+
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buf = '';
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buf += decoder.decode(value, { stream: true });
+    const lines = buf.split('\n');
+    buf = lines.pop() ?? '';
+    for (const line of lines) {
+      if (!line.startsWith('data: ')) continue;
+      const raw = line.slice(6).trim();
+      if (!raw) continue;
+      try {
+        yield JSON.parse(raw) as StreamEvent;
+      } catch {
+        // skip malformed line
+      }
+    }
+  }
+}
+
 export async function resolveSuggestion(
   caseId: string,
   suggestionId: string,

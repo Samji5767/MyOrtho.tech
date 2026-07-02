@@ -19,7 +19,7 @@ export class AuthGuard implements CanActivate {
       throw new UnauthorizedException('Authentication required');
     }
 
-    const payload = this.authService.verifyToken(token);
+    const payload = await this.authService.verifyToken(token);
 
     // Attach user to request for downstream use
     (request as Request & { user: unknown }).user = {
@@ -28,6 +28,7 @@ export class AuthGuard implements CanActivate {
       role: payload.role,
       name: payload.name,
       orgId: payload.orgId,
+      jti: payload.jti,
     };
 
     return true;

@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Delete, Param, Body, UseGuards, Request } from '@nestjs/common';
+import { Controller, Get, Post, Delete, Param, Body, Query, UseGuards, Request } from '@nestjs/common';
 import { AuthGuard } from '../auth/auth.guard';
 import { IprPlannerService, type CreateIprItemDto } from './ipr-planner.service';
 
@@ -8,8 +8,16 @@ export class IprPlannerController {
   constructor(private readonly svc: IprPlannerService) {}
 
   @Get()
-  list(@Param('planId') planId: string, @Param('caseId') caseId: string, @Request() req: any) {
-    return this.svc.listItems(planId, caseId, req.user.orgId as string);
+  list(
+    @Param('planId') planId: string,
+    @Param('caseId') caseId: string,
+    @Request() req: any,
+    @Query('limit') limit?: string,
+    @Query('offset') offset?: string,
+  ) {
+    const l = limit ? Math.min(500, Math.max(1, parseInt(limit, 10))) : 200;
+    const o = offset ? Math.max(0, parseInt(offset, 10)) : 0;
+    return this.svc.listItems(planId, caseId, req.user.orgId as string, l, o);
   }
 
   @Post()

@@ -13,6 +13,12 @@ import { PG_POOL } from '../database/database.module';
 
 const UPLOAD_DIR = process.env.UPLOADS_DIR ?? '/app/uploads';
 const AI_ENGINE_URL = process.env.AI_ENGINE_URL ?? 'http://ai-engine:8000';
+const INTERNAL_API_SECRET = process.env.INTERNAL_API_SECRET ?? '';
+
+const AI_ENGINE_HEADERS = (): Record<string, string> => ({
+  'Content-Type': 'application/json',
+  ...(INTERNAL_API_SECRET ? { 'X-Internal-Token': INTERNAL_API_SECRET } : {}),
+});
 const VALID_JAW_TYPES = ['maxillary', 'mandibular', 'both'] as const;
 const VALID_FORMATS = ['stl', 'obj', 'ply'] as const;
 
@@ -135,7 +141,7 @@ export class ScansService {
     try {
       const res = await fetch(`${AI_ENGINE_URL}/ai/segment`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: AI_ENGINE_HEADERS(),
         body: JSON.stringify({
           case_id: caseId,
           scan_id: scanId,
@@ -215,6 +221,7 @@ export class ScansService {
     let aiStatus: Record<string, unknown> | null = null;
     try {
       const res = await fetch(`${AI_ENGINE_URL}/ai/jobs/${jobId}`, {
+        headers: AI_ENGINE_HEADERS(),
         signal: AbortSignal.timeout(5_000),
       });
       if (res.ok) {
@@ -322,7 +329,7 @@ export class ScansService {
     try {
       const res = await fetch(`${AI_ENGINE_URL}/ai/segment`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: AI_ENGINE_HEADERS(),
         body: JSON.stringify({
           case_id: dbJob.case_id as string,
           scan_id: dbJob.scan_id as string,

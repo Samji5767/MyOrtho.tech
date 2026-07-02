@@ -3,10 +3,12 @@ import { Pool } from 'pg';
 import Redis from 'ioredis';
 import * as bcrypt from 'bcrypt';
 import * as jwt from 'jsonwebtoken';
+import * as crypto from 'crypto';
 import { REDIS_CLIENT } from '../redis/redis.module';
 
 const BCRYPT_ROUNDS = 12;
 const COOKIE_MAX_AGE_MS = 24 * 60 * 60 * 1000; // 24 h
+const JWT_ALGORITHM: jwt.Algorithm = 'HS256';
 
 export interface AuthUserRow {
   id: string;
@@ -25,6 +27,8 @@ export interface SessionPayload {
   name: string;
   orgId: string | null;
   isOnboarded: boolean;
+  /** JWT ID — unique per token; used for revocation via Redis blacklist */
+  jti: string;
 }
 
 @Injectable()
@@ -35,12 +39,20 @@ export class AuthService implements OnModuleInit {
 
   // In-memory rate limiter fallback (used when Redis is unavailable)
   private readonly loginAttemptsFallback = new Map<string, { count: number; resetAt: number }>();
+  // In-memory token blacklist fallback (used when Redis is unavailable)
+  private readonly tokenBlacklistFallback = new Set<string>();
 
   constructor(@Optional() @Inject(REDIS_CLIENT) private readonly redis: Redis | null) {
     this.pool = new Pool({ connectionString: process.env.DATABASE_URL });
-    this.jwtSecret = process.env.JWT_SECRET || 'dev-only-change-in-production';
-    if (!process.env.JWT_SECRET) {
-      this.logger.warn('JWT_SECRET not set — using insecure dev default. Set JWT_SECRET in .env for production.');
+    const secret = process.env.JWT_SECRET;
+    if (!secret || secret.length < 32) {
+      if (process.env.NODE_ENV === 'production') {
+        throw new Error('JWT_SECRET must be set to at least 32 characters in production.');
+      }
+      this.logger.warn('JWT_SECRET not set or too short — using insecure dev default. NEVER deploy without setting JWT_SECRET.');
+      this.jwtSecret = 'dev-only-change-in-production';
+    } else {
+      this.jwtSecret = secret;
     }
   }
 
@@ -56,15 +68,61 @@ export class AuthService implements OnModuleInit {
   // ─── Token ────────────────────────────────────────────────────────────────
 
   signToken(payload: SessionPayload): string {
-    return jwt.sign(payload, this.jwtSecret, { expiresIn: '24h' });
+    const jti = payload.jti ?? crypto.randomUUID();
+    return jwt.sign(
+      { ...payload, jti },
+      this.jwtSecret,
+      { expiresIn: '24h', algorithm: JWT_ALGORITHM },
+    );
   }
 
-  verifyToken(token: string): SessionPayload {
+  async verifyToken(token: string): Promise<SessionPayload> {
+    let decoded: SessionPayload;
     try {
-      return jwt.verify(token, this.jwtSecret) as SessionPayload;
+      decoded = jwt.verify(token, this.jwtSecret, { algorithms: [JWT_ALGORITHM] }) as SessionPayload;
     } catch {
       throw new UnauthorizedException('Invalid or expired session');
     }
+
+    // Check JWT blacklist — tokens are added on logout
+    if (decoded.jti) {
+      const blacklisted = await this.isTokenBlacklisted(decoded.jti);
+      if (blacklisted) {
+        throw new UnauthorizedException('Session has been revoked');
+      }
+    }
+
+    return decoded;
+  }
+
+  /** Revoke a token by adding its jti to the Redis blacklist (or in-memory fallback). */
+  async revokeToken(jti: string, expiresAt: number): Promise<void> {
+    const ttlSeconds = Math.max(0, Math.ceil((expiresAt - Date.now()) / 1000));
+    const key = `jti_blacklist:${jti}`;
+
+    if (this.redis) {
+      try {
+        if (ttlSeconds > 0) {
+          await this.redis.setex(key, ttlSeconds, '1');
+        }
+        return;
+      } catch {
+        // Fall through to in-memory
+      }
+    }
+    this.tokenBlacklistFallback.add(jti);
+  }
+
+  private async isTokenBlacklisted(jti: string): Promise<boolean> {
+    if (this.redis) {
+      try {
+        const val = await this.redis.get(`jti_blacklist:${jti}`);
+        return val !== null;
+      } catch {
+        // Fall through to in-memory
+      }
+    }
+    return this.tokenBlacklistFallback.has(jti);
   }
 
   // ─── Rate limiting ────────────────────────────────────────────────────────
@@ -77,7 +135,6 @@ export class AuthService implements OnModuleInit {
       try {
         const count = await this.redis.incr(key);
         if (count === 1) {
-          // First attempt in this window — expire in 60s
           await this.redis.expire(key, 60);
         }
         return count <= limit;
@@ -86,7 +143,6 @@ export class AuthService implements OnModuleInit {
       }
     }
 
-    // In-memory fallback
     const now = Date.now();
     const record = this.loginAttemptsFallback.get(ip);
     if (!record || record.resetAt < now) {
@@ -114,7 +170,6 @@ export class AuthService implements OnModuleInit {
     const user = await this.findByEmail(email);
 
     if (!user) {
-      // Constant-time fake compare to prevent username enumeration
       await bcrypt.compare(password, '$2b$12$AAAAAAAAAAAAAAAAAAAAAA.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA');
       throw new UnauthorizedException('Invalid email or password');
     }
@@ -187,7 +242,6 @@ export class AuthService implements OnModuleInit {
         return;
       }
 
-      // Ensure at least one org exists for the admin
       let orgId: string | null = null;
       const orgResult = await this.pool.query<{ id: string }>(
         `SELECT id FROM organizations LIMIT 1`,
@@ -225,6 +279,7 @@ export class AuthService implements OnModuleInit {
       name: user.full_name ?? user.email.split('@')[0],
       orgId: user.organization_id,
       isOnboarded: user.is_onboarded,
+      jti: crypto.randomUUID(),
     };
   }
 }

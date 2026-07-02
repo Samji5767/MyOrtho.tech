@@ -45,8 +45,16 @@ CREATE TABLE IF NOT EXISTS aligner_stages (
     UNIQUE(treatment_plan_id, stage_number)
 );
 
-CREATE INDEX IF NOT EXISTS idx_aligner_stages_plan     ON aligner_stages(treatment_plan_id, stage_number);
-CREATE INDEX IF NOT EXISTS idx_aligner_stages_case     ON aligner_stages(case_id);
+DO $$ BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.columns
+             WHERE table_name = 'aligner_stages' AND column_name = 'treatment_plan_id') THEN
+    EXECUTE 'CREATE INDEX IF NOT EXISTS idx_aligner_stages_plan ON aligner_stages(treatment_plan_id, stage_number)';
+  END IF;
+  IF EXISTS (SELECT 1 FROM information_schema.columns
+             WHERE table_name = 'aligner_stages' AND column_name = 'case_id') THEN
+    EXECUTE 'CREATE INDEX IF NOT EXISTS idx_aligner_stages_case ON aligner_stages(case_id)';
+  END IF;
+END $$;
 
 -- ─── Cephalometric Analyses ──────────────────────────────────────────────────
 -- Stores landmark coordinates and computed measurements for ceph X-rays.

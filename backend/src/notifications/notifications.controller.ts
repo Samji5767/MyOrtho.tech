@@ -8,19 +8,19 @@ export class NotificationsController {
   constructor(private readonly svc: NotificationsService) {}
 
   private user(req: Request) {
-    return (req as unknown as { user: { id: string; organizationId: string } }).user;
+    return (req as unknown as { user: { id: string; orgId: string } }).user;
   }
 
   @Get()
   list(@Req() req: Request, @Query('limit') limit?: string) {
-    const { id, organizationId } = this.user(req);
-    return this.svc.listForUser(id, organizationId, limit ? Number(limit) : 50);
+    const { id, orgId } = this.user(req);
+    return this.svc.listForUser(id, orgId, limit ? Number(limit) : 50);
   }
 
   @Get('unread-count')
   unreadCount(@Req() req: Request) {
-    const { id, organizationId } = this.user(req);
-    return this.svc.unreadCount(id, organizationId).then((count) => ({ count }));
+    const { id, orgId } = this.user(req);
+    return this.svc.unreadCount(id, orgId).then((count) => ({ count }));
   }
 
   @Post('mark-read')
@@ -33,8 +33,8 @@ export class NotificationsController {
   @Post('mark-all-read')
   @HttpCode(HttpStatus.NO_CONTENT)
   markAllRead(@Req() req: Request) {
-    const { id, organizationId } = this.user(req);
-    return this.svc.markAllRead(id, organizationId);
+    const { id, orgId } = this.user(req);
+    return this.svc.markAllRead(id, orgId);
   }
 
   @Delete(':id')

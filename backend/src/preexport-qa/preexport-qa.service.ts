@@ -49,8 +49,17 @@ function checkMeshIntegrity(segmentRows: Record<string, unknown>[]): QACheck {
 }
 
 function checkWallThickness(): QACheck {
-  // Without actual mesh data, verify based on known manufacturing constraints
-  return { key: 'wall_thickness', label: 'Wall Thickness', status: 'pass', detail: 'Minimum wall thickness ≥ 0.5 mm — within printable range.' };
+  // Real wall-thickness verification requires per-stage mesh geometry from the
+  // AI segmentation pipeline. Until real meshes are available this cannot pass.
+  return {
+    key: 'wall_thickness',
+    label: 'Wall Thickness',
+    status: 'warning',
+    detail:
+      'Wall thickness check requires real staged tooth mesh files. ' +
+      'Cannot verify without geometry from the AI segmentation pipeline — ' +
+      'manual clinical review required before printing.',
+  };
 }
 
 function checkAttachmentValidity(stageRows: Record<string, unknown>[]): QACheck {

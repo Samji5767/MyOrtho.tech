@@ -22,7 +22,7 @@ export class PhotosController {
   ) {
     return this.photos.create(caseId, req.user.orgId, {
       ...dto,
-      uploadedBy: dto.uploadedBy ?? req.user.sub,
+      uploadedBy: dto.uploadedBy ?? req.user.id,
     });
   }
 

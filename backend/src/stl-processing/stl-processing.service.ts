@@ -289,54 +289,45 @@ export class StlProcessingService {
     const archType = uploads[0].arch_type;
     const isMaxillary = archType === 'maxillary';
 
-    // Simulate realistic 4×4 orientation matrix (homogeneous transform)
-    // Small rotation around Z axis (1-3°) and Y axis (0.5-2°) = realistic scan head positioning
-    const rotZ = (Math.random() * 4 - 2) * (Math.PI / 180); // -2° to +2°
-    const rotY = (Math.random() * 3 - 1.5) * (Math.PI / 180);
-    const cosZ = Math.cos(rotZ);
-    const sinZ = Math.sin(rotZ);
-    const cosY = Math.cos(rotY);
-    const sinY = Math.sin(rotY);
-
+    // Orientation matrix: without mesh analysis we can only store the identity matrix.
+    // Real orientation registration requires loading the mesh binary and running an
+    // occlusal-plane fitting algorithm (e.g. PCA of cusp tip coordinates). That
+    // computation is performed by the AI segmentation engine — not available here.
     const orientationMatrix: number[][] = [
-      [cosY * cosZ, -sinZ, sinY * cosZ, 0],
-      [cosY * sinZ,  cosZ, sinY * sinZ, 0],
-      [-sinY,        0,    cosY,         0],
-      [0,            0,    0,            1],
+      [1, 0, 0, 0],
+      [0, 1, 0, 0],
+      [0, 0, 1, 0],
+      [0, 0, 0, 1],
     ];
 
-    // Occlusal plane normal — should point roughly along Y axis (superior-inferior)
-    // For maxillary: plane faces downward (negative Y), mandibular: upward (positive Y)
+    // Occlusal plane: conventional orientation stored so downstream code can read
+    // archType consistently; actual plane fitting is deferred to AI segmentation.
     const planeSign = isMaxillary ? -1 : 1;
     const occlusalPlane = {
-      normal: [
-        parseFloat((Math.random() * 0.04 - 0.02).toFixed(4)),  // ~0 in X
-        parseFloat((planeSign * (0.98 + Math.random() * 0.02)).toFixed(4)),
-        parseFloat((Math.random() * 0.06 - 0.03).toFixed(4)),  // slight Z tilt
-      ],
-      d: parseFloat((isMaxillary ? -(8 + Math.random() * 4) : (8 + Math.random() * 4)).toFixed(3)),
+      normal: [0, planeSign, 0],
+      d: 0,
+      status: 'nominal_convention_only',
+      note: 'Actual plane fitting requires AI segmentation engine with loaded mesh.',
     };
 
-    // Midline deviation: 80% of patients within ±2mm, some up to ±4mm
-    const midlineDeviation = parseFloat(((Math.random() * 4 - 2) * (Math.random() > 0.8 ? 1.5 : 0.5)).toFixed(3));
+    // Measurements that require real mesh analysis are stored as null.
+    // They will be populated after the AI segmentation engine processes the file.
+    const midlineDeviation = null;           // requires clinician or AI measurement
+    const islandsRemoved = null;             // requires mesh topology analysis
+    const holesFilled = null;                // requires mesh topology analysis
+    const scaleFactor = 1.0;                 // identity scale until calibration data provided
+    const gingivalTrimApplied = false;       // not applied — no mesh processing performed
 
-    // Processing parameters
-    const islandsRemoved = Math.floor(Math.random() * 8); // 0-7 debris islands
-    const holesFilled = Math.floor(Math.random() * 5) + 1; // 1-5 holes
-    const scaleFactor = parseFloat((0.998 + Math.random() * 0.004).toFixed(6)); // 0.998-1.002 (scanner calibration)
-    const gingivalTrimApplied = true;
-
-    // Bite registration estimate (ICP alignment distances)
+    // Bite registration cannot be estimated without a paired upper+lower scan in
+    // the same coordinate frame. Set to unavailable.
     const biteRegistrationEstimate = {
-      method: 'icp_alignment',
-      rms_error_mm: parseFloat((0.05 + Math.random() * 0.15).toFixed(4)),
-      max_error_mm: parseFloat((0.2 + Math.random() * 0.5).toFixed(4)),
-      iterations: Math.floor(20 + Math.random() * 30),
-      converged: Math.random() > 0.05,
-      interocclusal_distance_mm: parseFloat((1.5 + Math.random() * 2).toFixed(3)),
+      method: 'not_performed',
+      status: 'unavailable',
+      note: 'ICP bite registration requires paired upper/lower scans and AI segmentation.',
     };
 
-    const confidence = parseFloat((0.87 + Math.random() * 0.10).toFixed(3));
+    // Confidence reflects that processing is a metadata record only — no mesh was analyzed.
+    const confidence = 0.0;
 
     const { rows } = await this.pool.query<ScanProcessing>(
       `INSERT INTO scan_processing

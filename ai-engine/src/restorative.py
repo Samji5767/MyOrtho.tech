@@ -28,7 +28,7 @@ class RestorativeSlicerEngine:
         self,
         margin_line: list,
         outer_crown_vertices: np.ndarray,
-        target_material: string = "zirconia"
+        target_material: str = "zirconia"
     ) -> dict:
         """
         Checks thickness variables to prevent material shearing under bite forces.

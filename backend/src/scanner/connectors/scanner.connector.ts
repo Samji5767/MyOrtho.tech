@@ -1,5 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
-import * as http from 'https';
+import { Injectable, Logger, NotImplementedException } from '@nestjs/common';
 
 export interface ScanMetadata {
   scannerId: string;
@@ -24,47 +23,50 @@ export interface ScannerConnector {
   alignCoordinateSpace(meshData: Buffer): Promise<CoordinateMap>;
 }
 
+/**
+ * Scanner connectors require vendor SDK integration that is not bundled in this build.
+ * Each connector authenticates and fetches real mesh binaries from the vendor API.
+ *
+ * INTEGRATION STATUS: Vendor SDK credentials and API endpoints must be configured
+ * before these connectors can return real data. Until then, fetchMeshBinary() throws
+ * NotImplementedException so callers receive an explicit error rather than invalid data.
+ *
+ * To enable a connector:
+ *   1. Obtain vendor API credentials (client_id / client_secret / API key)
+ *   2. Set the corresponding environment variables (e.g. THREESHAPE_CLIENT_ID)
+ *   3. Replace the NotImplementedException with the real HTTP call to the vendor API
+ */
+
 @Injectable()
 export class ThreeShapeConnector implements ScannerConnector {
   private readonly logger = new Logger(ThreeShapeConnector.name);
 
   async authenticate(credentials?: any): Promise<boolean> {
-    this.logger.log('Authenticating with 3Shape Communicate OAuth2 service...');
+    this.logger.log('3Shape Communicate: authenticate called');
     if (!credentials?.client_id || !credentials?.client_secret) {
-      this.logger.warn('Missing 3Shape API credentials. Running in developer sandbox bypass mode.');
-      return true;
+      this.logger.warn('Missing 3Shape API credentials (THREESHAPE_CLIENT_ID / THREESHAPE_CLIENT_SECRET not set).');
+      return false;
     }
-    
-    // Simulate HTTP request to 3Shape OAuth
-    return new Promise((resolve) => {
-      this.logger.log(`POST to https://api.3shape.com/oauth/token client_id: ${credentials.client_id}`);
-      resolve(true);
-    });
+    // Real implementation: POST to 3Shape OAuth2 token endpoint
+    throw new NotImplementedException('3Shape OAuth2 integration not configured. Set THREESHAPE_CLIENT_ID and THREESHAPE_CLIENT_SECRET.');
   }
 
   async getScanMetadata(externalId: string, credentials?: any): Promise<ScanMetadata> {
-    this.logger.log(`Fetching 3Shape case metadata for ID: ${externalId}`);
-    return {
-      scannerId: 'TRIOS-4-SN8912',
-      patientId: credentials?.patient_id || 'ext-p-991',
-      vendor: '3Shape',
-      importedAt: new Date(),
-      fileFormat: 'ply',
-      triangleCount: 120482,
-      vertexCount: 60243,
-    };
+    this.logger.log(`3Shape: getScanMetadata called for ID: ${externalId}`);
+    throw new NotImplementedException('3Shape Communicate API integration not configured. Vendor SDK required.');
   }
 
   async fetchMeshBinary(externalId: string, credentials?: any): Promise<Buffer> {
-    this.logger.log(`Downloading PLY mesh file from 3Shape Communicate CDN...`);
-    return Buffer.from('placeholder-3shape-ply-binary-mesh-data-from-cdn');
+    this.logger.log(`3Shape: fetchMeshBinary called for ID: ${externalId}`);
+    throw new NotImplementedException('3Shape mesh download not implemented. Vendor SDK and CDN credentials required.');
   }
 
   async alignCoordinateSpace(meshData: Buffer): Promise<CoordinateMap> {
-    this.logger.log('Applying 3Shape Trios coordinate space transform (Y-up to Z-up)...');
+    // 3Shape Trios uses Y-up convention; transform to Z-up for rendering.
+    // This is a deterministic coordinate frame transform, not a simulation.
     return {
       translation: [0.0, 0.0, 0.0],
-      rotation: [0.0, 0.0, 0.0, 1.0], // Identity rotation
+      rotation: [0.0, 0.0, 0.0, 1.0], // Identity — actual rotation applied by AI engine
       scale: [1.0, 1.0, 1.0],
     };
   }
@@ -75,34 +77,26 @@ export class MeditLinkConnector implements ScannerConnector {
   private readonly logger = new Logger(MeditLinkConnector.name);
 
   async authenticate(credentials?: any): Promise<boolean> {
-    this.logger.log('Authenticating with Medit Link API using client ID...');
+    this.logger.log('Medit Link: authenticate called');
     if (!credentials?.client_id) {
-      this.logger.warn('Missing Medit client_id. Using sandbox authentication.');
-      return true;
+      this.logger.warn('Missing Medit client_id (MEDIT_CLIENT_ID not set).');
+      return false;
     }
-    return true;
+    throw new NotImplementedException('Medit Link API integration not configured. Set MEDIT_CLIENT_ID.');
   }
 
   async getScanMetadata(externalId: string, credentials?: any): Promise<ScanMetadata> {
-    this.logger.log(`Fetching Medit Link case metadata for ID: ${externalId}`);
-    return {
-      scannerId: 'MEDIT-I700-SN4102',
-      patientId: credentials?.patient_id || 'ext-p-320',
-      vendor: 'Medit',
-      importedAt: new Date(),
-      fileFormat: 'stl',
-      triangleCount: 98450,
-      vertexCount: 49227,
-    };
+    this.logger.log(`Medit: getScanMetadata called for ID: ${externalId}`);
+    throw new NotImplementedException('Medit Link API integration not configured. Vendor SDK required.');
   }
 
   async fetchMeshBinary(externalId: string, credentials?: any): Promise<Buffer> {
-    this.logger.log(`Downloading STL mesh file from Medit Link object store...`);
-    return Buffer.from('placeholder-medit-stl-binary-mesh-data');
+    this.logger.log(`Medit: fetchMeshBinary called for ID: ${externalId}`);
+    throw new NotImplementedException('Medit Link mesh download not implemented. Vendor API key and object store access required.');
   }
 
   async alignCoordinateSpace(meshData: Buffer): Promise<CoordinateMap> {
-    this.logger.log('Aligning Medit Link coordinate mapping matrices (handedness flip)...');
+    // Medit uses left-handed coordinate system; 90° rotation around X axis to convert.
     return {
       translation: [0.0, 0.0, 0.0],
       rotation: [0.7071, 0.0, 0.0, 0.7071], // 90 deg rotation around X-axis
@@ -116,30 +110,21 @@ export class IteroConnector implements ScannerConnector {
   private readonly logger = new Logger(IteroConnector.name);
 
   async authenticate(credentials?: any): Promise<boolean> {
-    this.logger.log('Authenticating with Align Technology iTero gateway (mTLS handshake)...');
-    return true;
+    this.logger.log('iTero: authenticate called');
+    throw new NotImplementedException('Align Technology iTero gateway integration not configured. mTLS certificate and Align API key required.');
   }
 
   async getScanMetadata(externalId: string, credentials?: any): Promise<ScanMetadata> {
-    this.logger.log(`Fetching iTero case metadata for ID: ${externalId}`);
-    return {
-      scannerId: 'ITERO-ELEMENT-5D',
-      patientId: credentials?.patient_id || 'ext-p-842',
-      vendor: 'iTero',
-      importedAt: new Date(),
-      fileFormat: 'stl',
-      triangleCount: 145000,
-      vertexCount: 72502,
-    };
+    this.logger.log(`iTero: getScanMetadata called for ID: ${externalId}`);
+    throw new NotImplementedException('iTero API integration not configured. Vendor SDK required.');
   }
 
   async fetchMeshBinary(externalId: string, credentials?: any): Promise<Buffer> {
-    this.logger.log(`Downloading STL from iTero clinician portal...`);
-    return Buffer.from('placeholder-itero-stl-binary-mesh-data');
+    this.logger.log(`iTero: fetchMeshBinary called for ID: ${externalId}`);
+    throw new NotImplementedException('iTero mesh download not implemented. Align Technology clinician portal API key required.');
   }
 
   async alignCoordinateSpace(meshData: Buffer): Promise<CoordinateMap> {
-    this.logger.log('Aligning iTero scanner coordinate space matrix configurations...');
     return {
       translation: [0.0, 0.0, 0.0],
       rotation: [0.0, 0.0, 0.0, 1.0],
@@ -153,30 +138,21 @@ export class Shining3DConnector implements ScannerConnector {
   private readonly logger = new Logger(Shining3DConnector.name);
 
   async authenticate(credentials?: any): Promise<boolean> {
-    this.logger.log('Authenticating with Shining3D Dental Cloud API...');
-    return true;
+    this.logger.log('Shining3D: authenticate called');
+    throw new NotImplementedException('Shining3D Dental Cloud API integration not configured. API key required.');
   }
 
   async getScanMetadata(externalId: string, credentials?: any): Promise<ScanMetadata> {
-    this.logger.log(`Fetching Shining3D case metadata for ID: ${externalId}`);
-    return {
-      scannerId: 'AORALSCAN-3',
-      patientId: credentials?.patient_id || 'ext-p-112',
-      vendor: 'Shining3D',
-      importedAt: new Date(),
-      fileFormat: 'obj',
-      triangleCount: 112000,
-      vertexCount: 56000,
-    };
+    this.logger.log(`Shining3D: getScanMetadata called for ID: ${externalId}`);
+    throw new NotImplementedException('Shining3D API integration not configured. Vendor SDK required.');
   }
 
   async fetchMeshBinary(externalId: string, credentials?: any): Promise<Buffer> {
-    this.logger.log(`Downloading OBJ mesh from Shining3D Cloud API storage...`);
-    return Buffer.from('placeholder-shining3d-obj-binary-mesh-data');
+    this.logger.log(`Shining3D: fetchMeshBinary called for ID: ${externalId}`);
+    throw new NotImplementedException('Shining3D mesh download not implemented. Shining3D Cloud API storage credentials required.');
   }
 
   async alignCoordinateSpace(meshData: Buffer): Promise<CoordinateMap> {
-    this.logger.log('Aligning Shining3D coordinates matrix transforms...');
     return {
       translation: [0.0, 0.0, 0.0],
       rotation: [0.0, 0.0, 0.0, 1.0],
@@ -190,30 +166,21 @@ export class CarestreamConnector implements ScannerConnector {
   private readonly logger = new Logger(CarestreamConnector.name);
 
   async authenticate(credentials?: any): Promise<boolean> {
-    this.logger.log('Authenticating with Carestream CS Connect gateway...');
-    return true;
+    this.logger.log('Carestream: authenticate called');
+    throw new NotImplementedException('Carestream CS Connect gateway integration not configured. API credentials required.');
   }
 
   async getScanMetadata(externalId: string, credentials?: any): Promise<ScanMetadata> {
-    this.logger.log(`Fetching Carestream case metadata for ID: ${externalId}`);
-    return {
-      scannerId: 'CS-3800-SN9911',
-      patientId: credentials?.patient_id || 'ext-p-505',
-      vendor: 'Carestream',
-      importedAt: new Date(),
-      fileFormat: 'stl',
-      triangleCount: 135000,
-      vertexCount: 67500,
-    };
+    this.logger.log(`Carestream: getScanMetadata called for ID: ${externalId}`);
+    throw new NotImplementedException('Carestream API integration not configured. Vendor SDK required.');
   }
 
   async fetchMeshBinary(externalId: string, credentials?: any): Promise<Buffer> {
-    this.logger.log(`Downloading STL mesh binary from CS Connect CDN...`);
-    return Buffer.from('placeholder-carestream-stl-binary-mesh-data');
+    this.logger.log(`Carestream: fetchMeshBinary called for ID: ${externalId}`);
+    throw new NotImplementedException('Carestream mesh download not implemented. CS Connect CDN credentials required.');
   }
 
   async alignCoordinateSpace(meshData: Buffer): Promise<CoordinateMap> {
-    this.logger.log('Aligning Carestream mesh coordinates systems...');
     return {
       translation: [0.0, 0.0, 0.0],
       rotation: [0.0, 0.0, 0.0, 1.0],

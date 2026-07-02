@@ -158,7 +158,7 @@ function generateToothPositions(fdis: number[]): SegmentedTooth[] {
     // Estimate face count based on tooth size
     const facesPerMm2 = 120;
     const approxSurfaceArea = 2 * (estimatedWidth * estimatedHeight + estimatedWidth * 16 + estimatedHeight * 16);
-    const faceCount = Math.round(approxSurfaceArea * facesPerMm2 * (0.9 + Math.random() * 0.2));
+    const faceCount = Math.round(approxSurfaceArea * facesPerMm2);
 
     teeth.push({
       fdi,
@@ -197,17 +197,15 @@ export class ToothSegmentationService {
 
     const resolvedArch = archType || uploads[0].arch_type;
 
-    // Determine which FDI teeth to include based on arch
+    // Determine which FDI teeth to include based on arch.
+    // All teeth in the arch are included by default; clinician review removes extras.
+    // Wisdom-tooth presence is NOT randomly simulated — that is determined by the
+    // real AI inference pipeline or by clinician correction after review.
     let fdis: number[];
     if (resolvedArch === 'maxillary') {
       fdis = [18, 17, 16, 15, 14, 13, 12, 11, 21, 22, 23, 24, 25, 26, 27, 28];
-      // Simulate 80% chance wisdom teeth are present
-      if (Math.random() > 0.8) fdis = fdis.filter(f => f !== 18);
-      if (Math.random() > 0.8) fdis = fdis.filter(f => f !== 28);
     } else if (resolvedArch === 'mandibular') {
       fdis = [48, 47, 46, 45, 44, 43, 42, 41, 31, 32, 33, 34, 35, 36, 37, 38];
-      if (Math.random() > 0.8) fdis = fdis.filter(f => f !== 48);
-      if (Math.random() > 0.8) fdis = fdis.filter(f => f !== 38);
     } else {
       // Bite registration or unknown — return empty
       fdis = [];
@@ -218,10 +216,13 @@ export class ToothSegmentationService {
       ? parseFloat((teeth.reduce((s, t) => s + t.confidence, 0) / teeth.length).toFixed(3))
       : 0;
 
+    // Positions are generated from published Bolton/Andrews anatomical norms,
+    // not from real STL mesh analysis. Status 'anatomy_model' distinguishes
+    // this from inference results so consumers know clinician review is required.
     const { rows } = await this.pool.query<ToothSegmentation>(
       `INSERT INTO tooth_segmentations
          (organization_id, stl_upload_id, teeth, overall_confidence, status)
-       VALUES ($1, $2, $3, $4, 'complete')
+       VALUES ($1, $2, $3, $4, 'anatomy_model')
        RETURNING *`,
       [orgId, uploadId, JSON.stringify(teeth), avgConfidence],
     );

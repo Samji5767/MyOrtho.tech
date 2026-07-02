@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  ForbiddenException,
   Get,
   HttpCode,
   HttpStatus,
@@ -13,7 +14,7 @@ import type { Request } from 'express';
 import { AuthGuard } from '../auth/auth.guard';
 import { CreditsService } from './credits.service';
 
-interface AuthUser { id: string; email: string; role: string; orgId: string | null }
+interface AuthUser { id: string; email: string; role: string; orgId: string | null; }
 
 function getUser(req: Request): AuthUser {
   const user = (req as Request & { user?: AuthUser }).user;
@@ -36,7 +37,7 @@ export class CreditsController {
     return this.creditsService.listTransactions(getUser(req).orgId!);
   }
 
-  /** Admin / internal: grant credits to the caller's org (protected by role in prod). */
+  /** Admin / internal: grant credits to the caller's org. Requires admin or super_admin role. */
   @Post('grant')
   @HttpCode(HttpStatus.OK)
   grantCredits(
@@ -44,6 +45,9 @@ export class CreditsController {
     @Body() body: { amount: number; notes?: string },
   ) {
     const user = getUser(req);
+    if (user.role !== 'admin' && user.role !== 'super_admin') {
+      throw new ForbiddenException('Credit grants require admin role');
+    }
     return this.creditsService.addCredits(
       user.orgId!,
       body.amount,

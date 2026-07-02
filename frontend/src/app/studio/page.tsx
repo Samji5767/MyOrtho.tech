@@ -9,6 +9,7 @@ import {
   ArrowRight,
   Box,
   CheckCircle2,
+  ClipboardList,
   FolderKanban,
   Layers3,
   Loader2,
@@ -21,6 +22,9 @@ import {
 import { Button, Card, StatusBadge } from "@/components/DesignSystem";
 import CADCapabilityMatrix from "@/components/CADCapabilityMatrix";
 import { fetchCase, type CaseDetail } from "@/lib/api/cases";
+import OrthoWorkflowRail from "@/components/OrthoWorkflowRail";
+import OrthoAnalysisTabs from "@/components/OrthoAnalysisTabs";
+import { CasePlanningProvider } from "@/components/CasePlanningContext";
 
 // ─── Heavy 3D components — SSR off, load only when tab is active ──────────────
 
@@ -44,13 +48,14 @@ const CADEngine = dynamic(() => import("@/components/CADEngine"), {
 
 // ─── Workbench tab types ──────────────────────────────────────────────────────
 
-type StudioTab = "import" | "viewer" | "cad" | "preview";
+type StudioTab = "import" | "viewer" | "cad" | "plan" | "preview";
 
 const TABS: { key: StudioTab; label: string; icon: LucideIcon }[] = [
-  { key: "import",  label: "Scan & Import", icon: ScanLine },
-  { key: "viewer",  label: "3D Viewer",     icon: Layers3  },
-  { key: "cad",     label: "CAD Studio",    icon: Box      },
-  { key: "preview", label: "Preview",       icon: Wand2    },
+  { key: "import",  label: "Scan & Import",  icon: ScanLine       },
+  { key: "viewer",  label: "3D Viewer",      icon: Layers3        },
+  { key: "cad",     label: "CAD Studio",     icon: Box            },
+  { key: "plan",    label: "Plan & Analyse", icon: ClipboardList  },
+  { key: "preview", label: "Preview",        icon: Wand2          },
 ];
 
 // ─── No-case-loaded banner ────────────────────────────────────────────────────
@@ -211,11 +216,65 @@ function ViewerTab({ caseData }: { caseData: CaseDetail | null }) {
 
 function CadTab({ caseData }: { caseData: CaseDetail | null }) {
   if (!caseData) return <NoCaseBanner />;
+
+  function saveSnapshot() {
+    const canvas = document.querySelector<HTMLCanvasElement>("canvas");
+    if (!canvas) return;
+    try {
+      const url = canvas.toDataURL("image/png");
+      const a = document.createElement("a");
+      const patientName = `${caseData!.patient.firstName}-${caseData!.patient.lastName}`.replace(/\s+/g, "-");
+      a.download = `myortho-snapshot-${patientName}.png`;
+      a.href = url;
+      a.click();
+    } catch {}
+  }
+
   return (
     <div className="space-y-4">
       <AIDisclaimer />
+      {/* Back to case + snapshot row */}
+      <div className="flex flex-wrap items-center gap-2">
+        <Link
+          href={`/cases/${caseData.id}`}
+          className="inline-flex h-8 items-center gap-1.5 rounded-xl border border-[color:var(--border)] px-3 text-xs font-semibold text-[color:var(--foreground)] transition-colors hover:border-[color:var(--primary)] hover:text-[color:var(--primary)]"
+        >
+          ← Back to Case
+        </Link>
+        <button
+          type="button"
+          onClick={saveSnapshot}
+          className="inline-flex h-8 items-center gap-1.5 rounded-xl border border-[color:var(--border)] px-3 text-xs font-semibold text-[color:var(--foreground)] transition-colors hover:border-[color:var(--primary)] hover:text-[color:var(--primary)]"
+        >
+          <CheckCircle2 size={12} /> Save Snapshot
+        </button>
+      </div>
       <CADCapabilityMatrix />
       <CADEngine />
+    </div>
+  );
+}
+
+// ─── Plan tab ─────────────────────────────────────────────────────────────────
+
+function PlanTab({ caseData }: { caseData: CaseDetail | null }) {
+  const caseId      = caseData?.id      ?? null;
+  const patientName = caseData
+    ? `${caseData.patient.firstName} ${caseData.patient.lastName}`
+    : "";
+
+  return (
+    <div className="space-y-4">
+      <AIDisclaimer />
+      {!caseData && (
+        <div className="rounded-xl border border-dashed border-[color:var(--border)] bg-[color:var(--card)] px-4 py-3 text-sm text-[color:var(--muted-foreground)]">
+          No case loaded — planning tools show demo data. Select a case to persist progress.
+        </div>
+      )}
+      {/* Pronto-style workflow rail */}
+      <OrthoWorkflowRail caseId={caseId} />
+      {/* Analysis / planning tabs */}
+      <OrthoAnalysisTabs caseId={caseId} patientName={patientName} />
     </div>
   );
 }
@@ -284,6 +343,7 @@ export default function StudioPage() {
   }, [caseId]);
 
   return (
+    <CasePlanningProvider caseId={caseId}>
     <section className="mx-auto flex w-full max-w-5xl flex-col gap-4 px-4 pb-[calc(var(--tab-bar-height)+var(--sa-bottom)+1.5rem)] pt-4 sm:px-5">
       {/* Header */}
       <div>
@@ -334,7 +394,7 @@ export default function StudioPage() {
             <Icon size={14} />
             <span className="hidden sm:inline">{label}</span>
             <span className="sm:hidden">
-              {key === "import" ? "Scan" : key === "viewer" ? "View" : key === "cad" ? "CAD" : "Preview"}
+              {key === "import" ? "Scan" : key === "viewer" ? "View" : key === "cad" ? "CAD" : key === "plan" ? "Plan" : "Preview"}
             </span>
           </button>
         ))}
@@ -345,8 +405,10 @@ export default function StudioPage() {
         {activeTab === "import"  && <ImportTab  caseData={caseData} />}
         {activeTab === "viewer"  && <ViewerTab  caseData={caseData} />}
         {activeTab === "cad"     && <CadTab     caseData={caseData} />}
+        {activeTab === "plan"    && <PlanTab    caseData={caseData} />}
         {activeTab === "preview" && <PreviewTab caseData={caseData} />}
       </div>
     </section>
+    </CasePlanningProvider>
   );
 }

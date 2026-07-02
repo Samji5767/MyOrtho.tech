@@ -54,38 +54,54 @@ export class WorkflowService {
   ) {}
 
   async transition(input: TransitionInput): Promise<{ fromStatus: string; toStatus: string }> {
-    // Read current status
-    const { rows } = await this.pool.query<{ status: string }>(
-      'SELECT status FROM cases WHERE id = $1',
-      [input.caseId],
-    );
-    const current = rows[0]?.status as CaseStatus | undefined;
-    if (!current) {
-      throw new BadRequestException(`Case ${input.caseId} not found`);
-    }
+    const client = await this.pool.connect();
+    let committed = false;
+    let fromStatus: CaseStatus | undefined;
+    try {
+      await client.query('BEGIN');
 
-    const allowed = TRANSITIONS[current] ?? [];
-    if (!allowed.includes(input.toStatus)) {
-      throw new BadRequestException(
-        `Transition from '${current}' to '${input.toStatus}' is not permitted`,
+      // Lock the row to prevent concurrent transitions on the same case (TOCTOU guard).
+      const { rows } = await client.query<{ status: string }>(
+        'SELECT status FROM cases WHERE id = $1 FOR UPDATE',
+        [input.caseId],
       );
+      fromStatus = rows[0]?.status as CaseStatus | undefined;
+      if (!fromStatus) {
+        throw new BadRequestException(`Case ${input.caseId} not found`);
+      }
+
+      const allowed = TRANSITIONS[fromStatus] ?? [];
+      if (!allowed.includes(input.toStatus)) {
+        throw new BadRequestException(
+          `Transition from '${fromStatus}' to '${input.toStatus}' is not permitted`,
+        );
+      }
+
+      // Update case status and write workflow event atomically.
+      await client.query(
+        'UPDATE cases SET status = $1::case_status, updated_at = now() WHERE id = $2',
+        [input.toStatus, input.caseId],
+      );
+
+      await client.query(
+        `INSERT INTO workflow_events
+           (case_id, from_status, to_status, actor_id, actor_role, notes)
+         VALUES ($1, $2, $3, $4, $5, $6)`,
+        [input.caseId, fromStatus, input.toStatus, input.actorId, input.actorRole, input.notes ?? null],
+      );
+
+      await client.query('COMMIT');
+      committed = true;
+    } catch (err) {
+      if (!committed) {
+        try { await client.query('ROLLBACK'); } catch { /* ignore rollback errors */ }
+      }
+      throw err;
+    } finally {
+      client.release();
     }
 
-    // Update case status
-    await this.pool.query(
-      'UPDATE cases SET status = $1::case_status, updated_at = now() WHERE id = $2',
-      [input.toStatus, input.caseId],
-    );
-
-    // Write workflow event (immutable)
-    await this.pool.query(
-      `INSERT INTO workflow_events
-         (case_id, from_status, to_status, actor_id, actor_role, notes)
-       VALUES ($1, $2, $3, $4, $5, $6)`,
-      [input.caseId, current, input.toStatus, input.actorId, input.actorRole, input.notes ?? null],
-    );
-
-    // Write audit event
+    // Audit outside the transaction — failures must never roll back a completed transition.
     await this.auditService.log({
       organizationId: input.orgId,
       actorId: input.actorId,
@@ -93,16 +109,25 @@ export class WorkflowService {
       resourceType: 'case',
       resourceId: input.caseId,
       action: `case.status.${input.toStatus}`,
-      details: { fromStatus: current, toStatus: input.toStatus, notes: input.notes },
+      details: { fromStatus, toStatus: input.toStatus, notes: input.notes },
       ipAddress: input.ipAddress,
     });
 
-    return { fromStatus: current, toStatus: input.toStatus };
+    return { fromStatus, toStatus: input.toStatus };
   }
 
   async getHistory(caseId: string) {
     const { rows } = await this.pool.query(
-      `SELECT we.*, au.full_name AS actor_name, au.email AS actor_email
+      `SELECT
+         we.id,
+         we.from_status   AS "fromStatus",
+         we.to_status     AS "toStatus",
+         we.actor_id      AS "actorId",
+         we.actor_role    AS "actorRole",
+         we.notes,
+         we.created_at    AS "createdAt",
+         au.full_name     AS "actorName",
+         au.email         AS "actorEmail"
        FROM workflow_events we
        LEFT JOIN auth_users au ON au.id = we.actor_id
        WHERE we.case_id = $1

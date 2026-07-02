@@ -1,4 +1,4 @@
-import { Controller, Get, Inject } from '@nestjs/common';
+import { Controller, Get, HttpException, HttpStatus, Inject } from '@nestjs/common';
 import type { Pool } from 'pg';
 import { PG_POOL } from '../database/database.module';
 
@@ -40,6 +40,13 @@ export class HealthController {
     };
     const ready = checks.databaseUrlSet && checks.databaseConnected;
 
-    return { ready, checks, timestamp: new Date().toISOString() };
+    if (!ready) {
+      throw new HttpException(
+        { ready: false, checks, timestamp: new Date().toISOString() },
+        HttpStatus.SERVICE_UNAVAILABLE,
+      );
+    }
+
+    return { ready: true, checks, timestamp: new Date().toISOString() };
   }
 }

@@ -13,7 +13,8 @@ import {
 } from '@nestjs/common';
 import type { Request } from 'express';
 import { AuthGuard } from '../auth/auth.guard';
-import { AnalysisService, type SaveAnalysisDto } from './analysis.service';
+import { AnalysisService, type SaveAnalysisDto, type ExtendedAnalysisInput } from './analysis.service';
+import { BoltonService, type BoltonInput } from './bolton.service';
 
 interface AuthUser { id: string; email: string; role: string; orgId: string | null }
 
@@ -26,7 +27,10 @@ function auth(req: Request): AuthUser {
 @Controller('api/cases/:caseId/analysis')
 @UseGuards(AuthGuard)
 export class AnalysisController {
-  constructor(private readonly svc: AnalysisService) {}
+  constructor(
+    private readonly svc: AnalysisService,
+    private readonly boltonSvc: BoltonService,
+  ) {}
 
   @Get()
   list(@Req() req: Request, @Param('caseId') caseId: string) {
@@ -60,5 +64,38 @@ export class AnalysisController {
   ) {
     const user = auth(req);
     return this.svc.update(id, caseId, user.orgId!, body);
+  }
+
+  /**
+   * Compute Bolton tooth-size ratios from mesiodistal width measurements.
+   * Pure computation — does not persist; use POST / or PATCH /:id to save results.
+   *
+   * Body: { "toothMeasurements": { "11": 8.5, "21": 8.4, ... } }
+   */
+  @Post('bolton')
+  @HttpCode(HttpStatus.OK)
+  computeBolton(
+    @Req() req: Request,
+    @Body() body: BoltonInput,
+  ) {
+    auth(req); // ensures org context; caseId not used for pure computation
+    return this.boltonSvc.compute(body);
+  }
+
+  /**
+   * Compute extended clinical analysis metrics (ALD, LII, TDI, space analysis).
+   * Pure computation — does not persist; use POST / or PATCH /:id to save results.
+   *
+   * Body: ExtendedAnalysisInput — see service for full schema.
+   */
+  @Post('compute')
+  @HttpCode(HttpStatus.OK)
+  computeExtended(
+    @Req() req: Request,
+    @Param('caseId') _caseId: string,
+    @Body() body: ExtendedAnalysisInput,
+  ) {
+    auth(req); // ensures org context; caseId not needed for pure computation
+    return this.svc.computeExtendedAnalysis(body);
   }
 }

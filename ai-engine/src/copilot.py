@@ -14,9 +14,6 @@ class MyOrthoCopilot:
         
         for tooth_id, disp in displacements.items():
             trans = disp.get("translation", [0, 0, 0])
-            rot = disp.get("rotation", [0, 0, 0])
-            
-            # Linear magnitude
             linear_mag = np.linalg.norm(trans)
             max_trans = max(max_trans, linear_mag)
             

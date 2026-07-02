@@ -1,4 +1,5 @@
-import { Controller, Get, Post, Patch, Param, Body, Req, Query, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Patch, Param, Body, Req, Res, Query, UseGuards } from '@nestjs/common';
+import type { Response } from 'express';
 import { AuthGuard } from '../auth/auth.guard';
 import { CopilotService, SendMessageDto } from './copilot.service';
 
@@ -47,6 +48,31 @@ export class CopilotController {
     @Query('planId') planId?: string,
   ) {
     return this.svc.listSuggestions(caseId, req.user.orgId, planId);
+  }
+
+  @Post('api/cases/:caseId/copilot/conversations/:conversationId/stream')
+  async streamMessage(
+    @Req() req: any,
+    @Res() res: Response,
+    @Param('caseId') _caseId: string,
+    @Param('conversationId') conversationId: string,
+    @Body() dto: SendMessageDto,
+  ): Promise<void> {
+    res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
+    res.setHeader('Cache-Control', 'no-cache, no-transform');
+    res.setHeader('Connection', 'keep-alive');
+    res.setHeader('X-Accel-Buffering', 'no');  // disable nginx buffering
+    res.flushHeaders();
+
+    try {
+      for await (const event of this.svc.streamMessage(conversationId, req.user.orgId, dto)) {
+        res.write(`data: ${JSON.stringify(event)}\n\n`);
+      }
+    } catch (err) {
+      res.write(`data: ${JSON.stringify({ type: 'error', error: (err as Error).message })}\n\n`);
+    } finally {
+      res.end();
+    }
   }
 
   @Patch('api/cases/:caseId/copilot/suggestions/:suggestionId/resolve')

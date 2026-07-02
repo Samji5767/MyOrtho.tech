@@ -106,12 +106,25 @@ VALUES
 ON CONFLICT (id) DO NOTHING;
 
 -- 8. Create Aligner Stages
-INSERT INTO aligner_stages (id, plan_id, stage_number, maxillary_mesh_path, mandibular_mesh_path)
-VALUES
-('b1111111-1111-1111-1111-111111111111', '88888888-8888-8888-8888-888888888888', 4, 'staging/eleanor_max_s4.stl', 'staging/eleanor_man_s4.stl'),
-('b2222222-2222-2222-2222-222222222222', '99999999-9999-9999-9999-999999999999', 8, 'staging/julian_max_s8.stl', 'staging/julian_man_s8.stl'),
-('b3333333-3333-3333-3333-333333333333', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 12, 'staging/amara_max_s12.stl', 'staging/amara_man_s12.stl')
-ON CONFLICT (id) DO NOTHING;
+-- Use plan_id on VPS (original schema); treatment_plan_id on fresh databases (migration 008 schema)
+DO $$ BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.columns
+             WHERE table_name = 'aligner_stages' AND column_name = 'plan_id') THEN
+    INSERT INTO aligner_stages (id, plan_id, stage_number, maxillary_mesh_path, mandibular_mesh_path)
+    VALUES
+      ('b1111111-1111-1111-1111-111111111111', '88888888-8888-8888-8888-888888888888', 4, 'staging/eleanor_max_s4.stl', 'staging/eleanor_man_s4.stl'),
+      ('b2222222-2222-2222-2222-222222222222', '99999999-9999-9999-9999-999999999999', 8, 'staging/julian_max_s8.stl', 'staging/julian_man_s8.stl'),
+      ('b3333333-3333-3333-3333-333333333333', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 12, 'staging/amara_max_s12.stl', 'staging/amara_man_s12.stl')
+    ON CONFLICT (id) DO NOTHING;
+  ELSE
+    INSERT INTO aligner_stages (id, treatment_plan_id, stage_number, maxillary_mesh_path, mandibular_mesh_path)
+    VALUES
+      ('b1111111-1111-1111-1111-111111111111', '88888888-8888-8888-8888-888888888888', 4, 'staging/eleanor_max_s4.stl', 'staging/eleanor_man_s4.stl'),
+      ('b2222222-2222-2222-2222-222222222222', '99999999-9999-9999-9999-999999999999', 8, 'staging/julian_max_s8.stl', 'staging/julian_man_s8.stl'),
+      ('b3333333-3333-3333-3333-333333333333', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 12, 'staging/amara_max_s12.stl', 'staging/amara_man_s12.stl')
+    ON CONFLICT (id) DO NOTHING;
+  END IF;
+END $$;
 
 -- Link Current Stages to Cases
 UPDATE cases SET current_stage_id = 'b1111111-1111-1111-1111-111111111111' WHERE id = 'c1111111-1111-1111-1111-111111111111';

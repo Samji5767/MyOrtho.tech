@@ -35,7 +35,7 @@ export class CasesService {
 
   // ─── List cases by org (joined with patient name) ─────────────────────────
 
-  async findAllByOrg(orgId: string) {
+  async findAllByOrg(orgId: string, limit = 100, offset = 0) {
     const { rows } = await this.pool.query(
       `SELECT
          c.id, c.status, c.notes, c.chief_complaint, c.malocclusion_class,
@@ -47,8 +47,9 @@ export class CasesService {
        JOIN patients p ON p.id = c.patient_id
        LEFT JOIN auth_users au ON au.id = c.assigned_to
        WHERE p.organization_id = $1
-       ORDER BY c.updated_at DESC`,
-      [orgId],
+       ORDER BY c.updated_at DESC
+       LIMIT $2 OFFSET $3`,
+      [orgId, limit, offset],
     );
     return rows.map(this.formatCase);
   }
@@ -82,6 +83,25 @@ export class CasesService {
       row.status as CaseStatus,
     );
 
+    // Fetch linked resource IDs in a single query to avoid N+1.
+    // Wrapped in try/catch so a missing table from an incomplete migration does not
+    // prevent the case from loading at all.
+    let linked: Record<string, unknown> = {};
+    try {
+      const { rows: linkedRows } = await this.pool.query(
+        `SELECT
+           (SELECT id FROM stl_uploads        WHERE case_id = $1 ORDER BY created_at DESC LIMIT 1) AS latest_scan_id,
+           (SELECT id FROM digital_setups     WHERE case_id = $1 ORDER BY created_at DESC LIMIT 1) AS setup_id,
+           (SELECT id FROM treatment_plans    WHERE patient_id = (SELECT patient_id FROM cases WHERE id = $1) ORDER BY created_at DESC LIMIT 1) AS plan_id,
+           (SELECT id FROM clinical_analyses  WHERE case_id = $1 ORDER BY created_at DESC LIMIT 1) AS analysis_id,
+           (SELECT id FROM treatment_goals    WHERE case_id = $1 ORDER BY created_at DESC LIMIT 1) AS goals_id`,
+        [id],
+      );
+      linked = linkedRows[0] ?? {};
+    } catch (e) {
+      this.logger.warn(`Could not fetch linked resources for case ${id}: ${String(e)}`);
+    }
+
     return {
       ...this.formatCase(row),
       patient: {
@@ -91,6 +111,13 @@ export class CasesService {
         dateOfBirth: row.date_of_birth,
         gender: row.gender,
         clinicalNotes: row.patient_notes,
+      },
+      linkedResources: {
+        latestScanId: (linked.latest_scan_id as string | null) ?? null,
+        setupId:      (linked.setup_id      as string | null) ?? null,
+        planId:       (linked.plan_id       as string | null) ?? null,
+        analysisId:   (linked.analysis_id   as string | null) ?? null,
+        goalsId:      (linked.goals_id      as string | null) ?? null,
       },
       workflowHistory: history,
       allowedTransitions,
@@ -167,9 +194,10 @@ export class CasesService {
 
     fields.push(`updated_at = now()`);
     values.push(id);
+    values.push(orgId);
 
     await this.pool.query(
-      `UPDATE cases SET ${fields.join(', ')} WHERE id = $${i}`,
+      `UPDATE cases SET ${fields.join(', ')} WHERE id = $${i} AND patient_id IN (SELECT id FROM patients WHERE organization_id = $${i + 1})`,
       values,
     );
 

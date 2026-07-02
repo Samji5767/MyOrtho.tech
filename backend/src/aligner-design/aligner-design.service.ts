@@ -35,6 +35,16 @@ export interface UpdateAlignerDto {
   label?: string;
 }
 
+export interface PrintProfile {
+  layerHeightMm: number;
+  exposureTimeSec: number;
+  liftHeightMm: number;
+  liftSpeedMmMin: number;
+  retractSpeedMmMin: number;
+  bottomLayerCount: number;
+  antiAliasingEnabled: boolean;
+}
+
 export interface ManufacturingPackage {
   setupId: string;
   totalAligners: number;
@@ -46,7 +56,22 @@ export interface ManufacturingPackage {
     alignerNumber: number;
     arch: string;
     stageType: string;
+    thicknessMm: number;
+    hasAttachmentWindows: boolean;
+    hasPressureAreas: boolean;
+    exportReady: boolean;
   }>;
+  printProfile: PrintProfile;
+  printerCompatibility: string[];
+  resinCompatibility: Array<{
+    resinName: string;
+    isoClass: string;
+    color: string;
+    hardnessShoreA: number;
+    recommended: boolean;
+  }>;
+  qaChecklist: Array<{ check: string; status: 'pass' | 'warn' | 'fail'; detail?: string }>;
+  packageValidated: boolean;
   generatedAt: string;
   exportReady: boolean;
 }
@@ -344,7 +369,73 @@ export class AlignerDesignService {
       alignerNumber: a.alignerNumber ?? 0,
       arch: a.archType === 'maxillary' ? 'upper' : 'lower',
       stageType: a.stageId ? (stageTypeMap.get(a.stageId) ?? 'unknown') : 'unknown',
+      thicknessMm: a.thicknessMm,
+      hasAttachmentWindows: Array.isArray(a.attachmentWindows) && a.attachmentWindows.length > 0,
+      hasPressureAreas: Array.isArray(a.pressureAreas) && a.pressureAreas.length > 0,
+      exportReady: a.exportReady,
     }));
+
+    // Standard biocompatible aligner print profile (based on common MSLA resin parameters)
+    const printProfile: PrintProfile = {
+      layerHeightMm:      0.05,
+      exposureTimeSec:    3.5,
+      liftHeightMm:       6.0,
+      liftSpeedMmMin:     60,
+      retractSpeedMmMin:  150,
+      bottomLayerCount:   3,
+      antiAliasingEnabled: true,
+    };
+
+    const printerCompatibility = [
+      'Formlabs Form 3B+',
+      'Formlabs Form 4B',
+      'SprintRay Pro 95',
+      'Envision One',
+      '3D Systems NextDent 5100',
+    ];
+
+    const resinCompatibility = [
+      { resinName: 'Formlabs Dental LT Clear',   isoClass: 'IIa', color: 'Clear',    hardnessShoreA: 82, recommended: true },
+      { resinName: 'Formlabs Dental LT Comfort',  isoClass: 'IIa', color: 'Tan',     hardnessShoreA: 78, recommended: false },
+      { resinName: 'SprintRay OrthoFlex',          isoClass: 'IIa', color: 'Clear',    hardnessShoreA: 80, recommended: true },
+      { resinName: 'NextDent Ortho Rigid',         isoClass: 'IIa', color: 'Clear',    hardnessShoreA: 85, recommended: false },
+    ];
+
+    // QA checklist
+    const qaChecklist: Array<{ check: string; status: 'pass' | 'warn' | 'fail'; detail?: string }> = [
+      {
+        check: 'Aligner count matches stage plan',
+        status: aligners.length > 0 ? 'pass' : 'warn',
+        detail: aligners.length === 0 ? 'No aligners generated yet' : `${aligners.length} aligners ready`,
+      },
+      {
+        check: 'All aligners export-ready',
+        status: allExportReady ? 'pass' : aligners.length === 0 ? 'warn' : 'fail',
+        detail: allExportReady ? undefined : 'Some aligners have pending export tasks',
+      },
+      {
+        check: 'Upper and lower arches covered',
+        status: upperAligners > 0 && lowerAligners > 0 ? 'pass' : upperAligners > 0 || lowerAligners > 0 ? 'warn' : 'fail',
+        detail: upperAligners > 0 && lowerAligners > 0 ? undefined : 'Single-arch treatment detected — verify intent',
+      },
+      {
+        check: 'Stage types validated',
+        status: exportManifest.some((e) => e.stageType !== 'unknown') ? 'pass' : 'warn',
+        detail: exportManifest.every((e) => e.stageType !== 'unknown') ? undefined : 'Some stages missing type classification',
+      },
+      {
+        check: 'Material thickness in range (0.5–1.5 mm)',
+        status: exportManifest.every((e) => e.thicknessMm >= 0.5 && e.thicknessMm <= 1.5) ? 'pass' : 'warn',
+        detail: undefined,
+      },
+      {
+        check: 'Print profile set',
+        status: 'pass',
+        detail: `Layer height ${printProfile.layerHeightMm} mm, exposure ${printProfile.exposureTimeSec}s`,
+      },
+    ];
+
+    const packageValidated = qaChecklist.every((q) => q.status !== 'fail');
 
     return {
       setupId,
@@ -353,8 +444,13 @@ export class AlignerDesignService {
       upperAligners,
       lowerAligners,
       exportManifest,
+      printProfile,
+      printerCompatibility,
+      resinCompatibility,
+      qaChecklist,
+      packageValidated,
       generatedAt: new Date().toISOString(),
-      exportReady: allExportReady,
+      exportReady: allExportReady && packageValidated,
     };
   }
 }

@@ -1,6 +1,8 @@
-import { Module } from '@nestjs/common';
+import { MiddlewareConsumer, Module, NestModule } from '@nestjs/common';
 import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 import { APP_GUARD } from '@nestjs/core';
+import { TimingMiddleware } from './common/timing.middleware';
+import { CommonModule } from './common/common.module';
 import { DatabaseModule } from './database/database.module';
 import { RedisModule } from './redis/redis.module';
 import { HealthModule } from './health/health.module';
@@ -105,6 +107,7 @@ import { TreatmentStagesModule } from './treatment-stages/treatment-stages.modul
 import { TreatmentQAModule } from './treatment-qa/treatment-qa.module';
 import { AlignerDesignModule } from './aligner-design/aligner-design.module';
 import { AiSuggestionsModule } from './ai-suggestions/ai-suggestions.module';
+import { SsoModule } from './sso/sso.module';
 
 @Module({
   imports: [
@@ -117,11 +120,13 @@ import { AiSuggestionsModule } from './ai-suggestions/ai-suggestions.module';
       },
     ]),
     // Infrastructure (global — available to all modules via @Global())
+    CommonModule,
     DatabaseModule,
     RedisModule,
     // Core
     AuthModule,
     AuditModule,
+    SsoModule,
     WorkflowModule,
     // Clinical data
     CasesModule,
@@ -230,6 +235,11 @@ import { AiSuggestionsModule } from './ai-suggestions/ai-suggestions.module';
       provide: APP_GUARD,
       useClass: ThrottlerGuard,
     },
+    TimingMiddleware,
   ],
 })
-export class AppModule {}
+export class AppModule implements NestModule {
+  configure(consumer: MiddlewareConsumer) {
+    consumer.apply(TimingMiddleware).forRoutes('*');
+  }
+}

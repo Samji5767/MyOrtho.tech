@@ -1,39 +1,173 @@
-from fastapi import FastAPI, HTTPException, BackgroundTasks
-from pydantic import BaseModel
+"""
+MyOrtho AI Engine — FastAPI application.
+
+Phase 30 security hardening:
+  - JWT / internal-token auth on every endpoint except /health and /ready
+  - File path sandboxed to UPLOADS_DIR when that env var is set
+  - Async inference timeout via asyncio.wait_for + ThreadPoolExecutor
+  - X-Trace-Id propagated on every response
+  - API version reported in X-API-Version response header
+"""
+
+import asyncio
+import json
 import logging
+import os
 import uuid
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
-from typing import Dict, Any
+from typing import Any, Dict, Optional
+
 import numpy as np
 import torch
-from src.segmentation import OrthoSegmentationEngine
-from src.mesh_processing import MeshProcessor
+from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, Request, Response
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
+
+from src.auth import get_trace_id, require_auth, require_upload_size
 from src.landmark_detector import DentalLandmarkDetector
+from src.mesh_processing import MeshProcessor
 from src.root_predictor import RootPredictorEngine
+from src.segmentation import INFERENCE_TIMEOUT_SEC, OrthoSegmentationEngine
+
+# ── Application ───────────────────────────────────────────────────────────────
 
 app = FastAPI(
     title="MyOrtho AI & Mesh Processing Engine",
-    description="High-performance compute node for tooth segmentation and WATERTIGHT STL preparation.",
-    version="1.0.0"
+    description=(
+        "High-performance compute node for tooth segmentation and WATERTIGHT STL preparation. "
+        "All endpoints except /health and /ready require authentication."
+    ),
+    version="1.0.0",
 )
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("ai-engine")
+
+# ── Upload directory (path sandboxing) ───────────────────────────────────────
+
+_UPLOADS_DIR: Optional[str] = None
+
+def _get_uploads_dir() -> Optional[str]:
+    raw = os.getenv("UPLOADS_DIR", "").strip()
+    return os.path.realpath(raw) if raw else None
+
+
+def _assert_safe_path(file_path: str) -> str:
+    """
+    Prevent path traversal.
+    - If UPLOADS_DIR is set: file_path must resolve within it.
+    - If UPLOADS_DIR is unset: only basic ``..`` traversal is rejected.
+    Returns the normalized absolute path on success.
+    Raises HTTP 400 on violation.
+    """
+    norm = os.path.normpath(file_path)
+    # Basic traversal: reject paths that still contain '..' after normpath
+    if ".." in norm.split(os.sep):
+        raise HTTPException(status_code=400, detail="Invalid file path (path traversal detected)")
+
+    uploads = _UPLOADS_DIR
+    if uploads:
+        real = os.path.realpath(norm)
+        if not real.startswith(uploads + os.sep) and real != uploads:
+            raise HTTPException(
+                status_code=400,
+                detail="file_path must be within the configured uploads directory",
+            )
+    return norm
+
+
+# ── Engine singletons ─────────────────────────────────────────────────────────
 
 segmentation_engine = OrthoSegmentationEngine()
 mesh_processor = MeshProcessor()
 landmark_detector = DentalLandmarkDetector()
 root_predictor = RootPredictorEngine()
 
-# In-memory job store: job_id → status dict.
-# Jobs are lost on restart; use a persistent store (Redis/DB) for production.
-job_store: Dict[str, Dict[str, Any]] = {}
+# Thread pool for blocking inference calls (keeps the async event loop free)
+_executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="seg-worker")
+
+# ── Job Store: Redis-backed with in-memory fallback ───────────────────────────
+
+_redis_client: Optional[Any] = None
+_memory_fallback: Dict[str, Dict[str, Any]] = {}
+JOB_TTL_SECONDS = 86_400 * 7  # 7 days
+
+
+def _init_redis() -> Optional[Any]:
+    redis_url = os.getenv("REDIS_URL", "redis://redis:6379")
+    try:
+        import redis as redis_lib  # type: ignore
+        client = redis_lib.Redis.from_url(
+            redis_url,
+            socket_connect_timeout=2,
+            socket_timeout=2,
+            decode_responses=True,
+        )
+        client.ping()
+        logger.info(f"AI engine connected to Redis at {redis_url}")
+        return client
+    except Exception as exc:
+        logger.warning(f"Redis unavailable ({exc}); using in-memory job store")
+        return None
+
+
+def _job_set(job_id: str, data: Dict[str, Any]) -> None:
+    if _redis_client:
+        try:
+            _redis_client.setex(f"mo:job:{job_id}", JOB_TTL_SECONDS, json.dumps(data))
+            return
+        except Exception:
+            pass
+    _memory_fallback[job_id] = data
+
+
+def _job_get(job_id: str) -> Optional[Dict[str, Any]]:
+    if _redis_client:
+        try:
+            raw = _redis_client.get(f"mo:job:{job_id}")
+            if raw:
+                return json.loads(raw)
+        except Exception:
+            pass
+    return _memory_fallback.get(job_id)
+
+
+# ── Middleware ────────────────────────────────────────────────────────────────
+
+@app.middleware("http")
+async def attach_trace_and_version(request: Request, call_next):
+    response: Response = await call_next(request)
+    trace_id = getattr(request.state, "trace_id", str(uuid.uuid4()))
+    response.headers["X-Trace-Id"] = trace_id
+    response.headers["X-API-Version"] = "1"
+    return response
+
+
+# ── Startup ───────────────────────────────────────────────────────────────────
+
+@app.on_event("startup")
+async def startup():
+    global _redis_client, _UPLOADS_DIR
+    _redis_client = _init_redis()
+    _UPLOADS_DIR = _get_uploads_dir()
+    if _UPLOADS_DIR:
+        logger.info(f"File path sandboxing enabled: uploads must be within {_UPLOADS_DIR}")
+    else:
+        logger.warning(
+            "UPLOADS_DIR not set — file path sandboxing is disabled. "
+            "Set UPLOADS_DIR in production."
+        )
+
+
+# ── Request models ────────────────────────────────────────────────────────────
 
 class SegmentationRequest(BaseModel):
     case_id: str
     scan_id: str
     file_path: str
-    jaw_type: str  # "maxillary" or "mandibular"
+    jaw_type: str  # "maxillary" | "mandibular" | "combined"
+
 
 class HollowRequest(BaseModel):
     input_mesh_path: str
@@ -41,164 +175,272 @@ class HollowRequest(BaseModel):
     wall_thickness_mm: float = 2.0
     engrave_label: str = ""
 
+
 class LandmarkRequest(BaseModel):
     mesh_path: str
     tooth_id: int
 
+
 class CollisionRequest(BaseModel):
-    centerline_a: list  # list of [x, y, z] points
+    centerline_a: list
     centerline_b: list
     min_clearance_mm: float = 1.5
 
+
 class AutoStageRequest(BaseModel):
     tooth_id: int
-    current_translation: list  # [x, y, z]
-    target_translation: list   # [x, y, z]
+    current_translation: list
+    target_translation: list
     max_step_mm: float = 0.25
 
-def run_segmentation_task(job_id: str, req: SegmentationRequest):
-    job_store[job_id]["status"] = "processing"
-    job_store[job_id]["started_at"] = datetime.now(timezone.utc).isoformat()
-    logger.info(f"Running tooth segmentation on scan {req.scan_id} for case {req.case_id} (job {job_id})")
+
+# ── Background segmentation task (async, with timeout) ───────────────────────
+
+async def run_segmentation_task(job_id: str, req: SegmentationRequest) -> None:
+    existing = _job_get(job_id) or {}
+    existing["status"] = "processing"
+    existing["started_at"] = datetime.now(timezone.utc).isoformat()
+    _job_set(job_id, existing)
+    logger.info(
+        f"Running segmentation — case={req.case_id} scan={req.scan_id} job={job_id}"
+    )
+
+    loop = asyncio.get_event_loop()
     try:
-        results = segmentation_engine.segment_mesh(req.file_path, req.jaw_type)
-        job_store[job_id] = {
-            "status": "completed",
-            "case_id": req.case_id,
-            "scan_id": req.scan_id,
-            "teeth_detected": len(results.get("tooth_ids", [])),
-            "missing_teeth": results.get("missing_teeth", []),
-            "teeth_confidence": results.get("confidence_scores", {}),
-            "segmented_mesh_path": results.get("segmented_mesh_path"),
-            "completed_at": datetime.now(timezone.utc).isoformat(),
-            "disclaimer": "Segmentation is a workflow tool only. Not clinically validated.",
-        }
-        logger.info(f"Segmentation complete for job {job_id}. Missing teeth: {results.get('missing_teeth', [])}")
-    except Exception as e:
-        job_store[job_id] = {
-            "status": "failed",
-            "case_id": req.case_id,
-            "scan_id": req.scan_id,
-            "error": str(e),
-            "completed_at": datetime.now(timezone.utc).isoformat(),
-        }
-        logger.error(f"Segmentation job {job_id} failed: {str(e)}")
+        results = await asyncio.wait_for(
+            loop.run_in_executor(
+                _executor,
+                lambda: segmentation_engine.segment_mesh(req.file_path, req.jaw_type),
+            ),
+            timeout=float(INFERENCE_TIMEOUT_SEC),
+        )
+        _job_set(
+            job_id,
+            {
+                "status": "completed",
+                "case_id": req.case_id,
+                "scan_id": req.scan_id,
+                "teeth_detected": len(results.get("tooth_ids", [])),
+                "tooth_ids": results.get("tooth_ids", []),
+                "missing_teeth": results.get("missing_teeth", []),
+                "teeth_confidence": results.get("confidence_scores", {}),
+                "confidence_maps": results.get("confidence_maps", {}),
+                "weights_loaded": results.get("weights_loaded", False),
+                "warning": results.get("warning"),
+                "segmented_mesh_path": results.get("segmented_mesh_path"),
+                "timing": results.get("timing", {}),
+                "completed_at": datetime.now(timezone.utc).isoformat(),
+                "disclaimer": (
+                    "Segmentation is a workflow tool only. "
+                    "Not clinically validated. Requires review by a licensed clinician."
+                ),
+            },
+        )
+        logger.info(f"Segmentation completed — job={job_id}")
+    except asyncio.TimeoutError:
+        _job_set(
+            job_id,
+            {
+                "status": "failed",
+                "case_id": req.case_id,
+                "scan_id": req.scan_id,
+                "error": f"Inference timed out after {INFERENCE_TIMEOUT_SEC}s",
+                "completed_at": datetime.now(timezone.utc).isoformat(),
+            },
+        )
+        logger.error(f"Segmentation job {job_id} timed out after {INFERENCE_TIMEOUT_SEC}s")
+    except Exception as exc:
+        _job_set(
+            job_id,
+            {
+                "status": "failed",
+                "case_id": req.case_id,
+                "scan_id": req.scan_id,
+                "error": str(exc),
+                "completed_at": datetime.now(timezone.utc).isoformat(),
+            },
+        )
+        logger.error(f"Segmentation job {job_id} failed: {exc}")
+
+
+# ── Unauthenticated health probes ─────────────────────────────────────────────
 
 @app.get("/health")
 async def health():
-    """Liveness probe: the process is up and serving requests."""
+    """Liveness probe — process is up and serving."""
     return {"status": "ok", "service": "myortho-ai-engine", "version": app.version}
 
 
 @app.get("/ready")
 async def ready():
-    """Readiness probe: report the active compute backend."""
+    """Readiness probe — reports active compute backend."""
     cuda = torch.cuda.is_available()
     return {
         "ready": True,
         "device": "cuda" if cuda else "cpu",
         "gpu_acceleration": cuda,
         "models_loaded": True,
+        "segmentation_weights_loaded": segmentation_engine.weights_loaded,
     }
 
 
-@app.post("/ai/segment")
-async def trigger_segmentation(req: SegmentationRequest, background_tasks: BackgroundTasks):
+# ── Authenticated endpoints ───────────────────────────────────────────────────
+
+@app.post(
+    "/ai/segment",
+    dependencies=[Depends(require_auth), Depends(require_upload_size)],
+)
+async def trigger_segmentation(
+    req: SegmentationRequest,
+    background_tasks: BackgroundTasks,
+):
+    safe_path = _assert_safe_path(req.file_path)
+    req = SegmentationRequest(
+        case_id=req.case_id,
+        scan_id=req.scan_id,
+        file_path=safe_path,
+        jaw_type=req.jaw_type,
+    )
+
     job_id = str(uuid.uuid4())
-    job_store[job_id] = {
-        "status": "queued",
-        "case_id": req.case_id,
-        "scan_id": req.scan_id,
-        "queued_at": datetime.now(timezone.utc).isoformat(),
-    }
+    _job_set(
+        job_id,
+        {
+            "status": "queued",
+            "case_id": req.case_id,
+            "scan_id": req.scan_id,
+            "queued_at": datetime.now(timezone.utc).isoformat(),
+        },
+    )
     background_tasks.add_task(run_segmentation_task, job_id, req)
     return {
         "job_id": job_id,
         "status": "queued",
         "message": "Segmentation job queued. Poll /ai/jobs/{job_id} for status.",
-        "disclaimer": "Not clinically validated. For workflow assistance only.",
+        "disclaimer": (
+            "Not clinically validated. For workflow assistance only. "
+            "Requires a licensed clinician's review before any clinical decision."
+        ),
     }
 
-@app.get("/ai/jobs/{job_id}")
+
+@app.get(
+    "/ai/jobs/{job_id}",
+    dependencies=[Depends(require_auth)],
+)
 async def get_job_status(job_id: str):
-    job = job_store.get(job_id)
+    job = _job_get(job_id)
     if not job:
         raise HTTPException(
             status_code=404,
-            detail=f"Job '{job_id}' not found. Jobs are stored in memory and lost on restart."
+            detail=f"Job '{job_id}' not found. Jobs expire after 7 days.",
         )
     return {"job_id": job_id, **job}
 
-@app.post("/mesh/hollow")
+
+@app.post(
+    "/mesh/hollow",
+    dependencies=[Depends(require_auth), Depends(require_upload_size)],
+)
 async def hollow_mesh(req: HollowRequest):
-    logger.info(f"Processing mesh hollowing for file: {req.input_mesh_path}")
+    safe_in = _assert_safe_path(req.input_mesh_path)
+    safe_out = _assert_safe_path(req.output_mesh_path)
     try:
         success = mesh_processor.hollow_and_label(
-            req.input_mesh_path,
-            req.output_mesh_path,
+            safe_in,
+            safe_out,
             req.wall_thickness_mm,
-            req.engrave_label
+            req.engrave_label,
         )
         if not success:
-            raise HTTPException(status_code=500, detail="Mesh hollowing or closure failed")
-        return {"status": "success", "output_path": req.output_mesh_path}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+            raise HTTPException(status_code=500, detail="Mesh hollowing failed")
+        return {"status": "success", "output_path": safe_out}
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
 
-@app.post("/ai/landmarks")
+
+@app.post(
+    "/ai/landmarks",
+    dependencies=[Depends(require_auth)],
+)
 async def detect_landmarks(req: LandmarkRequest):
+    safe_path = _assert_safe_path(req.mesh_path)
     try:
-        return landmark_detector.detect_landmarks(req.mesh_path, req.tooth_id)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        return landmark_detector.detect_landmarks(safe_path, req.tooth_id)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
 
-@app.post("/ai/collision")
+
+@app.post(
+    "/ai/collision",
+    dependencies=[Depends(require_auth)],
+)
 async def check_collision(req: CollisionRequest):
     try:
         arr_a = np.array(req.centerline_a)
         arr_b = np.array(req.centerline_b)
         return root_predictor.calculate_root_collision(arr_a, arr_b, req.min_clearance_mm)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
 
-@app.post("/ai/autostage")
+
+@app.post(
+    "/ai/autostage",
+    dependencies=[Depends(require_auth)],
+)
 async def generate_stages(req: AutoStageRequest):
     try:
         curr = np.array(req.current_translation)
         target = np.array(req.target_translation)
         diff = target - curr
-        distance = np.linalg.norm(diff)
-        
-        stages_count = int(np.ceil(distance / req.max_step_mm))
-        if stages_count == 0:
-            stages_count = 1
-            
-        steps = []
-        for i in range(1, stages_count + 1):
-            t = i / stages_count
-            step_pos = curr + diff * t
-            steps.append({
-                "stage_number": i,
-                "translation": [float(step_pos[0]), float(step_pos[1]), float(step_pos[2])]
-            })
-            
-        return {
-            "tooth_id": req.tooth_id,
-            "total_stages": stages_count,
-            "steps": steps
-        }
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        distance = float(np.linalg.norm(diff))
 
-@app.get("/ai/models")
+        stages_count = max(1, int(np.ceil(distance / req.max_step_mm)))
+        steps = [
+            {
+                "stage_number": i,
+                "translation": list(map(float, curr + diff * (i / stages_count))),
+            }
+            for i in range(1, stages_count + 1)
+        ]
+        return {"tooth_id": req.tooth_id, "total_stages": stages_count, "steps": steps}
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@app.get(
+    "/ai/models",
+    dependencies=[Depends(require_auth)],
+)
 async def get_models():
     return {
         "active_models": [
-            {"model_name": "OrthoSegmentationUNet", "version": "v2.1.4", "framework": "MONAI/PyTorch", "gpu_acceleration": torch.cuda.is_available()},
-            {"model_name": "LandmarkMeanCurvature", "version": "v1.0.8", "framework": "Trimesh/Scipy"},
-            {"model_name": "RootCollisionCenterline", "version": "v1.2.0", "framework": "Numpy/ICP"}
+            {
+                "model_name": "OrthoSegmentationUNet",
+                "version": "v2.1.4",
+                "framework": "MONAI/PyTorch",
+                "gpu_acceleration": torch.cuda.is_available(),
+                "weights_loaded": segmentation_engine.weights_loaded,
+            },
+            {
+                "model_name": "LandmarkMeanCurvature",
+                "version": "v1.0.8",
+                "framework": "Trimesh/Scipy",
+                "weights_loaded": True,
+            },
+            {
+                "model_name": "RootCollisionCenterline",
+                "version": "v1.2.0",
+                "framework": "Numpy/ICP",
+                "weights_loaded": True,
+            },
         ],
         "validation_status": "not_clinically_validated",
-        "clinical_disclaimer": "These models are research-stage prototypes. They have NOT been cleared as Software as a Medical Device (SaMD). Do not use outputs for clinical decisions.",
-        "last_verification_run": "2026-06-15"
+        "clinical_disclaimer": (
+            "These models are research-stage prototypes. They have NOT been cleared as "
+            "Software as a Medical Device (SaMD). Do not use outputs for clinical decisions."
+        ),
+        "last_verification_run": "2026-06-15",
     }

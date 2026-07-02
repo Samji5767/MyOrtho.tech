@@ -53,8 +53,8 @@ export class AdminController {
     @Param('id') id: string,
     @Body('role') role: string,
   ) {
-    requireSuperAdmin(req);
-    return this.adminService.updateUserRole(id, role);
+    const admin = requireSuperAdmin(req);
+    return this.adminService.updateUserRole(id, role, admin.id, admin.email);
   }
 
   @Patch('users/:id/active')
@@ -63,8 +63,8 @@ export class AdminController {
     @Param('id') id: string,
     @Body('active') active: boolean,
   ) {
-    requireSuperAdmin(req);
-    return this.adminService.setUserActive(id, active);
+    const admin = requireSuperAdmin(req);
+    return this.adminService.setUserActive(id, active, admin.id, admin.email);
   }
 
   @Get('orgs')
@@ -88,7 +88,7 @@ export class AdminController {
     @Body('notes') notes?: string,
   ) {
     const admin = requireSuperAdmin(req);
-    return this.adminService.grantCredits(orgId, amount, admin.email, notes);
+    return this.adminService.grantCredits(orgId, amount, admin.id, notes, admin.email);
   }
 
   @Get('revenue')

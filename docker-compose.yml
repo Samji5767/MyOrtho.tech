@@ -1,5 +1,3 @@
-version: "3.8"
-
 # Values come from `.env` (see .env.example). Defaults below preserve the
 # original dev behavior so the stack still runs without a .env file.
 
@@ -9,7 +7,7 @@ services:
     container_name: myortho-db
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-myortho_admin}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-secret_password}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-CHANGE_ME_BEFORE_PRODUCTION}
       POSTGRES_DB: ${POSTGRES_DB:-myortho_tech}
     # Not exposed to the host: only reachable on the internal compose network.
     expose:
@@ -26,14 +24,33 @@ services:
   redis:
     image: redis:7-alpine
     container_name: myortho-cache
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
     # Not exposed to the host: only reachable on the internal compose network.
     expose:
       - "6379"
+    volumes:
+      - redis_data:/data
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
       timeout: 3s
       retries: 5
+
+  # One-shot migration runner: applies every migration in database/migrations/
+  # in numeric order, then exits 0. Backend waits for this to succeed before
+  # starting. Safe to re-run because every migration is idempotent.
+  migrate:
+    image: postgres:15-alpine
+    container_name: myortho-migrate
+    environment:
+      - DATABASE_URL=${DATABASE_URL:-postgresql://myortho_admin:CHANGE_ME_BEFORE_PRODUCTION@database:5432/myortho_tech}
+    volumes:
+      - ./database:/database:ro
+    command: ["sh", "/database/migrate.sh"]
+    depends_on:
+      database:
+        condition: service_healthy
+    restart: "no"
 
   backend:
     build:
@@ -45,7 +62,7 @@ services:
     environment:
       - PORT=4000
       - NODE_ENV=${NODE_ENV:-development}
-      - DATABASE_URL=${DATABASE_URL:-postgresql://myortho_admin:secret_password@database:5432/myortho_tech}
+      - DATABASE_URL=${DATABASE_URL:-postgresql://myortho_admin:CHANGE_ME_BEFORE_PRODUCTION@database:5432/myortho_tech}
       - REDIS_URL=${REDIS_URL:-redis://redis:6379}
       - SUPABASE_URL=${SUPABASE_URL:-https://placeholder.supabase.co}
       - SUPABASE_ANON_KEY=${SUPABASE_ANON_KEY:-placeholder}
@@ -58,19 +75,23 @@ services:
       - MYORTHO_ADMIN_NAME=${MYORTHO_ADMIN_NAME:-Platform Admin}
       - UPLOADS_DIR=/app/uploads
       - AI_ENGINE_URL=http://ai-engine:8000
+      - OTEL_EXPORTER_OTLP_ENDPOINT=${OTEL_EXPORTER_OTLP_ENDPOINT:-}
+      - OTEL_SERVICE_NAME=${OTEL_SERVICE_NAME:-myortho-backend}
     volumes:
       - uploads_data:/app/uploads
     depends_on:
       database:
         condition: service_healthy
       redis:
-        condition: service_started
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://localhost:4000/health || exit 1"]
       interval: 15s
       timeout: 5s
       retries: 5
-      start_period: 20s
+      start_period: 30s
 
   frontend:
     build:
@@ -83,7 +104,14 @@ services:
       - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL:-http://localhost:4000}
       - NEXT_PUBLIC_AI_URL=${NEXT_PUBLIC_AI_URL:-http://localhost:8000}
     depends_on:
-      - backend
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3000/ || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
 
   ai-engine:
     build:
@@ -97,8 +125,15 @@ services:
     volumes:
       - shared_storage:/app/storage
       - uploads_data:/app/uploads:ro
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8000/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
 
 volumes:
   postgres_data:
+  redis_data:
   shared_storage:
   uploads_data:

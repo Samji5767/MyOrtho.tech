@@ -1,15 +1,13 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   CalendarDays,
-  Camera,
   ChevronRight,
   FileText,
   HeartPulse,
-  Images,
-  MessageSquare,
+  Loader2,
   Search,
   UploadCloud,
   UserPlus,
@@ -18,20 +16,40 @@ import {
 } from "lucide-react";
 import NativeSheet from "@/components/NativeSheet";
 import { Button, Card, StatusBadge } from "@/components/DesignSystem";
+import { api } from "@/lib/api/client";
+
+interface Patient {
+  id: string;
+  first_name: string;
+  last_name: string;
+  date_of_birth: string | null;
+  gender: string | null;
+  case_count: number;
+  created_at: string;
+}
 
 export default function PatientsPage() {
   const [query, setQuery] = useState("");
   const [sheetOpen, setSheetOpen] = useState(false);
+  const [patients, setPatients] = useState<Patient[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  // No patients loaded — real data comes from backend once configured
-  const patients: never[] = [];
+  useEffect(() => {
+    api.get<Patient[]>('/api/patients')
+      .then(setPatients)
+      .catch((e: Error) => setError(e?.message ?? 'Failed to load patients'))
+      .finally(() => setLoading(false));
+  }, []);
 
   const filteredPatients = useMemo(
     () =>
       query.trim()
-        ? patients.filter((p: any) => p.name?.toLowerCase().includes(query.toLowerCase()))
+        ? patients.filter((p) =>
+            `${p.first_name} ${p.last_name}`.toLowerCase().includes(query.toLowerCase())
+          )
         : patients,
-    [query]
+    [query, patients]
   );
 
   return (
@@ -81,8 +99,49 @@ export default function PatientsPage() {
             )}
           </div>
 
+          {/* Loading state */}
+          {loading && (
+            <div className="flex items-center justify-center gap-2 py-8 text-sm text-[color:var(--muted-foreground)]">
+              <Loader2 size={16} className="animate-spin" />
+              Loading patients…
+            </div>
+          )}
+
+          {/* Error state */}
+          {!loading && error && (
+            <p className="py-4 text-center text-sm text-rose-500">{error}</p>
+          )}
+
+          {/* Patient list */}
+          {!loading && filteredPatients.length > 0 && (
+            <ul className="divide-y divide-[color:var(--border)]">
+              {filteredPatients.map((p) => (
+                <li key={p.id}>
+                  <Link
+                    href={`/patients/${p.id}`}
+                    className="flex items-center gap-3 px-1 py-3 transition-colors hover:bg-[color:var(--muted-foreground)]/5"
+                  >
+                    <span className="grid h-10 w-10 shrink-0 place-items-center rounded-2xl bg-[color:var(--primary-glow)] text-sm font-bold text-[color:var(--primary)]">
+                      {p.first_name[0]}{p.last_name[0]}
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-semibold text-[color:var(--foreground)]">
+                        {p.first_name} {p.last_name}
+                      </p>
+                      <p className="mt-0.5 text-xs text-[color:var(--muted-foreground)]">
+                        {p.case_count} case{p.case_count !== 1 ? 's' : ''}
+                        {p.gender ? ` · ${p.gender}` : ''}
+                      </p>
+                    </div>
+                    <ChevronRight size={15} className="shrink-0 text-[color:var(--muted-foreground)]" />
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          )}
+
           {/* Empty state */}
-          {filteredPatients.length === 0 && (
+          {!loading && filteredPatients.length === 0 && (
             <div className="flex flex-col items-center gap-4 py-8 text-center">
               <span className="grid h-16 w-16 place-items-center rounded-3xl bg-[color:var(--primary-glow)] text-[color:var(--primary)]">
                 <UserPlus size={28} />
@@ -122,7 +181,7 @@ export default function PatientsPage() {
       </Card>
 
       {/* Workflow guide — shown when no patients, helps orient new users */}
-      {filteredPatients.length === 0 && !query && (
+      {!loading && filteredPatients.length === 0 && !query && (
         <>
           <Card className="p-5">
             <div className="flex items-start justify-between gap-3">

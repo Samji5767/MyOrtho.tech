@@ -3,9 +3,9 @@
 -- 1. Create default organization
 INSERT INTO organizations (id, name, type, settings)
 VALUES (
-    'd0b1a2c3-4d5e-6f7a-8b9c-0d1e2f3a4b5c', 
-    'Smile Orthodontics Group', 
-    'clinic', 
+    'd0b1a2c3-4d5e-6f7a-8b9c-0d1e2f3a4b5c',
+    'Smile Orthodontics Group',
+    'clinic',
     '{"theme": "dark", "ssoEnabled": true, "mfaEnforced": true, "domain": "https://portal.myortho.tech"}'::jsonb
 )
 ON CONFLICT (id) DO NOTHING;
@@ -45,18 +45,18 @@ END $$;
 -- 3. Create profile for Dr. Sarah Jenkins
 INSERT INTO profiles (id, email, full_name, role, organization_id, is_active)
 VALUES (
-    'e1b2c3d4-5e6f-7a8b-9c0d-1e2f3a4b5c6d', 
-    'sarah.jenkins@myortho.tech', 
-    'Dr. Sarah Jenkins', 
-    'dentist', 
-    'd0b1a2c3-4d5e-6f7a-8b9c-0d1e2f3a4b5c', 
+    'e1b2c3d4-5e6f-7a8b-9c0d-1e2f3a4b5c6d',
+    'sarah.jenkins@myortho.tech',
+    'Dr. Sarah Jenkins',
+    'dentist',
+    'd0b1a2c3-4d5e-6f7a-8b9c-0d1e2f3a4b5c',
     true
 )
 ON CONFLICT (id) DO NOTHING;
 
 -- 4. Create Patients
 INSERT INTO patients (id, organization_id, first_name, last_name, dob, gender, clinical_notes)
-VALUES 
+VALUES
 (
     '11111111-1111-1111-1111-111111111111',
     'd0b1a2c3-4d5e-6f7a-8b9c-0d1e2f3a4b5c',
@@ -87,30 +87,61 @@ VALUES
 ON CONFLICT (id) DO NOTHING;
 
 -- 5. Create Cases
-INSERT INTO cases (id, patient_id, dentist_id, status, notes)
-VALUES
-(
-    'c1111111-1111-1111-1111-111111111111',
-    '11111111-1111-1111-1111-111111111111',
-    'e1b2c3d4-5e6f-7a8b-9c0d-1e2f3a4b5c6d',
-    'planning',
-    'Requires upper/lower clear aligners. 18 maxillary stages.'
-),
-(
-    'c2222222-2222-2222-2222-222222222222',
-    '22222222-2222-2222-2222-222222222222',
-    'e1b2c3d4-5e6f-7a8b-9c0d-1e2f3a4b5c6d',
-    'pending_approval',
-    'Awaiting approval for stage layout. IPR required at tooth 11/21.'
-),
-(
-    'c3333333-3333-3333-3333-333333333333',
-    '33333333-3333-3333-3333-333333333333',
-    'e1b2c3d4-5e6f-7a8b-9c0d-1e2f3a4b5c6d',
-    'manufacturing',
-    'Aligner model generation complete. Print jobs in queue.'
-)
-ON CONFLICT (id) DO NOTHING;
+-- VPS (migration 002) cases has no dentist_id; use assigned_to instead.
+-- Supabase schema.sql cases has dentist_id.
+DO $$ BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.columns
+             WHERE table_name = 'cases' AND column_name = 'dentist_id'
+             AND table_schema = 'public') THEN
+    INSERT INTO cases (id, patient_id, dentist_id, status, notes)
+    VALUES
+    (
+        'c1111111-1111-1111-1111-111111111111',
+        '11111111-1111-1111-1111-111111111111',
+        'e1b2c3d4-5e6f-7a8b-9c0d-1e2f3a4b5c6d',
+        'planning',
+        'Requires upper/lower clear aligners. 18 maxillary stages.'
+    ),
+    (
+        'c2222222-2222-2222-2222-222222222222',
+        '22222222-2222-2222-2222-222222222222',
+        'e1b2c3d4-5e6f-7a8b-9c0d-1e2f3a4b5c6d',
+        'pending_approval',
+        'Awaiting approval for stage layout. IPR required at tooth 11/21.'
+    ),
+    (
+        'c3333333-3333-3333-3333-333333333333',
+        '33333333-3333-3333-3333-333333333333',
+        'e1b2c3d4-5e6f-7a8b-9c0d-1e2f3a4b5c6d',
+        'manufacturing',
+        'Aligner model generation complete. Print jobs in queue.'
+    )
+    ON CONFLICT (id) DO NOTHING;
+  ELSE
+    -- VPS path: no dentist_id column; use assigned_to if available
+    INSERT INTO cases (id, patient_id, status, notes)
+    VALUES
+    (
+        'c1111111-1111-1111-1111-111111111111',
+        '11111111-1111-1111-1111-111111111111',
+        'planning',
+        'Requires upper/lower clear aligners. 18 maxillary stages.'
+    ),
+    (
+        'c2222222-2222-2222-2222-222222222222',
+        '22222222-2222-2222-2222-222222222222',
+        'pending_approval',
+        'Awaiting approval for stage layout. IPR required at tooth 11/21.'
+    ),
+    (
+        'c3333333-3333-3333-3333-333333333333',
+        '33333333-3333-3333-3333-333333333333',
+        'manufacturing',
+        'Aligner model generation complete. Print jobs in queue.'
+    )
+    ON CONFLICT (id) DO NOTHING;
+  END IF;
+END $$;
 
 -- 6. Create Scans
 INSERT INTO scans (id, case_id, uploaded_by, jaw_type, file_path, file_format, file_size_bytes)
@@ -149,10 +180,16 @@ DO $$ BEGIN
   END IF;
 END $$;
 
--- Link Current Stages to Cases
-UPDATE cases SET current_stage_id = 'b1111111-1111-1111-1111-111111111111' WHERE id = 'c1111111-1111-1111-1111-111111111111';
-UPDATE cases SET current_stage_id = 'b2222222-2222-2222-2222-222222222222' WHERE id = 'c2222222-2222-2222-2222-222222222222';
-UPDATE cases SET current_stage_id = 'b3333333-3333-3333-3333-333333333333' WHERE id = 'c3333333-3333-3333-3333-333333333333';
+-- Link Current Stages to Cases (only if column exists)
+DO $$ BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.columns
+             WHERE table_name = 'cases' AND column_name = 'current_stage_id'
+             AND table_schema = 'public') THEN
+    UPDATE cases SET current_stage_id = 'b1111111-1111-1111-1111-111111111111' WHERE id = 'c1111111-1111-1111-1111-111111111111';
+    UPDATE cases SET current_stage_id = 'b2222222-2222-2222-2222-222222222222' WHERE id = 'c2222222-2222-2222-2222-222222222222';
+    UPDATE cases SET current_stage_id = 'b3333333-3333-3333-3333-333333333333' WHERE id = 'c3333333-3333-3333-3333-333333333333';
+  END IF;
+END $$;
 
 -- 9. Create Printers
 INSERT INTO printers (id, organization_id, name, brand, model, status, ip_address, material_type, material_volume_ml)
@@ -163,25 +200,51 @@ VALUES
 ON CONFLICT (id) DO NOTHING;
 
 -- 10. Create Print Jobs
-INSERT INTO print_jobs (id, printer_id, organization_id, stage_id, status, quality_score, qc_notes, created_at)
-VALUES
-('d1111111-1111-1111-1111-111111111111', 'f1111111-1111-1111-1111-111111111111', 'd0b1a2c3-4d5e-6f7a-8b9c-0d1e2f3a4b5c', 'b1111111-1111-1111-1111-111111111111', 'printing', 0.98, NULL, '2026-06-14 10:00:00+00'),
-('d2222222-2222-2222-2222-222222222222', 'f2222222-2222-2222-2222-222222222222', 'd0b1a2c3-4d5e-6f7a-8b9c-0d1e2f3a4b5c', 'b2222222-2222-2222-2222-222222222222', 'queued', 0.95, NULL, '2026-06-14 11:30:00+00'),
-('d3333333-3333-3333-3333-333333333333', 'f1111111-1111-1111-1111-111111111111', 'd0b1a2c3-4d5e-6f7a-8b9c-0d1e2f3a4b5c', 'b3333333-3333-3333-3333-333333333333', 'completed', 0.99, NULL, '2026-06-14 08:15:00+00'),
-('d4444444-4444-4444-4444-444444444444', 'f3333333-3333-3333-3333-333333333333', 'd0b1a2c3-4d5e-6f7a-8b9c-0d1e2f3a4b5c', NULL, 'failed', 0.74, 'Thin wall risk failed at buccal shell', '2026-06-13 14:20:00+00')
-ON CONFLICT (id) DO NOTHING;
+-- Supabase schema.sql: has stage_id, quality_score, qc_notes; no job_name, no created_by
+-- VPS migration 026: has job_name NOT NULL, created_by NOT NULL, case_id; no stage_id
+DO $$ BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.columns
+             WHERE table_name = 'print_jobs' AND column_name = 'stage_id'
+             AND table_schema = 'public') THEN
+    INSERT INTO print_jobs (id, printer_id, organization_id, stage_id, status, quality_score, qc_notes, created_at)
+    VALUES
+    ('d1111111-1111-1111-1111-111111111111', 'f1111111-1111-1111-1111-111111111111', 'd0b1a2c3-4d5e-6f7a-8b9c-0d1e2f3a4b5c', 'b1111111-1111-1111-1111-111111111111', 'printing', 0.98, NULL, '2026-06-14 10:00:00+00'),
+    ('d2222222-2222-2222-2222-222222222222', 'f2222222-2222-2222-2222-222222222222', 'd0b1a2c3-4d5e-6f7a-8b9c-0d1e2f3a4b5c', 'b2222222-2222-2222-2222-222222222222', 'queued', 0.95, NULL, '2026-06-14 11:30:00+00'),
+    ('d3333333-3333-3333-3333-333333333333', 'f1111111-1111-1111-1111-111111111111', 'd0b1a2c3-4d5e-6f7a-8b9c-0d1e2f3a4b5c', 'b3333333-3333-3333-3333-333333333333', 'completed', 0.99, NULL, '2026-06-14 08:15:00+00'),
+    ('d4444444-4444-4444-4444-444444444444', 'f3333333-3333-3333-3333-333333333333', 'd0b1a2c3-4d5e-6f7a-8b9c-0d1e2f3a4b5c', NULL, 'failed', 0.74, 'Thin wall risk failed at buccal shell', '2026-06-13 14:20:00+00')
+    ON CONFLICT (id) DO NOTHING;
+  ELSIF EXISTS (SELECT 1 FROM information_schema.columns
+                WHERE table_name = 'print_jobs' AND column_name = 'job_name'
+                AND table_schema = 'public') THEN
+    -- VPS path: job_name NOT NULL, created_by NOT NULL, optional case_id
+    INSERT INTO print_jobs (id, printer_id, organization_id, case_id, job_name, status, created_by, created_at)
+    VALUES
+    ('d1111111-1111-1111-1111-111111111111', 'f1111111-1111-1111-1111-111111111111', 'd0b1a2c3-4d5e-6f7a-8b9c-0d1e2f3a4b5c', 'c3333333-3333-3333-3333-333333333333', 'Eleanor Stage 4 Print', 'printing', 'e1b2c3d4-5e6f-7a8b-9c0d-1e2f3a4b5c6d', '2026-06-14 10:00:00+00'),
+    ('d2222222-2222-2222-2222-222222222222', 'f2222222-2222-2222-2222-222222222222', 'd0b1a2c3-4d5e-6f7a-8b9c-0d1e2f3a4b5c', 'c3333333-3333-3333-3333-333333333333', 'Julian Stage 8 Print', 'queued', 'e1b2c3d4-5e6f-7a8b-9c0d-1e2f3a4b5c6d', '2026-06-14 11:30:00+00'),
+    ('d3333333-3333-3333-3333-333333333333', 'f1111111-1111-1111-1111-111111111111', 'd0b1a2c3-4d5e-6f7a-8b9c-0d1e2f3a4b5c', 'c3333333-3333-3333-3333-333333333333', 'Amara Stage 12 Print', 'completed', 'e1b2c3d4-5e6f-7a8b-9c0d-1e2f3a4b5c6d', '2026-06-14 08:15:00+00'),
+    ('d4444444-4444-4444-4444-444444444444', 'f3333333-3333-3333-3333-333333333333', 'd0b1a2c3-4d5e-6f7a-8b9c-0d1e2f3a4b5c', NULL, 'Failed Print Job', 'failed', 'e1b2c3d4-5e6f-7a8b-9c0d-1e2f3a4b5c6d', '2026-06-13 14:20:00+00')
+    ON CONFLICT (id) DO NOTHING;
+  END IF;
+END $$;
 
 -- 11. Appointments
-INSERT INTO appointments (id, patient_id, dentist_id, scheduled_at, visit_reason, status)
-VALUES (
-    'a1111111-1111-1111-1111-111111111111',
-    '11111111-1111-1111-1111-111111111111',
-    'e1b2c3d4-5e6f-7a8b-9c0d-1e2f3a4b5c6d',
-    '2026-06-23 10:30:00+00',
-    'Orthodontic Staging Progress Check',
-    'scheduled'
-)
-ON CONFLICT (id) DO NOTHING;
+-- Guard on patient_id column: VPS old schema has patient_id/dentist_id/visit_reason
+DO $$ BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.columns
+             WHERE table_name = 'appointments' AND column_name = 'patient_id'
+             AND table_schema = 'public') THEN
+    INSERT INTO appointments (id, patient_id, dentist_id, scheduled_at, visit_reason, status)
+    VALUES (
+        'a1111111-1111-1111-1111-111111111111',
+        '11111111-1111-1111-1111-111111111111',
+        'e1b2c3d4-5e6f-7a8b-9c0d-1e2f3a4b5c6d',
+        '2026-06-23 10:30:00+00',
+        'Orthodontic Staging Progress Check',
+        'scheduled'
+    )
+    ON CONFLICT (id) DO NOTHING;
+  END IF;
+END $$;
 
 -- 12. Billing Subscriptions & usage meters
 INSERT INTO billing_subscriptions (id, organization_id, plan_tier, monthly_price, status)
@@ -209,49 +272,88 @@ VALUES
 ('d0b1a2c3-4d5e-6f7a-8b9c-0d1e2f3a4b5c', 'e1b2c3d4-5e6f-7a8b-9c0d-1e2f3a4b5c6d', 'Resin Low Warning: Formlabs Printer 1', '{"printerId": "f1111111-1111-1111-1111-111111111111"}'::jsonb, '192.168.1.45', '2026-06-14 18:22:30+00'),
 ('d0b1a2c3-4d5e-6f7a-8b9c-0d1e2f3a4b5c', NULL, 'Failed Login Attempt: Tenant Portal', '{"inputEmail": "unknown-admin"}'::jsonb, '203.0.113.19', '2026-06-14 15:10:04+00');
 
--- 14. Communication and Messaging (Conversations, Participants, Messages)
+-- 14. Communication and Messaging
 INSERT INTO conversations (id, case_id)
 VALUES ('92222222-2222-2222-2222-222222222222', 'c1111111-1111-1111-1111-111111111111')
 ON CONFLICT (id) DO NOTHING;
 
-INSERT INTO participants (id, conversation_id, profile_id)
-VALUES 
-('93333333-3333-3333-3333-333333333333', '92222222-2222-2222-2222-222222222222', 'e1b2c3d4-5e6f-7a8b-9c0d-1e2f3a4b5c6d')
-ON CONFLICT (id) DO NOTHING;
+-- participants table (Supabase schema.sql) vs conversation_participants (VPS migration 007)
+-- schema.sql participants has: id, conversation_id, profile_id
+-- VPS conversation_participants has: conversation_id, user_id (composite PK, no id column)
+DO $$ BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.tables
+             WHERE table_schema = 'public' AND table_name = 'participants') THEN
+    INSERT INTO participants (id, conversation_id, profile_id)
+    VALUES
+    ('93333333-3333-3333-3333-333333333333', '92222222-2222-2222-2222-222222222222', 'e1b2c3d4-5e6f-7a8b-9c0d-1e2f3a4b5c6d')
+    ON CONFLICT (id) DO NOTHING;
+  ELSIF EXISTS (SELECT 1 FROM information_schema.tables
+                WHERE table_schema = 'public' AND table_name = 'conversation_participants') THEN
+    INSERT INTO conversation_participants (conversation_id, user_id)
+    VALUES ('92222222-2222-2222-2222-222222222222', 'e1b2c3d4-5e6f-7a8b-9c0d-1e2f3a4b5c6d')
+    ON CONFLICT DO NOTHING;
+  END IF;
+END $$;
 
-INSERT INTO messages (id, conversation_id, sender_id, text)
-VALUES
-('95555555-5555-5555-5555-555555555555', '92222222-2222-2222-2222-222222222222', 'e1b2c3d4-5e6f-7a8b-9c0d-1e2f3a4b5c6d', 'Let us know if you feel minor tightness on aligner #4. That is normal for the first 48 hours.')
-ON CONFLICT (id) DO NOTHING;
+-- messages: Supabase schema.sql uses 'text' column; VPS migration 007 uses 'body' column
+DO $$ BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.columns
+             WHERE table_name = 'messages' AND column_name = 'text'
+             AND table_schema = 'public') THEN
+    INSERT INTO messages (id, conversation_id, sender_id, text)
+    VALUES
+    ('95555555-5555-5555-5555-555555555555', '92222222-2222-2222-2222-222222222222', 'e1b2c3d4-5e6f-7a8b-9c0d-1e2f3a4b5c6d', 'Let us know if you feel minor tightness on aligner #4. That is normal for the first 48 hours.')
+    ON CONFLICT (id) DO NOTHING;
+  ELSIF EXISTS (SELECT 1 FROM information_schema.columns
+                WHERE table_name = 'messages' AND column_name = 'body'
+                AND table_schema = 'public') THEN
+    INSERT INTO messages (id, conversation_id, sender_id, body)
+    VALUES
+    ('95555555-5555-5555-5555-555555555555', '92222222-2222-2222-2222-222222222222', 'e1b2c3d4-5e6f-7a8b-9c0d-1e2f3a4b5c6d', 'Let us know if you feel minor tightness on aligner #4. That is normal for the first 48 hours.')
+    ON CONFLICT (id) DO NOTHING;
+  END IF;
+END $$;
 
 -- 15. Clinician comments (model annotations)
-INSERT INTO model_comments (id, case_id, author_id, comment_text, coordinate_x, coordinate_y, coordinate_z)
-VALUES
-('96666666-6666-6666-6666-666666666666', 'c1111111-1111-1111-1111-111111111111', 'e1b2c3d4-5e6f-7a8b-9c0d-1e2f3a4b5c6d', 'Dr. Sam: Posterior crossbite alignment looks good. Attachment on tooth 13 is crucial.', 0, 0, 0),
-('96666666-6666-6666-6666-666666666667', 'c1111111-1111-1111-1111-111111111111', 'e1b2c3d4-5e6f-7a8b-9c0d-1e2f3a4b5c6d', 'Lab Tech: Watertight STL staging models sliced and validated.', 0, 0, 0)
-ON CONFLICT (id) DO NOTHING;
+-- model_comments only exists in schema.sql; not in any migration file
+DO $$ BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.tables
+             WHERE table_schema = 'public' AND table_name = 'model_comments') THEN
+    INSERT INTO model_comments (id, case_id, author_id, comment_text, coordinate_x, coordinate_y, coordinate_z)
+    VALUES
+    ('96666666-6666-6666-6666-666666666666', 'c1111111-1111-1111-1111-111111111111', 'e1b2c3d4-5e6f-7a8b-9c0d-1e2f3a4b5c6d', 'Dr. Sam: Posterior crossbite alignment looks good. Attachment on tooth 13 is crucial.', 0, 0, 0),
+    ('96666666-6666-6666-6666-666666666667', 'c1111111-1111-1111-1111-111111111111', 'e1b2c3d4-5e6f-7a8b-9c0d-1e2f3a4b5c6d', 'Lab Tech: Watertight STL staging models sliced and validated.', 0, 0, 0)
+    ON CONFLICT (id) DO NOTHING;
+  END IF;
+END $$;
 
 -- 16. Legal Consent Records
-INSERT INTO legal_consent_records (id, patient_id, case_id, template_jurisdiction, esign_signature, ip_address, document_hash, record_retention_until)
-VALUES
-(
-    '97777777-7777-7777-7777-777777777777', 
-    '11111111-1111-1111-1111-111111111111', 
-    'c1111111-1111-1111-1111-111111111111', 
-    'US-CA', 
-    'HIPAA Data Sharing Consent', 
-    '192.168.1.104', 
-    'SHA-256: 4f18e9a...', 
-    '2036-06-12'
-),
-(
-    '97777777-7777-7777-7777-777777777778', 
-    '11111111-1111-1111-1111-111111111111', 
-    'c1111111-1111-1111-1111-111111111111', 
-    'US-CA', 
-    'Aligner Treatment Informed Consent', 
-    '192.168.1.104', 
-    'SHA-256: 9b2d8e...', 
-    '2036-06-12'
-)
-ON CONFLICT (id) DO NOTHING;
+-- legal_consent_records only exists in schema.sql; not in any migration file
+DO $$ BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.tables
+             WHERE table_schema = 'public' AND table_name = 'legal_consent_records') THEN
+    INSERT INTO legal_consent_records (id, patient_id, case_id, template_jurisdiction, esign_signature, ip_address, document_hash, record_retention_until)
+    VALUES
+    (
+        '97777777-7777-7777-7777-777777777777',
+        '11111111-1111-1111-1111-111111111111',
+        'c1111111-1111-1111-1111-111111111111',
+        'US-CA',
+        'HIPAA Data Sharing Consent',
+        '192.168.1.104',
+        'SHA-256: 4f18e9a...',
+        '2036-06-12'
+    ),
+    (
+        '97777777-7777-7777-7777-777777777778',
+        '11111111-1111-1111-1111-111111111111',
+        'c1111111-1111-1111-1111-111111111111',
+        'US-CA',
+        'Aligner Treatment Informed Consent',
+        '192.168.1.104',
+        'SHA-256: 9b2d8e...',
+        '2036-06-12'
+    )
+    ON CONFLICT (id) DO NOTHING;
+  END IF;
+END $$;

@@ -161,17 +161,27 @@ CREATE INDEX IF NOT EXISTS idx_quality_scores_org  ON treatment_quality_scores(o
 
 -- ── Phase 37: Pricing Tiers ─────────────────────────────────────────────────
 
--- Upsert the two canonical subscription plans
-INSERT INTO subscription_plans (slug, name, price_usd_cents, max_cases_per_month, is_unlimited, is_active)
-VALUES
-  ('unlimited_professional', 'Unlimited Professional', 49900, NULL, true, true),
-  ('payg', 'Pay-As-You-Go', 0, NULL, false, true)
-ON CONFLICT (slug) DO UPDATE SET
-  name=EXCLUDED.name,
-  price_usd_cents=EXCLUDED.price_usd_cents,
-  max_cases_per_month=EXCLUDED.max_cases_per_month,
-  is_unlimited=EXCLUDED.is_unlimited,
-  is_active=EXCLUDED.is_active;
+-- Upsert the two canonical subscription plans.
+-- Use 0 for max_cases_per_month (avoids NOT NULL constraint on some VPS schemas);
+-- is_unlimited=true signals "no limit" independently of this value.
+-- Guard on is_unlimited column existence for VPS schema compatibility.
+DO $$ BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.tables
+             WHERE table_name = 'subscription_plans' AND table_schema = 'public')
+  AND EXISTS (SELECT 1 FROM information_schema.columns
+              WHERE table_name = 'subscription_plans' AND column_name = 'is_unlimited'
+              AND table_schema = 'public') THEN
+    INSERT INTO subscription_plans (slug, name, price_usd_cents, max_cases_per_month, is_unlimited, is_active)
+    VALUES
+      ('unlimited_professional', 'Unlimited Professional', 49900, 0, true, true),
+      ('payg', 'Pay-As-You-Go', 0, 0, false, true)
+    ON CONFLICT (slug) DO UPDATE SET
+      name             = EXCLUDED.name,
+      price_usd_cents  = EXCLUDED.price_usd_cents,
+      is_unlimited     = EXCLUDED.is_unlimited,
+      is_active        = EXCLUDED.is_active;
+  END IF;
+END $$;
 
 CREATE TABLE IF NOT EXISTS export_transactions (
   id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),

@@ -129,8 +129,9 @@ CREATE INDEX IF NOT EXISTS idx_audit_events_resource
 -- ─── Export / billing ─────────────────────────────────────────────────────────
 
 DO $$ BEGIN
-  IF EXISTS (SELECT 1 FROM information_schema.tables
-             WHERE table_name = 'export_packages' AND table_schema = 'public') THEN
+  IF EXISTS (SELECT 1 FROM information_schema.columns
+             WHERE table_name = 'export_packages' AND column_name = 'case_id'
+             AND table_schema = 'public') THEN
     EXECUTE 'CREATE INDEX IF NOT EXISTS idx_export_packages_case_id ON export_packages (case_id)';
   END IF;
 END $$;

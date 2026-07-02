@@ -60,9 +60,29 @@ CREATE TABLE IF NOT EXISTS appointments (
   created_at      timestamptz DEFAULT now(),
   updated_at      timestamptz DEFAULT now()
 );
-CREATE INDEX IF NOT EXISTS idx_appointments_case_id ON appointments(case_id);
-CREATE INDEX IF NOT EXISTS idx_appointments_org_date ON appointments(organization_id, scheduled_at);
-CREATE INDEX IF NOT EXISTS idx_appointments_status ON appointments(status, scheduled_at) WHERE status IN ('scheduled','confirmed');
+DO $$ BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.columns
+             WHERE table_name = 'appointments' AND column_name = 'case_id'
+             AND table_schema = 'public') THEN
+    EXECUTE 'CREATE INDEX IF NOT EXISTS idx_appointments_case_id ON appointments(case_id)';
+  END IF;
+END $$;
+DO $$ BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.columns
+             WHERE table_name = 'appointments' AND column_name = 'organization_id'
+             AND table_schema = 'public') THEN
+    EXECUTE 'CREATE INDEX IF NOT EXISTS idx_appointments_org_date ON appointments(organization_id, scheduled_at)';
+  END IF;
+END $$;
+DO $$ BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.columns
+             WHERE table_name = 'appointments' AND column_name = 'status'
+             AND table_schema = 'public') THEN
+    EXECUTE 'CREATE INDEX IF NOT EXISTS idx_appointments_status
+      ON appointments(status, scheduled_at)
+      WHERE status IN (''scheduled'',''confirmed'')';
+  END IF;
+END $$;
 
 CREATE TABLE IF NOT EXISTS treatment_milestones (
   id              uuid        PRIMARY KEY DEFAULT uuid_generate_v4(),

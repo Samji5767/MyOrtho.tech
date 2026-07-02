@@ -11,13 +11,36 @@ VALUES (
 ON CONFLICT (id) DO NOTHING;
 
 -- 2. Create auth user for Dr. Sarah Jenkins
-INSERT INTO auth.users (id, email, raw_user_meta_data)
-VALUES (
-    'e1b2c3d4-5e6f-7a8b-9c0d-1e2f3a4b5c6d', 
-    'sarah.jenkins@myortho.tech', 
-    '{"role": "dentist", "organizationId": "d0b1a2c3-4d5e-6f7a-8b9c-0d1e2f3a4b5c"}'::jsonb
-)
-ON CONFLICT (id) DO NOTHING;
+-- On Supabase: insert into auth.users (managed auth schema).
+-- On VPS: insert into auth_users (migration 001); password_hash is a seed placeholder
+--         and must be changed before the account is used in production.
+DO $$ BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.schemata WHERE schema_name = 'auth')
+  AND EXISTS (SELECT 1 FROM information_schema.tables
+              WHERE table_schema = 'auth' AND table_name = 'users') THEN
+    EXECUTE $q$
+      INSERT INTO auth.users (id, email, raw_user_meta_data)
+      VALUES (
+        'e1b2c3d4-5e6f-7a8b-9c0d-1e2f3a4b5c6d',
+        'sarah.jenkins@myortho.tech',
+        '{"role": "dentist", "organizationId": "d0b1a2c3-4d5e-6f7a-8b9c-0d1e2f3a4b5c"}'::jsonb
+      )
+      ON CONFLICT (id) DO NOTHING
+    $q$;
+  ELSIF EXISTS (SELECT 1 FROM information_schema.tables
+                WHERE table_schema = 'public' AND table_name = 'auth_users') THEN
+    INSERT INTO auth_users (id, email, password_hash, full_name, role, organization_id)
+    VALUES (
+      'e1b2c3d4-5e6f-7a8b-9c0d-1e2f3a4b5c6d',
+      'sarah.jenkins@myortho.tech',
+      '$2b$12$SEED.DATA.ONLY.CHANGE.BEFORE.PRODUCTION.USE.XXXXXX',
+      'Dr. Sarah Jenkins',
+      'orthodontist',
+      'd0b1a2c3-4d5e-6f7a-8b9c-0d1e2f3a4b5c'
+    )
+    ON CONFLICT (id) DO NOTHING;
+  END IF;
+END $$;
 
 -- 3. Create profile for Dr. Sarah Jenkins
 INSERT INTO profiles (id, email, full_name, role, organization_id, is_active)

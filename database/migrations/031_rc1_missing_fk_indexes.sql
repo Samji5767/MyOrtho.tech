@@ -44,11 +44,18 @@ END $$;
 
 -- ── Manufacturing / print jobs ────────────────────────────────────────────────
 
--- print_jobs.case_id → cases (for case-level manufacturing queries)
-CREATE INDEX IF NOT EXISTS idx_print_jobs_case_id
-  ON print_jobs(case_id);
+-- print_jobs.case_id → cases
+-- schema.sql creates print_jobs WITHOUT case_id; migration 026 adds it only when
+-- the table doesn't already exist. Guard to avoid failing on legacy VPS installs.
+DO $$ BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.columns
+             WHERE table_name = 'print_jobs' AND column_name = 'case_id'
+             AND table_schema = 'public') THEN
+    EXECUTE 'CREATE INDEX IF NOT EXISTS idx_print_jobs_case_id ON print_jobs(case_id)';
+  END IF;
+END $$;
 
--- print_jobs.created_by → auth_users
+-- print_jobs.created_by → auth_users (added by migration 003)
 CREATE INDEX IF NOT EXISTS idx_print_jobs_created_by
   ON print_jobs(created_by);
 

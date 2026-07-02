@@ -1,554 +1,372 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import {
-  AlertTriangle,
-  BarChart3,
-  CheckCircle2,
-  Loader2,
-  Minus,
-  Plus,
-  RefreshCw,
-  Save,
-  Scissors,
-  Stethoscope,
-  X,
-} from "lucide-react";
+import React, { useCallback, useEffect, useState } from "react";
+import { AlertCircle, Info, RefreshCw } from "lucide-react";
 import { Button, Card } from "@/components/DesignSystem";
 import {
   getLatestAnalysis,
-  createAnalysis,
-  updateAnalysis,
   type CaseAnalysis,
   type IprEntry,
 } from "@/lib/api/analysis";
 
-// ─── Bolton norm ranges ───────────────────────────────────────────────────────
+// ─── Bolton thresholds (Bolton 1958 / 1962 published norms) ─────────────────
+const BOLTON_OVERALL  = { mean: 91.3, sd: 1.91, low: 88.0, high: 94.5 };
+const BOLTON_ANTERIOR = { mean: 77.2, sd: 1.65, low: 74.0, high: 80.5 };
 
-const BOLTON_OVERALL_NORM = { mean: 91.3, low: 87.5, high: 95.1 };
-const BOLTON_ANTERIOR_NORM = { mean: 77.2, low: 73.9, high: 80.5 };
+// ─── Badge ────────────────────────────────────────────────────────────────────
+type BadgeColor = "green" | "yellow" | "orange" | "red";
 
-// ─── Default tooth widths (FDI notation) ─────────────────────────────────────
-
-const DEFAULT_MAX: Record<string, number> = {
-  "17": 11.0, "16": 10.0, "15": 7.0, "14": 7.2,
-  "13": 8.0, "12": 6.5, "11": 8.5,
-  "21": 8.5, "22": 6.5, "23": 8.0,
-  "24": 7.2, "25": 7.0, "26": 10.0, "27": 11.0,
-};
-
-const DEFAULT_MAN: Record<string, number> = {
-  "47": 10.5, "46": 10.5, "45": 7.1, "44": 7.0,
-  "43": 6.9, "42": 5.9, "41": 5.4,
-  "31": 5.4, "32": 5.9, "33": 6.9,
-  "34": 7.0, "35": 7.1, "36": 10.5, "37": 10.5,
-};
-
-// Anterior 6 FDI keys for each arch
-const MAX_ANTERIOR = ["13", "12", "11", "21", "22", "23"];
-const MAN_ANTERIOR = ["33", "32", "31", "41", "42", "43"];
-
-// ─── Bolton calculation ───────────────────────────────────────────────────────
-
-function computeBolton(max: Record<string, number>, man: Record<string, number>) {
-  const sumMax12 = Object.values(max).reduce((a, b) => a + b, 0);
-  const sumMan12 = Object.values(man).reduce((a, b) => a + b, 0);
-  const overall = sumMax12 > 0 ? (sumMan12 / sumMax12) * 100 : null;
-
-  const sumMax6 = MAX_ANTERIOR.reduce((a, k) => a + (max[k] ?? 0), 0);
-  const sumMan6 = MAN_ANTERIOR.reduce((a, k) => a + (man[k] ?? 0), 0);
-  const anterior = sumMax6 > 0 ? (sumMan6 / sumMax6) * 100 : null;
-
-  return { overall, anterior };
-}
-
-// ─── Complexity score ─────────────────────────────────────────────────────────
-
-function computeComplexity(opts: {
-  overjet: number;
-  overbite: number;
-  upperCrowding: number;
-  lowerCrowding: number;
-}) {
-  let score = 20;
-  if (opts.overjet > 5)        score += 30;
-  else if (opts.overjet > 3.5) score += 15;
-  else if (opts.overjet < 0)   score += 35;
-  if (opts.overbite > 4)       score += 15;
-  else if (opts.overbite < 0)  score += 20;
-  if (opts.upperCrowding > 6)  score += 20;
-  else if (opts.upperCrowding > 3) score += 10;
-  if (opts.lowerCrowding > 6)  score += 20;
-  else if (opts.lowerCrowding > 3) score += 10;
-  return Math.min(score, 100);
-}
-
-// ─── Gauge bar ────────────────────────────────────────────────────────────────
-
-function BoltonGauge({ value, norm, label }: {
-  value: number | null;
-  norm: { mean: number; low: number; high: number };
-  label: string;
-}) {
-  if (value === null) return null;
-  const isHigh = value > norm.high;
-  const isLow  = value < norm.low;
-  const tone   = isHigh || isLow ? "text-amber-600" : "text-emerald-600";
-  const msg    = isHigh ? "Upper excess" : isLow ? "Lower excess" : "Within norm";
-
+function Badge({ label, color }: { label: string; color: BadgeColor }) {
+  const cls: Record<BadgeColor, string> = {
+    green:  "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400",
+    yellow: "bg-amber-100  text-amber-700  dark:bg-amber-900/30  dark:text-amber-400",
+    orange: "bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400",
+    red:    "bg-rose-100   text-rose-700   dark:bg-rose-900/30   dark:text-rose-400",
+  };
   return (
-    <div className="space-y-1">
-      <div className="flex items-center justify-between text-xs">
-        <span className="font-semibold text-[color:var(--foreground)]">{label}</span>
-        <span className={`font-black tabular-nums ${tone}`}>{value.toFixed(1)}%</span>
+    <span
+      className={`inline-block rounded px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${cls[color]}`}
+    >
+      {label}
+    </span>
+  );
+}
+
+// ─── Helpers: Bolton ──────────────────────────────────────────────────────────
+function boltonColor(value: number, low: number, high: number): BadgeColor {
+  return value < low || value > high ? "yellow" : "green";
+}
+function boltonLabel(value: number, low: number, high: number): string {
+  if (value < low)  return "Mandibular excess";
+  if (value > high) return "Maxillary excess";
+  return "Within norm";
+}
+
+function BoltonRow({
+  label,
+  value,
+  norm,
+}: {
+  label: string;
+  value: number | null;
+  norm: { mean: number; sd: number; low: number; high: number };
+}) {
+  return (
+    <div className="py-2 space-y-1">
+      <div className="flex items-center justify-between gap-3 text-xs">
+        <span className="text-secondary">{label}</span>
+        {value !== null ? (
+          <div className="flex items-center gap-2">
+            <span className="tabular-nums font-semibold text-foreground">{value.toFixed(1)}%</span>
+            <Badge
+              label={boltonLabel(value, norm.low, norm.high)}
+              color={boltonColor(value, norm.low, norm.high)}
+            />
+          </div>
+        ) : (
+          <span className="italic text-secondary text-[11px]">Not measured</span>
+        )}
       </div>
-      <div className="relative h-2 overflow-hidden rounded-full bg-[color:var(--muted)]/40">
-        <div
-          className={`h-full rounded-full transition-all ${isHigh || isLow ? "bg-amber-400" : "bg-emerald-500"}`}
-          style={{ width: `${Math.min(100, Math.max(0, ((value - 70) / 30) * 100))}%` }}
-        />
-        {/* Norm range marker */}
-        <div
-          className="absolute top-0 h-full border-x border-white/60 bg-emerald-500/20"
-          style={{
-            left:  `${((norm.low  - 70) / 30) * 100}%`,
-            width: `${((norm.high - norm.low) / 30) * 100}%`,
-          }}
-        />
-      </div>
-      <p className={`text-[10px] font-semibold ${tone}`}>
-        {msg} · norm {norm.low}–{norm.high}%
+      <p className="text-[10px] text-secondary pl-0.5">
+        Norm {norm.mean}% ± {norm.sd} SD &nbsp;·&nbsp; range {norm.low}–{norm.high}%
       </p>
     </div>
   );
 }
 
-// ─── Tooth width row ──────────────────────────────────────────────────────────
+// ─── Helpers: Overjet ─────────────────────────────────────────────────────────
+function overjetInfo(v: number | null): { color: BadgeColor; label: string } {
+  if (v === null) return { color: "green",  label: "—" };
+  if (v < 0)      return { color: "red",    label: "Underbite" };
+  if (v <= 3)     return { color: "green",  label: "Normal" };
+  if (v <= 6)     return { color: "yellow", label: "Increased" };
+  return            { color: "red",    label: "Severe" };
+}
 
-function ToothRow({ fdi, value, onChange }: {
-  fdi: string;
-  value: number;
-  onChange: (v: number) => void;
+// ─── Helpers: Overbite ────────────────────────────────────────────────────────
+function overbiteInfo(v: number | null): { color: BadgeColor; label: string } {
+  if (v === null) return { color: "green",  label: "—" };
+  if (v < 0)      return { color: "red",    label: "Open bite" };
+  if (v <= 3)     return { color: "green",  label: "Normal" };
+  if (v <= 5)     return { color: "yellow", label: "Deep bite" };
+  return            { color: "red",    label: "Severe deep bite" };
+}
+
+// ─── Helpers: Angle class ─────────────────────────────────────────────────────
+function angleClassColor(cls: string | null): BadgeColor {
+  if (!cls)                  return "green";
+  if (cls.startsWith("Class III")) return "red";
+  if (cls.startsWith("Class II"))  return "orange";
+  return "green"; // Class I
+}
+
+// ─── Helpers: Crowding (positive = spacing, negative = crowding) ──────────────
+function crowdingInfo(mm: number | null): { color: BadgeColor; label: string } {
+  if (mm === null) return { color: "green",  label: "—" };
+  if (mm > 0)      return { color: "green",  label: "Spacing" };
+  if (mm >= -4)    return { color: "yellow", label: "Mild crowding" };
+  if (mm >= -8)    return { color: "orange", label: "Moderate crowding" };
+  return             { color: "red",    label: "Severe crowding" };
+}
+
+// ─── Generic metric row ───────────────────────────────────────────────────────
+function MetricRow({
+  label,
+  value,
+  unit,
+  color,
+  status,
+}: {
+  label: string;
+  value: number | null;
+  unit?: string;
+  color: BadgeColor;
+  status: string;
 }) {
   return (
-    <div className="flex items-center gap-2">
-      <span className="w-8 shrink-0 text-center text-[10px] font-bold text-[color:var(--muted-foreground)]">{fdi}</span>
-      <input
-        type="range"
-        min={4.0}
-        max={14.0}
-        step={0.1}
-        value={value}
-        onChange={e => onChange(parseFloat(e.target.value))}
-        className="h-1 flex-1 cursor-pointer appearance-none rounded-full bg-[color:var(--border)] accent-[color:var(--primary)]"
-      />
-      <span className="w-12 shrink-0 text-right text-[10px] tabular-nums text-[color:var(--foreground)]">{value.toFixed(1)}</span>
+    <div className="flex items-center justify-between gap-3 py-2 text-xs">
+      <span className="shrink-0 text-secondary">{label}</span>
+      <div className="flex items-center gap-2">
+        {value !== null ? (
+          <span className="tabular-nums font-semibold text-foreground">
+            {value.toFixed(1)}{unit}
+          </span>
+        ) : (
+          <span className="italic text-secondary text-[11px]">—</span>
+        )}
+        <Badge label={status} color={color} />
+      </div>
     </div>
   );
 }
 
-// ─── IPR schedule row ─────────────────────────────────────────────────────────
-
-function IprRow({ entry, onChange, onRemove }: {
-  entry: IprEntry;
-  onChange: (e: IprEntry) => void;
-  onRemove: () => void;
-}) {
+// ─── Complexity bar (0–10 scale) ──────────────────────────────────────────────
+function ComplexityBar({ score }: { score: number | null }) {
+  if (score === null) {
+    return <span className="text-xs italic text-secondary">Not scored</span>;
+  }
+  const pct   = Math.min(100, Math.max(0, (score / 10) * 100));
+  const label = score === 0 ? "Simple" : score <= 3 ? "Moderate" : score <= 6 ? "Complex" : "Severe";
+  const bar   =
+    score === 0  ? "bg-emerald-500" :
+    score <= 3   ? "bg-amber-400"   :
+    score <= 6   ? "bg-orange-500"  :
+                   "bg-rose-500";
   return (
-    <div className="flex items-center gap-2 rounded-lg border border-[color:var(--border)] px-3 py-2">
-      <div className="flex gap-1.5 items-center flex-1 flex-wrap">
-        <span className="text-[10px] font-semibold text-[color:var(--muted-foreground)]">Stage</span>
-        <input
-          type="number"
-          min={1}
-          max={60}
-          value={entry.stage}
-          onChange={e => onChange({ ...entry, stage: parseInt(e.target.value, 10) || 1 })}
-          className="w-12 rounded border border-[color:var(--border)] bg-[color:var(--background)] px-1.5 py-0.5 text-xs text-[color:var(--foreground)] outline-none"
-        />
-        <input
-          type="text"
-          placeholder="FDI A"
-          value={entry.toothA}
-          onChange={e => onChange({ ...entry, toothA: e.target.value })}
-          className="w-14 rounded border border-[color:var(--border)] bg-[color:var(--background)] px-1.5 py-0.5 text-xs text-[color:var(--foreground)] outline-none"
-        />
-        <X size={10} className="text-[color:var(--muted-foreground)]" />
-        <input
-          type="text"
-          placeholder="FDI B"
-          value={entry.toothB}
-          onChange={e => onChange({ ...entry, toothB: e.target.value })}
-          className="w-14 rounded border border-[color:var(--border)] bg-[color:var(--background)] px-1.5 py-0.5 text-xs text-[color:var(--foreground)] outline-none"
-        />
-        <input
-          type="number"
-          min={0.1}
-          max={2.0}
-          step={0.05}
-          value={entry.amountMm}
-          onChange={e => onChange({ ...entry, amountMm: parseFloat(e.target.value) || 0.1 })}
-          className="w-16 rounded border border-[color:var(--border)] bg-[color:var(--background)] px-1.5 py-0.5 text-xs text-[color:var(--foreground)] outline-none"
-        />
-        <span className="text-[10px] text-[color:var(--muted-foreground)]">mm</span>
+    <div className="space-y-1">
+      <div className="flex items-center justify-between text-xs">
+        <span className="font-semibold text-foreground">{label}</span>
+        <span className="tabular-nums text-secondary">{score}/10</span>
       </div>
-      <button type="button" onClick={onRemove} className="shrink-0 text-red-400 hover:text-red-600">
-        <X size={13} />
-      </button>
+      <div className="h-2 overflow-hidden rounded-full bg-slate-200 dark:bg-slate-700">
+        <div className={`h-full rounded-full transition-all ${bar}`} style={{ width: `${pct}%` }} />
+      </div>
     </div>
+  );
+}
+
+// ─── Loading skeleton ─────────────────────────────────────────────────────────
+function Skeleton() {
+  return (
+    <div className="space-y-4 animate-pulse">
+      {[1, 2, 3, 4].map(i => (
+        <div key={i} className="rounded-xl border border-border bg-card p-5">
+          <div className="mb-3 h-4 w-1/3 rounded bg-slate-200 dark:bg-slate-700" />
+          <div className="space-y-2">
+            <div className="h-3 rounded bg-slate-100 dark:bg-slate-800" />
+            <div className="h-3 w-5/6 rounded bg-slate-100 dark:bg-slate-800" />
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ─── Section wrapper ──────────────────────────────────────────────────────────
+function Section({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <Card className="p-5">
+      <h3 className="mb-1 text-sm font-semibold text-foreground">{title}</h3>
+      <div className="divide-y divide-border/60">{children}</div>
+    </Card>
   );
 }
 
 // ─── Main panel ───────────────────────────────────────────────────────────────
-
 export default function ClinicalAnalysisPanel({ caseId }: { caseId: string }) {
   const [loading, setLoading] = useState(true);
-  const [saving, setSaving]   = useState(false);
-  const [saved, setSaved]     = useState(false);
-  const [error, setError]     = useState<string | null>(null);
-  const [existingId, setExistingId] = useState<string | null>(null);
-  const [lastSavedAt, setLastSavedAt] = useState<string | null>(null);
+  const [error,   setError]   = useState<string | null>(null);
+  const [data,    setData]    = useState<CaseAnalysis | null>(null);
 
-  // Measurements
-  const [maxWidths, setMaxWidths] = useState<Record<string, number>>({ ...DEFAULT_MAX });
-  const [manWidths, setManWidths] = useState<Record<string, number>>({ ...DEFAULT_MAN });
-  const [overjet,       setOverjet]       = useState(2.5);
-  const [overbite,      setOverbite]      = useState(2.0);
-  const [upperCrowding, setUpperCrowding] = useState(2.0);
-  const [lowerCrowding, setLowerCrowding] = useState(1.5);
-  const [angleClass,    setAngleClass]    = useState<string>("Class I");
-  const [notes,         setNotes]         = useState("");
-
-  // IPR schedule
-  const [iprSchedule, setIprSchedule] = useState<IprEntry[]>([]);
-
-  // Live Bolton + complexity
-  const { overall, anterior } = useMemo(
-    () => computeBolton(maxWidths, manWidths),
-    [maxWidths, manWidths],
-  );
-  const complexity = useMemo(
-    () => computeComplexity({ overjet, overbite, upperCrowding, lowerCrowding }),
-    [overjet, overbite, upperCrowding, lowerCrowding],
-  );
-
-  // Load latest analysis from backend
-  const load = useCallback(async () => {
+  const loadAnalysis = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const data = await getLatestAnalysis(caseId);
-      if (data) {
-        setExistingId(data.id);
-        setLastSavedAt(data.updatedAt ?? data.createdAt);
-        if (data.toothMeasurements && Object.keys(data.toothMeasurements).length > 0) {
-          // split back into max/man by key range
-          const max: Record<string, number> = {};
-          const man: Record<string, number> = {};
-          for (const [k, v] of Object.entries(data.toothMeasurements)) {
-            const n = parseInt(k, 10);
-            if (n >= 11 && n <= 28) max[k] = v;
-            else if (n >= 31 && n <= 48) man[k] = v;
-          }
-          if (Object.keys(max).length > 0) setMaxWidths({ ...DEFAULT_MAX, ...max });
-          if (Object.keys(man).length > 0) setManWidths({ ...DEFAULT_MAN, ...man });
-        }
-        if (data.angleClass)       setAngleClass(data.angleClass);
-        if (data.overjetMm != null) setOverjet(data.overjetMm);
-        if (data.overbiteM != null) setOverbite(data.overbiteM);
-        if (data.upperCrowdingMm != null) setUpperCrowding(data.upperCrowdingMm);
-        if (data.lowerCrowdingMm != null) setLowerCrowding(data.lowerCrowdingMm);
-        if (data.iprSchedule?.length)     setIprSchedule(data.iprSchedule);
-        if (data.notes)            setNotes(data.notes);
-      }
+      const result = await getLatestAnalysis(caseId);
+      setData(result);
     } catch (e: unknown) {
-      if (e instanceof Error && e.message.includes("403")) {
-        setError("Access denied — clinical analysis requires authentication.");
-      }
-      // Silently ignore 404 (no analysis yet)
+      setError(e instanceof Error ? e.message : "Failed to load analysis");
     } finally {
       setLoading(false);
     }
   }, [caseId]);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => { loadAnalysis(); }, [loadAnalysis]);
 
-  // Auto-dismiss saved toast
-  const savedTimer = useRef<ReturnType<typeof setTimeout>>();
-  function flashSaved() {
-    setSaved(true);
-    clearTimeout(savedTimer.current);
-    savedTimer.current = setTimeout(() => setSaved(false), 3000);
-  }
+  // ── Loading ────────────────────────────────────────────────────────────────
+  if (loading) return <Skeleton />;
 
-  async function handleSave() {
-    setSaving(true);
-    setError(null);
-    const dto = {
-      boltonOverall:   overall  ?? undefined,
-      boltonAnterior:  anterior ?? undefined,
-      toothMeasurements: { ...maxWidths, ...manWidths },
-      angleClass,
-      overjetMm:        overjet,
-      overbiteM:        overbite,
-      upperCrowdingMm:  upperCrowding,
-      lowerCrowdingMm:  lowerCrowding,
-      iprSchedule,
-      complexityScore:  complexity,
-      notes:            notes || undefined,
-    };
-    try {
-      let saved: CaseAnalysis;
-      if (existingId) {
-        saved = await updateAnalysis(caseId, existingId, dto);
-      } else {
-        saved = await createAnalysis(caseId, dto);
-        setExistingId(saved.id);
-      }
-      setLastSavedAt(saved.updatedAt ?? saved.createdAt);
-      flashSaved();
-    } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : "Save failed");
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  function addIprEntry() {
-    setIprSchedule(prev => [...prev, { stage: 1, toothA: "12", toothB: "11", amountMm: 0.2 }]);
-  }
-
-  if (loading) {
+  // ── Error ──────────────────────────────────────────────────────────────────
+  if (error) {
     return (
-      <div className="flex h-40 items-center justify-center gap-3 text-[color:var(--muted-foreground)]">
-        <Loader2 size={18} className="animate-spin" />
-        <span className="text-sm">Loading analysis…</span>
+      <div className="flex items-start gap-3 rounded-xl border border-rose-200/60 bg-rose-50/60 px-4 py-3 text-sm text-rose-700 dark:border-rose-700/30 dark:bg-rose-900/10 dark:text-rose-400">
+        <AlertCircle size={15} className="mt-0.5 shrink-0" />
+        <div>
+          <p className="font-medium">Could not load analysis</p>
+          <p className="mt-0.5 text-xs opacity-80">{error}</p>
+          <button
+            onClick={loadAnalysis}
+            className="mt-2 text-xs underline underline-offset-2 hover:no-underline"
+          >
+            Try again
+          </button>
+        </div>
       </div>
     );
   }
 
-  const complexityColor = complexity >= 70 ? "text-red-500" : complexity >= 40 ? "text-amber-500" : "text-emerald-600";
+  // ── Empty state ────────────────────────────────────────────────────────────
+  if (!data) {
+    return (
+      <div className="flex flex-col items-center justify-center gap-3 rounded-xl border border-border bg-slate-50/60 px-6 py-12 text-center dark:bg-slate-900/40">
+        <Info size={28} className="text-slate-400" />
+        <p className="text-sm font-medium text-secondary">No analysis on file</p>
+        <p className="max-w-xs text-xs text-secondary">
+          Run a clinical analysis to see Bolton ratios, occlusal measurements, arch space
+          evaluation, and IPR planning.
+        </p>
+        <Button variant="secondary" size="sm" onClick={loadAnalysis}>
+          <RefreshCw size={13} /> Refresh
+        </Button>
+      </div>
+    );
+  }
+
+  // ── Derived values ─────────────────────────────────────────────────────────
+  const iprEntries = data.iprSchedule ?? [];
+  const iprTotal   = iprEntries.reduce((sum, e) => sum + e.amountMm, 0);
+  const oj         = overjetInfo(data.overjetMm);
+  const ob         = overbiteInfo(data.overbiteM);
+  const upper      = crowdingInfo(data.upperCrowdingMm);
+  const lower      = crowdingInfo(data.lowerCrowdingMm);
 
   return (
     <div className="space-y-4">
 
-      {/* Disclaimer */}
-      <div className="flex items-start gap-2 rounded-xl border border-amber-200/60 bg-amber-50/60 px-3 py-2 text-xs text-amber-800 dark:border-amber-500/20 dark:bg-amber-500/10 dark:text-amber-300">
-        <AlertTriangle size={12} className="mt-0.5 shrink-0" />
-        Clinical analysis indices are workflow tools only. Not diagnostically validated. All values require
-        review and sign-off by a licensed orthodontist before clinical use.
-      </div>
-
-      {/* Results summary */}
-      <Card className="p-5">
-        <div className="mb-4 flex items-center justify-between gap-2">
-          <div className="flex items-center gap-2">
-            <BarChart3 size={15} className="text-[color:var(--primary)]" />
-            <h3 className="text-sm font-semibold text-[color:var(--foreground)]">Analysis Summary</h3>
-          </div>
-          <div className="flex items-center gap-2">
-            {lastSavedAt && (
-              <span className="text-[10px] text-[color:var(--muted-foreground)]">
-                Saved {new Date(lastSavedAt).toLocaleTimeString()}
-              </span>
-            )}
-            {saved && (
-              <span className="flex items-center gap-1 text-[10px] font-bold text-emerald-600">
-                <CheckCircle2 size={11} /> Saved
-              </span>
-            )}
-          </div>
-        </div>
-
-        <div className="grid gap-4 sm:grid-cols-2">
-          {/* Bolton ratios */}
-          <div className="space-y-3">
-            <BoltonGauge value={overall}  norm={BOLTON_OVERALL_NORM}  label="Bolton Overall (12:12)" />
-            <BoltonGauge value={anterior} norm={BOLTON_ANTERIOR_NORM} label="Bolton Anterior (6:6)" />
-          </div>
-
-          {/* Classification + complexity */}
-          <div className="space-y-3">
-            <div>
-              <p className="text-[10px] font-semibold uppercase tracking-wider text-[color:var(--muted-foreground)]">Angle Classification</p>
-              <select
-                value={angleClass}
-                onChange={e => setAngleClass(e.target.value)}
-                className="mt-1 w-full rounded-lg border border-[color:var(--border)] bg-[color:var(--card)] px-3 py-2 text-sm font-bold text-[color:var(--foreground)] outline-none focus:ring-2 focus:ring-[color:var(--primary)]/30"
-              >
-                {["Class I", "Class II", "Class II Div 1", "Class II Div 2", "Class III"].map(c => (
-                  <option key={c} value={c}>{c}</option>
-                ))}
-              </select>
-            </div>
-
-            <div>
-              <div className="mb-1 flex items-center justify-between">
-                <p className="text-[10px] font-semibold uppercase tracking-wider text-[color:var(--muted-foreground)]">Case Complexity</p>
-                <span className={`text-lg font-black tabular-nums ${complexityColor}`}>{complexity}/100</span>
-              </div>
-              <div className="h-2 overflow-hidden rounded-full bg-[color:var(--muted)]/40">
-                <div
-                  className={`h-full rounded-full transition-all ${complexity >= 70 ? "bg-red-500" : complexity >= 40 ? "bg-amber-400" : "bg-emerald-500"}`}
-                  style={{ width: `${complexity}%` }}
-                />
-              </div>
-              <p className="mt-1 text-[10px] text-[color:var(--muted-foreground)]">
-                {complexity < 40 ? "Straightforward" : complexity < 70 ? "Moderate complexity" : "Complex — multi-phase likely"}
-              </p>
-            </div>
-          </div>
-        </div>
-      </Card>
-
-      {/* Clinical measurements */}
-      <Card className="p-5">
-        <div className="mb-4 flex items-center gap-2">
-          <Stethoscope size={15} className="text-[color:var(--primary)]" />
-          <h3 className="text-sm font-semibold text-[color:var(--foreground)]">Clinical Measurements</h3>
-        </div>
-
-        <div className="grid gap-5 sm:grid-cols-2">
-          {[
-            { label: "Overjet",          val: overjet,       set: setOverjet,       min: -5, max: 15, step: 0.1, unit: "mm", warn: overjet > 5 || overjet < 0 },
-            { label: "Overbite",         val: overbite,      set: setOverbite,      min: -5, max: 10, step: 0.1, unit: "mm", warn: overbite > 4 || overbite < 0 },
-            { label: "Upper arch crowding (+) / spacing (−)", val: upperCrowding, set: setUpperCrowding, min: -5, max: 12, step: 0.5, unit: "mm", warn: Math.abs(upperCrowding) > 6 },
-            { label: "Lower arch crowding (+) / spacing (−)", val: lowerCrowding, set: setLowerCrowding, min: -5, max: 12, step: 0.5, unit: "mm", warn: Math.abs(lowerCrowding) > 6 },
-          ].map(({ label, val, set, min, max, step, unit, warn }) => (
-            <div key={label}>
-              <div className="mb-1 flex items-center justify-between">
-                <span className="text-[10px] font-semibold text-[color:var(--muted-foreground)]">{label}</span>
-                <span className={`text-sm font-black tabular-nums ${warn ? "text-amber-500" : "text-[color:var(--foreground)]"}`}>
-                  {val > 0 ? "+" : ""}{val.toFixed(1)} {unit}
-                </span>
-              </div>
-              <input
-                type="range" min={min} max={max} step={step} value={val}
-                onChange={e => set(parseFloat(e.target.value))}
-                className="h-1 w-full cursor-pointer appearance-none rounded-full bg-[color:var(--border)] accent-[color:var(--primary)]"
-              />
-            </div>
-          ))}
-        </div>
-      </Card>
-
-      {/* Bolton tooth widths */}
-      <Card className="p-5">
-        <details>
-          <summary className="flex cursor-pointer items-center gap-2 text-sm font-semibold text-[color:var(--foreground)]">
-            <BarChart3 size={14} className="text-[color:var(--primary)]" />
-            Tooth Widths — Maxillary (FDI 11–27)
-            <span className="ml-auto text-xs font-normal text-[color:var(--muted-foreground)]">
-              Σ {Object.values(maxWidths).reduce((a, b) => a + b, 0).toFixed(1)} mm
-            </span>
-          </summary>
-          <div className="mt-3 space-y-1.5">
-            {Object.entries(maxWidths).sort(([a], [b]) => parseInt(a) - parseInt(b)).map(([fdi, v]) => (
-              <ToothRow key={fdi} fdi={fdi} value={v}
-                onChange={val => setMaxWidths(prev => ({ ...prev, [fdi]: val }))} />
-            ))}
-          </div>
-        </details>
-      </Card>
-
-      <Card className="p-5">
-        <details>
-          <summary className="flex cursor-pointer items-center gap-2 text-sm font-semibold text-[color:var(--foreground)]">
-            <BarChart3 size={14} className="text-[color:var(--primary)]" />
-            Tooth Widths — Mandibular (FDI 31–47)
-            <span className="ml-auto text-xs font-normal text-[color:var(--muted-foreground)]">
-              Σ {Object.values(manWidths).reduce((a, b) => a + b, 0).toFixed(1)} mm
-            </span>
-          </summary>
-          <div className="mt-3 space-y-1.5">
-            {Object.entries(manWidths).sort(([a], [b]) => parseInt(a) - parseInt(b)).map(([fdi, v]) => (
-              <ToothRow key={fdi} fdi={fdi} value={v}
-                onChange={val => setManWidths(prev => ({ ...prev, [fdi]: val }))} />
-            ))}
-          </div>
-        </details>
-      </Card>
-
-      {/* IPR schedule */}
-      <Card className="p-5">
-        <div className="mb-3 flex items-center justify-between gap-2">
-          <div className="flex items-center gap-2">
-            <Scissors size={14} className="text-[color:var(--primary)]" />
-            <h3 className="text-sm font-semibold text-[color:var(--foreground)]">IPR Schedule</h3>
-          </div>
-          <button
-            type="button"
-            onClick={addIprEntry}
-            className="flex items-center gap-1 rounded-lg border border-[color:var(--border)] px-2.5 py-1 text-xs font-semibold text-[color:var(--muted-foreground)] hover:text-[color:var(--foreground)]"
-          >
-            <Plus size={11} /> Add
-          </button>
-        </div>
-
-        {iprSchedule.length === 0 ? (
-          <p className="text-center text-xs text-[color:var(--muted-foreground)] py-4">No IPR events planned. Click Add to schedule interproximal reduction.</p>
-        ) : (
-          <div className="space-y-2">
-            {iprSchedule.map((entry, i) => (
-              <IprRow
-                key={i}
-                entry={entry}
-                onChange={updated => setIprSchedule(prev => prev.map((e, j) => j === i ? updated : e))}
-                onRemove={() => setIprSchedule(prev => prev.filter((_, j) => j !== i))}
-              />
-            ))}
-          </div>
-        )}
-      </Card>
-
-      {/* Notes */}
-      <Card className="p-5">
-        <label className="mb-2 block text-xs font-semibold text-[color:var(--muted-foreground)]">Clinical Notes</label>
-        <textarea
-          value={notes}
-          onChange={e => setNotes(e.target.value)}
-          rows={3}
-          placeholder="Clinician notes, observations, contraindications…"
-          className="w-full resize-none rounded-lg border border-[color:var(--border)] bg-[color:var(--background)] px-3 py-2.5 text-sm text-[color:var(--foreground)] placeholder:text-[color:var(--muted-foreground)] outline-none focus:ring-2 focus:ring-[color:var(--primary)]/30"
+      {/* Section 1 — Bolton Analysis */}
+      <Section title="Bolton Analysis">
+        <BoltonRow
+          label="Overall ratio (12:12)"
+          value={data.boltonOverall}
+          norm={BOLTON_OVERALL}
         />
-      </Card>
+        <BoltonRow
+          label="Anterior ratio (6:6)"
+          value={data.boltonAnterior}
+          norm={BOLTON_ANTERIOR}
+        />
+      </Section>
 
-      {error && (
-        <div className="flex items-center gap-2 rounded-xl border border-red-200/60 bg-red-50/60 px-3 py-2 text-xs text-red-600 dark:border-red-700/30 dark:bg-red-900/10">
-          <AlertTriangle size={12} className="shrink-0" /> {error}
+      {/* Section 2 — Occlusion */}
+      <Section title="Occlusion">
+        <div className="flex items-center justify-between gap-3 py-2 text-xs">
+          <span className="shrink-0 text-secondary">Angle classification</span>
+          <Badge
+            label={data.angleClass ?? "Not recorded"}
+            color={angleClassColor(data.angleClass)}
+          />
         </div>
+        <MetricRow
+          label="Overjet"
+          value={data.overjetMm}
+          unit=" mm"
+          color={oj.color}
+          status={oj.label}
+        />
+        <MetricRow
+          label="Overbite"
+          value={data.overbiteM}
+          unit=" mm"
+          color={ob.color}
+          status={ob.label}
+        />
+      </Section>
+
+      {/* Section 3 — Arch Space */}
+      <Section title="Arch Space">
+        <MetricRow
+          label="Upper arch"
+          value={data.upperCrowdingMm}
+          unit=" mm"
+          color={upper.color}
+          status={upper.label}
+        />
+        <MetricRow
+          label="Lower arch"
+          value={data.lowerCrowdingMm}
+          unit=" mm"
+          color={lower.color}
+          status={lower.label}
+        />
+        <div className="pt-3 pb-1">
+          <p className="mb-2 text-[11px] font-medium text-secondary">Case complexity</p>
+          <ComplexityBar score={data.complexityScore} />
+        </div>
+      </Section>
+
+      {/* Section 4 — IPR Schedule (only if entries exist) */}
+      {iprEntries.length > 0 && (
+        <Card className="p-5">
+          <h3 className="mb-3 text-sm font-semibold text-foreground">IPR Schedule</h3>
+          <table className="w-full text-xs">
+            <thead>
+              <tr className="border-b border-border text-left">
+                <th className="pb-2 pr-4 text-[10px] font-bold uppercase tracking-wide text-secondary">Stage</th>
+                <th className="pb-2 pr-4 text-[10px] font-bold uppercase tracking-wide text-secondary">Teeth</th>
+                <th className="pb-2 text-right text-[10px] font-bold uppercase tracking-wide text-secondary">Amount</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-border/50">
+              {iprEntries.map((entry: IprEntry, i: number) => (
+                <tr key={i}>
+                  <td className="py-1.5 pr-4 tabular-nums text-foreground">{entry.stage}</td>
+                  <td className="py-1.5 pr-4 font-mono text-foreground">{entry.toothA} – {entry.toothB}</td>
+                  <td className="py-1.5 text-right tabular-nums text-foreground">{entry.amountMm.toFixed(2)} mm</td>
+                </tr>
+              ))}
+            </tbody>
+            <tfoot>
+              <tr className="border-t border-border font-semibold">
+                <td colSpan={2} className="pt-2 text-secondary text-[11px]">Total IPR</td>
+                <td className="pt-2 text-right tabular-nums text-foreground">{iprTotal.toFixed(2)} mm</td>
+              </tr>
+            </tfoot>
+          </table>
+        </Card>
       )}
 
-      {/* Save / Reload */}
-      <div className="flex gap-3">
-        <Button
-          variant="primary"
-          size="sm"
-          onClick={handleSave}
-          disabled={saving}
-        >
-          {saving ? <Loader2 size={13} className="animate-spin" /> : <Save size={13} />}
-          {existingId ? "Update Analysis" : "Save Analysis"}
+      {/* Refresh */}
+      <div className="flex items-center justify-between">
+        <p className="text-[10px] text-secondary">
+          Bolton norms: Overall 91.3% ± 1.91 SD, Anterior 77.2% ± 1.65 SD.
+          Source: Bolton 1958, 1962. Reference only — requires clinician sign-off.
+        </p>
+        <Button variant="secondary" size="sm" onClick={loadAnalysis} disabled={loading}>
+          <RefreshCw size={13} className={loading ? "animate-spin" : ""} />
+          Refresh
         </Button>
-        <Button variant="secondary" size="sm" onClick={load} disabled={loading}>
-          <RefreshCw size={13} /> Reload
-        </Button>
-        {existingId && (
-          <Button
-            variant="secondary"
-            size="sm"
-            onClick={() => { setExistingId(null); }}
-          >
-            <Plus size={13} /> New Version
-          </Button>
-        )}
       </div>
 
-      {/* Legend note */}
-      <p className="text-[10px] text-[color:var(--muted-foreground)]">
-        Bolton norms: Overall 91.3 ± 1.91% (87.5–95.1), Anterior 77.2 ± 1.65% (73.9–80.5).
-        Source: Bolton 1958; values for reference only.
-      </p>
     </div>
   );
 }

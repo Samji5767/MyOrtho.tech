@@ -51,3 +51,11 @@ export const createAnalysis = (caseId: string, dto: SaveAnalysisDto) =>
 
 export const updateAnalysis = (caseId: string, id: string, dto: SaveAnalysisDto) =>
   api.patch<CaseAnalysis>(`/api/cases/${caseId}/analysis/${id}`, dto);
+
+export interface BoltonResult {
+  overall: number | null;
+  anterior: number | null;
+}
+
+export const computeBolton = (caseId: string, toothMeasurements: Record<string, number>) =>
+  api.post<BoltonResult>(`/api/cases/${caseId}/analysis/bolton`, { toothMeasurements });

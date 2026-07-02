@@ -4,10 +4,20 @@ import {
 import { AuthGuard } from '../auth/auth.guard';
 import { AlignerGenerationService, type GenerateDto } from './aligner-generation.service';
 
+
 @Controller()
 @UseGuards(AuthGuard)
 export class AlignerGenerationController {
   constructor(private readonly svc: AlignerGenerationService) {}
+
+  @Get('api/cases/:caseId/plans/:planId/aligner-generation/quality-report')
+  getQualityReport(
+    @Req() req: any,
+    @Param('caseId') _caseId: string,
+    @Param('planId') planId: string,
+  ) {
+    return this.svc.validatePlan(planId, req.user.orgId);
+  }
 
   @Post('api/cases/:caseId/plans/:planId/aligner-generation/generate')
   generate(

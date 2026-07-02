@@ -13,7 +13,7 @@ import {
 } from '@nestjs/common';
 import type { Request } from 'express';
 import { AuthGuard } from '../auth/auth.guard';
-import { AnalysisService, type SaveAnalysisDto } from './analysis.service';
+import { AnalysisService, type SaveAnalysisDto, type ExtendedAnalysisInput } from './analysis.service';
 import { BoltonService, type BoltonInput } from './bolton.service';
 
 interface AuthUser { id: string; email: string; role: string; orgId: string | null }
@@ -80,5 +80,22 @@ export class AnalysisController {
   ) {
     auth(req); // ensures org context; caseId not used for pure computation
     return this.boltonSvc.compute(body);
+  }
+
+  /**
+   * Compute extended clinical analysis metrics (ALD, LII, TDI, space analysis).
+   * Pure computation — does not persist; use POST / or PATCH /:id to save results.
+   *
+   * Body: ExtendedAnalysisInput — see service for full schema.
+   */
+  @Post('compute')
+  @HttpCode(HttpStatus.OK)
+  computeExtended(
+    @Req() req: Request,
+    @Param('caseId') _caseId: string,
+    @Body() body: ExtendedAnalysisInput,
+  ) {
+    auth(req); // ensures org context; caseId not needed for pure computation
+    return this.svc.computeExtendedAnalysis(body);
   }
 }

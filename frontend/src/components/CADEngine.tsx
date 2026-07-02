@@ -8,10 +8,10 @@ import {
 } from "@react-three/drei";
 import * as THREE from "three";
 import {
-  AlertTriangle, BarChart3, CheckCircle2, ChevronDown, ChevronRight, ChevronUp,
+  AlertTriangle, BarChart3, Camera, CheckCircle2, ChevronDown, ChevronRight, ChevronUp,
   ChevronsLeft, ChevronsRight, Download, Eye, EyeOff, Ghost, Layers, ListOrdered,
-  Lock, LockOpen, Move3d, RotateCcw, Ruler, Scissors, Settings2,
-  Sliders, SunMedium, Target, Zap,
+  Lock, LockOpen, Move3d, Play, RotateCcw, Ruler, Scissors, Settings2,
+  Sliders, Square, SunMedium, Target, Zap,
 } from "lucide-react";
 import { Button, Card, DataRow, StatusBadge } from "@/components/DesignSystem";
 import { validateMovements } from "@/lib/biomechanics/vectorMath";
@@ -181,6 +181,28 @@ function detectCollisions(
   return colliding;
 }
 
+// ─── Color-map helpers ────────────────────────────────────────────────────────
+
+function lerpColor(a: string, b: string, t: number): string {
+  const parse = (hex: string) => [
+    parseInt(hex.slice(1, 3), 16),
+    parseInt(hex.slice(3, 5), 16),
+    parseInt(hex.slice(5, 7), 16),
+  ];
+  const [ar, ag, ab] = parse(a);
+  const [br, bg, bb] = parse(b);
+  const r = Math.round(ar + (br - ar) * t);
+  const g = Math.round(ag + (bg - ag) * t);
+  const bv = Math.round(ab + (bb - ab) * t);
+  return `#${r.toString(16).padStart(2, "0")}${g.toString(16).padStart(2, "0")}${bv.toString(16).padStart(2, "0")}`;
+}
+
+function severityToColor(severity: number): string {
+  // 0 → #4ade80 (green), 0.5 → #facc15 (yellow), 1.0 → #ef4444 (red)
+  if (severity <= 0.5) return lerpColor("#4ade80", "#facc15", severity * 2);
+  return lerpColor("#facc15", "#ef4444", (severity - 0.5) * 2);
+}
+
 // ─── Single tooth mesh ────────────────────────────────────────────────────────
 
 function ToothMesh({
@@ -199,6 +221,7 @@ function ToothMesh({
   clippingPlanes,
   hasAttachmentOverride,
   iprAmountOverride,
+  colorMapColor,
   onSelect,
   onMeshMounted,
 }: {
@@ -217,6 +240,7 @@ function ToothMesh({
   clippingPlanes: THREE.Plane[];
   hasAttachmentOverride?: boolean;
   iprAmountOverride?: number;
+  colorMapColor?: string | null;
   onSelect: (fdi: number, shift: boolean) => void;
   onMeshMounted: (fdi: number, mesh: THREE.Mesh | null) => void;
 }) {
@@ -242,7 +266,7 @@ function ToothMesh({
       : isColliding ? "#ef4444"
       : isSelected ? "#2dd4bf"
       : isGroupSelected ? "#818cf8"
-      : tooth.color;
+      : (colorMapColor ?? tooth.color);
     return new THREE.MeshPhysicalMaterial({
       color,
       roughness: 0.32,
@@ -257,7 +281,7 @@ function ToothMesh({
       transparent: isTransparent,
       opacity: baseOpacity,
     });
-  }, [isSelected, isGroupSelected, isColliding, isHidden, enamelMode, tooth.color, jawOpacity]);
+  }, [isSelected, isGroupSelected, isColliding, isHidden, enamelMode, tooth.color, jawOpacity, colorMapColor]);
 
   // Dispose material when dependencies change or component unmounts to prevent VRAM leaks
   useEffect(() => {
@@ -389,6 +413,9 @@ function CADScene({
   alignerArch,
   onSelectTooth,
   onTransformChange,
+  colorMapColors,
+  snapshotEnabled,
+  onSnapshotDone,
 }: {
   teeth: ToothObject[];
   selectedFdis: Set<number>;
@@ -422,6 +449,9 @@ function CADScene({
   alignerArch: "upper" | "lower" | "both";
   onSelectTooth: (fdi: number, shift: boolean) => void;
   onTransformChange: (fdi: number, pos: THREE.Vector3, rot: THREE.Euler) => void;
+  colorMapColors: Map<number, string>;
+  snapshotEnabled: boolean;
+  onSnapshotDone: () => void;
 }) {
   const meshRegistry = useRef<Map<number, THREE.Mesh>>(new Map());
   const [activeMesh, setActiveMesh] = useState<THREE.Mesh | null>(null);
@@ -485,6 +515,20 @@ function CADScene({
 
   const gingivaColor = lightingPreset === "xray" ? "#112244" : lightingPreset === "dark" ? "#7a2d3a" : "#c8556a";
   const gingivaMandColor = lightingPreset === "xray" ? "#0d1e3a" : lightingPreset === "dark" ? "#6a2030" : "#b84e62";
+
+  // ── Workspace snapshot ────────────────────────────────────────────────────
+  useEffect(() => {
+    if (!snapshotEnabled) return;
+    const id = requestAnimationFrame(() => {
+      const dataUrl = gl.domElement.toDataURL("image/png");
+      const a = document.createElement("a");
+      a.href = dataUrl;
+      a.download = "myortho-snapshot.png";
+      a.click();
+      onSnapshotDone();
+    });
+    return () => cancelAnimationFrame(id);
+  }, [snapshotEnabled, gl, onSnapshotDone]);
 
   return (
     <>
@@ -657,6 +701,7 @@ function CADScene({
             clippingPlanes={clippingPlanes}
             hasAttachmentOverride={contextHasAttach}
             iprAmountOverride={contextIPRAmount}
+            colorMapColor={colorMapColors.get(tooth.fdi) ?? null}
             onSelect={onSelectTooth}
             onMeshMounted={handleMeshMounted}
           />
@@ -788,11 +833,44 @@ export default function CADEngine() {
   const [mandibleTransparency, setMandibleTransparency] = useState(0);
   const [toothOverrides, setToothOverrides] = useState<OverridesMap>(new Map());
   const [biomechanicsWarning, setBiomechanicsWarning] = useState<string | null>(null);
+  // Feature A: Color map
+  const [colorMapEnabled, setColorMapEnabled] = useState(false);
+  // Feature B: Workspace snapshot
+  const [snapshotEnabled, setSnapshotEnabled] = useState(false);
+  // Feature C: Stage animation
+  const [isAnimating, setIsAnimating] = useState(false);
+  const [animStageIndex, setAnimStageIndex] = useState(0);
+  const animTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const occlusionContacts = useMemo<OcclusionContact[]>(() => {
     const positions = buildToothPositions(teeth, toothOverrides);
     return computeOcclusionContacts(positions);
   }, [teeth, toothOverrides]);
+
+  // Feature A: per-tooth movement data for color map legend + summary table
+  const colorMapData = useMemo<Map<number, { movementMm: number; rotDeg: number; severity: number; color: string }>>(() => {
+    if (!colorMapEnabled) return new Map();
+    const m = new Map<number, { movementMm: number; rotDeg: number; severity: number; color: string }>();
+    planningOffsets.forEach((off, fdi) => {
+      const dist = Math.sqrt(off.dx * off.dx + off.dy * off.dy + off.dz * off.dz);
+      const movementMm = dist / MM_TO_SCENE;
+      const rotDeg = Math.sqrt(off.drx * off.drx + off.dry * off.dry + off.drz * off.drz) * (180 / Math.PI);
+      const severity = Math.min(1, Math.max(0, Math.max(movementMm / 3.0, rotDeg / 20.0)));
+      m.set(fdi, { movementMm, rotDeg, severity, color: severityToColor(severity) });
+    });
+    return m;
+  }, [colorMapEnabled, planningOffsets]);
+
+  // Feature A: per-tooth color map (all teeth; unmoved teeth = green severity 0)
+  const colorMapColors = useMemo<Map<number, string>>(() => {
+    if (!colorMapEnabled) return new Map();
+    const m = new Map<number, string>();
+    teeth.forEach(tooth => {
+      const data = colorMapData.get(tooth.fdi);
+      m.set(tooth.fdi, data ? data.color : severityToColor(0));
+    });
+    return m;
+  }, [colorMapEnabled, teeth, colorMapData]);
 
   // Undo/redo history stack
   const historyRef = useRef<OverridesMap[]>([new Map()]);
@@ -1006,6 +1084,36 @@ export default function CADEngine() {
     setStagesVisible(true);
   }, [teeth, toothOverrides]);
 
+  // Feature C: animation through generated stages
+  const handleStartAnimation = useCallback(() => {
+    if (generatedStages.length === 0) return;
+    setAnimStageIndex(0);
+    setIsAnimating(true);
+    animTimerRef.current = setInterval(() => {
+      setAnimStageIndex(prev => {
+        const next = prev + 1;
+        if (next >= generatedStages.length) {
+          if (animTimerRef.current) clearInterval(animTimerRef.current);
+          setIsAnimating(false);
+          return prev;
+        }
+        return next;
+      });
+    }, 800);
+  }, [generatedStages.length]);
+
+  const handleStopAnimation = useCallback(() => {
+    if (animTimerRef.current) clearInterval(animTimerRef.current);
+    setIsAnimating(false);
+  }, []);
+
+  // Clean up animation timer on unmount
+  useEffect(() => {
+    return () => {
+      if (animTimerRef.current) clearInterval(animTimerRef.current);
+    };
+  }, []);
+
   const exportCADPackage = () => {
     const pkg = {
       generatedAt: new Date().toISOString(),
@@ -1120,6 +1228,22 @@ export default function CADEngine() {
               title="Toggle ghost arch (original position overlay)"
             >
               <Ghost size={14} /> Ghost
+            </Button>
+            <Button
+              variant={colorMapEnabled ? "primary" : "secondary"}
+              size="sm"
+              onClick={() => setColorMapEnabled(v => !v)}
+              title="Toggle movement color map"
+            >
+              <BarChart3 size={14} /> Color Map
+            </Button>
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => setSnapshotEnabled(true)}
+              title="Download snapshot of current view"
+            >
+              <Camera size={14} /> Snapshot
             </Button>
           </div>
         </div>
@@ -1294,12 +1418,41 @@ export default function CADEngine() {
                 alignerArch={state.alignerArch}
                 onSelectTooth={handleSelectTooth}
                 onTransformChange={handleTransformChange}
+                colorMapColors={colorMapColors}
+                snapshotEnabled={snapshotEnabled}
+                onSnapshotDone={() => setSnapshotEnabled(false)}
               />
             </Suspense>
           </Canvas>
           <div className="pointer-events-none absolute bottom-4 left-4 right-4 lg:right-auto rounded-2xl border border-white/10 bg-slate-950/70 px-3 py-2 text-xs text-slate-200 backdrop-blur">
             Click to select · Shift+click multi-select · Drag gizmo arrows to move · Double-click canvas to reset
           </div>
+          {/* Color map legend */}
+          {colorMapEnabled && (
+            <div className="pointer-events-none absolute bottom-16 left-4 rounded-xl border border-white/10 bg-slate-950/80 p-2.5 text-[10px] text-white backdrop-blur">
+              <p className="mb-1.5 font-bold text-slate-300 text-[10px]">Movement Severity</p>
+              {[
+                { label: "High (≥3 mm)", color: "#ef4444" },
+                { label: "Med (~1.5 mm)", color: "#facc15" },
+                { label: "Low (≤0 mm)", color: "#4ade80" },
+                { label: "None (unmoved)", color: "#4ade80" },
+              ].map((s, i) => (
+                <div key={i} className="flex items-center gap-1.5 mb-0.5">
+                  <span className="inline-block h-3 w-3 rounded-sm shrink-0" style={{ background: s.color }} />
+                  <span className="text-slate-300">{s.label}</span>
+                </div>
+              ))}
+            </div>
+          )}
+          {/* Animation progress bar */}
+          {isAnimating && generatedStages.length > 0 && (
+            <div className="absolute bottom-0 left-0 right-0 h-1 bg-slate-800">
+              <div
+                className="h-full bg-primary transition-all duration-700"
+                style={{ width: `${((animStageIndex + 1) / generatedStages.length) * 100}%` }}
+              />
+            </div>
+          )}
         </div>
       </Card>
 
@@ -1732,6 +1885,42 @@ export default function CADEngine() {
           )}
         </Card>
 
+        {/* Movement Summary — visible only when color map is enabled */}
+        {colorMapEnabled && (
+          <Card className="p-4">
+            <h3 className="mb-3 text-sm font-semibold text-foreground flex items-center gap-2">
+              <BarChart3 size={14} className="text-primary" /> Movement Summary
+            </h3>
+            {colorMapData.size === 0 ? (
+              <p className="text-[11px] text-[color:var(--muted-foreground)] leading-relaxed">
+                No planned movements found. Use the Movements panel to set tooth targets.
+              </p>
+            ) : (
+              <div className="max-h-[220px] overflow-y-auto rounded-xl border border-[color:var(--border)] divide-y divide-[color:var(--border)]">
+                <div className="grid grid-cols-3 gap-1 px-2 py-1 text-[9px] font-bold uppercase tracking-wider text-[color:var(--muted-foreground)]">
+                  <span>FDI</span><span>Move mm</span><span>Severity</span>
+                </div>
+                {Array.from(colorMapData.entries())
+                  .sort((a, b) => b[1].severity - a[1].severity)
+                  .map(([fdi, data]) => (
+                    <div key={fdi} className="grid grid-cols-3 items-center gap-1 px-2 py-1.5 text-[10px]">
+                      <span className="font-semibold text-[color:var(--foreground)]">{fdi}</span>
+                      <span className="tabular-nums text-[color:var(--muted-foreground)]">{data.movementMm.toFixed(2)}</span>
+                      <div className="flex items-center gap-1">
+                        <div className="h-2 flex-1 overflow-hidden rounded-full bg-[color:var(--border)]">
+                          <div
+                            className="h-full rounded-full"
+                            style={{ width: `${Math.round(data.severity * 100)}%`, background: data.color }}
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+              </div>
+            )}
+          </Card>
+        )}
+
         {/* Cross-section */}
         <Card className="p-4">
           <h3 className="mb-3 text-sm font-semibold text-foreground flex items-center gap-2">
@@ -1911,17 +2100,28 @@ export default function CADEngine() {
                 </div>
                 <button
                   type="button"
-                  onClick={() => setStagesVisible(false)}
+                  onClick={() => { handleStopAnimation(); setStagesVisible(false); }}
                   className="text-[10px] font-medium text-[color:var(--muted-foreground)] underline-offset-2 hover:underline"
                 >
                   Reset
                 </button>
               </div>
+              <div className="mb-2 flex gap-1">
+                {isAnimating ? (
+                  <Button variant="secondary" size="sm" className="flex-1 justify-center" onClick={handleStopAnimation}>
+                    <Square size={13} /> Stop
+                  </Button>
+                ) : (
+                  <Button variant="primary" size="sm" className="flex-1 justify-center" onClick={handleStartAnimation}>
+                    <Play size={13} /> Animate
+                  </Button>
+                )}
+              </div>
               <div className="max-h-[260px] overflow-y-auto rounded-xl border border-[color:var(--border)] divide-y divide-[color:var(--border)]">
                 {generatedStages.map(row => (
                   <div
                     key={row.stage}
-                    className={`flex items-start gap-2 px-3 py-2 text-[11px] ${row.stage === 1 ? "bg-[color-mix(in_srgb,var(--primary-glow)_60%,transparent)]" : ""}`}
+                    className={`flex items-start gap-2 px-3 py-2 text-[11px] ${(isAnimating ? row.stage === animStageIndex + 1 : row.stage === 1) ? "bg-[color-mix(in_srgb,var(--primary-glow)_60%,transparent)]" : ""}`}
                   >
                     <span className="w-6 shrink-0 font-bold tabular-nums text-[color:var(--muted-foreground)]">
                       {row.stage}

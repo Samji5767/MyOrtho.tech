@@ -61,6 +61,28 @@ export interface AlignerGenerationPlan {
   generatedAt: string;
 }
 
+export interface QualityIssue {
+  stageNum?: number;
+  severity: 'error' | 'warning';
+  code: string;
+  message: string;
+}
+
+export interface ManufacturingReadinessCheck {
+  name: string;
+  passed: boolean;
+  details: string;
+}
+
+export interface StageQualityReport {
+  planId: string;
+  generatedAt: string;
+  overallQualityScore: number;
+  issues: QualityIssue[];
+  manufacturingReadiness: ManufacturingReadinessCheck[];
+  isManufacturingReady: boolean;
+}
+
 // Per-stage movement limits (Kravitz)
 const PER_STAGE = {
   translation_mm:  0.25,
@@ -307,6 +329,138 @@ export class AlignerGenerationService {
     );
     if (res.rowCount === 0) throw new NotFoundException('No generation plan found');
     return rowToPlan(res.rows[0]);
+  }
+
+  async validatePlan(planId: string, orgId: string): Promise<StageQualityReport> {
+    const res = await this.db.query(
+      `SELECT * FROM aligner_generation_plans WHERE plan_id=$1 AND organization_id=$2`,
+      [planId, orgId],
+    );
+    if (res.rowCount === 0) throw new NotFoundException('No generation plan found — run /generate first');
+    const plan = rowToPlan(res.rows[0]);
+
+    const issues: QualityIssue[] = [];
+    const TRANSLATION_LIMIT = PER_STAGE.translation_mm; // 0.25
+    const ROTATION_LIMIT    = PER_STAGE.rotation_deg;   // 2.0
+    const NEAR_FACTOR       = 0.9;
+
+    // ── Stage allocation movement limit checks ────────────────────────────────
+    let movementLimitsValid = true;
+    for (const stage of plan.stageAllocations) {
+      if (stage.maxTranslationMm > TRANSLATION_LIMIT) {
+        movementLimitsValid = false;
+        issues.push({
+          stageNum: stage.stageNum,
+          severity: 'error',
+          code: 'EXCESSIVE_TRANSLATION',
+          message: `Stage ${stage.stageNum}: translation ${stage.maxTranslationMm.toFixed(3)} mm exceeds ${TRANSLATION_LIMIT} mm limit`,
+        });
+      } else if (stage.maxTranslationMm >= TRANSLATION_LIMIT * NEAR_FACTOR) {
+        issues.push({
+          stageNum: stage.stageNum,
+          severity: 'warning',
+          code: 'NEAR_LIMIT_TRANSLATION',
+          message: `Stage ${stage.stageNum}: translation ${stage.maxTranslationMm.toFixed(3)} mm is within 10% of ${TRANSLATION_LIMIT} mm limit`,
+        });
+      }
+
+      if (stage.maxRotationDeg > ROTATION_LIMIT) {
+        movementLimitsValid = false;
+        issues.push({
+          stageNum: stage.stageNum,
+          severity: 'error',
+          code: 'EXCESSIVE_ROTATION',
+          message: `Stage ${stage.stageNum}: rotation ${stage.maxRotationDeg.toFixed(3)}° exceeds ${ROTATION_LIMIT}° limit`,
+        });
+      } else if (stage.maxRotationDeg >= ROTATION_LIMIT * NEAR_FACTOR) {
+        issues.push({
+          stageNum: stage.stageNum,
+          severity: 'warning',
+          code: 'NEAR_LIMIT_ROTATION',
+          message: `Stage ${stage.stageNum}: rotation ${stage.maxRotationDeg.toFixed(3)}° is within 10% of ${ROTATION_LIMIT}° limit`,
+        });
+      }
+    }
+
+    // ── IPR schedule validation ───────────────────────────────────────────────
+    let iprValid = true;
+    for (const entry of plan.iprStageSchedule) {
+      if (entry.amountMm > 0.5) {
+        iprValid = false;
+        issues.push({
+          stageNum: entry.stageNum,
+          severity: 'error',
+          code: 'EXCESSIVE_IPR',
+          message: `Stage ${entry.stageNum}: IPR amount ${entry.amountMm} mm between teeth ${entry.fdiA}–${entry.fdiB} exceeds 0.5 mm limit`,
+        });
+      }
+    }
+
+    // ── Manufacturing readiness checks ────────────────────────────────────────
+    const stageCountValid = plan.totalActiveStages >= 5 && plan.totalActiveStages <= 120;
+
+    const manufacturingReadiness: ManufacturingReadinessCheck[] = [
+      {
+        name: 'Plan Approved',
+        passed: plan.status === 'approved',
+        details: plan.status === 'approved'
+          ? 'Plan has been approved'
+          : `Plan status is '${plan.status}'; must be approved before manufacturing`,
+      },
+      {
+        name: 'Movement Limits',
+        passed: movementLimitsValid,
+        details: movementLimitsValid
+          ? 'All stage movement values are within clinical limits'
+          : 'One or more stages exceed per-stage movement limits',
+      },
+      {
+        name: 'IPR Valid',
+        passed: iprValid,
+        details: iprValid
+          ? 'All IPR amounts are within 0.5 mm limit'
+          : 'One or more IPR entries exceed the 0.5 mm per-contact limit',
+      },
+      {
+        name: 'Retention Protocol',
+        passed: plan.retentionStageCount > 0,
+        details: plan.retentionStageCount > 0
+          ? `${plan.retentionStageCount} retention stage(s) scheduled`
+          : 'No retention stages defined; a retention protocol is required',
+      },
+      {
+        name: 'STL Availability',
+        passed: plan.stlExportReady,
+        details: plan.stlExportReady
+          ? 'STL files are ready for manufacturing'
+          : 'Per-tooth mesh extraction is not yet implemented. Aligner shells cannot be generated until the segmentation pipeline produces individual tooth mesh files.',
+      },
+      {
+        name: 'Stage Count',
+        passed: stageCountValid,
+        details: stageCountValid
+          ? `${plan.totalActiveStages} active stages is within acceptable range (5–120)`
+          : `${plan.totalActiveStages} active stages is outside acceptable range (5–120)`,
+      },
+    ];
+
+    // ── Quality score ─────────────────────────────────────────────────────────
+    const errorCount   = issues.filter(i => i.severity === 'error').length;
+    const warningCount = issues.filter(i => i.severity === 'warning').length;
+    const overallQualityScore = Math.max(0, Math.min(100, 100 - (errorCount * 15 + warningCount * 5)));
+
+    const isManufacturingReady = manufacturingReadiness.every(c => c.passed);
+
+    this.log.log(`Quality validation: plan ${planId} → score ${overallQualityScore}, ${errorCount} error(s), ${warningCount} warning(s)`);
+
+    return {
+      planId,
+      generatedAt: new Date().toISOString(),
+      overallQualityScore,
+      issues,
+      manufacturingReadiness,
+      isManufacturingReady,
+    };
   }
 
   // ── Staging algorithms ─────────────────────────────────────────────────────

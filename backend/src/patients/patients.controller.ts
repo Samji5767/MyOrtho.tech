@@ -5,6 +5,7 @@ import {
   Patch,
   Body,
   Param,
+  Query,
   UseGuards,
   Req,
   HttpCode,
@@ -36,10 +37,16 @@ export class PatientsController {
 
   @Get()
   @RequirePermission('patients:read')
-  async getPatients(@Req() req: Request) {
+  async getPatients(
+    @Req() req: Request,
+    @Query('limit') limit?: string,
+    @Query('offset') offset?: string,
+  ) {
     const user = getUser(req);
     if (!user.orgId) return [];
-    return this.patientsService.findAllByOrg(user.orgId);
+    const l = limit ? Math.min(500, Math.max(1, parseInt(limit, 10))) : 100;
+    const o = offset ? Math.max(0, parseInt(offset, 10)) : 0;
+    return this.patientsService.findAllByOrg(user.orgId, l, o);
   }
 
   @Post()

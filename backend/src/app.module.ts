@@ -1,6 +1,7 @@
-import { Module } from '@nestjs/common';
+import { MiddlewareConsumer, Module, NestModule } from '@nestjs/common';
 import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 import { APP_GUARD } from '@nestjs/core';
+import { TimingMiddleware } from './common/timing.middleware';
 import { DatabaseModule } from './database/database.module';
 import { RedisModule } from './redis/redis.module';
 import { HealthModule } from './health/health.module';
@@ -230,6 +231,11 @@ import { AiSuggestionsModule } from './ai-suggestions/ai-suggestions.module';
       provide: APP_GUARD,
       useClass: ThrottlerGuard,
     },
+    TimingMiddleware,
   ],
 })
-export class AppModule {}
+export class AppModule implements NestModule {
+  configure(consumer: MiddlewareConsumer) {
+    consumer.apply(TimingMiddleware).forRoutes('*');
+  }
+}

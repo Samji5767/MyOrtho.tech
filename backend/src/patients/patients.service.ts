@@ -34,7 +34,7 @@ export class PatientsService {
     private readonly auditService: AuditService,
   ) {}
 
-  async findAllByOrg(orgId: string) {
+  async findAllByOrg(orgId: string, limit = 100, offset = 0) {
     const { rows } = await this.pool.query(
       `SELECT
          p.id, p.first_name, p.last_name, p.dob AS date_of_birth, p.gender,
@@ -44,8 +44,9 @@ export class PatientsService {
        LEFT JOIN cases c ON c.patient_id = p.id
        WHERE p.organization_id = $1
        GROUP BY p.id
-       ORDER BY p.updated_at DESC`,
-      [orgId],
+       ORDER BY p.updated_at DESC
+       LIMIT $2 OFFSET $3`,
+      [orgId, limit, offset],
     );
     return rows.map(this.formatPatient);
   }

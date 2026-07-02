@@ -59,13 +59,23 @@ export class IprPlannerService {
 
   constructor(@Inject(PG_POOL) private readonly pool: Pool) {}
 
-  async listItems(planId: string, caseId: string, orgId: string) {
+  async listItems(planId: string, caseId: string, orgId: string, limit = 200, offset = 0) {
     await this.verifyOwnership(caseId, orgId);
     const { rows } = await this.pool.query(
-      `SELECT * FROM ipr_plan_items WHERE treatment_plan_id = $1 ORDER BY before_stage, tooth_a_fdi`,
-      [planId],
+      `SELECT *, COUNT(*) OVER() AS _total
+       FROM ipr_plan_items
+       WHERE treatment_plan_id = $1
+       ORDER BY before_stage, tooth_a_fdi
+       LIMIT $2 OFFSET $3`,
+      [planId, limit, offset],
     );
-    return rows.map(this.format);
+    const total = rows.length > 0 ? Number(rows[0]['_total']) : 0;
+    const items = rows.map((r) => {
+      const row = Object.assign({}, r) as Record<string, unknown>;
+      delete row['_total'];
+      return this.format(row);
+    });
+    return { items, total, limit, offset };
   }
 
   async addItem(planId: string, caseId: string, orgId: string, dto: CreateIprItemDto, userId: string) {
@@ -132,7 +142,11 @@ export class IprPlannerService {
     );
     const totalStages = Number(stageCntRows[0]?.['cnt'] ?? 10);
 
-    const results = [];
+    const beforeStage = Math.max(1, Math.round(totalStages * 0.25));
+
+    // Compute candidates in memory to avoid N+1 DB round-trips
+    type Candidate = { a: number; b: number; amountMm: number; remA: string; remB: string; status: string };
+    const candidates: Candidate[] = [];
     for (const [a, b] of ADJACENT_PAIRS) {
       const isUpper = a < 30;
       if (isUpper && !doUpper) continue;
@@ -146,28 +160,40 @@ export class IprPlannerService {
       const { status, remainingA, remainingB } = iprSafetyStatus(amountMm, a, b);
       if (status === 'unsafe') continue; // skip if enamel would be violated
 
-      const beforeStage = Math.max(1, Math.round(totalStages * 0.25));
-
-      const { rows } = await this.pool.query(
-        `INSERT INTO ipr_plan_items
-           (case_id, treatment_plan_id, tooth_a_fdi, tooth_b_fdi,
-            amount_mm, before_stage, remaining_enamel_a, remaining_enamel_b,
-            safety_status, is_auto_recommended, created_by)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, true, $10)
-         ON CONFLICT (treatment_plan_id, tooth_a_fdi, tooth_b_fdi) DO NOTHING
-         RETURNING *`,
-        [
-          caseId, planId, a, b,
-          amountMm, beforeStage,
-          remainingA.toFixed(2), remainingB.toFixed(2),
-          status, userId,
-        ],
-      );
-      if (rows[0]) results.push(this.format(rows[0]));
+      candidates.push({ a, b, amountMm, remA: remainingA.toFixed(2), remB: remainingB.toFixed(2), status });
     }
 
-    this.logger.log(`Auto-recommended ${results.length} IPR items for plan ${planId}`);
-    return { recommended: results.length, items: results };
+    if (candidates.length === 0) return { recommended: 0, items: [] };
+
+    // Single batched INSERT using UNNEST — one round-trip regardless of candidate count
+    const { rows } = await this.pool.query(
+      `INSERT INTO ipr_plan_items
+         (case_id, treatment_plan_id, tooth_a_fdi, tooth_b_fdi,
+          amount_mm, before_stage, remaining_enamel_a, remaining_enamel_b,
+          safety_status, is_auto_recommended, created_by)
+       SELECT $1, $2,
+         UNNEST($3::int[]), UNNEST($4::int[]),
+         UNNEST($5::numeric[]), $6,
+         UNNEST($7::numeric[]), UNNEST($8::numeric[]),
+         UNNEST($9::text[]), true, $10
+       ON CONFLICT (treatment_plan_id, tooth_a_fdi, tooth_b_fdi) DO NOTHING
+       RETURNING *`,
+      [
+        caseId, planId,
+        candidates.map((c) => c.a),
+        candidates.map((c) => c.b),
+        candidates.map((c) => c.amountMm),
+        beforeStage,
+        candidates.map((c) => c.remA),
+        candidates.map((c) => c.remB),
+        candidates.map((c) => c.status),
+        userId,
+      ],
+    );
+
+    const items = rows.map(this.format);
+    this.logger.log(`Auto-recommended ${items.length} IPR items for plan ${planId}`);
+    return { recommended: items.length, items };
   }
 
   private async verifyOwnership(caseId: string, orgId: string) {

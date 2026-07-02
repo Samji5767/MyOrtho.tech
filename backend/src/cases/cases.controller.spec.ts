@@ -37,7 +37,7 @@ describe('CasesController.getCases', () => {
     const ctrl = new CasesController(svc);
 
     await ctrl.getCases(makeReq());
-    expect(svc.findAllByOrg).toHaveBeenCalledWith('org-1');
+    expect(svc.findAllByOrg).toHaveBeenCalledWith('org-1', 100, 0);
   });
 
   it('returns [] when user has no orgId', async () => {

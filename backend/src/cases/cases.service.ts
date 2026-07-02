@@ -35,7 +35,7 @@ export class CasesService {
 
   // ─── List cases by org (joined with patient name) ─────────────────────────
 
-  async findAllByOrg(orgId: string) {
+  async findAllByOrg(orgId: string, limit = 100, offset = 0) {
     const { rows } = await this.pool.query(
       `SELECT
          c.id, c.status, c.notes, c.chief_complaint, c.malocclusion_class,
@@ -47,8 +47,9 @@ export class CasesService {
        JOIN patients p ON p.id = c.patient_id
        LEFT JOIN auth_users au ON au.id = c.assigned_to
        WHERE p.organization_id = $1
-       ORDER BY c.updated_at DESC`,
-      [orgId],
+       ORDER BY c.updated_at DESC
+       LIMIT $2 OFFSET $3`,
+      [orgId, limit, offset],
     );
     return rows.map(this.formatCase);
   }

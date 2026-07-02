@@ -24,7 +24,7 @@ services:
   redis:
     image: redis:7-alpine
     container_name: myortho-cache
-    command: redis-server --appendonly yes
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
     # Not exposed to the host: only reachable on the internal compose network.
     expose:
       - "6379"

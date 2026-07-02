@@ -97,16 +97,18 @@ describe('IprPlannerService.listItems', () => {
         tooth_a_fdi: 12, tooth_b_fdi: 13, amount_mm: '0.20', before_stage: 3,
         remaining_enamel_a: '0.80', remaining_enamel_b: '0.70',
         safety_status: 'safe', is_auto_recommended: false, notes: null,
-        created_at: new Date(), updated_at: new Date() },
+        created_at: new Date(), updated_at: new Date(),
+        _total: 1 },
     ];
     const pool = makePool([ownsRow(), { rows }]);
     const svc = new IprPlannerService(pool);
 
     const result = await svc.listItems(PLAN_ID, CASE_ID, ORG_ID);
-    expect(result).toHaveLength(1);
-    expect(result[0].toothAFdi).toBe(12);
-    expect(result[0].toothBFdi).toBe(13);
-    expect(result[0].amountMm).toBeCloseTo(0.20);
+    expect(result.items).toHaveLength(1);
+    expect(result.total).toBe(1);
+    expect(result.items[0].toothAFdi).toBe(12);
+    expect(result.items[0].toothBFdi).toBe(13);
+    expect(result.items[0].amountMm).toBeCloseTo(0.20);
   });
 
   it('returns an empty array when no items exist', async () => {
@@ -114,7 +116,8 @@ describe('IprPlannerService.listItems', () => {
     const svc = new IprPlannerService(pool);
 
     const result = await svc.listItems(PLAN_ID, CASE_ID, ORG_ID);
-    expect(result).toEqual([]);
+    expect(result.items).toEqual([]);
+    expect(result.total).toBe(0);
   });
 });
 
@@ -170,37 +173,38 @@ describe('IprPlannerService.autoRecommend', () => {
   });
 
   it('returns recommendations when upper crowding ≥ 2 mm', async () => {
-    // Pool: ownership + analysis + stage count + N INSERT queries (one per pair)
-    // We pre-load many "inserted row" responses for adjacent pair loop
-    const insertedRow = (a: number, b: number) => ({
-      rows: [{
-        id: `auto_${a}_${b}`, case_id: CASE_ID, treatment_plan_id: PLAN_ID,
-        tooth_a_fdi: a, tooth_b_fdi: b,
-        amount_mm: '0.12', before_stage: 6,
-        remaining_enamel_a: '0.94', remaining_enamel_b: '0.84',
-        safety_status: 'safe', is_auto_recommended: true, notes: null,
-        created_at: new Date(), updated_at: new Date(),
-      }],
+    // Pool: ownership + analysis + stage count + ONE batched INSERT (all candidates in one query)
+    const makeRow = (a: number, b: number) => ({
+      id: `auto_${a}_${b}`, case_id: CASE_ID, treatment_plan_id: PLAN_ID,
+      tooth_a_fdi: a, tooth_b_fdi: b,
+      amount_mm: '0.12', before_stage: 6,
+      remaining_enamel_a: '0.94', remaining_enamel_b: '0.84',
+      safety_status: 'safe', is_auto_recommended: true, notes: null,
+      created_at: new Date(), updated_at: new Date(),
     });
 
-    const pairCount = 26; // ADJACENT_PAIRS has 26 entries
     const dbResponses = [
       ownsRow(),
       { rows: [{ upper_crowding_mm: 3.0, lower_crowding_mm: 0.5 }] },
       { rows: [{ cnt: '22' }] },
-      ...Array.from({ length: pairCount }, (_, i) => {
-        // upper pairs: 0-11 → [11,12]...[21,22], midline [11,21] = 12 upper + 1 midline = 13
-        // lower pairs: 12-23 → [31,32]...[41,47] = 12 lower + 1 midline = 13 total
-        // Only upper + upper midline should be inserted (doUpper=true, doLower=false)
-        return insertedRow(i, i + 1);
-      }),
+      // Single batch INSERT returns all successfully inserted rows at once
+      { rows: [
+        makeRow(11, 12), makeRow(12, 13), makeRow(13, 14),
+        makeRow(14, 15), makeRow(15, 16), makeRow(16, 17),
+        makeRow(21, 22), makeRow(22, 23), makeRow(23, 24),
+        makeRow(24, 25), makeRow(25, 26), makeRow(26, 27),
+        makeRow(11, 21),
+      ] },
     ];
 
     const pool = makePool(dbResponses);
     const svc = new IprPlannerService(pool);
 
     const result = await svc.autoRecommend(PLAN_ID, CASE_ID, ORG_ID, USER_ID);
-    // At least one upper pair should be recommended
+    // Upper arch has 13 contact pairs; all should be recommended
     expect(result.recommended).toBeGreaterThan(0);
+    expect(result.recommended).toBe(13);
+    // Pool should have been called exactly 4 times (not 26+3)
+    expect(pool.query).toHaveBeenCalledTimes(4);
   });
 });

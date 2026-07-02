@@ -5,7 +5,6 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { usePathname } from "next/navigation";
 import { TopBar } from "./TopBar";
 import { TabBar, SidebarNav } from "./TabBar";
-import CommandPalette from "@/components/CommandPalette";
 import { AuthGate } from "@/components/AuthGate";
 import { isIOS, isNative } from "@/lib/capacitor/platform";
 import { hapticLight } from "@/lib/capacitor/haptics";
@@ -138,32 +137,16 @@ function useIsIPad(): boolean {
 // ─── App shell ────────────────────────────────────────────────────────────────
 
 export function AppShell({ children }: { children: ReactNode }) {
-  const [commandOpen, setCommandOpen] = useState(false);
   const isIPad = useIsIPad();
   const pathname = usePathname() ?? '/';
 
-  const openCommand  = useCallback(() => setCommandOpen(true),  []);
-  const closeCommand = useCallback(() => setCommandOpen(false), []);
+  const openSearch = useCallback(() => {
+    window.dispatchEvent(new CustomEvent("open-global-search"));
+  }, []);
 
   const handleRefresh = useCallback(async () => {
     await new Promise<void>((resolve) => setTimeout(resolve, 800));
     window.dispatchEvent(new CustomEvent("app-refresh"));
-  }, []);
-
-  useEffect(() => {
-    const onKeyDown = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
-        e.preventDefault();
-        setCommandOpen((prev) => !prev);
-      }
-    };
-    const onCustomEvent = () => setCommandOpen(true);
-    window.addEventListener("keydown", onKeyDown);
-    window.addEventListener("open-command-palette", onCustomEvent);
-    return () => {
-      window.removeEventListener("keydown", onKeyDown);
-      window.removeEventListener("open-command-palette", onCustomEvent);
-    };
   }, []);
 
   useEffect(() => {
@@ -195,7 +178,6 @@ export function AppShell({ children }: { children: ReactNode }) {
             <main>{children}</main>
           </AuthGate>
         </div>
-        <CommandPalette isOpen={commandOpen} onClose={closeCommand} />
       </div>
     );
   }
@@ -208,12 +190,11 @@ export function AppShell({ children }: { children: ReactNode }) {
     <div className="app-shell-root">
       <DynamicIslandSpacer />
       <PullToRefresh onRefresh={handleRefresh} />
-      {showTopBar && <TopBar onOpenSearch={openCommand} />}
+      {showTopBar && <TopBar onOpenSearch={openSearch} />}
       <AuthGate>
         <main className="app-shell-content">{children}</main>
       </AuthGate>
       <TabBar />
-      <CommandPalette isOpen={commandOpen} onClose={closeCommand} />
     </div>
   );
 }

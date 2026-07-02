@@ -4,11 +4,6 @@ import Link from "next/link";
 import { useState, Suspense } from "react";
 import dynamic from "next/dynamic";
 
-const PricingPlansPanel = dynamic(() => import("@/components/PricingPlansPanel"), { ssr: false });
-const TrainingPanel = dynamic(() => import("@/components/TrainingPanel"), { ssr: false });
-const BIDashboardPanel = dynamic(() => import("@/components/BIDashboardPanel"), { ssr: false });
-const CompliancePanel = dynamic(() => import("@/components/CompliancePanel"), { ssr: false });
-const QualityMetricsPanel = dynamic(() => import("@/components/QualityMetricsPanel"), { ssr: false });
 const FeatureFlagsPanel = dynamic(() => import("@/components/FeatureFlagsPanel"), { ssr: false });
 const PlatformHealthPanel = dynamic(() => import("@/components/PlatformHealthPanel"), { ssr: false });
 import {
@@ -551,42 +546,6 @@ export default function SettingsPage() {
             <ChevronRight size={15} className="ml-auto shrink-0 text-[color:var(--muted-foreground)]" />
           </Link>
         </div>
-      </Card>
-
-      {/* BILLING */}
-      <Suspense fallback={<div className="rounded-lg border border-gray-200 bg-white p-6 text-sm text-gray-500">Loading billing…</div>}>
-        <PricingPlansPanel />
-      </Suspense>
-
-      {/* CPD / TRAINING */}
-      <Card className="ios-card p-5 sm:p-6">
-        <p className="text-xs font-bold uppercase tracking-[0.18em] text-[color:var(--primary)] mb-4">CPD &amp; Training</p>
-        <Suspense fallback={<div className="text-sm text-gray-500">Loading training…</div>}>
-          <TrainingPanel />
-        </Suspense>
-      </Card>
-
-      {/* BUSINESS INTELLIGENCE */}
-      <Card className="ios-card p-5 sm:p-6">
-        <p className="text-xs font-bold uppercase tracking-[0.18em] text-[color:var(--primary)] mb-4">Analytics</p>
-        <Suspense fallback={<div className="text-sm text-gray-500">Loading analytics…</div>}>
-          <BIDashboardPanel token="" />
-        </Suspense>
-      </Card>
-
-      {/* QUALITY METRICS */}
-      <Card className="ios-card p-5 sm:p-6">
-        <p className="text-xs font-bold uppercase tracking-[0.18em] text-[color:var(--primary)] mb-4">Quality</p>
-        <Suspense fallback={<div className="text-sm text-gray-500">Loading metrics…</div>}>
-          <QualityMetricsPanel token="" />
-        </Suspense>
-      </Card>
-
-      {/* COMPLIANCE */}
-      <Card className="ios-card p-5 sm:p-6">
-        <Suspense fallback={<div className="text-sm text-gray-500">Loading compliance…</div>}>
-          <CompliancePanel token="" />
-        </Suspense>
       </Card>
 
       {/* FEATURE FLAGS */}

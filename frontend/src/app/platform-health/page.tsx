@@ -8,18 +8,6 @@ const PlatformHealthPanel = dynamic(
   () => import("@/components/PlatformHealthPanel"),
   { ssr: false, loading: () => <p className="text-sm text-gray-500">Loading platform health…</p> },
 );
-const DeviceTrackingPanel = dynamic(
-  () => import("@/components/DeviceTrackingPanel"),
-  { ssr: false },
-);
-const RevenueCyclePanel = dynamic(
-  () => import("@/components/RevenueCyclePanel"),
-  { ssr: false },
-);
-const IntakeFormsPanel = dynamic(
-  () => import("@/components/IntakeFormsPanel"),
-  { ssr: false },
-);
 
 export default function PlatformHealthPage() {
   return (
@@ -33,24 +21,12 @@ export default function PlatformHealthPage() {
         </Link>
         <div>
           <h1 className="text-xl font-bold text-gray-900">Platform Health</h1>
-          <p className="text-sm text-gray-500">100-phase clinical operating system status</p>
+          <p className="text-sm text-gray-500">System status and infrastructure metrics</p>
         </div>
       </div>
 
       <div className="border rounded-xl bg-white p-5 sm:p-6">
         <PlatformHealthPanel token="" />
-      </div>
-
-      <div className="border rounded-xl bg-white p-5 sm:p-6">
-        <RevenueCyclePanel token="" />
-      </div>
-
-      <div className="border rounded-xl bg-white p-5 sm:p-6">
-        <DeviceTrackingPanel token="" />
-      </div>
-
-      <div className="border rounded-xl bg-white p-5 sm:p-6">
-        <IntakeFormsPanel token="" />
       </div>
     </section>
   );

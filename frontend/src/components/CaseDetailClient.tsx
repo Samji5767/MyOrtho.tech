@@ -18,7 +18,6 @@ import {
   Cpu,
   Factory,
   FileText,
-  FilePlus,
   GitBranch,
   Grid3X3,
   Layers,
@@ -27,14 +26,11 @@ import {
   Package,
   Ruler,
   ScanLine,
-  ScrollText,
   ShieldCheck,
   Stethoscope,
-  Syringe,
   Target,
   Upload,
   UploadCloud,
-  Users,
   Zap,
 } from "lucide-react";
 import dynamic from "next/dynamic";
@@ -45,29 +41,19 @@ import ClinicalAnalysisPanel from "@/components/ClinicalAnalysisPanel";
 import { Card, DataRow, ProgressBar, StatusBadge } from "@/components/DesignSystem";
 import ClinicalWorkflow, { type CaseStatus, type WorkflowEvent } from "@/components/ClinicalWorkflow";
 import AuditTrail from "@/components/AuditTrail";
-import SurgicalPlanningPanel from "@/components/SurgicalPlanningPanel";
 import PatientPhotosPanel from "@/components/PatientPhotosPanel";
 import CephalometricPanel from "@/components/CephalometricPanel";
 import AIProposalPanel from "@/components/AIProposalPanel";
 import PreExportQAPanel from "@/components/PreExportQAPanel";
 import ScanProcessingPanel from "@/components/ScanProcessingPanel";
-import TreatmentMonitoringPanel from "@/components/TreatmentMonitoringPanel";
 import CbctFusionPanel from "@/components/CbctFusionPanel";
-import ConsentFormsPanel from "@/components/ConsentFormsPanel";
-import AppointmentsPanel from "@/components/AppointmentsPanel";
 import ClinicalReportsPanel from "@/components/ClinicalReportsPanel";
-import LabOrdersPanel from "@/components/LabOrdersPanel";
-import ReferralsPanel from "@/components/ReferralsPanel";
-import InsurancePanel from "@/components/InsurancePanel";
-import PrescriptionsPanel from "@/components/PrescriptionsPanel";
-import RemoteMonitoringPanel from "@/components/RemoteMonitoringPanel";
-import OutcomesPanel from "@/components/OutcomesPanel";
 import ClinicalAlertsPanel from "@/components/ClinicalAlertsPanel";
-import TasksPanel from "@/components/TasksPanel";
-import DocumentsPanel from "@/components/DocumentsPanel";
-import PatientEducationPanel from "@/components/PatientEducationPanel";
 import OcclusionPanel from "@/components/OcclusionPanel";
 import RadiologyPanel from "@/components/RadiologyPanel";
+import AttachmentPlanner from "@/components/AttachmentPlanner";
+import IPRPlanner from "@/components/IPRPlanner";
+import RetentionProtocolPanel from "@/components/RetentionProtocolPanel";
 
 const AISegmentationCenter = dynamic(
   () => import("@/components/AISegmentationCenter").then((m) => ({ default: m.AISegmentationCenter })),
@@ -86,6 +72,7 @@ const TreatmentStagesPanel = dynamic(() => import("@/components/TreatmentStagesP
 const QAReportPanel = dynamic(() => import("@/components/QAReportPanel"), { ssr: false });
 const AlignerPreviewPanel = dynamic(() => import("@/components/AlignerPreviewPanel"), { ssr: false });
 const ManufacturingPackagePanel = dynamic(() => import("@/components/ManufacturingPackagePanel"), { ssr: false });
+const AlignerStaging = dynamic(() => import("@/components/AlignerStaging"), { ssr: false });
 
 // ─── Representative data keyed to case ID ─────────────────────────────────────
 
@@ -103,7 +90,6 @@ interface CaseProfile {
   goals: string[];
   measurements: { label: string; value: string }[];
   history: WorkflowEvent[];
-  // Optional IDs wired from the real API when available
   scanId?: string;
   planId?: string;
 }
@@ -234,61 +220,74 @@ const CASE_PROFILES: Record<string, CaseProfile> = {
 // ─── Tabs ─────────────────────────────────────────────────────────────────────
 
 type Tab =
-  | "summary" | "workflow" | "scans" | "plans" | "analysis"
-  | "segment" | "proposal" | "export"
-  | "ceph" | "photos" | "surgical" | "movements" | "audit"
-  | "processing" | "tx-monitoring" | "cbct"
-  | "consents" | "appointments" | "reports" | "lab-orders" | "referrals"
-  | "insurance" | "prescriptions" | "remote-monitoring" | "outcomes"
-  | "alerts" | "tasks" | "documents" | "education" | "occlusion" | "radiology"
-  | "pipeline" | "scan-validation" | "segmentation" | "clinical-deep"
-  | "tx-goals" | "cad-studio" | "biomechanics" | "ai-assistant"
-  | "stages" | "qa-report" | "aligner-preview" | "manufacturing";
+  // Overview
+  | "summary" | "workflow" | "audit"
+  // STL / Scans
+  | "scans" | "scan-validation" | "processing"
+  // AI Segmentation
+  | "segment" | "segmentation" | "pipeline"
+  // Treatment Planning
+  | "plans" | "tx-goals" | "proposal" | "ai-assistant"
+  // CAD
+  | "cad-studio" | "movements" | "biomechanics"
+  // Attachments & IPR
+  | "attachments" | "ipr"
+  // Staging & Aligners
+  | "stages" | "aligner-staging" | "aligner-preview"
+  // QA & Export
+  | "qa-report" | "export" | "manufacturing"
+  // Analysis & Imaging
+  | "analysis" | "clinical-deep" | "occlusion" | "ceph" | "cbct" | "radiology"
+  // AI & Clinical
+  | "alerts"
+  // Documentation
+  | "reports" | "photos";
 
 const TABS: { key: Tab; label: string; icon: React.ReactNode }[] = [
-  { key: "summary",   label: "Summary",   icon: <ClipboardList size={13} /> },
-  { key: "workflow",  label: "Workflow",  icon: <GitBranch size={13} /> },
-  { key: "scans",     label: "Scans",     icon: <UploadCloud size={13} /> },
-  { key: "plans",     label: "Plans",     icon: <ClipboardCheck size={13} /> },
-  { key: "analysis",  label: "Analysis",  icon: <Microscope size={13} /> },
-  { key: "segment",   label: "AI Segment",icon: <ScanLine size={13} /> },
-  { key: "proposal",  label: "AI Proposal",icon: <Brain size={13} /> },
-  { key: "export",    label: "QA & Export",icon: <ShieldCheck size={13} /> },
-  { key: "ceph",      label: "Ceph",      icon: <ScanLine size={13} /> },
-  { key: "photos",    label: "Photos",    icon: <Camera size={13} /> },
-  { key: "surgical",  label: "Surgical",  icon: <Syringe size={13} /> },
-  { key: "movements",  label: "Movements",  icon: <Ruler size={13} /> },
-  { key: "processing",       label: "Processing",    icon: <ScanLine size={13} /> },
-  { key: "tx-monitoring",    label: "Monitoring",    icon: <Activity size={13} /> },
-  { key: "cbct",             label: "CBCT",          icon: <Box size={13} /> },
-  { key: "consents",         label: "Consents",      icon: <ScrollText size={13} /> },
-  { key: "appointments",     label: "Appointments",  icon: <FilePlus size={13} /> },
-  { key: "reports",          label: "Reports",       icon: <FileText size={13} /> },
-  { key: "lab-orders",       label: "Lab Orders",    icon: <ClipboardCheck size={13} /> },
-  { key: "referrals",        label: "Referrals",     icon: <Users size={13} /> },
-  { key: "insurance",        label: "Insurance",     icon: <ShieldCheck size={13} /> },
-  { key: "prescriptions",    label: "Prescriptions", icon: <Syringe size={13} /> },
-  { key: "remote-monitoring",label: "Compliance",    icon: <Activity size={13} /> },
-  { key: "outcomes",         label: "Outcomes",      icon: <Target size={13} /> },
-  { key: "alerts",           label: "CDS Alerts",    icon: <Activity size={13} /> },
-  { key: "tasks",            label: "Tasks",         icon: <ClipboardCheck size={13} /> },
-  { key: "documents",        label: "Documents",     icon: <FileText size={13} /> },
-  { key: "education",        label: "Education",     icon: <ScrollText size={13} /> },
-  { key: "occlusion",        label: "Occlusion",     icon: <Target size={13} /> },
-  { key: "radiology",        label: "Imaging",       icon: <Camera size={13} /> },
-  { key: "audit",            label: "Audit",         icon: <Activity size={13} /> },
-  { key: "pipeline",        label: "AI Pipeline",    icon: <Cpu size={13} /> },
-  { key: "scan-validation", label: "Scan Upload",    icon: <Upload size={13} /> },
-  { key: "segmentation",    label: "Segmentation",   icon: <Grid3X3 size={13} /> },
-  { key: "clinical-deep",   label: "Analysis",       icon: <BarChart2 size={13} /> },
-  { key: "tx-goals",        label: "Tx Goals",       icon: <Target size={13} /> },
-  { key: "cad-studio",      label: "CAD Studio",     icon: <Move3d size={13} /> },
-  { key: "biomechanics",    label: "Biomechanics",   icon: <Zap size={13} /> },
-  { key: "ai-assistant",    label: "AI Assistant",   icon: <Bot size={13} /> },
-  { key: "stages",          label: "Stages",         icon: <Layers size={13} /> },
-  { key: "qa-report",       label: "QA",             icon: <ClipboardCheck size={13} /> },
-  { key: "aligner-preview", label: "Aligners",       icon: <Package size={13} /> },
-  { key: "manufacturing",   label: "Manufacturing",  icon: <Factory size={13} /> },
+  // Overview
+  { key: "summary",        label: "Summary",        icon: <ClipboardList size={13} /> },
+  { key: "workflow",       label: "Workflow",        icon: <GitBranch size={13} /> },
+  // STL / Scans
+  { key: "scans",          label: "Scans",           icon: <UploadCloud size={13} /> },
+  { key: "scan-validation",label: "Upload",          icon: <Upload size={13} /> },
+  { key: "processing",     label: "Processing",      icon: <ScanLine size={13} /> },
+  // AI Segmentation
+  { key: "segment",        label: "AI Segment",      icon: <ScanLine size={13} /> },
+  { key: "segmentation",   label: "Segmentation",    icon: <Grid3X3 size={13} /> },
+  { key: "pipeline",       label: "AI Pipeline",     icon: <Cpu size={13} /> },
+  // Treatment Planning
+  { key: "plans",          label: "Plans",           icon: <ClipboardCheck size={13} /> },
+  { key: "tx-goals",       label: "Tx Goals",        icon: <Target size={13} /> },
+  { key: "proposal",       label: "AI Proposal",     icon: <Brain size={13} /> },
+  // CAD
+  { key: "cad-studio",     label: "CAD Studio",      icon: <Move3d size={13} /> },
+  { key: "movements",      label: "Movements",       icon: <Ruler size={13} /> },
+  { key: "biomechanics",   label: "Biomechanics",    icon: <Zap size={13} /> },
+  // Attachments & IPR
+  { key: "attachments",    label: "Attachments",     icon: <Box size={13} /> },
+  { key: "ipr",            label: "IPR",             icon: <Ruler size={13} /> },
+  // Staging & Aligners
+  { key: "stages",         label: "Stages",          icon: <Layers size={13} /> },
+  { key: "aligner-staging",label: "Staging",         icon: <Layers size={13} /> },
+  { key: "aligner-preview",label: "Aligners",        icon: <Package size={13} /> },
+  // QA & Export
+  { key: "qa-report",      label: "QA",              icon: <ClipboardCheck size={13} /> },
+  { key: "export",         label: "QA & Export",     icon: <ShieldCheck size={13} /> },
+  { key: "manufacturing",  label: "Manufacturing",   icon: <Factory size={13} /> },
+  // Analysis & Imaging
+  { key: "analysis",       label: "Analysis",        icon: <Microscope size={13} /> },
+  { key: "clinical-deep",  label: "Deep Analysis",   icon: <BarChart2 size={13} /> },
+  { key: "occlusion",      label: "Occlusion",       icon: <Target size={13} /> },
+  { key: "ceph",           label: "Ceph",            icon: <ScanLine size={13} /> },
+  { key: "cbct",           label: "CBCT",            icon: <Box size={13} /> },
+  { key: "radiology",      label: "Imaging",         icon: <Camera size={13} /> },
+  // AI & Clinical
+  { key: "ai-assistant",   label: "AI Assistant",    icon: <Bot size={13} /> },
+  { key: "alerts",         label: "CDS Alerts",      icon: <Activity size={13} /> },
+  // Documentation
+  { key: "reports",        label: "Reports",         icon: <FileText size={13} /> },
+  { key: "photos",         label: "Photos",          icon: <Camera size={13} /> },
+  { key: "audit",          label: "Audit",           icon: <Activity size={13} /> },
 ];
 
 // ─── Summary tab ──────────────────────────────────────────────────────────────
@@ -416,12 +415,10 @@ export default function CaseDetailClient({ id }: { id: string }) {
     history: [{ id: "h1", timestamp: "—", actor: "—", actorRole: "—", action: "Case opened", toStatus: "draft" as CaseStatus }],
   };
 
-  // Resolve real resource IDs from live API data; fall back to profile stubs for demo mode.
-  const setupId    = liveData?.linkedResources?.setupId      ?? undefined;
-  const scanId     = liveData?.linkedResources?.latestScanId ?? profile.scanId ?? undefined;
-  const planId     = liveData?.linkedResources?.planId       ?? profile.planId ?? undefined;
+  const setupId = liveData?.linkedResources?.setupId      ?? undefined;
+  const scanId  = liveData?.linkedResources?.latestScanId ?? profile.scanId ?? undefined;
+  const planId  = liveData?.linkedResources?.planId       ?? profile.planId ?? undefined;
 
-  // Derive workflow state from live data when available
   const workflowStatus = (liveData?.status as CaseStatus | undefined) ?? profile.workflowStatus;
   const workflowHistory: WorkflowEvent[] = liveData?.workflowHistory?.map(e => ({
     id:        e.id,
@@ -486,8 +483,9 @@ export default function CaseDetailClient({ id }: { id: string }) {
       </div>
 
       <div className="px-4 pt-4 sm:px-5">
-        {tab === "summary"  && <SummaryTab profile={profile} caseId={id} />}
-        {tab === "workflow" && (
+        {/* Overview */}
+        {tab === "summary"   && <SummaryTab profile={profile} caseId={id} />}
+        {tab === "workflow"  && (
           <ClinicalWorkflow
             caseId={id}
             caseName={`${patientName} — ${liveData?.malocclusionClass ?? profile.malocclusionClass}`}
@@ -497,47 +495,57 @@ export default function CaseDetailClient({ id }: { id: string }) {
             currentActorRole="Clinical Director"
           />
         )}
-        {tab === "scans"     && <ScanPanel caseId={id} />}
-        {tab === "plans"     && <TreatmentPlansPanel caseId={id} />}
-        {tab === "analysis"  && <ClinicalAnalysisPanel caseId={id} />}
-        {tab === "segment"   && <AISegmentationCenter caseId={id} />}
-        {tab === "proposal"  && <AIProposalPanel caseId={id} />}
-        {tab === "export"    && <PreExportQAPanel caseId={id} />}
-        {tab === "ceph"      && <CephalometricPanel caseId={id} />}
-        {tab === "photos"    && <PatientPhotosPanel caseId={id} />}
-        {tab === "surgical"  && <SurgicalPlanningPanel caseId={id} />}
-        {tab === "movements"  && <ToothTransformPanel caseId={id} />}
-        {tab === "processing"        && <ScanProcessingPanel caseId={id} scanId={scanId ?? ''} />}
-        {tab === "tx-monitoring"    && <TreatmentMonitoringPanel caseId={id} planId={planId ?? ''} />}
-        {tab === "cbct"             && <CbctFusionPanel caseId={id} stlScanId={scanId ?? ''} />}
-        {tab === "consents"         && <ConsentFormsPanel caseId={id} />}
-        {tab === "appointments"     && <AppointmentsPanel caseId={id} />}
-        {tab === "reports"          && <ClinicalReportsPanel caseId={id} planId={planId} />}
-        {tab === "lab-orders"       && <LabOrdersPanel caseId={id} />}
-        {tab === "referrals"        && <ReferralsPanel caseId={id} />}
-        {tab === "insurance"        && <InsurancePanel caseId={id} />}
-        {tab === "prescriptions"    && <PrescriptionsPanel caseId={id} />}
-        {tab === "remote-monitoring"&& <RemoteMonitoringPanel caseId={id} />}
-        {tab === "outcomes"         && <OutcomesPanel caseId={id} />}
-        {tab === "alerts"           && <ClinicalAlertsPanel caseId={id} token="" />}
-        {tab === "tasks"            && <TasksPanel caseId={id} token="" />}
-        {tab === "documents"        && <DocumentsPanel caseId={id} token="" />}
-        {tab === "education"        && <PatientEducationPanel caseId={id} token="" />}
-        {tab === "occlusion"        && <OcclusionPanel caseId={id} token="" />}
-        {tab === "radiology"        && <RadiologyPanel patientId={liveData?.patient.id ?? id} caseId={id} token="" />}
-        {tab === "audit"            && <AuditTrail caseId={id} isLive={dataSource === 'api'} />}
-        {tab === "pipeline"         && <TreatmentPipelinePanel caseId={id} token="" />}
-        {tab === "scan-validation"  && <ScanValidationPanel caseId={id} uploadId={scanId} token="" />}
-        {tab === "segmentation"     && <ToothSegmentationPanel uploadId={scanId ?? ""} token="" />}
-        {tab === "clinical-deep"    && <ClinicalAnalysisDeepPanel caseId={id} uploadId={scanId} token="" />}
-        {tab === "tx-goals"         && <TreatmentGoalsPanel caseId={id} token="" />}
-        {tab === "cad-studio"       && <CADWorkspacePanel caseId={id} token="" />}
-        {tab === "biomechanics"     && <BiomechanicsPanel setupId={setupId} token="" />}
-        {tab === "ai-assistant"     && <AIClinicalAssistantPanel setupId={setupId} token="" />}
-        {tab === "stages"           && <TreatmentStagesPanel setupId={setupId} token="" />}
-        {tab === "qa-report"        && <QAReportPanel setupId={setupId} token="" />}
-        {tab === "aligner-preview"  && <AlignerPreviewPanel setupId={setupId} token="" />}
-        {tab === "manufacturing"    && <ManufacturingPackagePanel setupId={setupId} caseId={id} token="" />}
+        {tab === "audit"     && <AuditTrail caseId={id} isLive={dataSource === 'api'} />}
+
+        {/* STL / Scans */}
+        {tab === "scans"          && <ScanPanel caseId={id} />}
+        {tab === "scan-validation" && <ScanValidationPanel caseId={id} uploadId={scanId} token="" />}
+        {tab === "processing"     && <ScanProcessingPanel caseId={id} scanId={scanId ?? ''} />}
+
+        {/* AI Segmentation */}
+        {tab === "segment"        && <AISegmentationCenter caseId={id} />}
+        {tab === "segmentation"   && <ToothSegmentationPanel uploadId={scanId ?? ""} token="" />}
+        {tab === "pipeline"       && <TreatmentPipelinePanel caseId={id} token="" />}
+
+        {/* Treatment Planning */}
+        {tab === "plans"          && <TreatmentPlansPanel caseId={id} />}
+        {tab === "tx-goals"       && <TreatmentGoalsPanel caseId={id} token="" />}
+        {tab === "proposal"       && <AIProposalPanel caseId={id} />}
+
+        {/* CAD */}
+        {tab === "cad-studio"     && <CADWorkspacePanel caseId={id} token="" />}
+        {tab === "movements"      && <ToothTransformPanel caseId={id} />}
+        {tab === "biomechanics"   && <BiomechanicsPanel setupId={setupId} token="" />}
+
+        {/* Attachments & IPR */}
+        {tab === "attachments"    && <AttachmentPlanner caseId={id} planId={planId ?? ''} />}
+        {tab === "ipr"            && <IPRPlanner caseId={id} planId={planId ?? ''} />}
+
+        {/* Staging & Aligners */}
+        {tab === "stages"         && <TreatmentStagesPanel setupId={setupId} token="" />}
+        {tab === "aligner-staging" && <AlignerStaging caseId={id} patientName={patientName} />}
+        {tab === "aligner-preview" && <AlignerPreviewPanel setupId={setupId} token="" />}
+
+        {/* QA & Export */}
+        {tab === "qa-report"      && <QAReportPanel setupId={setupId} token="" />}
+        {tab === "export"         && <PreExportQAPanel caseId={id} />}
+        {tab === "manufacturing"  && <ManufacturingPackagePanel setupId={setupId} caseId={id} token="" />}
+
+        {/* Analysis & Imaging */}
+        {tab === "analysis"       && <ClinicalAnalysisPanel caseId={id} />}
+        {tab === "clinical-deep"  && <ClinicalAnalysisDeepPanel caseId={id} uploadId={scanId} token="" />}
+        {tab === "occlusion"      && <OcclusionPanel caseId={id} token="" />}
+        {tab === "ceph"           && <CephalometricPanel caseId={id} />}
+        {tab === "cbct"           && <CbctFusionPanel caseId={id} stlScanId={scanId ?? ''} />}
+        {tab === "radiology"      && <RadiologyPanel patientId={liveData?.patient.id ?? id} caseId={id} token="" />}
+
+        {/* AI & Clinical */}
+        {tab === "ai-assistant"   && <AIClinicalAssistantPanel setupId={setupId} token="" />}
+        {tab === "alerts"         && <ClinicalAlertsPanel caseId={id} token="" />}
+
+        {/* Documentation */}
+        {tab === "reports"        && <ClinicalReportsPanel caseId={id} planId={planId} />}
+        {tab === "photos"         && <PatientPhotosPanel caseId={id} />}
       </div>
     </section>
   );

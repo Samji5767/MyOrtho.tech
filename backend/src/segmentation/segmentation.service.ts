@@ -238,8 +238,10 @@ export class SegmentationService {
     for (let i = 0; i < teeth.length; i += batchSize) {
       const batch = teeth.slice(i, i + batchSize);
       for (const tooth of batch) {
-        const isThirdMolar = [18, 28, 38, 48].includes(tooth.fdi);
-        const isMissing = isThirdMolar && Math.random() > 0.6;
+        // Third molars are included by default in the rule-based fallback.
+        // Actual presence/absence must be determined by the real AI inference
+        // pipeline or clinician correction — not by random simulation.
+        const isMissing = false;
         const confidence = isMissing ? 0 : deterministicConfidence(tooth.fdi, 42);
         const hasFlag = [14, 21].includes(tooth.fdi);
 
@@ -322,7 +324,9 @@ export class SegmentationService {
         // Confidence improvement for repair operations
         const repairOps = new Set(['fix_geometry','repair_mesh','improve_segmentation','rebuild_tooth','recalculate_landmarks']);
         if (repairOps.has(dto.correctionType) && beforeConf !== null) {
-          afterConf = Math.min(1, beforeConf + 0.05 + Math.random() * 0.07);
+          // Fixed increment: repair operations improve confidence by a standard 0.08.
+          // Random increment removed — simulated confidence values are not clinically meaningful.
+          afterConf = Math.min(1, beforeConf + 0.08);
           await this.pool.query(
             `UPDATE tooth_segments SET confidence = $3, version = version + 1
                WHERE job_id = $1 AND tooth_number = $2`,

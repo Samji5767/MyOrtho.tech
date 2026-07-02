@@ -29,6 +29,13 @@ function assertRequiredEnv(): void {
       'Set a strong POSTGRES_PASSWORD in your .env file before deploying to production.',
     );
   }
+  const adminPw = process.env.MYORTHO_ADMIN_PASSWORD ?? '';
+  if (!adminPw) {
+    console.warn(
+      '[WARN] MYORTHO_ADMIN_PASSWORD is not set. The bootstrap admin account will use ' +
+      'the default password "adminadmin". Set this env var before deploying to production.',
+    );
+  }
 }
 
 async function bootstrap() {

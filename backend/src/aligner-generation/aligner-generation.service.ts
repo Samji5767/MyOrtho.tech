@@ -1,4 +1,5 @@
-import { Injectable, Inject, NotFoundException, Logger } from '@nestjs/common';
+import { Injectable, Inject, NotFoundException, ServiceUnavailableException, Logger } from '@nestjs/common';
+import * as fs from 'fs';
 import type { Pool } from 'pg';
 import { PG_POOL } from '../database/database.module';
 
@@ -677,6 +678,35 @@ export class AlignerGenerationService {
     }
 
     return summaries;
+  }
+
+  // ── STL file streaming ─────────────────────────────────────────────────────
+
+  async getStlFile(planId: string, orgId: string): Promise<{ filePath: string; planId: string }> {
+    const { rows } = await this.db.query(
+      `SELECT plan_id, stl_export_ready, stl_export_path
+         FROM aligner_generation_plans
+        WHERE plan_id = $1 AND organization_id = $2`,
+      [planId, orgId],
+    );
+    if (!rows.length) throw new NotFoundException('Aligner generation plan not found');
+    const row = rows[0];
+    if (!row.stl_export_ready || !row.stl_export_path) {
+      throw new ServiceUnavailableException(
+        'STL export is not ready. ' +
+        'Aligner shell generation requires per-tooth mesh files produced by the AI segmentation pipeline. ' +
+        'The segmentation pipeline is not operational (MODEL_CHECKPOINT not loaded). ' +
+        'Call POST .../stl-ready once a real manufacturing pipeline produces output files.',
+      );
+    }
+    const filePath = row.stl_export_path as string;
+    if (!fs.existsSync(filePath)) {
+      throw new ServiceUnavailableException(
+        'STL file is not accessible at the configured export path. ' +
+        'The file may have been deleted or the manufacturing pipeline did not complete.',
+      );
+    }
+    return { filePath, planId: row.plan_id as string };
   }
 
   // ── Guard ──────────────────────────────────────────────────────────────────

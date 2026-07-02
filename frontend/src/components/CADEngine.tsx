@@ -7,6 +7,8 @@ import {
   PerspectiveCamera, TransformControls,
 } from "@react-three/drei";
 import * as THREE from "three";
+import { STLLoader } from "three/examples/jsm/loaders/STLLoader.js";
+import { listScans, type ScanRecord } from "@/lib/api/scans";
 import {
   AlertTriangle, BarChart3, Camera, CheckCircle2, ChevronDown, ChevronRight, ChevronUp,
   ChevronsLeft, ChevronsRight, Download, Eye, EyeOff, Ghost, Layers, ListOrdered,
@@ -416,6 +418,7 @@ function CADScene({
   colorMapColors,
   snapshotEnabled,
   onSnapshotDone,
+  archGeometries,
 }: {
   teeth: ToothObject[];
   selectedFdis: Set<number>;
@@ -452,6 +455,7 @@ function CADScene({
   colorMapColors: Map<number, string>;
   snapshotEnabled: boolean;
   onSnapshotDone: () => void;
+  archGeometries: { upper: THREE.BufferGeometry | null; lower: THREE.BufferGeometry | null };
 }) {
   const meshRegistry = useRef<Map<number, THREE.Mesh>>(new Map());
   const [activeMesh, setActiveMesh] = useState<THREE.Mesh | null>(null);
@@ -575,6 +579,36 @@ function CADScene({
             color={gingivaMandColor} roughness={0.68} metalness={0}
             transparent={mandibleTransparency > 0 || lightingPreset === "xray"}
             opacity={lightingPreset === "xray" ? 0.15 : Math.max(0, 1 - mandibleTransparency)}
+          />
+        </mesh>
+      )}
+
+      {/* Arch scan meshes — real patient geometry when scan data is available.
+          Geometry is centered and scaled to MM_TO_SCENE; registration to
+          planning coordinates is approximate. Not for clinical measurements. */}
+      {archGeometries.upper && showMaxilla && (
+        <mesh geometry={archGeometries.upper}>
+          <meshPhysicalMaterial
+            color={lightingPreset === "xray" ? "#88aacc" : "#e8d0bc"}
+            roughness={0.60}
+            metalness={0}
+            transparent
+            opacity={lightingPreset === "xray" ? 0.22 : Math.max(0.08, 1 - maxillaTransparency)}
+            clippingPlanes={clippingPlanes}
+            side={THREE.DoubleSide}
+          />
+        </mesh>
+      )}
+      {archGeometries.lower && showMandible && (
+        <mesh geometry={archGeometries.lower}>
+          <meshPhysicalMaterial
+            color={lightingPreset === "xray" ? "#7799bb" : "#d9c4af"}
+            roughness={0.60}
+            metalness={0}
+            transparent
+            opacity={lightingPreset === "xray" ? 0.22 : Math.max(0.08, 1 - mandibleTransparency)}
+            clippingPlanes={clippingPlanes}
+            side={THREE.DoubleSide}
           />
         </mesh>
       )}
@@ -842,6 +876,13 @@ export default function CADEngine() {
   const [animStageIndex, setAnimStageIndex] = useState(0);
   const animTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
+  // Arch scan meshes — loaded from the backend when a caseId is available.
+  // These are real patient STL scans (full arch geometry), not per-tooth meshes.
+  const [archGeometries, setArchGeometries] = useState<{
+    upper: THREE.BufferGeometry | null;
+    lower: THREE.BufferGeometry | null;
+  }>({ upper: null, lower: null });
+
   const occlusionContacts = useMemo<OcclusionContact[]>(() => {
     const positions = buildToothPositions(teeth, toothOverrides);
     return computeOcclusionContacts(positions);
@@ -871,6 +912,57 @@ export default function CADEngine() {
     });
     return m;
   }, [colorMapEnabled, teeth, colorMapData]);
+
+  // Load arch scan meshes when a caseId is available.
+  // Each scan STL is fetched as a binary ArrayBuffer and parsed with STLLoader.
+  // The geometry is centered and scaled to scene units (MM_TO_SCENE = 0.1).
+  // Registration to the planning coordinate system is approximate.
+  useEffect(() => {
+    const caseId = state.caseId;
+    if (!caseId) return;
+    let cancelled = false;
+
+    async function loadArchScan(scan: ScanRecord): Promise<THREE.BufferGeometry | null> {
+      if (!['stl'].includes(scan.fileFormat.toLowerCase())) return null;
+      try {
+        const res = await fetch(`/api/cases/${caseId}/scans/${scan.id}/file`, { credentials: 'include' });
+        if (!res.ok) return null;
+        const buffer = await res.arrayBuffer();
+        const geom = new STLLoader().parse(buffer);
+        geom.computeVertexNormals();
+        geom.center();
+        geom.scale(MM_TO_SCENE, MM_TO_SCENE, MM_TO_SCENE);
+        return geom;
+      } catch {
+        return null;
+      }
+    }
+
+    (async () => {
+      try {
+        const scans = await listScans(caseId);
+        const upperScan = scans.find(s => s.jawType === 'maxillary');
+        const lowerScan = scans.find(s => s.jawType === 'mandibular');
+        const [upper, lower] = await Promise.all([
+          upperScan ? loadArchScan(upperScan) : Promise.resolve(null),
+          lowerScan ? loadArchScan(lowerScan) : Promise.resolve(null),
+        ]);
+        if (!cancelled) setArchGeometries({ upper, lower });
+      } catch {
+        // Scan list unavailable — leave placeholder geometry active
+      }
+    })();
+
+    return () => { cancelled = true; };
+  }, [state.caseId]);
+
+  // Dispose arch geometries when they change or the component unmounts
+  useEffect(() => {
+    return () => {
+      archGeometries.upper?.dispose();
+      archGeometries.lower?.dispose();
+    };
+  }, [archGeometries]);
 
   // Undo/redo history stack
   const historyRef = useRef<OverridesMap[]>([new Map()]);
@@ -1141,15 +1233,34 @@ export default function CADEngine() {
   return (
     <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_320px]">
       {/* Geometry status — shown because teeth are rendered as scaled-sphere placeholders,
-          not real segmented meshes. Real geometry requires AI segmentation results. */}
-      <div className="col-span-full rounded-lg border border-amber-500/30 bg-amber-500/5 px-4 py-3 flex items-start gap-2">
-        <AlertTriangle size={14} className="mt-0.5 shrink-0 text-amber-400" />
-        <p className="text-xs text-amber-300 leading-relaxed">
-          <span className="font-semibold">Placeholder geometry.</span>{" "}
-          Tooth meshes are scaled-sphere approximations — not real tooth geometry.
-          Real per-tooth meshes require completed AI segmentation (MODEL_CHECKPOINT not loaded).
-          Movement planning and collision detection operate on these placeholders only.
-          Do not use for clinical measurements or manufacturing export.
+          not real segmented meshes. Real geometry requires AI segmentation results.
+          If scan STL files have been uploaded, arch meshes are shown as reference geometry. */}
+      <div className={`col-span-full rounded-lg border px-4 py-3 flex items-start gap-2 ${
+        archGeometries.upper || archGeometries.lower
+          ? "border-blue-500/30 bg-blue-500/5"
+          : "border-amber-500/30 bg-amber-500/5"
+      }`}>
+        <AlertTriangle size={14} className={`mt-0.5 shrink-0 ${archGeometries.upper || archGeometries.lower ? "text-blue-400" : "text-amber-400"}`} />
+        <p className={`text-xs leading-relaxed ${archGeometries.upper || archGeometries.lower ? "text-blue-300" : "text-amber-300"}`}>
+          {archGeometries.upper || archGeometries.lower ? (
+            <>
+              <span className="font-semibold">Scan geometry loaded.</span>{" "}
+              Arch scan mesh{archGeometries.upper && archGeometries.lower ? "es" : ""} loaded
+              ({[archGeometries.upper && "maxillary", archGeometries.lower && "mandibular"].filter(Boolean).join(", ")}).
+              Geometry is centered to origin — registration to planning coordinates is approximate.
+              Individual tooth meshes remain sphere approximations; real per-tooth geometry requires AI segmentation.
+              Do not use for clinical measurements or manufacturing export.
+            </>
+          ) : (
+            <>
+              <span className="font-semibold">Placeholder geometry.</span>{" "}
+              Tooth meshes are scaled-sphere approximations — not real tooth geometry.
+              Real per-tooth meshes require completed AI segmentation (MODEL_CHECKPOINT not loaded).
+              Upload a scan STL to display arch reference geometry.
+              Movement planning and collision detection operate on these placeholders only.
+              Do not use for clinical measurements or manufacturing export.
+            </>
+          )}
         </p>
       </div>
 
@@ -1421,6 +1532,7 @@ export default function CADEngine() {
                 colorMapColors={colorMapColors}
                 snapshotEnabled={snapshotEnabled}
                 onSnapshotDone={() => setSnapshotEnabled(false)}
+                archGeometries={archGeometries}
               />
             </Suspense>
           </Canvas>

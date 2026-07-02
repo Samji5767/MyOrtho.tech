@@ -6,12 +6,13 @@ import {
   Body,
   Param,
   Req,
+  Res,
   UseGuards,
   UnauthorizedException,
   HttpCode,
   HttpStatus,
 } from '@nestjs/common';
-import type { Request } from 'express';
+import type { Request, Response } from 'express';
 import { AuthGuard } from '../auth/auth.guard';
 import { PermissionsGuard } from '../auth/permissions.guard';
 import { SsoService, type SsoProvider } from './sso.service';
@@ -101,6 +102,41 @@ export class SsoController {
         'This configuration record is stored but will not enable SSO login until ' +
         'the SAML/OIDC callback handler is implemented and deployed.',
     };
+  }
+
+  /**
+   * GET /api/sso/metadata
+   * Returns SAML 2.0 SP metadata XML for this application.
+   * Requires admin authentication — download this to configure your Identity Provider.
+   * AuthnRequests are not signed (no SP private key). Assertions must be signed by the IdP.
+   */
+  @Get('metadata')
+  @UseGuards(PermissionsGuard)
+  getMetadata(@Req() req: Request, @Res() res: Response) {
+    const { role } = getUser(req);
+    if (!['admin', 'super_admin'].includes(role)) {
+      throw new UnauthorizedException('Admin role required');
+    }
+    const proto  = (req.headers['x-forwarded-proto'] as string | undefined) ?? req.protocol;
+    const host   = (req.headers['x-forwarded-host'] as string | undefined) ?? req.get('host') ?? 'localhost';
+    const baseUrl = `${proto}://${host}`;
+    const xml = this.ssoService.generateSpMetadata(baseUrl);
+    res.setHeader('Content-Type', 'application/xml; charset=utf-8');
+    res.setHeader('Content-Disposition', 'attachment; filename="myortho-sp-metadata.xml"');
+    res.send(xml);
+  }
+
+  /**
+   * GET /api/sso/initiate
+   * Returns SSO initiation information for this organization.
+   * For SAML: returns the IdP SSO URL for redirect.
+   * For OIDC: returns a note that openid-client library is required.
+   * Does NOT produce a signed SAML AuthnRequest.
+   */
+  @Get('initiate')
+  async getInitiate(@Req() req: Request) {
+    const { orgId } = getUser(req);
+    return this.ssoService.getInitiateInfo(orgId);
   }
 
   /**

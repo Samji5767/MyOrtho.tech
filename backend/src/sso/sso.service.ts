@@ -146,4 +146,77 @@ export class SsoService {
     );
     if (!rowCount) throw new NotFoundException(`No SSO configuration found for provider: ${provider}`);
   }
+
+  /**
+   * Generate SAML 2.0 Service Provider metadata XML.
+   * The ACS URL and entity ID are derived from the provided base URL.
+   * This XML must be provided to the Identity Provider during configuration.
+   * NOTE: AuthnRequests are not signed (no SP private key configured).
+   */
+  generateSpMetadata(baseUrl: string): string {
+    const entityId = `${baseUrl}/api/sso`;
+    const acsUrl   = `${baseUrl}/api/sso/callback/saml`;
+    return [
+      '<?xml version="1.0" encoding="UTF-8"?>',
+      '<EntityDescriptor xmlns="urn:oasis:names:tc:SAML:2.0:metadata"',
+      `                  entityID="${entityId}">`,
+      '  <SPSSODescriptor',
+      '      AuthnRequestsSigned="false"',
+      '      WantAssertionsSigned="true"',
+      '      protocolSupportEnumeration="urn:oasis:names:tc:SAML:2.0:protocol">',
+      '    <NameIDFormat>',
+      '      urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress',
+      '    </NameIDFormat>',
+      '    <AssertionConsumerService',
+      '        Binding="urn:oasis:names:tc:SAML:2.0:bindings:HTTP-POST"',
+      `        Location="${acsUrl}"`,
+      '        index="1"',
+      '        isDefault="true"/>',
+      '  </SPSSODescriptor>',
+      '</EntityDescriptor>',
+    ].join('\n');
+  }
+
+  /**
+   * Returns SSO initiation information for the organization.
+   * For SAML: the IdP SSO URL to redirect to.
+   * For OIDC: a note that authorization URL construction requires openid-client.
+   * Does NOT produce a signed SAML AuthnRequest (library not installed).
+   */
+  async getInitiateInfo(orgId: string): Promise<{
+    available: boolean;
+    provider: SsoProvider | null;
+    idpUrl: string | null;
+    note: string;
+  }> {
+    const config = await this.getConfiguration(orgId);
+    if (!config) {
+      return { available: false, provider: null, idpUrl: null, note: 'SSO not configured for this organization.' };
+    }
+    if (config.status !== 'active') {
+      return {
+        available: false,
+        provider: config.provider,
+        idpUrl: null,
+        note: `SSO configuration exists (${config.provider}) but is not active — status: ${config.status}. Contact your administrator.`,
+      };
+    }
+    if (config.provider === 'saml') {
+      return {
+        available: !!config.ssoUrl,
+        provider: 'saml',
+        idpUrl: config.ssoUrl,
+        note: config.ssoUrl
+          ? 'SAML IdP URL provided. Full AuthnRequest signing requires @node-saml/node-saml (not yet installed). Direct redirect without signed request only.'
+          : 'SAML sso_url is not configured. Update SSO configuration with the IdP SSO endpoint.',
+      };
+    }
+    // OIDC providers: google, microsoft, okta, onelogin, oidc
+    return {
+      available: false,
+      provider: config.provider,
+      idpUrl: config.discoveryUrl,
+      note: 'OIDC authorization code flow requires openid-client library (not yet installed). discovery_url is provided for reference. Install openid-client to enable OIDC login.',
+    };
+  }
 }

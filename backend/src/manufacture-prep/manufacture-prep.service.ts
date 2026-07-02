@@ -121,11 +121,17 @@ export class ManufacturePrepService {
     const stageCount = parseInt(stageRows[0]?.cnt ?? '0', 10);
     const manifest = buildManifest(dto, stageCount);
 
+    const NOT_IMPLEMENTED_MSG =
+      'Manufacturing export pipeline not implemented. ' +
+      'Aligner shell geometry requires the AI segmentation pipeline to produce per-tooth mesh files. ' +
+      'The pipeline is not operational (MODEL_CHECKPOINT not loaded). ' +
+      'The manifest records which files would be produced once the pipeline is available.';
+
     const { rows } = await this.pool.query(
       `INSERT INTO manufacture_exports
          (case_id, treatment_plan_id, organization_id, export_format, export_type,
-          stage_range_from, stage_range_to, status, manifest, generated_by, generated_at)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,'pending',$8,$9,NOW())
+          stage_range_from, stage_range_to, status, error_message, manifest, generated_by, generated_at)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,'failed',$8,$9,$10,NOW())
          RETURNING *`,
       [
         caseId,
@@ -135,27 +141,12 @@ export class ManufacturePrepService {
         dto.exportType,
         dto.stageRangeFrom ?? null,
         dto.stageRangeTo ?? null,
+        NOT_IMPLEMENTED_MSG,
         JSON.stringify(manifest),
         userId,
       ],
     );
     const exportJob = rows[0];
-
-    // Simulate async processing
-    setTimeout(async () => {
-      await this.pool.query(
-        `UPDATE manufacture_exports
-           SET status = 'completed', completed_at = NOW(),
-               file_path = $2, file_size_bytes = $3
-           WHERE id = $1`,
-        [
-          exportJob.id,
-          `/exports/${caseId}/${exportJob.id}/${dto.exportType}.${dto.exportFormat === 'zip' ? 'zip' : 'zip'}`,
-          manifest.estimatedSizeBytes,
-        ],
-      );
-    }, 3000);
-
     return this.format(exportJob);
   }
 

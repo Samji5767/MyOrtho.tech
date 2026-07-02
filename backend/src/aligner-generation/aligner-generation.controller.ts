@@ -1,6 +1,8 @@
+import * as fs from 'fs';
 import {
-  Body, Controller, Get, Param, Post, Req, UseGuards,
+  Body, Controller, Get, Param, Post, Req, Res, StreamableFile, UseGuards,
 } from '@nestjs/common';
+import type { Response } from 'express';
 import { AuthGuard } from '../auth/auth.guard';
 import { AlignerGenerationService, type GenerateDto } from './aligner-generation.service';
 
@@ -46,6 +48,20 @@ export class AlignerGenerationController {
     @Param('stageNum') stageNum: string,
   ) {
     return this.svc.getStageAllocations(caseId, req.user.orgId, planId, parseInt(stageNum, 10));
+  }
+
+  @Get('api/cases/:caseId/plans/:planId/aligner-generation/stl-export')
+  async getStlExport(
+    @Req() req: any,
+    @Param('caseId') _caseId: string,
+    @Param('planId') planId: string,
+    @Res({ passthrough: true }) res: Response,
+  ): Promise<StreamableFile> {
+    const { filePath, planId: pid } = await this.svc.getStlFile(planId, req.user.orgId);
+    res.setHeader('Content-Disposition', `attachment; filename="aligner-plan-${pid}.stl"`);
+    res.setHeader('Content-Type', 'model/stl');
+    res.setHeader('Cache-Control', 'private, no-cache');
+    return new StreamableFile(fs.createReadStream(filePath));
   }
 
   @Post('api/cases/:caseId/plans/:planId/aligner-generation/approve')

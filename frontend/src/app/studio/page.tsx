@@ -164,7 +164,7 @@ function ImportTab({ caseData }: { caseData: CaseDetail | null }) {
               </p>
             </div>
             <Link
-              href="/ai-analysis"
+              href="/studio"
               className="inline-flex h-10 items-center gap-2 rounded-xl bg-[color:var(--primary)] px-5 text-sm font-semibold text-[color:var(--primary-foreground)] shadow-[var(--shadow-sm)] transition-transform active:scale-95"
             >
               <ScanLine size={15} />

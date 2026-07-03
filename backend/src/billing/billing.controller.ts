@@ -39,7 +39,7 @@ export class BillingController {
     const origin = (req.headers['origin'] as string) ?? process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000';
     return this.billing.createCheckoutSession({
       orgId: user.orgId,
-      userId: user.sub,
+      userId: user.id,
       interval: body.interval,
       email: user.email,
       successUrl: body.successUrl ?? `${origin}/settings/billing?success=1`,

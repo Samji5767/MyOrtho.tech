@@ -36,6 +36,6 @@ export class OrgBrandingController {
     if (!allowedRoles.includes(user.role)) {
       throw new ForbiddenException('Only clinic admins can update branding');
     }
-    return this.branding.updateBranding(user.orgId, user.sub, body);
+    return this.branding.updateBranding(user.orgId, user.id, body);
   }
 }

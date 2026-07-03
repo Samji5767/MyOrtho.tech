@@ -178,14 +178,14 @@ export const ROLE_CONFIG: Record<RoleKey, RoleConfig> = {
     label: "Lab Technician",
     category: "lab",
     description: "Prepares digital models, runs manufacturing jobs, and performs quality checks.",
-    primaryWorkspace: { href: "/manufacturing", label: "Manufacturing", description: "Your production queue" },
+    primaryWorkspace: { href: "/cases", label: "Manufacturing", description: "Your production queue" },
     recommendedRoutes: [
-      { href: "/manufacturing", label: "Manufacturing", description: "Print queue and job status" },
+      { href: "/cases", label: "Manufacturing", description: "Print queue and job status" },
       { href: "/studio",        label: "CAD Studio",    description: "Model prep and inspection" },
       { href: "/workflow",      label: "Workflow",      description: "Case status and handoffs" },
     ],
     recommendedActions: [
-      { label: "Open production queue",   href: "/manufacturing", tone: "primary" },
+      { label: "Open production queue",   href: "/cases", tone: "primary" },
       { label: "Inspect model in Studio", href: "/studio",        tone: "info" },
     ],
     defaultWidgets: ["production_queue", "print_status", "sla_alerts", "failed_jobs"],
@@ -208,12 +208,12 @@ export const ROLE_CONFIG: Record<RoleKey, RoleConfig> = {
     primaryWorkspace: { href: "/dashboard", label: "Dashboard", description: "Lab operations dashboard" },
     recommendedRoutes: [
       { href: "/dashboard",     label: "Dashboard",     description: "Lab KPIs and SLA metrics" },
-      { href: "/manufacturing", label: "Manufacturing", description: "Production queue management" },
+      { href: "/cases", label: "Manufacturing", description: "Production queue management" },
       { href: "/analytics",     label: "Analytics",     description: "Throughput and efficiency" },
     ],
     recommendedActions: [
       { label: "Check SLA status",       href: "/dashboard",     tone: "warning" },
-      { label: "Review production queue", href: "/manufacturing", tone: "primary" },
+      { label: "Review production queue", href: "/cases", tone: "primary" },
       { label: "Open analytics",         href: "/analytics",     tone: "info" },
     ],
     defaultWidgets: ["production_queue", "sla_alerts", "throughput", "failed_jobs"],
@@ -264,12 +264,12 @@ export const ROLE_CONFIG: Record<RoleKey, RoleConfig> = {
     primaryWorkspace: { href: "/analytics", label: "Analytics", description: "Manufacturing performance metrics" },
     recommendedRoutes: [
       { href: "/analytics",     label: "Analytics",     description: "Manufacturing throughput and SLA" },
-      { href: "/manufacturing", label: "Manufacturing", description: "Production pipeline overview" },
+      { href: "/cases", label: "Manufacturing", description: "Production pipeline overview" },
       { href: "/dashboard",     label: "Dashboard",     description: "Operational summary" },
     ],
     recommendedActions: [
       { label: "Review manufacturing metrics", href: "/analytics",     tone: "primary" },
-      { label: "Check production pipeline",    href: "/manufacturing", tone: "info" },
+      { label: "Check production pipeline",    href: "/cases", tone: "info" },
     ],
     defaultWidgets: ["production_queue", "throughput", "sla_metrics", "failed_jobs"],
     clinicalPermissionSummary: [

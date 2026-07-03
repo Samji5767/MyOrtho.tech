@@ -414,7 +414,7 @@ export default function CasesPage() {
         {[
           { href: "/workflow",       label: "Clinical Workflow",  icon: Clock, tone: "bg-[color:var(--primary-glow)] text-[color:var(--primary)]" },
           { href: "/cases/new",      label: "New Case Wizard",    icon: Plus,  tone: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400" },
-          { href: "/manufacturing",  label: "Manufacturing",      icon: AlertCircle, tone: "bg-amber-500/10 text-amber-600 dark:text-amber-400" },
+          { href: "/cases",  label: "Manufacturing",      icon: AlertCircle, tone: "bg-amber-500/10 text-amber-600 dark:text-amber-400" },
         ].map(item => {
           const Icon = item.icon;
           return (

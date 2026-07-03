@@ -79,7 +79,7 @@ export const CAD_CAPABILITIES: CadCapability[] = [
     maturity: "simulated",
     summary: "Arch length/width, intercanine & intermolar distances, curve of Spee, symmetry index.",
     statusNote: "Backend ai-engine arch_analysis exists; frontend reads a typed ArchAnalysis model.",
-    surface: "/ai-analysis",
+    surface: "/studio",
   },
   {
     id: "occlusal-analysis",

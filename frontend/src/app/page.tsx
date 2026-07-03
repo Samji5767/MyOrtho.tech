@@ -50,7 +50,7 @@ const SHORTCUTS: Shortcut[] = [
   { label: "Cases",              sub: "All patient cases",            icon: FolderKanban, href: "/cases" },
   { label: "Patients",           sub: "Patient records",              icon: Users,        href: "/patients" },
   { label: "CAD Design Studio",  sub: "3D aligner & CAD workspace",   icon: Box,          href: "/studio" },
-  { label: "AI Copilot",         sub: "Treatment proposal & review",  icon: Brain,        href: "/ai-analysis" },
+  { label: "AI Copilot",         sub: "Treatment proposal & review",  icon: Brain,        href: "/studio" },
   { label: "Export & Downloads", sub: "Printer-ready file exports",   icon: Download,     href: "/cases" },
   { label: "Settings",           sub: "Preferences & admin",          icon: Settings,     href: "/settings" },
 ];

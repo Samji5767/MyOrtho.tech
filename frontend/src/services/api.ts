@@ -1,5 +1,6 @@
 import { Patient, Case, Printer, PrintJob } from "@/types";
 import { supabase, ensureAuth } from "@/lib/supabase";
+import { safeStorage } from "@/lib/safeStorage";
 
 const PATIENTS_KEY = "myortho_patients";
 const CASES_KEY = "myortho_cases";
@@ -17,15 +18,11 @@ const isSupabaseConfigured = () => {
   return url && key && !url.includes("placeholder") && key !== "placeholder";
 };
 
-const getStoredData = <T>(key: string, fallback: T): T => {
-  if (typeof window === "undefined") return fallback;
-  const stored = localStorage.getItem(key);
-  return stored ? (JSON.parse(stored) as T) : fallback;
-};
+const getStoredData = <T>(key: string, fallback: T): T =>
+  safeStorage.getJSON<T>(key) ?? fallback;
 
 const setStoredData = <T>(key: string, data: T): void => {
-  if (typeof window === "undefined") return;
-  localStorage.setItem(key, JSON.stringify(data));
+  safeStorage.setJSON(key, data);
 };
 
 // Row mappers for Supabase → domain types

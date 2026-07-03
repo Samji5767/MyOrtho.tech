@@ -130,7 +130,13 @@ export class AuthController {
       }
     }
 
-    res.clearCookie(COOKIE_NAME, { httpOnly: true, path: '/' });
+    const isProduction = process.env.NODE_ENV === 'production';
+    res.clearCookie(COOKIE_NAME, {
+      httpOnly: true,
+      secure: isProduction,
+      sameSite: 'strict' as const,
+      path: '/',
+    });
     return { ok: true };
   }
 

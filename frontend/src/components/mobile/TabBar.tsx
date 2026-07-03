@@ -128,13 +128,13 @@ const SIDEBAR_GROUPS: SidebarGroup[] = [
     label: 'Studio',
     items: [
       { href: '/studio',      label: 'CAD Design Studio', icon: Box     },
-      { href: '/ai-analysis', label: 'Scan & Segment',    icon: ScanLine },
+      { href: '/studio', label: 'Scan & Segment',    icon: ScanLine },
     ],
   },
   {
     label: 'Manufacturing',
     items: [
-      { href: '/manufacturing', label: 'Manufacturing', icon: Factory },
+      { href: '/cases', label: 'Manufacturing', icon: Factory },
     ],
   },
   {

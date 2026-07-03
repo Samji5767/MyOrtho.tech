@@ -167,7 +167,7 @@ async def require_auth(request: Request) -> dict:
             audit(request, action="internal_auth", outcome="deny",
                   detail="INTERNAL_API_SECRET not configured")
             raise HTTPException(status_code=401, detail="Internal auth not configured")
-        if internal != INTERNAL_TOKEN:
+        if not hmac.compare_digest(internal, INTERNAL_TOKEN):
             audit(request, action="internal_auth", outcome="deny",
                   detail="invalid internal token")
             raise HTTPException(status_code=401, detail="Invalid internal token")

@@ -133,6 +133,18 @@ def _job_get(job_id: str) -> Optional[Dict[str, Any]]:
     return _memory_fallback.get(job_id)
 
 
+# ── CORS (internal service — only the NestJS backend should reach this) ──────
+
+_ALLOWED_ORIGINS = [o.strip() for o in os.getenv("CORS_ALLOWED_ORIGINS", "").split(",") if o.strip()]
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=_ALLOWED_ORIGINS or ["http://localhost:4000"],
+    allow_credentials=False,
+    allow_methods=["GET", "POST"],
+    allow_headers=["Authorization", "X-Internal-Token", "Content-Type"],
+)
+
 # ── Middleware ────────────────────────────────────────────────────────────────
 
 @app.middleware("http")

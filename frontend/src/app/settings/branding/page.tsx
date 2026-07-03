@@ -2,7 +2,7 @@
 
 import { useState, useEffect, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
-import { Building2, Globe, Image, Palette, Save, Type } from "lucide-react";
+import { Building2, Globe, Image as ImageIcon, Palette, Save, Type } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 
 interface OrgBranding {

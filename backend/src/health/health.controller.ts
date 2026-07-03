@@ -36,7 +36,6 @@ export class HealthController {
     const checks = {
       databaseUrlSet: databaseUrl,
       databaseConnected: dbConnected,
-      jwtSecretSet: Boolean(process.env.JWT_SECRET),
     };
     const ready = checks.databaseUrlSet && checks.databaseConnected;
 

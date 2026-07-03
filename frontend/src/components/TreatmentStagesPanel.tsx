@@ -301,6 +301,7 @@ export default function TreatmentStagesPanel({ setupId, token }: { setupId?: str
 
   const fetchStages = useCallback(async () => {
     if (!setupId) return;
+    const authHeaders = { Authorization: `Bearer ${token}`, "Content-Type": "application/json" };
     setLoading(true);
     setError(null);
     try {

@@ -9,11 +9,11 @@ export type ThreadStatus =
   | 'plan_ready'
   | 'pending_approval'
   | 'cad'
-  | 'manufacturing'
+  | 'export'
   | 'shipping'
   | 'completed';
 
-export type FilterKey = 'all' | 'urgent' | 'approval' | 'manufacturing' | 'completed';
+export type FilterKey = 'all' | 'urgent' | 'approval' | 'export' | 'completed';
 
 export type WorkflowSection =
   | 'Overview' | 'Scan' | 'Segment' | 'CAD' | 'Plan' | 'Mfg' | 'Notes' | 'Workflow' | 'Audit';
@@ -27,7 +27,7 @@ export type TimelineEventType =
   | 'approval_given'
   | 'cad_review'
   | 'cad_approved'
-  | 'manufacturing_started'
+  | 'export_ready'
   | 'qc_passed'
   | 'shipped'
   | 'note';
@@ -68,7 +68,7 @@ export function statusLabel(s: ThreadStatus): string {
     plan_ready: 'Plan ready',
     pending_approval: 'Awaiting approval',
     cad: 'CAD review',
-    manufacturing: 'Manufacturing',
+    export: 'Export',
     shipping: 'Shipping',
     completed: 'Completed',
   };
@@ -79,7 +79,7 @@ export function statusTone(s: ThreadStatus): 'primary' | 'warning' | 'danger' | 
   if (s === 'pending_approval' || s === 'plan_ready') return 'warning';
   if (s === 'new_scan' || s === 'segmentation') return 'info';
   if (s === 'cad') return 'primary';
-  if (s === 'manufacturing') return 'primary';
+  if (s === 'export') return 'primary';
   if (s === 'shipping' || s === 'completed') return 'success';
   return 'neutral';
 }
@@ -103,6 +103,6 @@ export function getThreadEvents(_threadId: string): TimelineEvent[] {
 export const TODAY_STATS = {
   activeCases: 0,
   awaitingApproval: 0,
-  inManufacturing: 0,
+  readyForExport: 0,
   slaAtRisk: 0,
 };

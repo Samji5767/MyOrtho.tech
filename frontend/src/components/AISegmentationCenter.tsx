@@ -390,6 +390,16 @@ export function AISegmentationCenter({ caseId }: Props) {
   const [error, setError] = useState("");
   const [showHistory, setShowHistory] = useState(false);
 
+  const loadJob = useCallback(async (jobId: string) => {
+    setLoadingJob(true); setSelectedFdi(null);
+    try {
+      const job = await getSegmentationJob(caseId, jobId);
+      setActiveJob(job);
+    } finally {
+      setLoadingJob(false);
+    }
+  }, [caseId]);
+
   const loadJobs = useCallback(async () => {
     setLoading(true); setError("");
     try {
@@ -405,17 +415,7 @@ export function AISegmentationCenter({ caseId }: Props) {
     } finally {
       setLoading(false);
     }
-  }, [caseId]);
-
-  const loadJob = useCallback(async (jobId: string) => {
-    setLoadingJob(true); setSelectedFdi(null);
-    try {
-      const job = await getSegmentationJob(caseId, jobId);
-      setActiveJob(job);
-    } finally {
-      setLoadingJob(false);
-    }
-  }, [caseId]);
+  }, [caseId, activeJob, loadJob]);
 
   useEffect(() => { loadJobs(); }, [loadJobs]);
 

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { AlertTriangle, CheckCircle2, ChevronDown, ChevronUp, Info, Loader2, MinusCircle, Plus, Trash2 } from "lucide-react";
 import {
   CephAnalysis, CephMeasurements, CreateCephDto,
@@ -295,9 +295,7 @@ export default function CephalometricPanel({ caseId }: { caseId: string }) {
   const [error, setError] = useState("");
   const [showForm, setShowForm] = useState(false);
 
-  useEffect(() => { load(); }, [caseId]);
-
-  async function load() {
+  const load = useCallback(async () => {
     setLoading(true); setError("");
     try {
       setAnalyses(await listCephAnalyses(caseId));
@@ -306,7 +304,9 @@ export default function CephalometricPanel({ caseId }: { caseId: string }) {
     } finally {
       setLoading(false);
     }
-  }
+  }, [caseId]);
+
+  useEffect(() => { load(); }, [load]);
 
   async function handleDelete(id: string) {
     try {

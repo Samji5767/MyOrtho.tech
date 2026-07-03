@@ -19,7 +19,7 @@ import { Button, Card, ProgressBar, StatusBadge } from "@/components/DesignSyste
 // Shown only in preview mode. Never presented as live backend data.
 
 type CaseUrgency = "routine" | "urgent" | "critical";
-type CaseStageStatus = "draft" | "submitted" | "clinical-review" | "approved" | "manufacturing" | "completed";
+type CaseStageStatus = "draft" | "scan_review" | "clinical_review" | "approved" | "active_treatment" | "completed";
 
 interface DemoCase {
   id: string;
@@ -39,7 +39,7 @@ const DEMO_CASES: DemoCase[] = [
   {
     id: "C-2883", patient: "Oliver T.", initials: "OT",
     accentClass: "bg-rose-500",
-    status: "clinical-review", urgency: "critical",
+    status: "clinical_review", urgency: "critical",
     doctor: "Dr. Park", type: "Class II Div1 — Canine reposition",
     age: "4 h", progress: 45, slaRisk: true,
   },
@@ -53,21 +53,21 @@ const DEMO_CASES: DemoCase[] = [
   {
     id: "C-2876", patient: "Emma K.", initials: "EK",
     accentClass: "bg-violet-500",
-    status: "manufacturing", urgency: "urgent",
+    status: "active_treatment", urgency: "urgent",
     doctor: "Dr. Chen", type: "Refinement — 8 upper aligners",
     age: "3 d", progress: 85, slaRisk: false,
   },
   {
     id: "C-2901", patient: "James R.", initials: "JR",
     accentClass: "bg-teal-500",
-    status: "clinical-review", urgency: "routine",
+    status: "clinical_review", urgency: "routine",
     doctor: "Dr. Lee", type: "Class I — Upper arch IPR 0.3 mm",
     age: "1 d", progress: 35, slaRisk: false,
   },
   {
     id: "C-2859", patient: "Marcus D.", initials: "MD",
     accentClass: "bg-blue-500",
-    status: "submitted", urgency: "urgent",
+    status: "scan_review", urgency: "urgent",
     doctor: "Dr. Torres", type: "Full-arch correction — 7 attachments",
     age: "3 d", progress: 60, slaRisk: true,
   },
@@ -88,12 +88,12 @@ const DEMO_CASES: DemoCase[] = [
 ];
 
 const STATUS_META: Record<CaseStageStatus, { label: string; tone: "neutral" | "info" | "primary" | "warning" | "success" | "danger" }> = {
-  draft:           { label: "Draft",            tone: "neutral"  },
-  submitted:       { label: "Submitted",        tone: "info"     },
-  "clinical-review": { label: "Clinical Review", tone: "primary" },
-  approved:        { label: "Approved",         tone: "success"  },
-  manufacturing:   { label: "Manufacturing",    tone: "info"     },
-  completed:       { label: "Completed",        tone: "success"  },
+  draft:            { label: "Draft",            tone: "neutral" },
+  scan_review:      { label: "Scan Review",      tone: "info"    },
+  clinical_review:  { label: "Clinical Review",  tone: "primary" },
+  approved:         { label: "Approved",         tone: "success" },
+  active_treatment: { label: "Active Treatment", tone: "info"    },
+  completed:        { label: "Completed",        tone: "success" },
 };
 
 const URGENCY_TONE: Record<CaseUrgency, "neutral" | "warning" | "danger"> = {
@@ -102,23 +102,23 @@ const URGENCY_TONE: Record<CaseUrgency, "neutral" | "warning" | "danger"> = {
   critical: "danger",
 };
 
-type FilterKey = "all" | "review" | "approved" | "manufacturing" | "completed" | "sla";
+type FilterKey = "all" | "review" | "approved" | "active_treatment" | "completed" | "sla";
 
 const FILTER_SPECS: { key: FilterKey; label: string }[] = [
-  { key: "all",           label: "All" },
-  { key: "review",        label: "Needs Review" },
-  { key: "approved",      label: "Approved" },
-  { key: "manufacturing", label: "Manufacturing" },
-  { key: "completed",     label: "Completed" },
-  { key: "sla",           label: "SLA Risk" },
+  { key: "all",              label: "All" },
+  { key: "review",           label: "Needs Review" },
+  { key: "approved",         label: "Approved" },
+  { key: "active_treatment", label: "Active Treatment" },
+  { key: "completed",        label: "Completed" },
+  { key: "sla",              label: "SLA Risk" },
 ];
 
 function filterCases(cases: DemoCase[], key: FilterKey): DemoCase[] {
-  if (key === "review")        return cases.filter(c => c.status === "clinical-review" || c.status === "submitted");
-  if (key === "approved")      return cases.filter(c => c.status === "approved");
-  if (key === "manufacturing") return cases.filter(c => c.status === "manufacturing");
-  if (key === "completed")     return cases.filter(c => c.status === "completed");
-  if (key === "sla")           return cases.filter(c => c.slaRisk);
+  if (key === "review")           return cases.filter(c => c.status === "clinical_review" || c.status === "scan_review");
+  if (key === "approved")         return cases.filter(c => c.status === "approved");
+  if (key === "active_treatment") return cases.filter(c => c.status === "active_treatment");
+  if (key === "completed")        return cases.filter(c => c.status === "completed");
+  if (key === "sla")              return cases.filter(c => c.slaRisk);
   return cases;
 }
 
@@ -183,8 +183,8 @@ function LiveCaseRow({ c }: { c: CaseListItem }) {
   const initials = `${c.patient.firstName[0] ?? "?"}${c.patient.lastName[0] ?? "?"}`.toUpperCase();
   const statusTone: "neutral" | "info" | "warning" | "success" =
     c.status === "completed" ? "success"
-    : c.status === "scan_uploaded" || c.status === "segmenting" ? "info"
-    : c.status === "pending_approval" || c.status === "planning" ? "warning"
+    : c.status === "scan_review" || c.status === "segmentation" || c.status === "active_treatment" ? "info"
+    : c.status === "clinical_review" || c.status === "planning" ? "warning"
     : "neutral";
   const label = c.status.replace(/_/g, " ").replace(/\b\w/g, (l) => l.toUpperCase());
 
@@ -237,7 +237,7 @@ export default function CasesPage() {
   const visible = filterCases(cases, filter);
 
   const slaCount   = cases.filter(c => c.slaRisk).length;
-  const reviewCount = cases.filter(c => c.status === "clinical-review" || c.status === "submitted").length;
+  const reviewCount = cases.filter(c => c.status === "clinical_review" || c.status === "scan_review").length;
 
   return (
     <section className="animate-page-enter mx-auto flex w-full max-w-4xl flex-col gap-4 px-4 pb-[calc(var(--tab-bar-height)+var(--sa-bottom)+1.5rem)] pt-4 sm:px-5">
@@ -305,7 +305,7 @@ export default function CasesPage() {
         </Card>
         <Card className="flex flex-col items-center gap-2 p-3">
           <span className="text-2xl font-bold tabular-nums text-[color:var(--foreground)]">
-            {previewMode ? reviewCount : apiSource === "loading" ? "…" : apiCases.filter(c => c.status === "pending_approval").length}
+            {previewMode ? reviewCount : apiSource === "loading" ? "…" : apiCases.filter(c => c.status === "clinical_review").length}
           </span>
           <StatusBadge tone="warning">Needs review</StatusBadge>
         </Card>
@@ -359,8 +359,8 @@ export default function CasesPage() {
 
           {/* Footer link */}
           <div className="border-t border-[color:var(--border)] px-4 py-3">
-            <Link href="/workflow" className="text-xs font-semibold text-[color:var(--primary)] hover:underline underline-offset-2">
-              Open Clinical Workflow →
+            <Link href="/cases/new" className="text-xs font-semibold text-[color:var(--primary)] hover:underline underline-offset-2">
+              Start New Case →
             </Link>
           </div>
         </Card>
@@ -412,9 +412,9 @@ export default function CasesPage() {
       {/* Workflow shortcuts */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
         {[
-          { href: "/workflow",       label: "Clinical Workflow",  icon: Clock, tone: "bg-[color:var(--primary-glow)] text-[color:var(--primary)]" },
+          { href: "/studio",         label: "CAD Studio",         icon: Clock, tone: "bg-[color:var(--primary-glow)] text-[color:var(--primary)]" },
           { href: "/cases/new",      label: "New Case Wizard",    icon: Plus,  tone: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400" },
-          { href: "/cases",  label: "Manufacturing",      icon: AlertCircle, tone: "bg-amber-500/10 text-amber-600 dark:text-amber-400" },
+          { href: "/treatment-plan", label: "Treatment Plan",     icon: AlertCircle, tone: "bg-amber-500/10 text-amber-600 dark:text-amber-400" },
         ].map(item => {
           const Icon = item.icon;
           return (

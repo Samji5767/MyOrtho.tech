@@ -25,8 +25,8 @@ export type AuditEventType =
   | "approved"
   | "approval_revoked"
   | "revision_requested"
-  | "manufacturing_started"
-  | "manufacturing_completed"
+  | "export_ready"
+  | "treatment_completed"
   | "status_changed"
   | "note_added";
 
@@ -55,8 +55,8 @@ const EVENT_META: Record<
   approved:               { label: "Approved",                icon: <CheckCircle2 size={13} />,tone: "success" },
   approval_revoked:       { label: "Approval Revoked",        icon: <XCircle size={13} />,     tone: "danger"  },
   revision_requested:     { label: "Revision Requested",      icon: <FileCheck2 size={13} />,  tone: "warning" },
-  manufacturing_started:  { label: "Manufacturing Started",   icon: <Truck size={13} />,       tone: "info"    },
-  manufacturing_completed:{ label: "Manufacturing Completed", icon: <Truck size={13} />,       tone: "success" },
+  export_ready:           { label: "Export Ready",           icon: <Truck size={13} />,       tone: "info"    },
+  treatment_completed:    { label: "Treatment Completed",    icon: <Truck size={13} />,        tone: "success" },
   status_changed:         { label: "Status Changed",          icon: <Activity size={13} />,    tone: "neutral" },
   note_added:             { label: "Note Added",              icon: <Pencil size={13} />,      tone: "neutral" },
 };
@@ -70,7 +70,7 @@ const SEED_ENTRIES: AuditEntry[] = [
     actor: "Dr. Lee",
     actorRole: "Clinical Director",
     eventType: "approved",
-    description: "Treatment plan approved for manufacturing.",
+    description: "Treatment plan approved. Ready for active treatment.",
     metadata: { caseStatus: "approved", reviewDurationMin: 18 },
   },
   {
@@ -80,7 +80,7 @@ const SEED_ENTRIES: AuditEntry[] = [
     actorRole: "Clinical Director",
     eventType: "status_changed",
     description: "Case moved to Clinical Review.",
-    metadata: { from: "submitted", to: "clinical-review" },
+    metadata: { from: "scan_review", to: "clinical_review" },
   },
   {
     id: "aud-005",
@@ -89,7 +89,7 @@ const SEED_ENTRIES: AuditEntry[] = [
     actorRole: "Treatment Coordinator",
     eventType: "status_changed",
     description: "Case submitted for clinical review.",
-    metadata: { from: "draft", to: "submitted" },
+    metadata: { from: "draft", to: "scan_review" },
   },
   {
     id: "aud-004",

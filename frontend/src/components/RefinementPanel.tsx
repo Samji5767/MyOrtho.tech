@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
   AlertTriangle,
   CheckCircle2,
@@ -208,12 +208,12 @@ export default function RefinementPanel({ caseId, planId }: Props) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  async function load() {
+  const load = useCallback(async () => {
     setLoading(true);
     try { setCycles(await listRefinementCycles(caseId, planId)); }
     catch (e) { setError((e as Error).message); }
     finally { setLoading(false); }
-  }
+  }, [caseId, planId]);
 
   async function handleCreate(dto: CreateRefinementDto) {
     const cycle = await createRefinementCycle(caseId, planId, dto);
@@ -230,7 +230,7 @@ export default function RefinementPanel({ caseId, planId }: Props) {
     setCycles((prev) => prev.map((c) => c.id === id ? updated : c));
   }
 
-  useEffect(() => { void load(); }, [caseId, planId]);
+  useEffect(() => { void load(); }, [load]);
 
   return (
     <div className="space-y-4">

@@ -147,6 +147,7 @@ export default function BiomechanicsPanel({ setupId, token }: { setupId?: string
 
   const fetchResult = useCallback(async () => {
     if (!setupId) return;
+    const authHeaders = { Authorization: `Bearer ${token}`, "Content-Type": "application/json" };
     setLoading(true);
     setError(null);
     try {

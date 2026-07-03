@@ -376,6 +376,7 @@ export default function TreatmentGoalsPanel({ caseId, token }: { caseId: string;
   const authHeaders = { Authorization: `Bearer ${token}`, "Content-Type": "application/json" };
 
   const fetchGoals = useCallback(async () => {
+    const authHeaders = { Authorization: `Bearer ${token}`, "Content-Type": "application/json" };
     setLoading(true);
     setError(null);
     try {

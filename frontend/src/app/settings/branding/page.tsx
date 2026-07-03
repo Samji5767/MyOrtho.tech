@@ -2,6 +2,7 @@
 
 import { useState, useEffect, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
+import NextImage from "next/image";
 import { Building2, Globe, Image as ImageIcon, Palette, Save, Type } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 
@@ -155,9 +156,11 @@ export default function BrandingSettingsPage() {
               className={inputClass}
             />
             {logoUrl && (
-              <img
+              <NextImage
                 src={logoUrl}
                 alt="Logo preview"
+                width={200}
+                height={48}
                 className="mt-2 h-12 w-auto rounded-lg border border-[color:var(--border)] object-contain p-1"
                 onError={e => (e.currentTarget.style.display = "none")}
               />

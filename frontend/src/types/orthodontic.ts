@@ -121,7 +121,7 @@ export interface PatientTimelineEvent {
     | 'segmentation'
     | 'plan_generated'
     | 'approval'
-    | 'manufacturing'
+    | 'export'
     | 'delivery'
     | 'refinement'
     | 'appointment'
@@ -295,7 +295,7 @@ export interface TreatmentPlanData {
   version: number;
 }
 
-// ─── Manufacturing Operations (Phase 8) ──────────────────────────────────────
+// ─── Export Operations ────────────────────────────────────────────────────────
 
 export type ProductionStatus =
   | 'queued'
@@ -447,7 +447,7 @@ export interface AIPrediction {
 
 export interface AIRecommendation {
   id: string;
-  category: 'attachment' | 'ipr' | 'movement_warning' | 'manufacturing' | 'clinical' | 'compliance';
+  category: 'attachment' | 'ipr' | 'movement_warning' | 'export' | 'clinical' | 'compliance';
   severity: 'info' | 'warning' | 'critical';
   title: string;
   description: string;
@@ -478,8 +478,8 @@ export interface ClinicalMetrics {
   onTimeCompletionRate: number; // %
 }
 
-export interface ManufacturingMetrics {
-  totalJobsThisMonth: number;
+export interface ExportMetrics {
+  totalExportsThisMonth: number;
   successRate: number; // %
   failureRate: number; // %
   averageTurnaroundHours: number;
@@ -506,7 +506,7 @@ export interface CommandCenterStats {
   awaitingApproval: number;
   awaitingSegmentation: number;
   awaitingCAD: number;
-  inManufacturing: number;
+  readyForExport: number;
   slaAtRisk: number;
   refinementsNeeded: number;
   completedToday: number;

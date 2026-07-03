@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { useState, Suspense } from "react";
 import dynamic from "next/dynamic";
 
@@ -610,10 +611,12 @@ export default function SettingsPage() {
       {/* VERSION FOOTER */}
       <div className="flex flex-col items-center gap-1 py-4 text-center">
         <div className="flex items-center gap-2">
-          <img
+          <Image
             src="/app-icon.png"
             alt="MyOrtho"
-            style={{ width: 28, height: 28, borderRadius: 10, objectFit: 'cover', flexShrink: 0 }}
+            width={28}
+            height={28}
+            style={{ borderRadius: 10, objectFit: 'cover', flexShrink: 0 }}
             onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }}
           />
           <span className="text-sm font-semibold text-[color:var(--foreground)]">MyOrtho.tech</span>

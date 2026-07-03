@@ -1,18 +1,16 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { usePathname } from "next/navigation";
 import {
   BarChart3,
   Box,
-  Brain,
-  Factory,
+  Download,
   FolderKanban,
   Home,
   Layers3,
-  ScanLine,
   Settings,
-  Shield,
   Users,
   type LucideIcon,
 } from "lucide-react";
@@ -127,28 +125,25 @@ const SIDEBAR_GROUPS: SidebarGroup[] = [
   {
     label: 'Studio',
     items: [
-      { href: '/studio',      label: 'CAD Design Studio', icon: Box     },
-      { href: '/studio', label: 'Scan & Segment',    icon: ScanLine },
+      { href: '/studio', label: 'CAD Design Studio', icon: Box },
     ],
   },
   {
-    label: 'Manufacturing',
+    label: 'Export',
     items: [
-      { href: '/cases', label: 'Manufacturing', icon: Factory },
+      { href: '/cases', label: 'Export & Downloads', icon: Download },
     ],
   },
   {
     label: 'Intelligence',
     items: [
-      { href: '/analytics',    label: 'Analytics',   icon: BarChart3 },
-      { href: '/ai-readiness', label: 'AI Readiness', icon: Brain    },
+      { href: '/analytics', label: 'Analytics', icon: BarChart3 },
     ],
   },
   {
     label: 'Settings',
     items: [
-      { href: '/settings', label: 'Settings',     icon: Settings },
-      { href: '/trust',    label: 'Trust Center', icon: Shield   },
+      { href: '/settings', label: 'Settings', icon: Settings },
     ],
   },
 ];
@@ -166,10 +161,12 @@ export function SidebarNav() {
       >
         {/* Logo mark */}
         <div className="mb-5 flex items-center gap-2.5 px-2">
-          <img
+          <Image
             src="/app-icon.png"
             alt="MyOrtho"
-            style={{ width: 32, height: 32, borderRadius: 12, objectFit: 'cover', flexShrink: 0 }}
+            width={32}
+            height={32}
+            style={{ borderRadius: 12, objectFit: 'cover', flexShrink: 0 }}
             onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }}
           />
           <span className="flex flex-col leading-none">

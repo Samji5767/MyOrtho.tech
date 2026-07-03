@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
   AlertTriangle,
   CheckCircle2,
@@ -93,7 +93,7 @@ function QASection({ caseId }: { caseId: string }) {
   const [error, setError] = useState("");
   const [notes, setNotes] = useState("");
 
-  async function load() {
+  const load = useCallback(async () => {
     setLoading(true);
     try {
       const list = await listQAReports(caseId);
@@ -103,9 +103,9 @@ function QASection({ caseId }: { caseId: string }) {
     } finally {
       setLoading(false);
     }
-  }
+  }, [caseId]);
 
-  useEffect(() => { load(); }, [caseId]);
+  useEffect(() => { load(); }, [load]);
 
   async function handleRun() {
     setRunning(true);
@@ -268,7 +268,7 @@ function ManufacturingSection({ caseId }: { caseId: string }) {
   const [exportType, setExportType] = useState<ExportType>("full_case");
   const [exportFormat, setExportFormat] = useState<ExportFormat>("stl");
 
-  async function load() {
+  const load = useCallback(async () => {
     setLoading(true);
     try {
       const list = await listExports(caseId);
@@ -278,9 +278,9 @@ function ManufacturingSection({ caseId }: { caseId: string }) {
     } finally {
       setLoading(false);
     }
-  }
+  }, [caseId]);
 
-  useEffect(() => { load(); }, [caseId]);
+  useEffect(() => { load(); }, [load]);
 
   async function handleCreate() {
     setCreating(true);

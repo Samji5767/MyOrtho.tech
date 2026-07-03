@@ -228,6 +228,7 @@ export default function AIClinicalAssistantPanel({ setupId, token }: { setupId?:
 
   const fetchSuggestions = useCallback(async () => {
     if (!setupId) return;
+    const authHeaders = { Authorization: `Bearer ${token}`, "Content-Type": "application/json" };
     setLoading(true);
     setError(null);
     try {

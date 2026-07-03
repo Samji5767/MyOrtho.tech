@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
   AlertTriangle,
   CheckCircle2,
@@ -162,12 +162,12 @@ export default function IPRPlanner({ caseId, planId }: Props) {
   const [recommending, setRecommending] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  async function load() {
+  const load = useCallback(async () => {
     setLoading(true);
     try { setItems(await listIprItems(caseId, planId)); }
     catch (e) { setError((e as Error).message); }
     finally { setLoading(false); }
-  }
+  }, [caseId, planId]);
 
   async function handleAdd(dto: CreateIprItemDto) {
     const item = await addIprItem(caseId, planId, dto);
@@ -194,7 +194,7 @@ export default function IPRPlanner({ caseId, planId }: Props) {
     }
   }
 
-  useEffect(() => { void load(); }, [caseId, planId]);
+  useEffect(() => { void load(); }, [load]);
 
   const unsafeItems = items.filter((i) => i.safetyStatus === "unsafe");
   const totalMm = items.reduce((s, i) => s + i.amountMm, 0);

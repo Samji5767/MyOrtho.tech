@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
+import Image from "next/image";
 import {
   Box,
   Brain,
@@ -59,13 +60,18 @@ const SHORTCUTS: Shortcut[] = [
 
 function caseStatusBadge(status: string): { label: string; cls: string } {
   const map: Record<string, { label: string; cls: string }> = {
-    active_treatment: { label: "Active",          cls: "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400" },
-    pending_records:  { label: "Pending",         cls: "bg-amber-500/10 text-amber-700 dark:text-amber-400" },
+    draft:            { label: "Draft",            cls: "bg-slate-500/10 text-slate-500" },
     scan_review:      { label: "Scan Review",     cls: "bg-sky-500/10 text-sky-700 dark:text-sky-400" },
+    segmentation:     { label: "Segmentation",    cls: "bg-sky-500/10 text-sky-700 dark:text-sky-400" },
+    planning:         { label: "Planning",        cls: "bg-violet-500/10 text-violet-700 dark:text-violet-400" },
     clinical_review:  { label: "Clinical Review", cls: "bg-violet-500/10 text-violet-700 dark:text-violet-400" },
-    manufacturing:    { label: "Manufacturing",   cls: "bg-[color:var(--primary-glow)] text-[color:var(--primary)]" },
+    approved:         { label: "Approved",        cls: "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400" },
+    active_treatment: { label: "Active",          cls: "bg-[color:var(--primary-glow)] text-[color:var(--primary)]" },
+    monitoring:       { label: "Monitoring",      cls: "bg-amber-500/10 text-amber-700 dark:text-amber-400" },
+    retention:        { label: "Retention",       cls: "bg-amber-500/10 text-amber-700 dark:text-amber-400" },
     completed:        { label: "Completed",       cls: "bg-slate-500/10 text-slate-600 dark:text-slate-400" },
-    on_hold:          { label: "On Hold",         cls: "bg-slate-500/10 text-slate-500" },
+    archived:         { label: "Archived",        cls: "bg-slate-500/10 text-slate-400" },
+    cancelled:        { label: "Cancelled",       cls: "bg-rose-500/10 text-rose-600 dark:text-rose-400" },
   };
   return map[status] ?? { label: status, cls: "bg-slate-500/10 text-slate-500" };
 }
@@ -167,10 +173,12 @@ export default function OverviewPage() {
         {/* ── Hero ── */}
         <div className="flex items-start justify-between gap-3">
           <div className="flex items-center gap-3">
-            <img
+            <Image
               src="/app-icon.png"
               alt="MyOrtho"
-              style={{ width: 40, height: 40, borderRadius: 14, objectFit: "cover", flexShrink: 0 }}
+              width={40}
+              height={40}
+              style={{ borderRadius: 14, objectFit: "cover", flexShrink: 0 }}
               onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = "none"; }}
             />
             <div>

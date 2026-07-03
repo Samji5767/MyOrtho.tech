@@ -2,17 +2,19 @@
 
 export type UserRole = 'enterprise_admin' | 'clinic_admin' | 'dentist' | 'lab_technician' | 'operator' | 'patient';
 
-export type CaseStatus = 
-  | 'draft' 
-  | 'scan_uploaded' 
-  | 'segmenting' 
-  | 'planning' 
-  | 'pending_approval' 
-  | 'approved' 
-  | 'staging' 
-  | 'manufacturing' 
-  | 'completed' 
-  | 'canceled';
+export type CaseStatus =
+  | 'draft'
+  | 'scan_review'
+  | 'segmentation'
+  | 'planning'
+  | 'clinical_review'
+  | 'approved'
+  | 'active_treatment'
+  | 'monitoring'
+  | 'retention'
+  | 'completed'
+  | 'archived'
+  | 'cancelled';
 
 export type JobStatus = 
   | 'queued' 

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import {
   Camera, ChevronLeft, ChevronRight, Download, Grid3X3,
   Info, Loader2, Plus, Trash2, X, ZoomIn,
@@ -329,11 +329,7 @@ export default function PatientPhotosPanel({ caseId }: { caseId: string }) {
   const [previewPhoto, setPreviewPhoto] = useState<PatientPhoto | null>(null);
   const [previewIdx, setPreviewIdx] = useState(0);
 
-  useEffect(() => {
-    loadPhotos();
-  }, [caseId]);
-
-  async function loadPhotos() {
+  const loadPhotos = useCallback(async () => {
     setLoading(true); setError("");
     try {
       const list = await listPhotos(caseId);
@@ -343,7 +339,11 @@ export default function PatientPhotosPanel({ caseId }: { caseId: string }) {
     } finally {
       setLoading(false);
     }
-  }
+  }, [caseId]);
+
+  useEffect(() => {
+    loadPhotos();
+  }, [loadPhotos]);
 
   async function handleDelete(photoId: string) {
     try {

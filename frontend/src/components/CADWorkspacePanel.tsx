@@ -427,6 +427,7 @@ export default function CADWorkspacePanel({
   const authHeaders = { Authorization: `Bearer ${token}`, "Content-Type": "application/json" };
 
   const fetchSetups = useCallback(async () => {
+    const authHeaders = { Authorization: `Bearer ${token}`, "Content-Type": "application/json" };
     setLoading(true);
     setError(null);
     try {
@@ -434,7 +435,7 @@ export default function CADWorkspacePanel({
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json() as DigitalSetup[];
       setSetups(data);
-      if (data.length > 0 && !activeSetup) setActiveSetup(data[0]);
+      setActiveSetup(prev => prev ?? data[0] ?? null);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to load setups");
     } finally {

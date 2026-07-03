@@ -32,6 +32,7 @@ import {
 } from "lucide-react";
 import { useEffect } from "react";
 import { Button, Card, LiveDot, SectionDivider, StatusBadge } from "@/components/DesignSystem";
+import { safeStorage } from "@/lib/safeStorage";
 import { useTheme } from "@/components/ThemeContext";
 import { APP_VERSION, APP_BUILD, RELEASE_TITLE, RELEASE_SUBTITLE, RELEASE_HIGHLIGHTS } from "@/lib/constants";
 
@@ -52,7 +53,7 @@ function ClinicalFlagsCard() {
   useEffect(() => {
     const loaded: Record<string, boolean> = {};
     CLINICAL_FLAGS.forEach(({ key }) => {
-      try { loaded[key] = localStorage.getItem(key) === "1"; } catch { loaded[key] = true; }
+      loaded[key] = (safeStorage.get(key) ?? "1") === "1";
     });
     setFlags(loaded);
   }, []);
@@ -60,7 +61,7 @@ function ClinicalFlagsCard() {
   function toggle(key: string) {
     setFlags((prev) => {
       const next = { ...prev, [key]: !prev[key] };
-      try { localStorage.setItem(key, next[key] ? "1" : "0"); } catch {}
+      safeStorage.set(key, next[key] ? "1" : "0");
       return next;
     });
   }
@@ -598,7 +599,7 @@ export default function SettingsPage() {
             <button
               type="button"
               className="ml-4 shrink-0 inline-flex h-9 items-center gap-1.5 rounded-xl border border-[color:var(--border)] px-3 text-xs font-semibold text-[color:var(--muted-foreground)] transition-colors hover:border-red-400 hover:text-red-500 active:scale-95"
-              onClick={() => { try { localStorage.removeItem("mo_demo_loaded"); } catch {} window.location.reload(); }}
+              onClick={() => { safeStorage.remove("mo_demo_loaded"); window.location.reload(); }}
             >
               Clear demo
             </button>

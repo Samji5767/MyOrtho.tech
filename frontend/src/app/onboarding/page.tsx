@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { safeStorage } from "@/lib/safeStorage";
 import {
   ArrowRight,
   BarChart3,
@@ -190,13 +191,13 @@ export default function OnboardingPage() {
       });
     } catch {}
     // Persist completion locally so the skip-gate works even without a live session
-    try { localStorage.setItem("mo_onboarding_done", "1"); } catch {}
+    safeStorage.set("mo_onboarding_done", "1");
     await refresh();
     router.replace(getPrimaryWorkspace(resolvedRole));
   }
 
   function skip() {
-    try { localStorage.setItem("mo_onboarding_done", "1"); } catch {}
+    safeStorage.set("mo_onboarding_done", "1");
     router.replace("/");
   }
 

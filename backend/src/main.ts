@@ -4,6 +4,7 @@ import * as cookieParser from 'cookie-parser';
 import helmet from 'helmet';
 import { AppModule } from './app.module';
 import { AllExceptionsFilter } from './common/all-exceptions.filter';
+import { LoggingInterceptor } from './common/logging.interceptor';
 
 // ─── Startup validation ───────────────────────────────────────────────────────
 
@@ -46,8 +47,29 @@ async function bootstrap() {
   // Security headers
   app.use(
     helmet({
-      contentSecurityPolicy: false,
+      // CSP: restrict sources; allow same-origin + Stripe/Supabase for SaaS features.
+      contentSecurityPolicy: {
+        directives: {
+          defaultSrc: ["'self'"],
+          scriptSrc: ["'self'", "'unsafe-inline'"],
+          styleSrc: ["'self'", "'unsafe-inline'"],
+          imgSrc: ["'self'", "data:", "blob:"],
+          connectSrc: [
+            "'self'",
+            "https://*.supabase.co",
+            "https://api.stripe.com",
+          ],
+          fontSrc: ["'self'", "data:"],
+          objectSrc: ["'none'"],
+          upgradeInsecureRequests: [],
+        },
+      },
       crossOriginOpenerPolicy: { policy: 'same-origin-allow-popups' },
+      hsts: {
+        maxAge: 31_536_000,
+        includeSubDomains: true,
+        preload: true,
+      },
     }),
   );
 
@@ -70,12 +92,15 @@ async function bootstrap() {
     new ValidationPipe({
       whitelist: true,
       transform: true,
-      forbidNonWhitelisted: false,
-      forbidUnknownValues: false,
+      // Reject requests that include properties not declared in the DTO.
+      // Prevents mass-assignment attacks on all endpoints.
+      forbidNonWhitelisted: true,
+      forbidUnknownValues: true,
     }),
   );
 
   app.useGlobalFilters(new AllExceptionsFilter());
+  app.useGlobalInterceptors(new LoggingInterceptor());
 
   const port = process.env.PORT || 4000;
   await app.listen(port);

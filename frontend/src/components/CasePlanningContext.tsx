@@ -14,6 +14,7 @@ import {
   createContext, useContext, useReducer, useEffect, useRef,
   type ReactNode,
 } from "react";
+import { safeStorage } from "@/lib/safeStorage";
 
 // ─── Domain types ─────────────────────────────────────────────────────────────
 
@@ -300,40 +301,35 @@ export function CasePlanningProvider({
   // Load persisted state when caseId changes
   useEffect(() => {
     const key = persistKey(caseId);
-    try {
-      const raw = localStorage.getItem(key);
-      if (raw) {
-        const persisted = JSON.parse(raw) as Partial<CasePlanningState>;
-        dispatch({ type: "LOAD_PERSISTED", partial: persisted });
-      }
-    } catch {}
+    const persisted = safeStorage.getJSON<Partial<CasePlanningState>>(key);
+    if (persisted) {
+      dispatch({ type: "LOAD_PERSISTED", partial: persisted });
+    }
   }, [caseId]);
 
   // Auto-save on state change (debounced)
   useEffect(() => {
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
     saveTimerRef.current = setTimeout(() => {
-      try {
-        const key = persistKey(state.caseId);
-        const toSave: Partial<CasePlanningState> = {
-          movements:     state.movements,
-          attachments:   state.attachments,
-          iprEntries:    state.iprEntries,
-          measurements:  state.measurements,
-          workflowSteps: state.workflowSteps,
-          totalStages:   state.totalStages,
-          showGhostArch:           state.showGhostArch,
-          ghostOpacity:            state.ghostOpacity,
-          showRoots:               state.showRoots,
-          showOcclusionContacts:   state.showOcclusionContacts,
-          showIPROverlay:          state.showIPROverlay,
-          showAlignerShell:        state.showAlignerShell,
-          alignerThickness:        state.alignerThickness,
-          alignerArch:             state.alignerArch,
-          reviewNotes:             state.reviewNotes,
-        };
-        localStorage.setItem(key, JSON.stringify(toSave));
-      } catch {}
+      const key = persistKey(state.caseId);
+      const toSave: Partial<CasePlanningState> = {
+        movements:     state.movements,
+        attachments:   state.attachments,
+        iprEntries:    state.iprEntries,
+        measurements:  state.measurements,
+        workflowSteps: state.workflowSteps,
+        totalStages:   state.totalStages,
+        showGhostArch:           state.showGhostArch,
+        ghostOpacity:            state.ghostOpacity,
+        showRoots:               state.showRoots,
+        showOcclusionContacts:   state.showOcclusionContacts,
+        showIPROverlay:          state.showIPROverlay,
+        showAlignerShell:        state.showAlignerShell,
+        alignerThickness:        state.alignerThickness,
+        alignerArch:             state.alignerArch,
+        reviewNotes:             state.reviewNotes,
+      };
+      safeStorage.setJSON(key, toSave);
     }, DEBOUNCE_MS);
 
     return () => {

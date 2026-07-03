@@ -62,13 +62,14 @@ export const FDI_GROUPS: { label: 'UR' | 'UL' | 'LL' | 'LR'; teeth: number[] }[]
   { label: 'LR', teeth: [41, 42, 43, 44, 45, 46, 47, 48] },
 ];
 
+import { safeStorage } from './safeStorage';
+
 const STORAGE_KEY = 'myortho_tooth_notation';
 
 export function loadNotationPref(): ToothNotation {
-  if (typeof window === 'undefined') return 'FDI';
-  return (localStorage.getItem(STORAGE_KEY) as ToothNotation | null) ?? 'FDI';
+  return (safeStorage.get(STORAGE_KEY) as ToothNotation | null) ?? 'FDI';
 }
 
 export function saveNotationPref(n: ToothNotation) {
-  if (typeof window !== 'undefined') localStorage.setItem(STORAGE_KEY, n);
+  safeStorage.set(STORAGE_KEY, n);
 }

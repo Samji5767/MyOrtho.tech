@@ -1,4 +1,9 @@
-const BASE = '';
+const BASE =
+  typeof process !== 'undefined'
+    ? (process.env.NEXT_PUBLIC_API_URL ?? '')
+    : '';
+
+const DEFAULT_TIMEOUT_MS = 30_000;
 
 export class ApiError extends Error {
   constructor(
@@ -10,48 +15,87 @@ export class ApiError extends Error {
   }
 }
 
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(`${BASE}${path}`, {
-    ...init,
-    credentials: 'include',
-    headers: {
-      'Content-Type': 'application/json',
-      ...(init?.headers ?? {}),
-    },
-  });
+async function request<T>(
+  path: string,
+  init?: RequestInit,
+  timeoutMs = DEFAULT_TIMEOUT_MS,
+): Promise<T> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+
+  let res: Response;
+  try {
+    res = await fetch(`${BASE}${path}`, {
+      ...init,
+      signal: controller.signal,
+      credentials: 'include',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(init?.headers ?? {}),
+      },
+    });
+  } catch (err) {
+    clearTimeout(timer);
+    if (err instanceof DOMException && err.name === 'AbortError') {
+      throw new ApiError(408, 'Request timed out');
+    }
+    throw new ApiError(0, err instanceof Error ? err.message : 'Network error');
+  }
+  clearTimeout(timer);
 
   if (!res.ok) {
     let msg = `HTTP ${res.status}`;
     try {
       const body = (await res.json()) as { message?: string };
-      if (body.message) msg = body.message;
-    } catch { /* swallow */ }
+      if (body.message) {
+        msg = Array.isArray(body.message)
+          ? body.message.join('; ')
+          : String(body.message);
+      }
+    } catch { /* body may not be JSON */ }
     throw new ApiError(res.status, msg);
   }
 
-  return res.json() as Promise<T>;
+  const text = await res.text();
+  if (!text) return undefined as unknown as T;
+  return JSON.parse(text) as T;
 }
 
 export const api = {
-  get:    <T>(path: string)               => request<T>(path),
-  post:   <T>(path: string, body: object) => request<T>(path, { method: 'POST',   body: JSON.stringify(body) }),
-  put:    <T>(path: string, body: object) => request<T>(path, { method: 'PUT',    body: JSON.stringify(body) }),
-  patch:  <T>(path: string, body: object) => request<T>(path, { method: 'PATCH',  body: JSON.stringify(body) }),
-  delete: <T>(path: string)               => request<T>(path, { method: 'DELETE' }),
+  get:    <T>(path: string, timeout?: number)               => request<T>(path, undefined, timeout),
+  post:   <T>(path: string, body: object, timeout?: number) => request<T>(path, { method: 'POST',   body: JSON.stringify(body) }, timeout),
+  put:    <T>(path: string, body: object, timeout?: number) => request<T>(path, { method: 'PUT',    body: JSON.stringify(body) }, timeout),
+  patch:  <T>(path: string, body: object, timeout?: number) => request<T>(path, { method: 'PATCH',  body: JSON.stringify(body) }, timeout),
+  delete: <T>(path: string, timeout?: number)               => request<T>(path, { method: 'DELETE' }, timeout),
 };
 
 /** Multipart file upload — does NOT set Content-Type (browser sets boundary automatically). */
-export async function uploadFile<T>(path: string, form: FormData): Promise<T> {
-  const res = await fetch(`${BASE}${path}`, {
-    method: 'POST',
-    credentials: 'include',
-    body: form,
-  });
+export async function uploadFile<T>(path: string, form: FormData, timeoutMs = 120_000): Promise<T> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+
+  let res: Response;
+  try {
+    res = await fetch(`${BASE}${path}`, {
+      method: 'POST',
+      credentials: 'include',
+      signal: controller.signal,
+      body: form,
+    });
+  } catch (err) {
+    clearTimeout(timer);
+    if (err instanceof DOMException && err.name === 'AbortError') {
+      throw new ApiError(408, 'Upload timed out');
+    }
+    throw new ApiError(0, err instanceof Error ? err.message : 'Network error');
+  }
+  clearTimeout(timer);
+
   if (!res.ok) {
     let msg = `HTTP ${res.status}`;
     try {
       const body = (await res.json()) as { message?: string };
-      if (body.message) msg = body.message;
+      if (body.message) msg = String(body.message);
     } catch { /* swallow */ }
     throw new ApiError(res.status, msg);
   }

@@ -21,7 +21,7 @@ import {
   Zap,
 } from "lucide-react";
 import { MedicalDisclaimer } from "@/components/MedicalDisclaimer";
-import type { ScanItem, ScanStatus } from "@/types/orthodontic";
+import type { ScanFormat, ScanItem, ScanStatus } from "@/types/orthodontic";
 
 // ─── Mock scan queue ──────────────────────────────────────────────────────────
 
@@ -222,6 +222,29 @@ export function ScanProcessingCenter() {
   const [scans, setScans] = useState<ScanItem[]>(MOCK_SCANS);
   const [filter, setFilter] = useState<ScanStatus | "all">("all");
 
+  const handleFileDropped = useCallback((file: File) => {
+    const rawExt = file.name.split(".").pop()?.toLowerCase() ?? "stl";
+    const knownFormats: ScanFormat[] = ["stl", "ply", "obj", "dcm", "cbct"];
+    const format: ScanFormat = knownFormats.includes(rawExt as ScanFormat)
+      ? (rawExt as ScanFormat)
+      : "stl";
+
+    const newScan: ScanItem = {
+      id: `scan-${Date.now()}`,
+      caseId: "—",
+      patientName: "Pending assignment",
+      fileName: file.name,
+      fileSize: file.size,
+      format,
+      source: "manual",
+      status: "uploading",
+      progress: 0,
+      uploadedAt: new Date().toISOString(),
+      uploadedBy: "current user",
+    };
+    setScans(prev => [newScan, ...prev]);
+  }, []);
+
   const filtered = filter === "all" ? scans : scans.filter(s => s.status === filter);
   const pendingCount = scans.filter(s => s.status === "review_needed" || s.status === "validating").length;
   const processingCount = scans.filter(s => s.status === "processing" || s.status === "uploading").length;
@@ -257,7 +280,7 @@ export function ScanProcessingCenter() {
       </div>
 
       {/* Upload dropzone */}
-      <UploadDropzone onFile={(f) => console.log("File dropped:", f.name)} />
+      <UploadDropzone onFile={handleFileDropped} />
 
       {/* Scanner integrations */}
       <div className="ios-card p-5">

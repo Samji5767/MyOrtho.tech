@@ -1,6 +1,7 @@
 "use client";
 
 import React, { createContext, useContext, useEffect, useMemo, useState } from "react";
+import { safeStorage } from "@/lib/safeStorage";
 
 type ThemePreference = "light" | "dark" | "system";
 type ResolvedTheme = Exclude<ThemePreference, "system">;
@@ -39,7 +40,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   const resolvedTheme = useMemo(() => resolveTheme(theme), [theme]);
 
   useEffect(() => {
-    const storedTheme = window.localStorage.getItem(STORAGE_KEY);
+    const storedTheme = safeStorage.get(STORAGE_KEY);
 
     if (storedTheme === "light" || storedTheme === "dark" || storedTheme === "system") {
       setThemeState(storedTheme);
@@ -48,7 +49,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     applyTheme(theme);
-    window.localStorage.setItem(STORAGE_KEY, theme);
+    safeStorage.set(STORAGE_KEY, theme);
 
     if (theme !== "system") {
       return;

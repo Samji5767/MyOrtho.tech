@@ -152,7 +152,7 @@ describe('Phase 25 — Full Workflow Integration', () => {
 
     it('returns full allowed transitions table', () => {
       const allowed = svc.allowedTransitions('planning');
-      expect(allowed).toContain('pending_approval');
+      expect(allowed).toContain('clinical_review');
     });
 
     it('getHistory returns camelCase field names', async () => {
@@ -374,9 +374,9 @@ describe('Phase 25 — Full Workflow Integration', () => {
     it('covers all required clinical workflow states', () => {
       const { CASE_STATUSES } = require('../src/workflow/workflow.service');
       const required = [
-        'draft', 'scan_uploaded', 'segmenting', 'planning',
-        'pending_approval', 'approved', 'staging', 'manufacturing',
-        'completed', 'canceled',
+        'draft', 'scan_review', 'segmentation', 'planning',
+        'clinical_review', 'approved', 'active_treatment', 'monitoring',
+        'retention', 'completed', 'archived', 'cancelled',
       ];
       for (const s of required) {
         expect(CASE_STATUSES).toContain(s);

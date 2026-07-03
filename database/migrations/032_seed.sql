@@ -257,20 +257,37 @@ VALUES (
 )
 ON CONFLICT (id) DO NOTHING;
 
-INSERT INTO billing_usage_meters (organization_id, case_id, metric_type, quantity)
-VALUES
-('d0b1a2c3-4d5e-6f7a-8b9c-0d1e2f3a4b5c', 'c1111111-1111-1111-1111-111111111111', 'case_export', 12),
-('d0b1a2c3-4d5e-6f7a-8b9c-0d1e2f3a4b5c', 'c2222222-2222-2222-2222-222222222222', 'api_call', 1245),
-('d0b1a2c3-4d5e-6f7a-8b9c-0d1e2f3a4b5c', 'c3333333-3333-3333-3333-333333333333', 'resin_print_ml', 450),
-('d0b1a2c3-4d5e-6f7a-8b9c-0d1e2f3a4b5c', NULL, 'storage_gb', 48);
+DO $$ BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM billing_usage_meters
+    WHERE organization_id = 'd0b1a2c3-4d5e-6f7a-8b9c-0d1e2f3a4b5c'
+    LIMIT 1
+  ) THEN
+    INSERT INTO billing_usage_meters (organization_id, case_id, metric_type, quantity)
+    VALUES
+    ('d0b1a2c3-4d5e-6f7a-8b9c-0d1e2f3a4b5c', 'c1111111-1111-1111-1111-111111111111', 'case_export', 12),
+    ('d0b1a2c3-4d5e-6f7a-8b9c-0d1e2f3a4b5c', 'c2222222-2222-2222-2222-222222222222', 'api_call', 1245),
+    ('d0b1a2c3-4d5e-6f7a-8b9c-0d1e2f3a4b5c', 'c3333333-3333-3333-3333-333333333333', 'resin_print_ml', 450),
+    ('d0b1a2c3-4d5e-6f7a-8b9c-0d1e2f3a4b5c', NULL, 'storage_gb', 48);
+  END IF;
+END $$;
 
 -- 13. Audit logs
-INSERT INTO audit_logs (organization_id, user_id, action, details, ip_address, created_at)
-VALUES
-('d0b1a2c3-4d5e-6f7a-8b9c-0d1e2f3a4b5c', 'e1b2c3d4-5e6f-7a8b-9c0d-1e2f3a4b5c6d', 'Approved Case #c1 Staging Plan', '{"caseId": "c1111111-1111-1111-1111-111111111111"}'::jsonb, '192.168.1.104', '2026-06-14 21:12:05+00'),
-('d0b1a2c3-4d5e-6f7a-8b9c-0d1e2f3a4b5c', NULL, 'AI Scan Segmentation Completed', '{"caseId": "c1111111-1111-1111-1111-111111111111"}'::jsonb, '10.0.4.88', '2026-06-14 20:45:12+00'),
-('d0b1a2c3-4d5e-6f7a-8b9c-0d1e2f3a4b5c', 'e1b2c3d4-5e6f-7a8b-9c0d-1e2f3a4b5c6d', 'Resin Low Warning: Formlabs Printer 1', '{"printerId": "f1111111-1111-1111-1111-111111111111"}'::jsonb, '192.168.1.45', '2026-06-14 18:22:30+00'),
-('d0b1a2c3-4d5e-6f7a-8b9c-0d1e2f3a4b5c', NULL, 'Failed Login Attempt: Tenant Portal', '{"inputEmail": "unknown-admin"}'::jsonb, '203.0.113.19', '2026-06-14 15:10:04+00');
+DO $$ BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM audit_logs
+    WHERE organization_id = 'd0b1a2c3-4d5e-6f7a-8b9c-0d1e2f3a4b5c'
+      AND action = 'Approved Case #c1 Staging Plan'
+    LIMIT 1
+  ) THEN
+    INSERT INTO audit_logs (organization_id, user_id, action, details, ip_address, created_at)
+    VALUES
+    ('d0b1a2c3-4d5e-6f7a-8b9c-0d1e2f3a4b5c', 'e1b2c3d4-5e6f-7a8b-9c0d-1e2f3a4b5c6d', 'Approved Case #c1 Staging Plan', '{"caseId": "c1111111-1111-1111-1111-111111111111"}'::jsonb, '192.168.1.104', '2026-06-14 21:12:05+00'),
+    ('d0b1a2c3-4d5e-6f7a-8b9c-0d1e2f3a4b5c', NULL, 'AI Scan Segmentation Completed', '{"caseId": "c1111111-1111-1111-1111-111111111111"}'::jsonb, '10.0.4.88', '2026-06-14 20:45:12+00'),
+    ('d0b1a2c3-4d5e-6f7a-8b9c-0d1e2f3a4b5c', 'e1b2c3d4-5e6f-7a8b-9c0d-1e2f3a4b5c6d', 'Resin Low Warning: Formlabs Printer 1', '{"printerId": "f1111111-1111-1111-1111-111111111111"}'::jsonb, '192.168.1.45', '2026-06-14 18:22:30+00'),
+    ('d0b1a2c3-4d5e-6f7a-8b9c-0d1e2f3a4b5c', NULL, 'Failed Login Attempt: Tenant Portal', '{"inputEmail": "unknown-admin"}'::jsonb, '203.0.113.19', '2026-06-14 15:10:04+00');
+  END IF;
+END $$;
 
 -- 14. Communication and Messaging
 INSERT INTO conversations (id, case_id)

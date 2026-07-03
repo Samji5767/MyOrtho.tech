@@ -68,7 +68,8 @@ CREATE INDEX IF NOT EXISTS idx_workflow_events_case_created
   ON workflow_events(case_id, created_at DESC);
 
 -- ── Audit events index for case audit trail ────────────────────────────────────
-CREATE INDEX IF NOT EXISTS idx_audit_events_resource
+-- Named _ts to avoid collision with the 2-column idx_audit_events_resource in 002/021
+CREATE INDEX IF NOT EXISTS idx_audit_events_resource_ts
   ON audit_events(resource_type, resource_id, created_at DESC);
 
 -- ── Manufacturing readiness: ensure aligner_designs table has required columns ─
@@ -242,8 +243,10 @@ DO $$ BEGIN
   END IF;
 END $$;
 
--- ── Cases: composite index for organization + status (dashboard queries) ──────
-CREATE INDEX IF NOT EXISTS idx_cases_org_status
+-- ── Cases: index on patient_id with active-case filter (dashboard queries) ─────
+-- Renamed from idx_cases_org_status to avoid shadowing 034's correct
+-- (organization_id, status) index of the same name.
+CREATE INDEX IF NOT EXISTS idx_cases_patient_active
   ON cases(patient_id)
   WHERE status NOT IN ('completed', 'canceled');
 

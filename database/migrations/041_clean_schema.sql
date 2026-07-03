@@ -29,6 +29,24 @@ CREATE INDEX IF NOT EXISTS idx_stl_uploads_case    ON stl_uploads (case_id);
 CREATE INDEX IF NOT EXISTS idx_stl_uploads_org     ON stl_uploads (organization_id);
 CREATE INDEX IF NOT EXISTS idx_stl_uploads_status  ON stl_uploads (status) WHERE status <> 'ready';
 
+-- If stl_uploads was created by migration 028 (storage_path, no file_url/arch/scan_type),
+-- add the columns that 041's CREATE TABLE IF NOT EXISTS would have silently skipped.
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+      WHERE table_name = 'stl_uploads' AND column_name = 'file_url') THEN
+    ALTER TABLE stl_uploads ADD COLUMN file_url TEXT;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+      WHERE table_name = 'stl_uploads' AND column_name = 'arch') THEN
+    ALTER TABLE stl_uploads ADD COLUMN arch TEXT CHECK (arch IN ('upper', 'lower', 'both'));
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+      WHERE table_name = 'stl_uploads' AND column_name = 'scan_type') THEN
+    ALTER TABLE stl_uploads ADD COLUMN scan_type TEXT
+      CHECK (scan_type IN ('intraoral', 'model', 'cbct', 'study'));
+  END IF;
+END $$;
+
 -- ─── segmented_teeth ──────────────────────────────────────────────────────────
 
 CREATE TABLE IF NOT EXISTS segmented_teeth (

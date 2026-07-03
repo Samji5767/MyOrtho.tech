@@ -81,7 +81,7 @@ export class BillingService {
       planName: sub?.plan_name ?? null,
       currentPeriodEnd: sub?.current_period_end ?? null,
       stripeCustomerId: orgRows[0]?.stripe_customer_id ?? null,
-      trialEnd: sub?.trial_end ?? null,
+      trialEnd: sub?.trial_ends_at ?? null,
     };
   }
 
@@ -265,7 +265,7 @@ export class BillingService {
     const planSlug = data.interval === 'annual' ? 'annual' : 'monthly';
 
     const { rows: planRows } = await this.pool.query(
-      `SELECT id FROM subscription_plans WHERE id = $1 LIMIT 1`,
+      `SELECT id FROM subscription_plans WHERE slug = $1 LIMIT 1`,
       [planSlug],
     ).catch(() => ({ rows: [] }));
     const planId = planRows[0]?.id ?? null;

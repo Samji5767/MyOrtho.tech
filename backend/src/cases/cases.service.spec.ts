@@ -54,6 +54,7 @@ function makeService(pool: ReturnType<typeof makePool>) {
     pool as any,
     makeAudit() as any,
     makeWorkflow() as any,
+    { encrypt: (v: unknown) => v, decrypt: (v: unknown) => v } as any,
   );
 }
 

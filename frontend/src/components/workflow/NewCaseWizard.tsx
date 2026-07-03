@@ -4,8 +4,8 @@ import { useState, useEffect, useRef } from "react";
 import { Check, ChevronLeft, ChevronRight, Loader2, AlertCircle, Search, UserPlus, Upload, X } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { Button, Card, StatusBadge } from "@/components/DesignSystem";
-import { fetchPatients, createPatient, type PatientListItem } from "@/lib/api/patients";
-import { createCase } from "@/lib/api/cases";
+import { fetchPatients, type PatientListItem } from "@/lib/api/patients";
+import { createCase, createCaseWithNewPatient } from "@/lib/api/cases";
 import { uploadScan } from "@/lib/api/scans";
 import { useToast } from "@/components/ToastContext";
 
@@ -327,27 +327,28 @@ export default function NewCaseWizard() {
     setSubmitError(null);
 
     try {
-      // 1 — Resolve patient (create if new, otherwise use selected)
-      let patientId: string;
+      // 1 & 2 — Resolve patient and create case (atomically when creating new patient)
+      let caseRecord: Awaited<ReturnType<typeof createCase>>;
       if (createNew) {
-        const p = await createPatient({
-          firstName: newPatient.firstName,
-          lastName: newPatient.lastName,
-          dateOfBirth: newPatient.dob || undefined,
-          gender: newPatient.gender || undefined,
+        caseRecord = await createCaseWithNewPatient({
+          patient: {
+            firstName: newPatient.firstName,
+            lastName: newPatient.lastName,
+            dateOfBirth: newPatient.dob || undefined,
+            gender: newPatient.gender || undefined,
+          },
+          chiefComplaint: clinical.chiefComplaint || undefined,
+          malocclusionClass: clinical.malocclusionClass || undefined,
+          notes: goals.notes || undefined,
         });
-        patientId = p.id;
       } else {
-        patientId = selectedPatient!.id;
+        caseRecord = await createCase({
+          patientId: selectedPatient!.id,
+          chiefComplaint: clinical.chiefComplaint || undefined,
+          malocclusionClass: clinical.malocclusionClass || undefined,
+          notes: goals.notes || undefined,
+        });
       }
-
-      // 2 — Create case
-      const caseRecord = await createCase({
-        patientId,
-        chiefComplaint: clinical.chiefComplaint || undefined,
-        malocclusionClass: clinical.malocclusionClass || undefined,
-        notes: goals.notes || undefined,
-      });
 
       // 3 — Upload scans (fire-and-forget errors so case is still created)
       const uploads: Promise<unknown>[] = [];

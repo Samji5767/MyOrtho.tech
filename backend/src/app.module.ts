@@ -59,12 +59,10 @@ import { PreexportQaModule } from './preexport-qa/preexport-qa.module';
 import { TreatmentQAModule } from './treatment-qa/treatment-qa.module';
 import { QcModule } from './qc/qc.module';
 import { ExportPackageModule } from './export-package/export-package.module';
-// ─── Manufacturing / Print ───────────────────────────────────────────────────
+// ─── Export / Print Prep ─────────────────────────────────────────────────────
 import { ManufacturingModule } from './manufacturing/manufacturing.module';
 import { ManufacturePrepModule } from './manufacture-prep/manufacture-prep.module';
 import { PrintersModule } from './printers/printers.module';
-import { PrintFarmModule } from './print-farm/print-farm.module';
-import { BatchManufacturingModule } from './batch-manufacturing/batch-manufacturing.module';
 // ─── Clinical Reports & Photos ────────────────────────────────────────────────
 import { ClinicalReportsModule } from './clinical-reports/clinical-reports.module';
 import { PhotosModule } from './photos/photos.module';
@@ -157,12 +155,10 @@ import { OrgBrandingModule } from './org-branding/org-branding.module';
     TreatmentQAModule,
     QcModule,
     ExportPackageModule,
-    // Manufacturing / Print
+    // Export / Print Prep
     ManufacturingModule,
     ManufacturePrepModule,
     PrintersModule,
-    PrintFarmModule,
-    BatchManufacturingModule,
     // Clinical Reports & Photos
     ClinicalReportsModule,
     PhotosModule,

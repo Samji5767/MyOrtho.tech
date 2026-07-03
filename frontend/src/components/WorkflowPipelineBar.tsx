@@ -26,7 +26,7 @@ export const DEFAULT_PIPELINE_STEPS: Omit<WorkflowStep, "status">[] = [
   { key: "stage_generation", label: "Stages" },
   { key: "qa",              label: "QA" },
   { key: "approval",        label: "Approval" },
-  { key: "manufacturing",   label: "Export" },
+  { key: "export",          label: "Export" },
 ];
 
 // ─── Sub-components ───────────────────────────────────────────────────────────

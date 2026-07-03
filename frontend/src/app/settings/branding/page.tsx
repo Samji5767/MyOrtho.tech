@@ -145,7 +145,7 @@ export default function BrandingSettingsPage() {
           </div>
           <div className="space-y-1.5">
             <label className="text-xs font-semibold text-[color:var(--foreground)]">
-              <span className="flex items-center gap-1.5"><Image size={13} />Logo URL</span>
+              <span className="flex items-center gap-1.5"><ImageIcon size={13} />Logo URL</span>
             </label>
             <input
               type="url"

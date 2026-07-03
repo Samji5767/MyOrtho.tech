@@ -13,7 +13,7 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import type { Request } from 'express';
-import { CasesService, type CreateCaseDto, type UpdateCaseDto } from './cases.service';
+import { CasesService, type CreateCaseDto, type CreateCaseWithPatientDto, type UpdateCaseDto } from './cases.service';
 import { AuthGuard } from '../auth/auth.guard';
 import { PermissionsGuard } from '../auth/permissions.guard';
 import { RequirePermission } from '../auth/require-permission.decorator';
@@ -63,6 +63,18 @@ export class CasesController {
     const user = getUser(req);
     if (!user.orgId) throw new UnauthorizedException('No organization assigned');
     return this.casesService.create(user.orgId, user.id, dto, {
+      actorEmail: user.email,
+      ipAddress: getIp(req),
+    });
+  }
+
+  @Post('with-new-patient')
+  @HttpCode(HttpStatus.CREATED)
+  @RequirePermission('cases:write')
+  async createCaseWithNewPatient(@Req() req: Request, @Body() dto: CreateCaseWithPatientDto) {
+    const user = getUser(req);
+    if (!user.orgId) throw new UnauthorizedException('No organization assigned');
+    return this.casesService.createWithNewPatient(user.orgId, user.id, dto, {
       actorEmail: user.email,
       ipAddress: getIp(req),
     });

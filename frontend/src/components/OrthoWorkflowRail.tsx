@@ -40,7 +40,7 @@ const WORKFLOW_STEPS: WorkflowStep[] = [
   { id: "ipr",         label: "Plan IPR",             description: "Record interproximal reduction amounts between contacts.",   action: "Set IPR sites" },
   { id: "stages",      label: "Generate Stages",      description: "Create aligner stages and review movement per step.",       action: "Generate stages" },
   { id: "simulation",  label: "Review Simulation",    description: "Play through treatment timeline and confirm movements.",    action: "Run simulation" },
-  { id: "export",      label: "Export / Manufacturing", description: "Approve plan and send to lab or export STL files.",      action: "Export plan" },
+  { id: "export",      label: "Export",                  description: "Export STL, 3MF, or ZIP for the lab or in-house printer.",  action: "Export plan" },
 ];
 
 const STATUS_COLORS: Record<WorkflowStepStatus, string> = {

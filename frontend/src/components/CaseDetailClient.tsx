@@ -99,7 +99,7 @@ const CASE_PROFILES: Record<string, CaseProfile> = {
     patient: "Oliver T.", initials: "OT", accentClass: "bg-rose-500",
     doctor: "Dr. Park", malocclusionClass: "Class II Div1",
     crowding: "Severe (≥6 mm)", chiefComplaint: "Canine reposition & overjet reduction",
-    urgency: "critical", progress: 45, workflowStatus: "clinical-review",
+    urgency: "critical", progress: 45, workflowStatus: "clinical_review",
     goals: ["Reduce overjet to < 2 mm", "Canine retraction UL3/UR3", "Correct midline deviation", "Improve smile arc"],
     measurements: [
       { label: "Overjet",             value: "7.4 mm" },
@@ -108,8 +108,8 @@ const CASE_PROFILES: Record<string, CaseProfile> = {
       { label: "Bolton ratio (6:6)",  value: "74.8% (upper excess)" },
     ],
     history: [
-      { id: "h3", timestamp: "2026-06-23 09:30", actor: "Dr. Park", actorRole: "Orthodontist", action: "Submitted for clinical review", fromStatus: "submitted", toStatus: "clinical-review" },
-      { id: "h2", timestamp: "2026-06-23 08:15", actor: "T. Williams", actorRole: "Treatment Coordinator", action: "Case submitted", fromStatus: "draft", toStatus: "submitted" },
+      { id: "h3", timestamp: "2026-06-23 09:30", actor: "Dr. Park", actorRole: "Orthodontist", action: "Submitted for clinical review", fromStatus: "scan_review", toStatus: "clinical_review" },
+      { id: "h2", timestamp: "2026-06-23 08:15", actor: "T. Williams", actorRole: "Treatment Coordinator", action: "Case submitted", fromStatus: "draft", toStatus: "scan_review" },
       { id: "h1", timestamp: "2026-06-22 16:40", actor: "T. Williams", actorRole: "Treatment Coordinator", action: "Case created", toStatus: "draft" },
     ],
   },
@@ -126,9 +126,9 @@ const CASE_PROFILES: Record<string, CaseProfile> = {
       { label: "Bolton ratio (6:6)", value: "77.0% (within norm)" },
     ],
     history: [
-      { id: "h4", timestamp: "2026-06-23 10:05", actor: "Dr. Lee", actorRole: "Clinical Director", action: "Approved", fromStatus: "clinical-review", toStatus: "approved" },
-      { id: "h3", timestamp: "2026-06-23 08:45", actor: "Dr. Chen", actorRole: "Orthodontist", action: "Submitted for clinical review", fromStatus: "submitted", toStatus: "clinical-review" },
-      { id: "h2", timestamp: "2026-06-22 14:30", actor: "T. Williams", actorRole: "Treatment Coordinator", action: "Case submitted", fromStatus: "draft", toStatus: "submitted" },
+      { id: "h4", timestamp: "2026-06-23 10:05", actor: "Dr. Lee", actorRole: "Clinical Director", action: "Approved", fromStatus: "clinical_review", toStatus: "approved" },
+      { id: "h3", timestamp: "2026-06-23 08:45", actor: "Dr. Chen", actorRole: "Orthodontist", action: "Submitted for clinical review", fromStatus: "scan_review", toStatus: "clinical_review" },
+      { id: "h2", timestamp: "2026-06-22 14:30", actor: "T. Williams", actorRole: "Treatment Coordinator", action: "Case submitted", fromStatus: "draft", toStatus: "scan_review" },
       { id: "h1", timestamp: "2026-06-20 09:00", actor: "T. Williams", actorRole: "Treatment Coordinator", action: "Case created", toStatus: "draft" },
     ],
   },
@@ -136,7 +136,7 @@ const CASE_PROFILES: Record<string, CaseProfile> = {
     patient: "Emma K.", initials: "EK", accentClass: "bg-violet-500",
     doctor: "Dr. Chen", malocclusionClass: "Class I",
     crowding: "Mild (1–3 mm)", chiefComplaint: "Refinement — 8 upper aligners post-correction",
-    urgency: "urgent", progress: 85, workflowStatus: "manufacturing",
+    urgency: "urgent", progress: 85, workflowStatus: "active_treatment",
     goals: ["Refine upper anterior positions", "Close residual spacing 11/21", "Final torque adjustment"],
     measurements: [
       { label: "Overjet",            value: "1.9 mm" },
@@ -145,16 +145,16 @@ const CASE_PROFILES: Record<string, CaseProfile> = {
       { label: "Bolton ratio (6:6)", value: "78.1% (lower excess 0.9 mm)" },
     ],
     history: [
-      { id: "h4", timestamp: "2026-06-23 11:20", actor: "T. Williams", actorRole: "Treatment Coordinator", action: "Sent to manufacturing", fromStatus: "approved", toStatus: "manufacturing" },
-      { id: "h3", timestamp: "2026-06-23 10:45", actor: "Dr. Lee", actorRole: "Clinical Director", action: "Approved", fromStatus: "clinical-review", toStatus: "approved" },
-      { id: "h2", timestamp: "2026-06-23 09:10", actor: "Dr. Chen", actorRole: "Orthodontist", action: "Submitted for review", fromStatus: "draft", toStatus: "submitted" },
+      { id: "h4", timestamp: "2026-06-23 11:20", actor: "T. Williams", actorRole: "Treatment Coordinator", action: "Started active treatment", fromStatus: "approved", toStatus: "active_treatment" },
+      { id: "h3", timestamp: "2026-06-23 10:45", actor: "Dr. Lee", actorRole: "Clinical Director", action: "Approved", fromStatus: "clinical_review", toStatus: "approved" },
+      { id: "h2", timestamp: "2026-06-23 09:10", actor: "Dr. Chen", actorRole: "Orthodontist", action: "Submitted for review", fromStatus: "draft", toStatus: "scan_review" },
     ],
   },
   "C-2901": {
     patient: "James R.", initials: "JR", accentClass: "bg-teal-500",
     doctor: "Dr. Lee", malocclusionClass: "Class I",
     crowding: "Moderate (3–5 mm)", chiefComplaint: "Upper arch IPR 0.3 mm pre-authorization",
-    urgency: "routine", progress: 35, workflowStatus: "clinical-review",
+    urgency: "routine", progress: 35, workflowStatus: "clinical_review",
     goals: ["Authorize IPR 0.3 mm upper anteriors", "Maintain arch form", "Continue stage 7 of 18"],
     measurements: [
       { label: "Overjet",            value: "3.5 mm" },
@@ -163,7 +163,7 @@ const CASE_PROFILES: Record<string, CaseProfile> = {
       { label: "Bolton ratio (6:6)", value: "76.4% (lower excess 0.7 mm)" },
     ],
     history: [
-      { id: "h2", timestamp: "2026-06-23 10:30", actor: "Dr. Lee", actorRole: "Orthodontist", action: "Submitted for IPR review", fromStatus: "draft", toStatus: "submitted" },
+      { id: "h2", timestamp: "2026-06-23 10:30", actor: "Dr. Lee", actorRole: "Orthodontist", action: "Submitted for IPR review", fromStatus: "draft", toStatus: "scan_review" },
       { id: "h1", timestamp: "2026-06-22 15:00", actor: "T. Williams", actorRole: "Treatment Coordinator", action: "Case created", toStatus: "draft" },
     ],
   },
@@ -171,7 +171,7 @@ const CASE_PROFILES: Record<string, CaseProfile> = {
     patient: "Marcus D.", initials: "MD", accentClass: "bg-blue-500",
     doctor: "Dr. Torres", malocclusionClass: "Class II",
     crowding: "Moderate (3–5 mm)", chiefComplaint: "Full-arch correction — 7 attachments proposed",
-    urgency: "urgent", progress: 60, workflowStatus: "submitted",
+    urgency: "urgent", progress: 60, workflowStatus: "scan_review",
     goals: ["Class II correction with elastics", "Place 7 attachments", "Reduce overjet to < 3 mm"],
     measurements: [
       { label: "Overjet",            value: "5.2 mm" },
@@ -180,7 +180,7 @@ const CASE_PROFILES: Record<string, CaseProfile> = {
       { label: "Bolton ratio (6:6)", value: "75.1% (upper excess 1.6 mm)" },
     ],
     history: [
-      { id: "h2", timestamp: "2026-06-23 07:45", actor: "Dr. Torres", actorRole: "Orthodontist", action: "Case submitted", fromStatus: "draft", toStatus: "submitted" },
+      { id: "h2", timestamp: "2026-06-23 07:45", actor: "Dr. Torres", actorRole: "Orthodontist", action: "Case submitted", fromStatus: "draft", toStatus: "scan_review" },
       { id: "h1", timestamp: "2026-06-22 10:00", actor: "T. Williams", actorRole: "Treatment Coordinator", action: "Case created", toStatus: "draft" },
     ],
   },
@@ -196,9 +196,9 @@ const CASE_PROFILES: Record<string, CaseProfile> = {
       { label: "Bolton ratio (6:6)", value: "77.4% (within norm)" },
     ],
     history: [
-      { id: "h5", timestamp: "2026-06-23 09:00", actor: "T. Williams", actorRole: "Treatment Coordinator", action: "Case completed", fromStatus: "manufacturing", toStatus: "completed" },
-      { id: "h4", timestamp: "2026-06-22 14:00", actor: "T. Williams", actorRole: "Treatment Coordinator", action: "Sent to manufacturing", fromStatus: "approved", toStatus: "manufacturing" },
-      { id: "h3", timestamp: "2026-06-22 10:00", actor: "Dr. Lee", actorRole: "Orthodontist", action: "Approved", fromStatus: "clinical-review", toStatus: "approved" },
+      { id: "h5", timestamp: "2026-06-23 09:00", actor: "T. Williams", actorRole: "Treatment Coordinator", action: "Treatment completed", fromStatus: "active_treatment", toStatus: "completed" },
+      { id: "h4", timestamp: "2026-06-22 14:00", actor: "T. Williams", actorRole: "Treatment Coordinator", action: "Started active treatment", fromStatus: "approved", toStatus: "active_treatment" },
+      { id: "h3", timestamp: "2026-06-22 10:00", actor: "Dr. Lee", actorRole: "Orthodontist", action: "Approved", fromStatus: "clinical_review", toStatus: "approved" },
     ],
   },
   "C-2900": {
@@ -410,7 +410,7 @@ export default function CaseDetailClient({ id }: { id: string }) {
     patient: id, initials: id.slice(-2).toUpperCase(), accentClass: "bg-slate-500",
     doctor: "—", malocclusionClass: "—", crowding: "—", chiefComplaint: "—",
     urgency: "routine" as const, progress: 50,
-    workflowStatus: "clinical-review" as CaseStatus,
+    workflowStatus: "clinical_review" as CaseStatus,
     goals: [], measurements: [],
     history: [{ id: "h1", timestamp: "—", actor: "—", actorRole: "—", action: "Case opened", toStatus: "draft" as CaseStatus }],
   };

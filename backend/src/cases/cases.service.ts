@@ -1,17 +1,32 @@
 import {
   Injectable,
   Inject,
+  BadRequestException,
   NotFoundException,
   ForbiddenException,
   Logger,
 } from '@nestjs/common';
-import type { Pool } from 'pg';
+import type { Pool, PoolClient } from 'pg';
 import { PG_POOL } from '../database/database.module';
 import { AuditService } from '../audit/audit.service';
+import { CryptoService } from '../common/crypto.service';
 import { WorkflowService, type CaseStatus } from '../workflow/workflow.service';
 
 export interface CreateCaseDto {
   patientId: string;
+  chiefComplaint?: string;
+  malocclusionClass?: string;
+  notes?: string;
+}
+
+export interface CreateCaseWithPatientDto {
+  patient: {
+    firstName: string;
+    lastName: string;
+    dateOfBirth?: string;
+    gender?: string;
+    clinicalNotes?: string;
+  };
   chiefComplaint?: string;
   malocclusionClass?: string;
   notes?: string;
@@ -31,7 +46,19 @@ export class CasesService {
     @Inject(PG_POOL) private readonly pool: Pool,
     private readonly auditService: AuditService,
     private readonly workflowService: WorkflowService,
+    private readonly cryptoService: CryptoService,
   ) {}
+
+  private assertValidDob(dob: string | undefined): void {
+    if (!dob) return;
+    const match = /^(\d{4})-\d{2}-\d{2}$/.exec(dob);
+    if (!match) throw new BadRequestException('dateOfBirth must be in YYYY-MM-DD format');
+    const year = parseInt(match[1], 10);
+    const currentYear = new Date().getFullYear();
+    if (year < 1900 || year > currentYear) {
+      throw new BadRequestException(`dateOfBirth year must be between 1900 and ${currentYear}`);
+    }
+  }
 
   // ─── List cases by org (joined with patient name) ─────────────────────────
 
@@ -169,6 +196,85 @@ export class CasesService {
     });
 
     return this.findOne(newId, orgId);
+  }
+
+  // ─── Atomic create: new patient + case in one transaction ─────────────────
+
+  async createWithNewPatient(
+    orgId: string,
+    actorId: string,
+    dto: CreateCaseWithPatientDto,
+    opts: { actorEmail?: string; ipAddress?: string } = {},
+  ) {
+    this.assertValidDob(dto.patient.dateOfBirth);
+
+    const client: PoolClient = await this.pool.connect();
+    let committed = false;
+    let patientId: string;
+    let caseId: string;
+
+    try {
+      await client.query('BEGIN');
+
+      const { rows: patRows } = await client.query<{ id: string }>(
+        `INSERT INTO patients
+           (organization_id, first_name, last_name, dob, gender, clinical_notes, created_by)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)
+         RETURNING id`,
+        [
+          orgId,
+          this.cryptoService.encrypt(dto.patient.firstName),
+          this.cryptoService.encrypt(dto.patient.lastName),
+          dto.patient.dateOfBirth ?? null,
+          this.cryptoService.encrypt(dto.patient.gender ?? null),
+          this.cryptoService.encrypt(dto.patient.clinicalNotes ?? null),
+          actorId,
+        ],
+      );
+      patientId = patRows[0].id;
+
+      const { rows: caseRows } = await client.query<{ id: string }>(
+        `INSERT INTO cases
+           (patient_id, assigned_to, status, chief_complaint, malocclusion_class, notes)
+         VALUES ($1, $2, 'draft', $3, $4, $5)
+         RETURNING id`,
+        [
+          patientId,
+          actorId,
+          dto.chiefComplaint ?? null,
+          dto.malocclusionClass ?? null,
+          dto.notes ?? null,
+        ],
+      );
+      caseId = caseRows[0].id;
+
+      await client.query('COMMIT');
+      committed = true;
+    } catch (err) {
+      if (!committed) {
+        try { await client.query('ROLLBACK'); } catch { /* ignore */ }
+      }
+      throw err;
+    } finally {
+      client.release();
+    }
+
+    await Promise.all([
+      this.auditService.log({
+        organizationId: orgId, actorId, actorEmail: opts.actorEmail,
+        resourceType: 'patient', resourceId: patientId!,
+        action: 'patient.created', details: { firstName: dto.patient.firstName, lastName: dto.patient.lastName },
+        ipAddress: opts.ipAddress,
+      }),
+      this.auditService.log({
+        organizationId: orgId, actorId, actorEmail: opts.actorEmail,
+        resourceType: 'case', resourceId: caseId!,
+        action: 'case.created', details: { patientId, chiefComplaint: dto.chiefComplaint },
+        ipAddress: opts.ipAddress,
+      }),
+    ]);
+
+    return this.findOne(caseId!, orgId);
   }
 
   // ─── Update ───────────────────────────────────────────────────────────────

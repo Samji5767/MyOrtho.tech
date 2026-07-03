@@ -1,17 +1,22 @@
 "use client";
 
 import React, { useState } from "react";
-import { CheckCircle2, ChevronRight, Clock, FileEdit, Send, ShieldCheck, Truck, XCircle } from "lucide-react";
+import { Activity, Archive, CheckCircle2, ChevronRight, Clock, FileEdit, FlaskConical, Scan, ShieldCheck, XCircle } from "lucide-react";
 import { Button, Card, StatusBadge } from "@/components/DesignSystem";
 
 export type CaseStatus =
   | "draft"
-  | "submitted"
-  | "clinical-review"
+  | "scan_review"
+  | "segmentation"
+  | "planning"
+  | "clinical_review"
   | "approved"
-  | "revision-requested"
-  | "manufacturing"
-  | "completed";
+  | "active_treatment"
+  | "monitoring"
+  | "retention"
+  | "completed"
+  | "archived"
+  | "cancelled";
 
 export type WorkflowEvent = {
   id: string;
@@ -28,17 +33,23 @@ const STATUS_META: Record<
   CaseStatus,
   { label: string; tone: "neutral" | "info" | "primary" | "success" | "warning" | "danger"; icon: React.ReactNode; order: number }
 > = {
-  draft:              { label: "Draft",            tone: "neutral",  icon: <FileEdit size={13} />,    order: 0 },
-  submitted:          { label: "Submitted",        tone: "info",     icon: <Send size={13} />,        order: 1 },
-  "clinical-review":  { label: "Clinical Review",  tone: "primary",  icon: <ShieldCheck size={13} />, order: 2 },
-  approved:           { label: "Approved",         tone: "success",  icon: <CheckCircle2 size={13} />,order: 3 },
-  "revision-requested": { label: "Revision Requested", tone: "warning", icon: <FileEdit size={13} />, order: 2 },
-  manufacturing:      { label: "Manufacturing",    tone: "info",     icon: <Truck size={13} />,       order: 4 },
-  completed:          { label: "Completed",        tone: "success",  icon: <CheckCircle2 size={13} />,order: 5 },
+  draft:            { label: "Draft",            tone: "neutral",  icon: <FileEdit size={13} />,     order: 0 },
+  scan_review:      { label: "Scan Review",      tone: "info",     icon: <Scan size={13} />,         order: 1 },
+  segmentation:     { label: "Segmentation",     tone: "info",     icon: <FlaskConical size={13} />, order: 2 },
+  planning:         { label: "Planning",         tone: "primary",  icon: <Activity size={13} />,     order: 3 },
+  clinical_review:  { label: "Clinical Review",  tone: "primary",  icon: <ShieldCheck size={13} />,  order: 4 },
+  approved:         { label: "Approved",         tone: "success",  icon: <CheckCircle2 size={13} />, order: 5 },
+  active_treatment: { label: "Active Treatment", tone: "success",  icon: <Activity size={13} />,     order: 6 },
+  monitoring:       { label: "Monitoring",       tone: "info",     icon: <Clock size={13} />,        order: 7 },
+  retention:        { label: "Retention",        tone: "warning",  icon: <Clock size={13} />,        order: 8 },
+  completed:        { label: "Completed",        tone: "success",  icon: <CheckCircle2 size={13} />, order: 9 },
+  archived:         { label: "Archived",         tone: "neutral",  icon: <Archive size={13} />,      order: 10 },
+  cancelled:        { label: "Cancelled",        tone: "danger",   icon: <XCircle size={13} />,      order: 10 },
 };
 
 const ORDERED_STATUSES: CaseStatus[] = [
-  "draft", "submitted", "clinical-review", "approved", "manufacturing", "completed",
+  "draft", "scan_review", "segmentation", "planning", "clinical_review",
+  "approved", "active_treatment", "monitoring", "retention", "completed",
 ];
 
 type AllowedAction = {
@@ -49,17 +60,44 @@ type AllowedAction = {
 };
 
 const TRANSITIONS: Record<CaseStatus, AllowedAction[]> = {
-  draft:              [{ label: "Submit for Review", toStatus: "submitted",    tone: "primary" }],
-  submitted:          [{ label: "Begin Review",      toStatus: "clinical-review", tone: "primary" }],
-  "clinical-review":  [
-    { label: "Approve",           toStatus: "approved",           tone: "success" },
-    { label: "Request Revision",  toStatus: "revision-requested", tone: "secondary", requiresNote: true },
-    { label: "Reject",            toStatus: "draft",              tone: "danger",  requiresNote: true },
+  draft:            [
+    { label: "Upload Scans",  toStatus: "scan_review", tone: "primary" },
+    { label: "Cancel Case",   toStatus: "cancelled",   tone: "danger", requiresNote: true },
   ],
-  approved:           [{ label: "Send to Manufacturing", toStatus: "manufacturing", tone: "primary" }],
-  "revision-requested": [{ label: "Resubmit",         toStatus: "submitted",    tone: "primary" }],
-  manufacturing:      [{ label: "Mark Completed",    toStatus: "completed",    tone: "success" }],
-  completed:          [],
+  scan_review:      [
+    { label: "Begin Segmentation", toStatus: "segmentation", tone: "primary" },
+    { label: "Back to Draft",      toStatus: "draft",        tone: "secondary" },
+    { label: "Cancel Case",        toStatus: "cancelled",    tone: "danger", requiresNote: true },
+  ],
+  segmentation:     [
+    { label: "Start Planning", toStatus: "planning",     tone: "primary" },
+    { label: "Re-scan",        toStatus: "scan_review",  tone: "secondary" },
+    { label: "Cancel Case",    toStatus: "cancelled",    tone: "danger", requiresNote: true },
+  ],
+  planning:         [
+    { label: "Submit for Review", toStatus: "clinical_review", tone: "primary" },
+    { label: "Back to Segmentation", toStatus: "segmentation", tone: "secondary" },
+    { label: "Cancel Case",       toStatus: "cancelled",       tone: "danger", requiresNote: true },
+  ],
+  clinical_review:  [
+    { label: "Approve Treatment", toStatus: "approved",         tone: "success" },
+    { label: "Request Revision",  toStatus: "planning",         tone: "secondary", requiresNote: true },
+  ],
+  approved:         [{ label: "Start Treatment", toStatus: "active_treatment", tone: "primary" }],
+  active_treatment: [
+    { label: "Move to Monitoring", toStatus: "monitoring", tone: "primary" },
+    { label: "Begin Retention",    toStatus: "retention",  tone: "primary" },
+    { label: "Complete",           toStatus: "completed",  tone: "success" },
+  ],
+  monitoring:       [
+    { label: "Begin Retention",    toStatus: "retention",        tone: "primary" },
+    { label: "Resume Treatment",   toStatus: "active_treatment", tone: "secondary" },
+    { label: "Complete",           toStatus: "completed",        tone: "success" },
+  ],
+  retention:        [{ label: "Complete Case", toStatus: "completed", tone: "success" }],
+  completed:        [{ label: "Archive",       toStatus: "archived",  tone: "secondary" }],
+  archived:         [],
+  cancelled:        [],
 };
 
 function StatusPill({ status }: { status: CaseStatus }) {
@@ -153,7 +191,7 @@ interface ClinicalWorkflowProps {
 export default function ClinicalWorkflow({
   caseId = "DEMO-001",
   caseName = "Sample Case",
-  initialStatus = "clinical-review",
+  initialStatus = "clinical_review",
   initialHistory,
   currentActor = "Dr. Demo",
   currentActorRole = "Clinical Director",
@@ -168,7 +206,7 @@ export default function ClinicalWorkflow({
         actorRole: "Treatment Coordinator",
         action: "Case submitted for clinical review",
         fromStatus: "draft",
-        toStatus: "submitted",
+        toStatus: "scan_review",
       },
       {
         id: "evt-seed-1",
@@ -296,7 +334,7 @@ export default function ClinicalWorkflow({
             <CheckCircle2 className="text-emerald-400" size={20} />
             <div>
               <p className="text-sm font-semibold text-foreground">Case completed</p>
-              <p className="text-xs text-secondary">All clinical and manufacturing steps are done.</p>
+              <p className="text-xs text-secondary">All clinical steps are complete. Ready to archive.</p>
             </div>
           </div>
         </Card>

@@ -54,6 +54,19 @@ export interface CreateCaseDto {
   notes?: string;
 }
 
+export interface CreateCaseWithPatientDto {
+  patient: {
+    firstName: string;
+    lastName: string;
+    dateOfBirth?: string;
+    gender?: string;
+    clinicalNotes?: string;
+  };
+  chiefComplaint?: string;
+  malocclusionClass?: string;
+  notes?: string;
+}
+
 export interface UpdateCaseDto {
   chiefComplaint?: string;
   malocclusionClass?: string;
@@ -138,6 +151,10 @@ export async function fetchCase(id: string): Promise<{ data: CaseDetail; source:
 
 export async function createCase(dto: CreateCaseDto): Promise<CaseDetail> {
   return api.post<CaseDetail>('/api/cases', dto);
+}
+
+export async function createCaseWithNewPatient(dto: CreateCaseWithPatientDto): Promise<CaseDetail> {
+  return api.post<CaseDetail>('/api/cases/with-new-patient', dto);
 }
 
 export async function updateCase(id: string, dto: UpdateCaseDto): Promise<CaseDetail> {

@@ -126,16 +126,16 @@ describe('Phase 25 — Full Workflow Integration', () => {
       svc = new WorkflowService(mockPool as never, auditSvc);
     });
 
-    it('transitions draft → scan_uploaded', async () => {
+    it('transitions draft → scan_review', async () => {
       const result = await svc.transition({
         caseId: CASE_ID,
-        toStatus: 'scan_uploaded',
+        toStatus: 'scan_review',
         actorId: USER_ID,
         actorRole: 'orthodontist',
         orgId: ORG_ID,
       });
       expect(result.fromStatus).toBe('draft');
-      expect(result.toStatus).toBe('scan_uploaded');
+      expect(result.toStatus).toBe('scan_review');
     });
 
     it('rejects invalid transition draft → approved', async () => {
@@ -201,7 +201,7 @@ describe('Phase 25 — Full Workflow Integration', () => {
         return { rows: [] };
       });
 
-      svc = new CasesService(mockPool as never, auditSvc, workflowSvc);
+      svc = new CasesService(mockPool as never, auditSvc, workflowSvc, { encrypt: (v: unknown) => v, decrypt: (v: unknown) => v } as any);
     });
 
     it('returns linkedResources with real IDs', async () => {
@@ -224,7 +224,7 @@ describe('Phase 25 — Full Workflow Integration', () => {
         getHistory: jest.fn().mockResolvedValue([]),
         allowedTransitions: jest.fn().mockReturnValue([]),
       } as unknown as WorkflowService;
-      const svc2 = new CasesService(brokenPool as never, auditSvc, workflowSvc);
+      const svc2 = new CasesService(brokenPool as never, auditSvc, workflowSvc, { encrypt: (v: unknown) => v, decrypt: (v: unknown) => v } as any);
       const caseDetail = await svc2.findOne(CASE_ID, ORG_ID);
       // Should not throw — safe fallback returns nulls
       expect(caseDetail.linkedResources!.latestScanId).toBeNull();

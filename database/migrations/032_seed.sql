@@ -87,58 +87,45 @@ VALUES
 ON CONFLICT (id) DO NOTHING;
 
 -- 5. Create Cases
--- VPS (migration 002) cases has no dentist_id; use assigned_to instead.
--- Supabase schema.sql cases has dentist_id.
-DO $$ BEGIN
-  IF EXISTS (SELECT 1 FROM information_schema.columns
-             WHERE table_name = 'cases' AND column_name = 'dentist_id'
-             AND table_schema = 'public') THEN
-    INSERT INTO cases (id, patient_id, dentist_id, status, notes)
-    VALUES
-    (
-        'c1111111-1111-1111-1111-111111111111',
-        '11111111-1111-1111-1111-111111111111',
-        'e1b2c3d4-5e6f-7a8b-9c0d-1e2f3a4b5c6d',
-        'planning',
-        'Requires upper/lower clear aligners. 18 maxillary stages.'
-    ),
-    (
-        'c2222222-2222-2222-2222-222222222222',
-        '22222222-2222-2222-2222-222222222222',
-        'e1b2c3d4-5e6f-7a8b-9c0d-1e2f3a4b5c6d',
-        'pending_approval',
-        'Awaiting approval for stage layout. IPR required at tooth 11/21.'
-    ),
-    (
-        'c3333333-3333-3333-3333-333333333333',
-        '33333333-3333-3333-3333-333333333333',
-        'e1b2c3d4-5e6f-7a8b-9c0d-1e2f3a4b5c6d',
-        'manufacturing',
-        'Aligner model generation complete. Print jobs in queue.'
-    )
+-- Handles 4 schema variants: presence/absence of dentist_id and organization_id.
+-- organization_id is NOT NULL in schema.sql so must be included when column exists.
+DO $$
+DECLARE
+  has_dentist_id  boolean;
+  has_org_id      boolean;
+BEGIN
+  IF EXISTS (SELECT 1 FROM cases WHERE id = 'c1111111-1111-1111-1111-111111111111') THEN
+    RETURN; -- already seeded
+  END IF;
+
+  has_dentist_id := EXISTS (SELECT 1 FROM information_schema.columns
+    WHERE table_name = 'cases' AND column_name = 'dentist_id' AND table_schema = 'public');
+  has_org_id := EXISTS (SELECT 1 FROM information_schema.columns
+    WHERE table_name = 'cases' AND column_name = 'organization_id' AND table_schema = 'public');
+
+  IF has_dentist_id AND has_org_id THEN
+    INSERT INTO cases (id, patient_id, dentist_id, organization_id, status, notes) VALUES
+      ('c1111111-1111-1111-1111-111111111111','11111111-1111-1111-1111-111111111111','e1b2c3d4-5e6f-7a8b-9c0d-1e2f3a4b5c6d','d0b1a2c3-4d5e-6f7a-8b9c-0d1e2f3a4b5c','planning','Requires upper/lower clear aligners. 18 maxillary stages.'),
+      ('c2222222-2222-2222-2222-222222222222','22222222-2222-2222-2222-222222222222','e1b2c3d4-5e6f-7a8b-9c0d-1e2f3a4b5c6d','d0b1a2c3-4d5e-6f7a-8b9c-0d1e2f3a4b5c','pending_approval','Awaiting approval for stage layout. IPR required at tooth 11/21.'),
+      ('c3333333-3333-3333-3333-333333333333','33333333-3333-3333-3333-333333333333','e1b2c3d4-5e6f-7a8b-9c0d-1e2f3a4b5c6d','d0b1a2c3-4d5e-6f7a-8b9c-0d1e2f3a4b5c','manufacturing','Aligner model generation complete. Print jobs in queue.')
+    ON CONFLICT (id) DO NOTHING;
+  ELSIF has_dentist_id THEN
+    INSERT INTO cases (id, patient_id, dentist_id, status, notes) VALUES
+      ('c1111111-1111-1111-1111-111111111111','11111111-1111-1111-1111-111111111111','e1b2c3d4-5e6f-7a8b-9c0d-1e2f3a4b5c6d','planning','Requires upper/lower clear aligners. 18 maxillary stages.'),
+      ('c2222222-2222-2222-2222-222222222222','22222222-2222-2222-2222-222222222222','e1b2c3d4-5e6f-7a8b-9c0d-1e2f3a4b5c6d','pending_approval','Awaiting approval for stage layout. IPR required at tooth 11/21.'),
+      ('c3333333-3333-3333-3333-333333333333','33333333-3333-3333-3333-333333333333','e1b2c3d4-5e6f-7a8b-9c0d-1e2f3a4b5c6d','manufacturing','Aligner model generation complete. Print jobs in queue.')
+    ON CONFLICT (id) DO NOTHING;
+  ELSIF has_org_id THEN
+    INSERT INTO cases (id, patient_id, organization_id, status, notes) VALUES
+      ('c1111111-1111-1111-1111-111111111111','11111111-1111-1111-1111-111111111111','d0b1a2c3-4d5e-6f7a-8b9c-0d1e2f3a4b5c','planning','Requires upper/lower clear aligners. 18 maxillary stages.'),
+      ('c2222222-2222-2222-2222-222222222222','22222222-2222-2222-2222-222222222222','d0b1a2c3-4d5e-6f7a-8b9c-0d1e2f3a4b5c','pending_approval','Awaiting approval for stage layout. IPR required at tooth 11/21.'),
+      ('c3333333-3333-3333-3333-333333333333','33333333-3333-3333-3333-333333333333','d0b1a2c3-4d5e-6f7a-8b9c-0d1e2f3a4b5c','manufacturing','Aligner model generation complete. Print jobs in queue.')
     ON CONFLICT (id) DO NOTHING;
   ELSE
-    -- VPS path: no dentist_id column; use assigned_to if available
-    INSERT INTO cases (id, patient_id, status, notes)
-    VALUES
-    (
-        'c1111111-1111-1111-1111-111111111111',
-        '11111111-1111-1111-1111-111111111111',
-        'planning',
-        'Requires upper/lower clear aligners. 18 maxillary stages.'
-    ),
-    (
-        'c2222222-2222-2222-2222-222222222222',
-        '22222222-2222-2222-2222-222222222222',
-        'pending_approval',
-        'Awaiting approval for stage layout. IPR required at tooth 11/21.'
-    ),
-    (
-        'c3333333-3333-3333-3333-333333333333',
-        '33333333-3333-3333-3333-333333333333',
-        'manufacturing',
-        'Aligner model generation complete. Print jobs in queue.'
-    )
+    INSERT INTO cases (id, patient_id, status, notes) VALUES
+      ('c1111111-1111-1111-1111-111111111111','11111111-1111-1111-1111-111111111111','planning','Requires upper/lower clear aligners. 18 maxillary stages.'),
+      ('c2222222-2222-2222-2222-222222222222','22222222-2222-2222-2222-222222222222','pending_approval','Awaiting approval for stage layout. IPR required at tooth 11/21.'),
+      ('c3333333-3333-3333-3333-333333333333','33333333-3333-3333-3333-333333333333','manufacturing','Aligner model generation complete. Print jobs in queue.')
     ON CONFLICT (id) DO NOTHING;
   END IF;
 END $$;

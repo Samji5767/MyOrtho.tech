@@ -5,11 +5,13 @@
 
 DO $$
 BEGIN
-  -- Install pgvector if available; skip silently if not installed on this host.
-  CREATE EXTENSION IF NOT EXISTS vector;
-EXCEPTION
-  WHEN OTHERS THEN
+  -- Check pg_available_extensions BEFORE attempting install — CREATE EXTENSION raises
+  -- a hard error (not catchable via EXCEPTION) when the .control file is missing.
+  IF EXISTS (SELECT 1 FROM pg_available_extensions WHERE name = 'vector') THEN
+    CREATE EXTENSION IF NOT EXISTS vector;
+  ELSE
     RAISE NOTICE 'pgvector extension not available on this host — copilot RAG tables will be skipped';
+  END IF;
 END $$;
 
 -- Only create RAG tables if the vector type is available.

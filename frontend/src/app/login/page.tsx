@@ -2,6 +2,7 @@
 
 import { useState, useRef, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { Eye, EyeOff, Lock, Mail, Stethoscope } from "lucide-react";
 import { login } from "@/lib/auth";
 import { useAuth } from "@/context/AuthContext";
@@ -162,10 +163,10 @@ export default function LoginPage() {
         </form>
 
         <p className="mt-6 text-center text-xs text-[color:var(--muted-foreground)]">
-          Need access?{" "}
-          <span className="font-medium text-[color:var(--primary)]">
-            Contact your administrator
-          </span>
+          New to MyOrtho?{" "}
+          <Link href="/signup" className="font-medium text-[color:var(--primary)] hover:underline">
+            Start your free trial
+          </Link>
         </p>
       </div>
 

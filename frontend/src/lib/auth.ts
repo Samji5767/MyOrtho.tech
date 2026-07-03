@@ -39,6 +39,27 @@ export async function login(email: string, password: string): Promise<{ user: Au
   }
 }
 
+export async function register(
+  email: string,
+  password: string,
+  fullName: string,
+  clinicName: string,
+): Promise<{ user: AuthUser } | { error: string }> {
+  try {
+    const res = await fetch(`/api/auth/register`, {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password, fullName, clinicName }),
+    });
+    const data = await res.json() as { user?: AuthUser; message?: string; error?: string };
+    if (!res.ok) return { error: data.message ?? data.error ?? 'Registration failed' };
+    return { user: data.user! };
+  } catch {
+    return { error: 'Network error — could not reach the server' };
+  }
+}
+
 export async function logout(): Promise<void> {
   try {
     await fetch(`/api/auth/logout`, {

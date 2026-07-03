@@ -154,6 +154,49 @@ export class AuthController {
     };
   }
 
+  @Post('register')
+  @HttpCode(HttpStatus.CREATED)
+  async register(
+    @Body() body: { email?: string; password?: string; fullName?: string; clinicName?: string },
+    @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const { email, password, fullName, clinicName } = body;
+    if (!email || !password || !fullName || !clinicName) {
+      throw new HttpException('email, password, fullName and clinicName are required', HttpStatus.BAD_REQUEST);
+    }
+    if (password.length < 8) {
+      throw new HttpException('Password must be at least 8 characters', HttpStatus.BAD_REQUEST);
+    }
+
+    const payload = await this.authService.register(email, password, fullName, clinicName);
+    const token = this.authService.signToken(payload);
+    const isProduction = process.env.NODE_ENV === 'production';
+    res.cookie(COOKIE_NAME, token, cookieOptions(this.authService.cookieMaxAgeMs, isProduction));
+
+    await this.auditService.log({
+      organizationId: payload.orgId,
+      actorId: payload.sub,
+      actorEmail: payload.email,
+      resourceType: 'auth',
+      action: 'auth.register',
+      ipAddress: getIp(req),
+      details: { clinicName },
+    });
+
+    return {
+      user: {
+        id: payload.sub,
+        email: payload.email,
+        name: payload.name,
+        role: payload.role,
+        orgId: payload.orgId,
+        isOnboarded: payload.isOnboarded,
+      },
+      token,
+    };
+  }
+
   @Post('onboarding')
   @HttpCode(HttpStatus.OK)
   async onboarding(

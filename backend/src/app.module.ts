@@ -85,6 +85,8 @@ import { CollaborationModule } from './collaboration/collaboration.module';
 import { FeatureFlagsModule } from './feature-flags/feature-flags.module';
 import { FhirModule } from './fhir/fhir.module';
 import { EmergencyProtocolsModule } from './emergency-protocols/emergency-protocols.module';
+import { BillingModule } from './billing/billing.module';
+import { OrgBrandingModule } from './org-branding/org-branding.module';
 
 @Module({
   imports: [
@@ -182,6 +184,8 @@ import { EmergencyProtocolsModule } from './emergency-protocols/emergency-protoc
     FeatureFlagsModule,
     FhirModule,
     EmergencyProtocolsModule,
+    BillingModule,
+    OrgBrandingModule,
   ],
   providers: [
     {

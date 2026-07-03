@@ -197,6 +197,36 @@ export class AuthService implements OnModuleInit {
     return this.toPayload(user);
   }
 
+  // ─── Self-service registration ────────────────────────────────────────────
+
+  async register(email: string, password: string, fullName: string, clinicName: string): Promise<SessionPayload> {
+    const normalizedEmail = email.toLowerCase().trim();
+    const existing = await this.findByEmail(normalizedEmail);
+    if (existing) {
+      throw new UnauthorizedException('An account with this email already exists');
+    }
+
+    // Create the clinic's organization
+    const orgResult = await this.pool.query<{ id: string }>(
+      `INSERT INTO organizations (name, type, settings)
+       VALUES ($1, 'clinic', '{}') RETURNING id`,
+      [clinicName.trim()],
+    );
+    const orgId = orgResult.rows[0]?.id ?? null;
+
+    // Create the user
+    const hash = await bcrypt.hash(password, BCRYPT_ROUNDS);
+    const { rows } = await this.pool.query<{ id: string }>(
+      `INSERT INTO auth_users (email, password_hash, full_name, role, organization_id, is_onboarded)
+       VALUES ($1, $2, $3, 'orthodontist', $4, false) RETURNING id`,
+      [normalizedEmail, hash, fullName.trim(), orgId],
+    );
+    const userId = rows[0].id;
+
+    const user = await this.pool.query<AuthUserRow>('SELECT * FROM auth_users WHERE id = $1', [userId]);
+    return this.toPayload(user.rows[0]);
+  }
+
   // ─── Mark onboarded ───────────────────────────────────────────────────────
 
   async markOnboarded(userId: string): Promise<void> {

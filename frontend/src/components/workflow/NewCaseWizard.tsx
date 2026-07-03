@@ -301,9 +301,18 @@ export default function NewCaseWizard() {
 
   // ── Validation ────────────────────────────────────────────────────────────
 
+  function isDobValid(dob: string): boolean {
+    if (!dob) return false;
+    const year = parseInt(dob.split('-')[0], 10);
+    const currentYear = new Date().getFullYear();
+    return !isNaN(year) && year >= 1900 && year <= currentYear;
+  }
+
   function canAdvance(): boolean {
     if (step === 0) {
-      if (createNew) return !!newPatient.firstName && !!newPatient.lastName && !!newPatient.dob;
+      if (createNew) {
+        return !!newPatient.firstName && !!newPatient.lastName && isDobValid(newPatient.dob);
+      }
       return !!selectedPatient;
     }
     if (step === 1) return !!clinical.chiefComplaint && !!clinical.malocclusionClass;
@@ -514,8 +523,13 @@ export default function NewCaseWizard() {
                       type="date"
                       className={INPUT}
                       value={newPatient.dob}
+                      min="1900-01-01"
+                      max={new Date().toISOString().split('T')[0]}
                       onChange={(e) => setNewPatient((p) => ({ ...p, dob: e.target.value }))}
                     />
+                    {newPatient.dob && !isDobValid(newPatient.dob) && (
+                      <p className="text-[10px] text-rose-500">Enter a valid year between 1900 and today.</p>
+                    )}
                   </Field>
                   <Field label="Gender">
                     <select

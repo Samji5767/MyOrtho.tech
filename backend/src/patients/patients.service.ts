@@ -1,6 +1,7 @@
 import {
   Injectable,
   Inject,
+  BadRequestException,
   NotFoundException,
   ForbiddenException,
   Logger,
@@ -72,12 +73,26 @@ export class PatientsService {
     return this.formatPatient(row, true);
   }
 
+  private assertValidDob(dob: string | undefined): void {
+    if (!dob) return;
+    const match = /^(\d{4})-\d{2}-\d{2}$/.exec(dob);
+    if (!match) {
+      throw new BadRequestException('dateOfBirth must be in YYYY-MM-DD format');
+    }
+    const year = parseInt(match[1], 10);
+    const currentYear = new Date().getFullYear();
+    if (year < 1900 || year > currentYear) {
+      throw new BadRequestException(`dateOfBirth year must be between 1900 and ${currentYear}`);
+    }
+  }
+
   async create(
     orgId: string,
     createdBy: string,
     dto: CreatePatientDto,
     opts: { actorEmail?: string; ipAddress?: string } = {},
   ) {
+    this.assertValidDob(dto.dateOfBirth);
     const { rows } = await this.pool.query(
       `INSERT INTO patients
          (organization_id, first_name, last_name, dob, gender, clinical_notes, created_by)
@@ -118,6 +133,7 @@ export class PatientsService {
     dto: UpdatePatientDto,
     opts: { actorEmail?: string; ipAddress?: string } = {},
   ) {
+    this.assertValidDob(dto.dateOfBirth);
     await this.findOne(id, orgId); // ownership check
 
     const fields: string[] = [];

@@ -144,7 +144,7 @@ export class CasesService {
     const { rows } = await this.pool.query(
       `INSERT INTO cases
          (patient_id, assigned_to, status, chief_complaint, malocclusion_class, notes)
-       VALUES ($1, $2, 'draft'::case_status, $3, $4, $5)
+       VALUES ($1, $2, 'draft', $3, $4, $5)
        RETURNING id`,
       [
         dto.patientId,

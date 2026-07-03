@@ -6,31 +6,35 @@ import { AuditService } from '../audit/audit.service';
 // Valid case status values — must exactly match the case_status enum in schema.sql
 export const CASE_STATUSES = [
   'draft',
-  'scan_uploaded',
-  'segmenting',
+  'scan_review',
+  'segmentation',
   'planning',
-  'pending_approval',
+  'clinical_review',
   'approved',
-  'staging',
-  'manufacturing',
+  'active_treatment',
+  'monitoring',
+  'retention',
   'completed',
-  'canceled',
+  'archived',
+  'cancelled',
 ] as const;
 
 export type CaseStatus = (typeof CASE_STATUSES)[number];
 
 // Allowed transitions: from → allowed next statuses
 const TRANSITIONS: Record<CaseStatus, CaseStatus[]> = {
-  draft:            ['scan_uploaded', 'canceled'],
-  scan_uploaded:    ['segmenting', 'canceled'],
-  segmenting:       ['planning', 'scan_uploaded'],
-  planning:         ['pending_approval'],
-  pending_approval: ['approved', 'planning'],
-  approved:         ['staging', 'pending_approval'],
-  staging:          ['manufacturing'],
-  manufacturing:    ['completed'],
-  completed:        [],
-  canceled:         [],
+  draft:            ['scan_review', 'cancelled'],
+  scan_review:      ['segmentation', 'draft', 'cancelled'],
+  segmentation:     ['planning', 'scan_review', 'cancelled'],
+  planning:         ['clinical_review', 'segmentation', 'cancelled'],
+  clinical_review:  ['approved', 'planning'],
+  approved:         ['active_treatment', 'clinical_review'],
+  active_treatment: ['monitoring', 'retention', 'completed'],
+  monitoring:       ['retention', 'active_treatment', 'completed'],
+  retention:        ['completed'],
+  completed:        ['archived'],
+  archived:         [],
+  cancelled:        [],
 };
 
 export interface TransitionInput {
@@ -79,7 +83,7 @@ export class WorkflowService {
 
       // Update case status and write workflow event atomically.
       await client.query(
-        'UPDATE cases SET status = $1::case_status, updated_at = now() WHERE id = $2',
+        'UPDATE cases SET status = $1, updated_at = now() WHERE id = $2',
         [input.toStatus, input.caseId],
       );
 

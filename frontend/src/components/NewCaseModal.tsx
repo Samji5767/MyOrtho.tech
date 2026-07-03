@@ -307,6 +307,8 @@ export default function NewCaseModal({ onClose, onCreated }: NewCaseModalProps) 
                 <input
                   type="date"
                   value={newDob}
+                  min="1900-01-01"
+                  max={new Date().toISOString().split('T')[0]}
                   onChange={(e) => setNewDob(e.target.value)}
                   className="w-full rounded-xl border border-[color:var(--border)] bg-[color:var(--card)] px-3 py-2.5 text-sm text-[color:var(--foreground)] outline-none focus:border-[color:var(--primary)]"
                 />

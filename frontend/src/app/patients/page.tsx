@@ -20,12 +20,12 @@ import { api } from "@/lib/api/client";
 
 interface Patient {
   id: string;
-  first_name: string;
-  last_name: string;
-  date_of_birth: string | null;
+  firstName: string;
+  lastName: string;
+  dateOfBirth: string | null;
   gender: string | null;
-  case_count: number;
-  created_at: string;
+  caseCount: number;
+  createdAt: string;
 }
 
 export default function PatientsPage() {
@@ -46,7 +46,7 @@ export default function PatientsPage() {
     () =>
       query.trim()
         ? patients.filter((p) =>
-            `${p.first_name} ${p.last_name}`.toLowerCase().includes(query.toLowerCase())
+            `${p.firstName} ${p.lastName}`.toLowerCase().includes(query.toLowerCase())
           )
         : patients,
     [query, patients]
@@ -122,14 +122,14 @@ export default function PatientsPage() {
                     className="flex items-center gap-3 px-1 py-3 transition-colors hover:bg-[color:var(--muted-foreground)]/5"
                   >
                     <span className="grid h-10 w-10 shrink-0 place-items-center rounded-2xl bg-[color:var(--primary-glow)] text-sm font-bold text-[color:var(--primary)]">
-                      {p.first_name[0]}{p.last_name[0]}
+                      {p.firstName[0]}{p.lastName[0]}
                     </span>
                     <div className="min-w-0 flex-1">
                       <p className="truncate text-sm font-semibold text-[color:var(--foreground)]">
-                        {p.first_name} {p.last_name}
+                        {p.firstName} {p.lastName}
                       </p>
                       <p className="mt-0.5 text-xs text-[color:var(--muted-foreground)]">
-                        {p.case_count} case{p.case_count !== 1 ? 's' : ''}
+                        {p.caseCount} case{p.caseCount !== 1 ? 's' : ''}
                         {p.gender ? ` · ${p.gender}` : ''}
                       </p>
                     </div>

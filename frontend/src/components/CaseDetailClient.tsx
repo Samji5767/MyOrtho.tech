@@ -16,7 +16,7 @@ import {
   ClipboardCheck,
   ClipboardList,
   Cpu,
-  Factory,
+  Download,
   FileText,
   GitBranch,
   Grid3X3,
@@ -71,7 +71,7 @@ const AIClinicalAssistantPanel = dynamic(() => import("@/components/AIClinicalAs
 const TreatmentStagesPanel = dynamic(() => import("@/components/TreatmentStagesPanel"), { ssr: false });
 const QAReportPanel = dynamic(() => import("@/components/QAReportPanel"), { ssr: false });
 const AlignerPreviewPanel = dynamic(() => import("@/components/AlignerPreviewPanel"), { ssr: false });
-const ManufacturingPackagePanel = dynamic(() => import("@/components/ManufacturingPackagePanel"), { ssr: false });
+const PrinterDownloadPanel = dynamic(() => import("@/components/PrinterDownloadPanel"), { ssr: false });
 const AlignerStaging = dynamic(() => import("@/components/AlignerStaging"), { ssr: false });
 
 // ─── Representative data keyed to case ID ─────────────────────────────────────
@@ -235,7 +235,7 @@ type Tab =
   // Staging & Aligners
   | "stages" | "aligner-staging" | "aligner-preview"
   // QA & Export
-  | "qa-report" | "export" | "manufacturing"
+  | "qa-report" | "export" | "downloads"
   // Analysis & Imaging
   | "analysis" | "clinical-deep" | "occlusion" | "ceph" | "cbct" | "radiology"
   // AI & Clinical
@@ -273,7 +273,7 @@ const TABS: { key: Tab; label: string; icon: React.ReactNode }[] = [
   // QA & Export
   { key: "qa-report",      label: "QA",              icon: <ClipboardCheck size={13} /> },
   { key: "export",         label: "QA & Export",     icon: <ShieldCheck size={13} /> },
-  { key: "manufacturing",  label: "Manufacturing",   icon: <Factory size={13} /> },
+  { key: "downloads",      label: "Downloads",        icon: <Download size={13} /> },
   // Analysis & Imaging
   { key: "analysis",       label: "Analysis",        icon: <Microscope size={13} /> },
   { key: "clinical-deep",  label: "Deep Analysis",   icon: <BarChart2 size={13} /> },
@@ -529,7 +529,7 @@ export default function CaseDetailClient({ id }: { id: string }) {
         {/* QA & Export */}
         {tab === "qa-report"      && <QAReportPanel setupId={setupId} token="" />}
         {tab === "export"         && <PreExportQAPanel caseId={id} />}
-        {tab === "manufacturing"  && <ManufacturingPackagePanel setupId={setupId} caseId={id} token="" />}
+        {tab === "downloads"      && <PrinterDownloadPanel caseId={id} setupId={setupId} token="" />}
 
         {/* Analysis & Imaging */}
         {tab === "analysis"       && <ClinicalAnalysisPanel caseId={id} />}

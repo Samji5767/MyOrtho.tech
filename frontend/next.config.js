@@ -17,8 +17,6 @@ const nextConfig = {
 
   // Reduce JS payload
   experimental: {
-    // Inline critical CSS for faster first paint
-    optimizeCss: true,
     // Tree-shake barrel re-exports
     optimizePackageImports: [
       'lucide-react',

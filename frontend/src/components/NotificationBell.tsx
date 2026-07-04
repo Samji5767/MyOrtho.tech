@@ -36,8 +36,9 @@ export default function NotificationBell() {
     try {
       const data = await listNotifications(30);
       setItems(data);
-    } catch { /* silent */ }
-    finally { setLoading(false); }
+    } catch {
+      // Notifications are non-critical; fail silently but stop loading state
+    } finally { setLoading(false); }
   }, []);
 
   useEffect(() => {
@@ -127,6 +128,7 @@ export default function NotificationBell() {
                     <p className="text-[10px] text-muted-foreground mt-1">{relativeTime(n.createdAt)}</p>
                   </div>
                   <button
+                    aria-label="Dismiss notification"
                     onClick={(e) => { e.stopPropagation(); handleDismiss(n.id); }}
                     className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-foreground transition-opacity shrink-0 mt-0.5"
                   >

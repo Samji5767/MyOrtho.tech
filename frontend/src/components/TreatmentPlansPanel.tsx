@@ -1,12 +1,14 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import {
   Activity,
   AlertTriangle,
   CheckCircle2,
   ChevronDown,
+  ChevronLeft,
+  ChevronRight,
   ChevronUp,
   ClipboardCheck,
   Layers3,
@@ -18,7 +20,7 @@ import {
   Sparkles,
   XCircle,
 } from "lucide-react";
-import { Button, Card, StatusBadge } from "@/components/DesignSystem";
+import { Button, Card, SkeletonBlock, StatusBadge } from "@/components/DesignSystem";
 import {
   listPlans,
   createPlan,
@@ -40,11 +42,23 @@ type PlanTab = "stages" | "biomechanics" | "attachments" | "ipr" | "refinement";
 
 // ─── Stage movement detail ────────────────────────────────────────────────────
 
+function mvSeverity(value: number, isAngle: boolean): "high" | "moderate" | "none" {
+  const abs = Math.abs(value);
+  if (isAngle) return abs > 5 ? "high" : abs > 2 ? "moderate" : "none";
+  return abs > 1.0 ? "high" : abs > 0.5 ? "moderate" : "none";
+}
+
+function mvClass(value: number, isAngle: boolean): string {
+  const s = mvSeverity(value, isAngle);
+  if (s === "high") return "text-rose-500 font-bold";
+  if (s === "moderate") return "text-amber-500 font-semibold";
+  return value !== 0 ? "text-[color:var(--foreground)]" : "text-[color:var(--muted-foreground)]";
+}
+
 function MovementTable({ movements }: { movements: Record<string, Record<string, number>> }) {
   const teeth = Object.keys(movements).map(Number).sort((a, b) => a - b);
   if (teeth.length === 0) return null;
 
-  // Show only teeth with non-trivial movement (any component > 0.05 mm or > 0.5 deg)
   const significant = teeth.filter((fdi) => {
     const m = movements[String(fdi)];
     return Object.values(m).some((v) => Math.abs(v) > 0.05);
@@ -54,42 +68,52 @@ function MovementTable({ movements }: { movements: Record<string, Record<string,
     return <p className="text-xs text-[color:var(--muted-foreground)]">No significant movements at this stage</p>;
   }
 
+  const COLS: { key: string; label: string; angle: boolean }[] = [
+    { key: "mesialMm", label: "M (mm)", angle: false },
+    { key: "distalMm", label: "D (mm)", angle: false },
+    { key: "buccalMm", label: "B (mm)", angle: false },
+    { key: "lingualMm", label: "L (mm)", angle: false },
+    { key: "torqueDeg", label: "Torq (°)", angle: true },
+  ];
+
   return (
     <div className="overflow-x-auto">
       <table className="w-full text-[10px] tabular-nums">
         <thead>
           <tr className="border-b border-[color:var(--border)] text-[color:var(--muted-foreground)]">
             <th className="py-1 text-left font-semibold w-10">FDI</th>
-            <th className="py-1 text-right font-semibold">M (mm)</th>
-            <th className="py-1 text-right font-semibold">D (mm)</th>
-            <th className="py-1 text-right font-semibold">B (mm)</th>
-            <th className="py-1 text-right font-semibold">L (mm)</th>
-            <th className="py-1 text-right font-semibold">Torq (°)</th>
+            {COLS.map((c) => (
+              <th key={c.key} className="py-1 text-right font-semibold">{c.label}</th>
+            ))}
           </tr>
         </thead>
         <tbody>
           {significant.map((fdi) => {
             const m = movements[String(fdi)] ?? {};
-            const val = (k: string) => {
-              const v = m[k] ?? 0;
-              return v === 0 ? "—" : (v > 0 ? "+" : "") + v.toFixed(2);
-            };
+            const fmt = (v: number) => v === 0 ? "—" : (v > 0 ? "+" : "") + v.toFixed(2);
             return (
               <tr key={fdi} className="border-b border-[color:var(--border)]/40 last:border-0">
                 <td className="py-0.5 font-mono font-semibold text-[color:var(--foreground)]">{fdi}</td>
-                <td className={`py-0.5 text-right ${(m.mesialMm ?? 0) !== 0 ? "text-[color:var(--foreground)]" : "text-[color:var(--muted-foreground)]"}`}>{val("mesialMm")}</td>
-                <td className={`py-0.5 text-right ${(m.distalMm ?? 0) !== 0 ? "text-[color:var(--foreground)]" : "text-[color:var(--muted-foreground)]"}`}>{val("distalMm")}</td>
-                <td className={`py-0.5 text-right ${(m.buccalMm ?? 0) !== 0 ? "text-[color:var(--foreground)]" : "text-[color:var(--muted-foreground)]"}`}>{val("buccalMm")}</td>
-                <td className={`py-0.5 text-right ${(m.lingualMm ?? 0) !== 0 ? "text-[color:var(--foreground)]" : "text-[color:var(--muted-foreground)]"}`}>{val("lingualMm")}</td>
-                <td className={`py-0.5 text-right ${(m.torqueDeg ?? 0) !== 0 ? "text-[color:var(--foreground)]" : "text-[color:var(--muted-foreground)]"}`}>{val("torqueDeg")}</td>
+                {COLS.map((c) => {
+                  const v = m[c.key] ?? 0;
+                  return (
+                    <td key={c.key} className={`py-0.5 text-right ${mvClass(v, c.angle)}`}>
+                      {fmt(v)}
+                    </td>
+                  );
+                })}
               </tr>
             );
           })}
         </tbody>
       </table>
-      <p className="mt-1.5 text-[9px] text-[color:var(--muted-foreground)]">
-        M=Mesial · D=Distal · B=Buccal · L=Lingual · Cumulative position at this stage
-      </p>
+      <div className="mt-1.5 flex items-center gap-3 text-[9px] text-[color:var(--muted-foreground)]">
+        <span>M=Mesial · D=Distal · B=Buccal · L=Lingual · Cumulative at this stage</span>
+        <span className="ml-auto flex items-center gap-2">
+          <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-amber-500" />Moderate (&gt;0.5mm)</span>
+          <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-rose-500" />High (&gt;1.0mm)</span>
+        </span>
+      </div>
     </div>
   );
 }
@@ -105,24 +129,87 @@ function StageStrip({
   activeStage: number | null;
   onSelect: (n: number) => void;
 }) {
+  const scrollRef = useRef<HTMLDivElement>(null);
+
+  // Scroll the active chip into view whenever activeStage changes
+  useEffect(() => {
+    if (!scrollRef.current || activeStage === null) return;
+    const chip = scrollRef.current.querySelector<HTMLElement>(`[data-stage="${activeStage}"]`);
+    chip?.scrollIntoView({ behavior: "smooth", inline: "center", block: "nearest" });
+  }, [activeStage]);
+
   if (stages.length === 0) return null;
+
+  const idx = stages.findIndex((s) => s.stageNumber === activeStage);
+  const canPrev = idx > 0;
+  const canNext = idx >= 0 && idx < stages.length - 1;
+  const progressPct = idx >= 0 ? ((idx + 1) / stages.length) * 100 : 0;
+
   return (
-    <div className="flex flex-wrap gap-1 py-2">
-      {stages.map((s) => (
+    <div className="space-y-2">
+      {/* Navigation bar */}
+      <div className="flex items-center gap-2">
         <button
-          key={s.id}
           type="button"
-          onClick={() => onSelect(s.stageNumber)}
-          className={[
-            "h-6 min-w-[1.75rem] rounded-md border px-1.5 text-[10px] font-semibold transition-colors",
-            activeStage === s.stageNumber
-              ? "border-[color:var(--primary)] bg-[color:var(--primary)] text-[color:var(--primary-foreground)]"
-              : "border-[color:var(--border)] bg-[color:var(--card)] text-[color:var(--muted-foreground)] hover:border-[color:var(--primary)]/50",
-          ].join(" ")}
+          disabled={!canPrev}
+          onClick={() => canPrev && onSelect(stages[idx - 1].stageNumber)}
+          className="rounded-lg border border-[color:var(--border)] p-1 text-[color:var(--muted-foreground)] transition-colors hover:bg-[color:var(--muted)]/30 hover:text-[color:var(--foreground)] disabled:cursor-not-allowed disabled:opacity-30"
+          aria-label="Previous stage"
         >
-          {s.stageNumber}
+          <ChevronLeft size={12} />
         </button>
-      ))}
+
+        <span className="text-[11px] font-medium tabular-nums text-[color:var(--muted-foreground)]">
+          {idx >= 0 ? `Stage ${idx + 1} of ${stages.length}` : `${stages.length} stages`}
+        </span>
+
+        <button
+          type="button"
+          disabled={!canNext}
+          onClick={() => canNext && onSelect(stages[idx + 1].stageNumber)}
+          className="rounded-lg border border-[color:var(--border)] p-1 text-[color:var(--muted-foreground)] transition-colors hover:bg-[color:var(--muted)]/30 hover:text-[color:var(--foreground)] disabled:cursor-not-allowed disabled:opacity-30"
+          aria-label="Next stage"
+        >
+          <ChevronRight size={12} />
+        </button>
+
+        {/* Progress track */}
+        <div className="ml-auto flex items-center gap-1.5">
+          <div className="h-1 w-20 overflow-hidden rounded-full bg-[color:var(--border)]">
+            <div
+              className="h-full rounded-full bg-[color:var(--primary)] transition-all duration-300"
+              style={{ width: `${progressPct}%` }}
+            />
+          </div>
+          <span className="text-[10px] tabular-nums text-[color:var(--muted-foreground)]">
+            {Math.round(progressPct)}%
+          </span>
+        </div>
+      </div>
+
+      {/* Scrollable chip strip */}
+      <div
+        ref={scrollRef}
+        className="flex gap-1 overflow-x-auto py-1"
+        style={{ scrollbarWidth: "none" }}
+      >
+        {stages.map((s) => (
+          <button
+            key={s.id}
+            data-stage={s.stageNumber}
+            type="button"
+            onClick={() => onSelect(s.stageNumber)}
+            className={[
+              "h-6 shrink-0 min-w-[1.75rem] rounded-md border px-1.5 text-[10px] font-semibold transition-colors",
+              activeStage === s.stageNumber
+                ? "border-[color:var(--primary)] bg-[color:var(--primary)] text-[color:var(--primary-foreground)]"
+                : "border-[color:var(--border)] bg-[color:var(--card)] text-[color:var(--muted-foreground)] hover:border-[color:var(--primary)]/50 hover:text-[color:var(--foreground)]",
+            ].join(" ")}
+          >
+            {s.stageNumber}
+          </button>
+        ))}
+      </div>
     </div>
   );
 }
@@ -147,6 +234,8 @@ function PlanRow({
   const [generateError, setGenerateError] = useState<string | null>(null);
   const [approving, setApproving] = useState(false);
   const [approveError, setApproveError] = useState<string | null>(null);
+  const [showApproveForm, setShowApproveForm] = useState(false);
+  const [approveSignature, setApproveSignature] = useState("");
 
   async function loadStages() {
     setStagesLoading(true);
@@ -181,12 +270,14 @@ function PlanRow({
   }
 
   async function handleApprove() {
-    const sig = window.prompt("Enter doctor name / signature to approve this treatment plan:");
-    if (!sig?.trim()) return;
+    const sig = approveSignature.trim();
+    if (!sig) return;
     setApproving(true);
     setApproveError(null);
     try {
-      onApproved(await approvePlan(caseId, plan.id, sig.trim()));
+      onApproved(await approvePlan(caseId, plan.id, sig));
+      setShowApproveForm(false);
+      setApproveSignature("");
     } catch (e) {
       setApproveError(e instanceof ApiError ? e.message : "Approval failed");
     } finally {
@@ -224,15 +315,20 @@ function PlanRow({
                 {plan.aiRecommendationNotes}
               </p>
             )}
-            {(approveError || generateError) && (
-              <p className="mt-1 text-xs text-red-500">{approveError ?? generateError}</p>
+            {generateError && (
+              <p className="mt-1 text-xs text-rose-500">{generateError}</p>
             )}
           </div>
 
           <div className="flex shrink-0 items-center gap-1.5">
             {!plan.doctorApproval && (
-              <Button variant="primary" size="sm" onClick={handleApprove} disabled={approving}>
-                {approving ? <Loader2 size={12} className="animate-spin" /> : <ClipboardCheck size={12} />}
+              <Button
+                variant="primary"
+                size="sm"
+                onClick={() => setShowApproveForm((v) => !v)}
+                disabled={approving}
+              >
+                <ClipboardCheck size={12} />
                 Approve
               </Button>
             )}
@@ -245,6 +341,45 @@ function PlanRow({
             </button>
           </div>
         </div>
+
+        {/* Inline approval form */}
+        {showApproveForm && !plan.doctorApproval && (
+          <div className="mt-2 rounded-xl border border-[color:var(--border)] bg-[color:var(--background)] p-3">
+            <p className="mb-2 text-xs font-semibold text-[color:var(--foreground)]">
+              Doctor approval — enter your name as signature
+            </p>
+            <div className="flex items-center gap-2">
+              <input
+                type="text"
+                value={approveSignature}
+                onChange={(e) => setApproveSignature(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && handleApprove()}
+                placeholder="Dr. First Last"
+                autoFocus
+                className="flex-1 rounded-lg border border-[color:var(--border)] bg-[color:var(--card)] px-3 py-1.5 text-xs text-[color:var(--foreground)] placeholder:text-[color:var(--muted-foreground)] focus:outline-none focus:ring-2 focus:ring-[color:var(--primary)]/40"
+              />
+              <Button
+                variant="primary"
+                size="sm"
+                disabled={!approveSignature.trim() || approving}
+                onClick={handleApprove}
+              >
+                {approving ? <Loader2 size={11} className="animate-spin" /> : <CheckCircle2 size={11} />}
+                Confirm
+              </Button>
+              <button
+                type="button"
+                onClick={() => { setShowApproveForm(false); setApproveSignature(""); setApproveError(null); }}
+                className="text-[color:var(--muted-foreground)] hover:text-[color:var(--foreground)] transition-colors"
+              >
+                <XCircle size={15} />
+              </button>
+            </div>
+            {approveError && (
+              <p className="mt-1.5 text-xs text-rose-500">{approveError}</p>
+            )}
+          </div>
+        )}
 
         {/* Expanded plan details with sub-tabs */}
         {expanded && (
@@ -279,8 +414,17 @@ function PlanRow({
             <div className="p-3">
               {activeTab === "stages" && (
                 stagesLoading ? (
-                  <div className="flex justify-center py-6">
-                    <Loader2 size={16} className="animate-spin text-[color:var(--muted-foreground)]" />
+                  <div className="space-y-2 py-2">
+                    <div className="flex items-center gap-2 pb-1">
+                      <SkeletonBlock className="h-6 w-6 rounded-lg" />
+                      <SkeletonBlock className="h-4 w-24" />
+                      <SkeletonBlock className="ml-auto h-1 w-20 rounded-full" />
+                    </div>
+                    <div className="flex gap-1">
+                      {Array.from({ length: 12 }).map((_, i) => (
+                        <SkeletonBlock key={i} className="h-6 w-7 rounded-md" />
+                      ))}
+                    </div>
                   </div>
                 ) : stages.length === 0 ? (
                   <div className="flex flex-col items-center gap-3 py-6 text-center">
@@ -515,8 +659,16 @@ export default function TreatmentPlansPanel({ caseId }: { caseId: string }) {
         )}
 
         {loading ? (
-          <div className="flex items-center justify-center py-10">
-            <Loader2 size={20} className="animate-spin text-[color:var(--muted-foreground)]" />
+          <div className="divide-y divide-[color:var(--border)]">
+            {[0, 1, 2].map((i) => (
+              <div key={i} className="flex items-center gap-3 px-4 py-3.5">
+                <div className="flex-1 space-y-1.5">
+                  <SkeletonBlock className="h-4 w-40" />
+                  <SkeletonBlock className="h-3 w-28" />
+                </div>
+                <SkeletonBlock className="h-7 w-20 rounded-lg" />
+              </div>
+            ))}
           </div>
         ) : loadError ? (
           <div className="px-4 py-8 text-center">

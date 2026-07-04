@@ -380,8 +380,8 @@ export default function QAReportPanel({
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-[color:var(--border)]">
-                    {data.issues.excessiveMovements.map((m, i) => (
-                      <tr key={i}>
+                    {data.issues.excessiveMovements.map((m) => (
+                      <tr key={`${m.tooth}-${m.movement}`}>
                         <td className="py-2 font-mono">{m.tooth}</td>
                         <td className="py-2">{m.movement}</td>
                         <td className="py-2 text-right font-mono text-red-600">
@@ -403,9 +403,9 @@ export default function QAReportPanel({
               tone="danger"
             >
               <ul className="space-y-2">
-                {data.issues.collisions.map((c, i) => (
+                {data.issues.collisions.map((c) => (
                   <li
-                    key={i}
+                    key={`${c.toothPair}-${c.description}`}
                     className="flex items-start gap-2 rounded-lg border border-red-100 bg-red-50 px-3 py-2"
                   >
                     <XCircle size={13} className="mt-0.5 shrink-0 text-red-500" />
@@ -426,7 +426,7 @@ export default function QAReportPanel({
               tone="warning"
             >
               <ul className="space-y-2">
-                {data.issues.pdlWarnings.map((p, i) => {
+                {data.issues.pdlWarnings.map((p) => {
                   const sColor =
                     p.severity === "high"
                       ? "text-red-600"
@@ -435,7 +435,7 @@ export default function QAReportPanel({
                       : "text-slate-600";
                   return (
                     <li
-                      key={i}
+                      key={`${p.tooth}-${p.severity}`}
                       className="flex items-center justify-between rounded-lg border border-amber-100 bg-amber-50 px-3 py-2 text-xs"
                     >
                       <div className="flex items-center gap-2">

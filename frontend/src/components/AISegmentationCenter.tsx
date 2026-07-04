@@ -321,7 +321,7 @@ function SubmitModal({ caseId, onSubmitted, onClose }: {
       <div className="w-full max-w-sm mx-4 rounded-2xl border border-[color:var(--border)] bg-[color:var(--card)] p-5 space-y-4">
         <div className="flex items-center justify-between">
           <h3 className="font-bold text-[color:var(--foreground)]">New Segmentation Job</h3>
-          <button type="button" onClick={onClose}><X size={16} className="text-[color:var(--muted-foreground)]" /></button>
+          <button type="button" aria-label="Close dialog" onClick={onClose}><X size={16} className="text-[color:var(--muted-foreground)]" /></button>
         </div>
 
         <div className="space-y-3">

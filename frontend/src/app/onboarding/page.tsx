@@ -188,7 +188,10 @@ export default function OnboardingPage() {
           primaryFlow, cadLevel, aiReadiness, enableDemo,
         }),
       });
-    } catch {}
+    } catch (err) {
+      // Profile save is best-effort; local onboarding state still advances
+      console.error("Onboarding profile save failed:", err);
+    }
     // Persist completion locally so the skip-gate works even without a live session
     safeStorage.set("mo_onboarding_done", "1");
     await refresh();

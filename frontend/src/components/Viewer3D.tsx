@@ -370,6 +370,8 @@ export default function Viewer3D() {
   const [hoverPoint, setHoverPoint] = useState<THREE.Vector3 | null>(null);
   const [measureType, setMeasureType] = useState<MeasureType>("distance");
   const [measurementHistory, setMeasurementHistory] = useState<MeasurementRecord[]>([]);
+  const [renamingId, setRenamingId] = useState<string | null>(null);
+  const [renameValue, setRenameValue] = useState("");
   const [loadingProgress, setLoadingProgress] = useState<number | null>(null);
   const [resetSignal, setResetSignal] = useState(0);
   const [viewerNode, setViewerNode] = useState<HTMLDivElement | null>(null);
@@ -405,10 +407,19 @@ export default function Viewer3D() {
     ]);
   };
 
-  const renameMeasurement = (id: string) => {
-    const nextName = window.prompt("Rename measurement");
-    if (!nextName) return;
-    setMeasurementHistory((previous) => previous.map((entry) => (entry.id === id ? { ...entry, name: nextName } : entry)));
+  const startRename = (id: string, currentName: string) => {
+    setRenamingId(id);
+    setRenameValue(currentName);
+  };
+
+  const commitRename = () => {
+    if (renamingId && renameValue.trim()) {
+      setMeasurementHistory((prev) =>
+        prev.map((e) => (e.id === renamingId ? { ...e, name: renameValue.trim() } : e))
+      );
+    }
+    setRenamingId(null);
+    setRenameValue("");
   };
 
   const deleteMeasurement = (id: string) => {
@@ -725,9 +736,20 @@ export default function Viewer3D() {
               measurementHistory.slice(0, 4).map((entry) => (
                 <div key={entry.id} className="rounded-lg border border-border p-3">
                   <div className="flex items-center justify-between gap-3">
-                    <button type="button" className="text-left text-sm font-semibold text-foreground" onClick={() => renameMeasurement(entry.id)}>
-                      {entry.name}
-                    </button>
+                    {renamingId === entry.id ? (
+                      <input
+                        autoFocus
+                        value={renameValue}
+                        onChange={(e) => setRenameValue(e.target.value)}
+                        onKeyDown={(e) => { if (e.key === "Enter") commitRename(); if (e.key === "Escape") { setRenamingId(null); } }}
+                        onBlur={commitRename}
+                        className="flex-1 rounded border border-[color:var(--border)] bg-[color:var(--card)] px-2 py-0.5 text-sm font-semibold text-foreground focus:outline-none focus:ring-2 focus:ring-[color:var(--primary)]/30"
+                      />
+                    ) : (
+                      <button type="button" className="text-left text-sm font-semibold text-foreground hover:text-[color:var(--primary)]" onClick={() => startRename(entry.id, entry.name)}>
+                        {entry.name}
+                      </button>
+                    )}
                     <span className="text-xs text-secondary">{entry.createdAt}</span>
                   </div>
                   <p className="mt-1 text-xs text-secondary">
@@ -738,7 +760,7 @@ export default function Viewer3D() {
                     {entry.type === "overbite" && " — overbite"}
                   </p>
                   <div className="mt-3 flex gap-2">
-                    <Button variant="ghost" size="sm" onClick={() => renameMeasurement(entry.id)}>Rename</Button>
+                    <Button variant="ghost" size="sm" onClick={() => startRename(entry.id, entry.name)}>Rename</Button>
                     <Button variant="ghost" size="sm" onClick={() => deleteMeasurement(entry.id)}>Delete</Button>
                   </div>
                 </div>

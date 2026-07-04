@@ -234,9 +234,9 @@ function AlignerCard({
                 Attachment Windows
               </h4>
               <div className="space-y-1">
-                {aligner.attachmentWindows.map((aw, i) => (
+                {aligner.attachmentWindows.map((aw) => (
                   <div
-                    key={i}
+                    key={`${aw.toothFDI}-${aw.type}`}
                     className="flex items-center justify-between rounded border border-[color:var(--border)] bg-[color:var(--muted)] px-2 py-1 text-[10px]"
                   >
                     <span className="font-mono font-semibold">{aw.toothFDI}</span>
@@ -257,7 +257,7 @@ function AlignerCard({
                 Pressure Areas
               </h4>
               <div className="flex flex-wrap gap-1">
-                {aligner.pressureAreas.map((pa, i) => {
+                {aligner.pressureAreas.map((pa) => {
                   const c =
                     pa.intensity === "heavy"
                       ? "bg-red-100 text-red-700"
@@ -266,7 +266,7 @@ function AlignerCard({
                       : "bg-slate-100 text-slate-600";
                   return (
                     <span
-                      key={i}
+                      key={`${pa.region}-${pa.intensity}`}
                       className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold ${c}`}
                     >
                       {pa.region}

@@ -193,7 +193,7 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
 
   const toast = useCallback(
     (options: ToastOptions) => {
-      const id = `toast-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+      const id = `toast-${typeof performance !== "undefined" ? Math.round(performance.now() * 1000) : Date.now()}`;
       const duration = options.duration ?? DEFAULT_DURATION;
       const type: ToastType = options.type ?? "info";
 

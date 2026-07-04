@@ -227,7 +227,9 @@ function CadTab({ caseData }: { caseData: CaseDetail | null }) {
       a.download = `myortho-snapshot-${patientName}.png`;
       a.href = url;
       a.click();
-    } catch {}
+    } catch (err) {
+      console.error("Snapshot export failed:", err);
+    }
   }
 
   return (

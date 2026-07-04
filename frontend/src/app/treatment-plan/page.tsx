@@ -7,7 +7,6 @@ import {
   CheckCircle2,
   FolderKanban,
   Layers3,
-  Loader2,
   Search,
 } from "lucide-react";
 import { Card } from "@/components/DesignSystem";
@@ -69,8 +68,13 @@ function CaseSelector({ onSelect }: { onSelect: (c: CaseListItem) => void }) {
       </div>
 
       {loading ? (
-        <div className="flex justify-center py-8">
-          <Loader2 size={18} className="animate-spin text-[color:var(--muted-foreground)]" />
+        <div className="space-y-2 py-2">
+          {[0, 1, 2].map((i) => (
+            <div key={i} className="flex items-center gap-3 px-4 py-3">
+              <div className="h-4 w-32 animate-skeleton rounded" />
+              <div className="ml-auto h-5 w-16 animate-skeleton rounded-full" />
+            </div>
+          ))}
         </div>
       ) : filtered.length === 0 ? (
         <div className="rounded-xl border border-dashed border-[color:var(--border)] py-8 text-center text-sm text-[color:var(--muted-foreground)]">

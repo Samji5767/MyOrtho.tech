@@ -3,20 +3,24 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import {
+  AlertCircle,
+  ArrowUpDown,
   CalendarDays,
   ChevronRight,
   FileText,
   HeartPulse,
-  Loader2,
   Search,
   UploadCloud,
   UserPlus,
+  Users,
   X,
   type LucideIcon,
 } from "lucide-react";
 import NativeSheet from "@/components/NativeSheet";
-import { Button, Card, StatusBadge } from "@/components/DesignSystem";
+import { Button, Card, SkeletonBlock, StatusBadge } from "@/components/DesignSystem";
 import { fetchPatients } from "@/lib/api/patients";
+
+// ─── Types ─────────────────────────────────────────────────────────────────────
 
 interface Patient {
   id: string;
@@ -28,8 +32,44 @@ interface Patient {
   createdAt: string;
 }
 
+type SortKey = "name_asc" | "name_desc" | "cases_desc" | "newest" | "oldest";
+
+const STAGGER_CLASSES = [
+  "animate-stagger-1",
+  "animate-stagger-2",
+  "animate-stagger-3",
+  "animate-stagger-4",
+  "animate-stagger-5",
+  "animate-stagger-6",
+];
+
+// ─── Helpers ───────────────────────────────────────────────────────────────────
+
+function sortPatients(list: Patient[], key: SortKey): Patient[] {
+  const arr = [...list];
+  switch (key) {
+    case "name_asc":    return arr.sort((a, b) => `${a.firstName} ${a.lastName}`.localeCompare(`${b.firstName} ${b.lastName}`));
+    case "name_desc":   return arr.sort((a, b) => `${b.firstName} ${b.lastName}`.localeCompare(`${a.firstName} ${a.lastName}`));
+    case "cases_desc":  return arr.sort((a, b) => b.caseCount - a.caseCount);
+    case "newest":      return arr.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+    case "oldest":      return arr.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+    default:            return arr;
+  }
+}
+
+function formatAge(dob: string | null): string | null {
+  if (!dob) return null;
+  const d = new Date(dob);
+  if (isNaN(d.getTime())) return null;
+  const age = Math.floor((Date.now() - d.getTime()) / (365.25 * 24 * 3600000));
+  return `${age}y`;
+}
+
+// ─── Main page ─────────────────────────────────────────────────────────────────
+
 export default function PatientsPage() {
   const [query, setQuery] = useState("");
+  const [sortKey, setSortKey] = useState<SortKey>("newest");
   const [sheetOpen, setSheetOpen] = useState(false);
   const [patients, setPatients] = useState<Patient[]>([]);
   const [loading, setLoading] = useState(true);
@@ -38,176 +78,239 @@ export default function PatientsPage() {
   useEffect(() => {
     fetchPatients()
       .then(({ patients: data }) => setPatients(data as Patient[]))
-      .catch((e: Error) => setError(e?.message ?? 'Failed to load patients'))
+      .catch((e: Error) => setError(e?.message ?? "Failed to load patients"))
       .finally(() => setLoading(false));
   }, []);
 
-  const filteredPatients = useMemo(
-    () =>
-      query.trim()
-        ? patients.filter((p) =>
-            `${p.firstName} ${p.lastName}`.toLowerCase().includes(query.toLowerCase())
-          )
-        : patients,
-    [query, patients]
-  );
+  const filteredPatients = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    const matched = q
+      ? patients.filter((p) =>
+          `${p.firstName} ${p.lastName}`.toLowerCase().includes(q)
+        )
+      : patients;
+    return sortPatients(matched, sortKey);
+  }, [query, patients, sortKey]);
+
+  const activeCaseCount = patients.reduce((s, p) => s + (p.caseCount > 0 ? 1 : 0), 0);
 
   return (
-    <section className="mx-auto flex w-full max-w-6xl flex-col gap-4 px-4 pb-[calc(var(--tab-bar-height)+var(--sa-bottom)+1.5rem)] pt-4 sm:px-5 lg:px-8 lg:pb-10">
-      {/* Header card */}
-      <Card className="ios-card p-5 sm:p-6">
-        <div className="flex flex-col gap-5">
-          <div className="flex items-start justify-between gap-4">
-            <div>
-              <p className="text-xs font-bold uppercase tracking-[0.18em] text-[color:var(--primary)]">Patient care</p>
-              <h1 className="mt-2 text-3xl font-semibold tracking-tight text-[color:var(--foreground)]">
-                Patients
-              </h1>
-              <p className="mt-2 max-w-2xl text-sm leading-6 text-[color:var(--muted-foreground)]">
-                Treatment progress, appointments, reminders, and scans.
-              </p>
-            </div>
-            <div className="flex flex-col items-end gap-2 shrink-0">
-              <StatusBadge tone="success">Mobile ready</StatusBadge>
-              <Button variant="primary" size="sm" onClick={() => setSheetOpen(true)}>
-                <UserPlus size={13} />
-                Add patient
-              </Button>
-            </div>
-          </div>
+    <section className="animate-page-enter mx-auto flex w-full max-w-4xl flex-col gap-4 px-4 pb-[calc(var(--tab-bar-height)+var(--sa-bottom)+1.5rem)] pt-4 sm:px-5">
 
-          {/* Search input */}
-          <div className="relative">
-            <span className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-[color:var(--muted-foreground)]">
-              <Search size={15} />
-            </span>
+      {/* ── Header ── */}
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-[color:var(--primary)]">Patient Care</p>
+          <h1 className="mt-0.5 text-2xl font-semibold tracking-tight text-[color:var(--foreground)]">
+            Patients
+          </h1>
+        </div>
+        <Button variant="primary" size="sm" onClick={() => setSheetOpen(true)}>
+          <UserPlus size={13} />
+          Add Patient
+        </Button>
+      </div>
+
+      {/* ── Stat strip ── */}
+      {!loading && patients.length > 0 && (
+        <div className="grid grid-cols-3 gap-2.5">
+          {[
+            { label: "Total",       value: patients.length,  icon: Users,       cls: "text-[color:var(--primary)]",        bg: "bg-[color:var(--primary-glow)]" },
+            { label: "With Cases",  value: activeCaseCount,  icon: HeartPulse,  cls: "text-emerald-600 dark:text-emerald-400", bg: "bg-emerald-500/10" },
+            { label: "New (30d)",   value: patients.filter(p => (Date.now() - new Date(p.createdAt).getTime()) < 30 * 86400000).length,
+              icon: CalendarDays, cls: "text-sky-600 dark:text-sky-400", bg: "bg-sky-500/10" },
+          ].map((s) => {
+            const Icon = s.icon;
+            return (
+              <Card key={s.label} className="flex flex-col items-center gap-1.5 p-3 text-center animate-stagger-1">
+                <span className={`grid h-7 w-7 place-items-center rounded-xl ${s.bg} ${s.cls}`}>
+                  <Icon size={13} />
+                </span>
+                <span className={`text-xl font-bold tabular-nums ${s.cls}`}>{s.value}</span>
+                <span className="text-[10px] font-medium text-[color:var(--muted-foreground)]">{s.label}</span>
+              </Card>
+            );
+          })}
+        </div>
+      )}
+
+      {/* ── Search + Sort ── */}
+      <Card className="p-4">
+        <div className="flex gap-2">
+          <div className="relative flex-1">
+            <Search
+              size={14}
+              className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[color:var(--muted-foreground)]"
+              aria-hidden
+            />
             <input
               type="search"
-              placeholder="Search by patient name…"
+              placeholder="Search by name…"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              className="h-11 w-full rounded-2xl border border-[color:var(--border)] bg-[color-mix(in_srgb,var(--card)_92%,transparent)] pl-10 pr-10 text-sm text-[color:var(--foreground)] outline-none placeholder:text-[color:var(--muted-foreground)] focus:border-[color:var(--primary)] focus:ring-2 focus:ring-[color:var(--primary-glow)] transition-all"
+              className="h-10 w-full rounded-xl border border-[color:var(--border)] bg-[color:var(--background)] pl-9 pr-8 text-sm text-[color:var(--foreground)] outline-none placeholder:text-[color:var(--muted-foreground)] focus:border-[color:var(--primary)] focus:ring-2 focus:ring-[color:var(--primary-glow)] transition-all"
             />
             {query && (
               <button
                 type="button"
                 onClick={() => setQuery("")}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-[color:var(--muted-foreground)]"
+                aria-label="Clear search"
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[color:var(--muted-foreground)] hover:text-[color:var(--foreground)]"
               >
-                <X size={14} />
+                <X size={13} />
               </button>
             )}
           </div>
 
-          {/* Loading state */}
-          {loading && (
-            <div className="flex items-center justify-center gap-2 py-8 text-sm text-[color:var(--muted-foreground)]">
-              <Loader2 size={16} className="animate-spin" />
-              Loading patients…
-            </div>
-          )}
-
-          {/* Error state */}
-          {!loading && error && (
-            <p className="py-4 text-center text-sm text-rose-500">{error}</p>
-          )}
-
-          {/* Patient list */}
-          {!loading && filteredPatients.length > 0 && (
-            <ul className="divide-y divide-[color:var(--border)]">
-              {filteredPatients.map((p) => (
-                <li key={p.id}>
-                  <Link
-                    href={`/patients/${p.id}`}
-                    className="flex items-center gap-3 px-1 py-3 transition-colors hover:bg-[color:var(--muted-foreground)]/5"
-                  >
-                    <span className="grid h-10 w-10 shrink-0 place-items-center rounded-2xl bg-[color:var(--primary-glow)] text-sm font-bold text-[color:var(--primary)]">
-                      {p.firstName[0]}{p.lastName[0]}
-                    </span>
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate text-sm font-semibold text-[color:var(--foreground)]">
-                        {p.firstName} {p.lastName}
-                      </p>
-                      <p className="mt-0.5 text-xs text-[color:var(--muted-foreground)]">
-                        {p.caseCount} case{p.caseCount !== 1 ? 's' : ''}
-                        {p.gender ? ` · ${p.gender}` : ''}
-                      </p>
-                    </div>
-                    <ChevronRight size={15} className="shrink-0 text-[color:var(--muted-foreground)]" />
-                  </Link>
-                </li>
-              ))}
-            </ul>
-          )}
-
-          {/* Empty state */}
-          {!loading && filteredPatients.length === 0 && (
-            <div className="flex flex-col items-center gap-4 py-8 text-center">
-              <span className="grid h-16 w-16 place-items-center rounded-3xl bg-[color:var(--primary-glow)] text-[color:var(--primary)]">
-                <UserPlus size={28} />
-              </span>
-              <div>
-                <p className="text-base font-semibold text-[color:var(--foreground)]">
-                  {query ? `No results for "${query}"` : "No patients yet"}
-                </p>
-                <p className="mt-1 text-sm text-[color:var(--muted-foreground)]">
-                  {query
-                    ? "Try a different name or clear the search."
-                    : "Add a patient or upload a scan to begin a clinical case."}
-                </p>
-              </div>
-              {!query && (
-                <div className="flex flex-wrap justify-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setSheetOpen(true)}
-                    className="inline-flex h-11 items-center gap-2 rounded-full bg-[color:var(--primary)] px-5 text-sm font-semibold text-[color:var(--primary-foreground)] transition-transform active:scale-95"
-                  >
-                    <UserPlus size={15} />
-                    Add Patient
-                  </button>
-                  <Link
-                    href="/studio"
-                    className="inline-flex h-11 items-center gap-2 rounded-full border border-[color:var(--border)] bg-[color:var(--card)] px-5 text-sm font-semibold text-[color:var(--foreground)] transition-transform active:scale-95"
-                  >
-                    <UploadCloud size={15} className="text-[color:var(--primary)]" />
-                    Upload Scan
-                  </Link>
-                </div>
-              )}
-            </div>
-          )}
+          <select
+            value={sortKey}
+            onChange={(e) => setSortKey(e.target.value as SortKey)}
+            aria-label="Sort patients"
+            className="h-10 rounded-xl border border-[color:var(--border)] bg-[color:var(--card)] px-3 text-xs font-medium text-[color:var(--foreground)] outline-none focus:border-[color:var(--primary)] focus:ring-2 focus:ring-[color:var(--primary-glow)] transition-all"
+          >
+            <option value="newest">Newest first</option>
+            <option value="oldest">Oldest first</option>
+            <option value="name_asc">Name A–Z</option>
+            <option value="name_desc">Name Z–A</option>
+            <option value="cases_desc">Most cases</option>
+          </select>
         </div>
+
+        {/* ── Loading ── */}
+        {loading && (
+          <div className="mt-4 space-y-3">
+            {[0, 1, 2, 3, 4].map((i) => (
+              <div key={i} className="flex items-center gap-3">
+                <SkeletonBlock className="h-10 w-10 shrink-0 rounded-2xl" />
+                <div className="flex-1 space-y-2">
+                  <SkeletonBlock className="h-3.5 w-36" />
+                  <SkeletonBlock className="h-3 w-20" />
+                </div>
+                <SkeletonBlock className="h-5 w-12 rounded-full" />
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* ── Error ── */}
+        {!loading && error && (
+          <div className="mt-4 flex items-center gap-2 rounded-xl border border-rose-200/60 bg-rose-50/60 px-4 py-3 text-sm text-rose-700 dark:border-rose-500/20 dark:bg-rose-500/10 dark:text-rose-300">
+            <AlertCircle size={14} className="shrink-0" />
+            {error}
+          </div>
+        )}
+
+        {/* ── Patient list ── */}
+        {!loading && !error && filteredPatients.length > 0 && (
+          <>
+            <div className="mt-3 flex items-center justify-between px-1">
+              <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-[color:var(--muted-foreground)]">
+                {query ? `${filteredPatients.length} result${filteredPatients.length !== 1 ? "s" : ""}` : `${filteredPatients.length} patient${filteredPatients.length !== 1 ? "s" : ""}`}
+              </p>
+              <ArrowUpDown size={11} className="text-[color:var(--muted-foreground)]" aria-hidden />
+            </div>
+            <ul className="mt-1 divide-y divide-[color:var(--border)]">
+              {filteredPatients.map((p, idx) => {
+                const stagger = STAGGER_CLASSES[Math.min(idx, STAGGER_CLASSES.length - 1)];
+                const age = formatAge(p.dateOfBirth);
+                const initials = `${p.firstName[0] ?? ""}${p.lastName[0] ?? ""}`.toUpperCase();
+                return (
+                  <li key={p.id} className={stagger}>
+                    <Link
+                      href={`/patients/${p.id}`}
+                      className="group flex items-center gap-3 rounded-xl px-1 py-2.5 transition-colors hover:bg-[color:var(--muted-foreground)]/5"
+                    >
+                      <span className="grid h-10 w-10 shrink-0 place-items-center rounded-2xl bg-[color:var(--primary-glow)] text-sm font-bold text-[color:var(--primary)]">
+                        {initials}
+                      </span>
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-sm font-semibold text-[color:var(--foreground)]">
+                          {p.firstName} {p.lastName}
+                        </p>
+                        <p className="mt-0.5 text-[11px] text-[color:var(--muted-foreground)]">
+                          {p.caseCount} case{p.caseCount !== 1 ? "s" : ""}
+                          {age ? ` · ${age} old` : ""}
+                          {p.gender ? ` · ${p.gender}` : ""}
+                        </p>
+                      </div>
+                      <div className="flex shrink-0 items-center gap-2">
+                        {p.caseCount > 0 && (
+                          <StatusBadge tone={p.caseCount >= 3 ? "primary" : "success"}>
+                            {p.caseCount} {p.caseCount === 1 ? "case" : "cases"}
+                          </StatusBadge>
+                        )}
+                        <ChevronRight size={14} className="text-[color:var(--muted-foreground)] transition-transform group-hover:translate-x-0.5" />
+                      </div>
+                    </Link>
+                  </li>
+                );
+              })}
+            </ul>
+          </>
+        )}
+
+        {/* ── Empty state ── */}
+        {!loading && !error && filteredPatients.length === 0 && (
+          <div className="mt-4 flex flex-col items-center gap-4 py-10 text-center">
+            <span className="grid h-14 w-14 place-items-center rounded-3xl bg-[color:var(--primary-glow)] text-[color:var(--primary)]">
+              <UserPlus size={24} />
+            </span>
+            <div>
+              <p className="text-sm font-semibold text-[color:var(--foreground)]">
+                {query ? `No results for "${query}"` : "No patients yet"}
+              </p>
+              <p className="mt-1 text-xs text-[color:var(--muted-foreground)]">
+                {query
+                  ? "Try a different name or clear the search."
+                  : "Add a patient or upload a scan to begin a clinical case."}
+              </p>
+            </div>
+            {!query && (
+              <div className="flex flex-wrap justify-center gap-2">
+                <Button variant="primary" size="sm" onClick={() => setSheetOpen(true)}>
+                  <UserPlus size={13} />
+                  Add Patient
+                </Button>
+                <Link href="/studio">
+                  <Button variant="secondary" size="sm">
+                    <UploadCloud size={13} />
+                    Upload Scan
+                  </Button>
+                </Link>
+              </div>
+            )}
+          </div>
+        )}
       </Card>
 
-      {/* Workflow guide — shown when no patients, helps orient new users */}
-      {!loading && filteredPatients.length === 0 && !query && (
+      {/* ── Workflow guide (first-run only) ── */}
+      {!loading && !error && patients.length === 0 && !query && (
         <>
-          <Card className="p-5">
+          <Card className="p-5 animate-stagger-2">
             <div className="flex items-start justify-between gap-3">
               <div>
-                <p className="text-xs font-bold uppercase tracking-[0.18em] text-[color:var(--primary)]">Getting started</p>
-                <h2 className="mt-1 text-xl font-semibold tracking-tight text-[color:var(--foreground)]">
+                <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-[color:var(--primary)]">Getting Started</p>
+                <h2 className="mt-0.5 text-lg font-semibold tracking-tight text-[color:var(--foreground)]">
                   Start with a scan or patient record
                 </h2>
               </div>
-              <HeartPulse size={20} className="text-[color:var(--primary)]" />
+              <HeartPulse size={18} className="mt-1 shrink-0 text-[color:var(--primary)]" />
             </div>
 
             <div className="mt-4 grid gap-3 sm:grid-cols-3">
               {[
-                { icon: UploadCloud, title: "Upload a scan", body: "Drop an STL, PLY, or OBJ file to start the AI segmentation pipeline.", href: "/studio" },
-                { icon: UserPlus, title: "Add a patient", body: "Create a patient record manually to link cases, scans, and treatment plans.", href: undefined },
-                { icon: HeartPulse, title: "Open CAD workspace", body: "Use the full desktop workspace for scan review, CAD design, and treatment staging.", href: "/desktop" },
+                { icon: UploadCloud, title: "Upload a scan", body: "Import an STL, PLY, or OBJ file to start the AI segmentation pipeline.", href: "/studio" },
+                { icon: UserPlus, title: "Add a patient", body: "Create a patient record to link cases, scans, and treatment plans.", href: undefined },
+                { icon: HeartPulse, title: "Open CAD workspace", body: "Full-screen workspace for scan review, CAD design, and treatment staging.", href: "/desktop" },
               ].map((item) => {
                 const Icon = item.icon;
                 const inner = (
                   <>
-                    <span className="grid h-10 w-10 place-items-center rounded-2xl bg-[color:var(--primary-glow)] text-[color:var(--primary)]">
-                      <Icon size={18} />
+                    <span className="grid h-9 w-9 place-items-center rounded-xl bg-[color:var(--primary-glow)] text-[color:var(--primary)]">
+                      <Icon size={16} />
                     </span>
-                    <h3 className="mt-3 text-sm font-semibold text-[color:var(--foreground)]">{item.title}</h3>
-                    <p className="mt-2 text-xs leading-5 text-[color:var(--muted-foreground)]">{item.body}</p>
+                    <p className="mt-3 text-sm font-semibold text-[color:var(--foreground)]">{item.title}</p>
+                    <p className="mt-1.5 text-xs leading-5 text-[color:var(--muted-foreground)]">{item.body}</p>
                   </>
                 );
                 return item.href ? (
@@ -219,15 +322,15 @@ export default function PatientsPage() {
             </div>
           </Card>
 
-          <Card className="p-5">
+          <Card className="p-5 animate-stagger-3">
             <div className="flex items-center justify-between gap-3">
               <div>
-                <p className="text-xs font-bold uppercase tracking-[0.18em] text-[color:var(--primary)]">Documents</p>
-                <h2 className="mt-1 text-xl font-semibold tracking-tight text-[color:var(--foreground)]">
+                <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-[color:var(--primary)]">Documents</p>
+                <h2 className="mt-0.5 text-lg font-semibold tracking-tight text-[color:var(--foreground)]">
                   Document management
                 </h2>
               </div>
-              <FileText size={20} className="text-[color:var(--primary)]" />
+              <FileText size={18} className="mt-1 shrink-0 text-[color:var(--primary)]" />
             </div>
 
             <div className="mt-4 space-y-2">
@@ -239,32 +342,12 @@ export default function PatientsPage() {
         </>
       )}
 
-      {/* Floating bottom bar */}
-      <div className="fixed inset-x-0 bottom-4 z-30 mx-auto w-[min(92vw,32rem)] lg:hidden">
-        <div className="flex items-center gap-2 rounded-full border border-[color:var(--border)] bg-[color-mix(in_srgb,var(--card)_88%,transparent)] p-2 shadow-[var(--shadow-lg)] backdrop-blur-xl">
-          <Link
-            href="/"
-            className="flex flex-1 items-center justify-center gap-2 rounded-full px-3 py-3 text-sm font-semibold text-[color:var(--foreground)] transition-transform duration-200 active:scale-95"
-          >
-            <HeartPulse size={16} className="text-[color:var(--primary)]" />
-            Dashboard
-          </Link>
-          <button
-            type="button"
-            onClick={() => setSheetOpen(true)}
-            className="flex-1 rounded-full bg-[color:var(--primary)] px-4 py-3 text-sm font-semibold text-[color:var(--primary-foreground)] transition-transform duration-200 active:scale-95"
-          >
-            Add patient
-          </button>
-        </div>
-      </div>
-
       <NativeSheet isOpen={sheetOpen} title="Patient actions" onClose={() => setSheetOpen(false)}>
         <div className="space-y-3">
-          <SheetAction icon={UserPlus} title="Add patient" body="Create a new patient record with contact and clinical details." />
-          <SheetAction icon={UploadCloud} title="Upload scan" body="Import an STL, PLY, or OBJ file and link it to a patient." />
+          <SheetAction icon={UserPlus}    title="Add patient"       body="Create a new patient record with contact and clinical details." />
+          <SheetAction icon={UploadCloud} title="Upload scan"       body="Import an STL, PLY, or OBJ file and link it to a patient." />
           <SheetAction icon={CalendarDays} title="Book appointment" body="Schedule a visit and link it to a patient record." />
-          <SheetAction icon={FileText} title="Upload document" body="Attach consent forms, X-rays, or care instructions." />
+          <SheetAction icon={FileText}    title="Upload document"   body="Attach consent forms, X-rays, or care instructions." />
         </div>
       </NativeSheet>
     </section>
@@ -278,7 +361,7 @@ function DocRow({ title, body }: { title: string; body: string }) {
         <p className="text-sm font-semibold text-[color:var(--foreground)]">{title}</p>
         <p className="mt-1 text-xs leading-5 text-[color:var(--muted-foreground)]">{body}</p>
       </div>
-      <ChevronRight size={16} className="mt-1 shrink-0 text-[color:var(--muted-foreground)]" />
+      <ChevronRight size={15} className="mt-0.5 shrink-0 text-[color:var(--muted-foreground)]" />
     </div>
   );
 }

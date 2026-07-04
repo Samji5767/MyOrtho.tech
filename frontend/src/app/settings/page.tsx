@@ -148,7 +148,7 @@ export default function SettingsPage() {
   const supabaseConnected = isSupabaseConfigured();
 
   return (
-    <section className="mx-auto flex w-full max-w-6xl flex-col gap-4 px-4 pb-[calc(var(--tab-bar-height)+var(--sa-bottom)+1.5rem)] pt-4 sm:px-5 lg:px-8 lg:pb-10">
+    <section className="animate-page-enter mx-auto flex w-full max-w-6xl flex-col gap-4 px-4 pb-[calc(var(--tab-bar-height)+var(--sa-bottom)+1.5rem)] pt-4 sm:px-5 lg:px-8 lg:pb-10">
 
       {/* PROFILE CARD */}
       <Card className="ios-card p-5 sm:p-6">

@@ -225,25 +225,72 @@ function ProposalDetail({
     }
   }
 
+  // Derive complexity color
+  const complexityPct = proposal.complexityScore != null ? Math.round(proposal.complexityScore * 100) : null;
+  const complexityColor =
+    complexityPct == null ? ""
+    : complexityPct >= 70 ? "bg-rose-500"
+    : complexityPct >= 40 ? "bg-amber-500"
+    : "bg-emerald-500";
+  const complexityLabel =
+    complexityPct == null ? ""
+    : complexityPct >= 70 ? "High"
+    : complexityPct >= 40 ? "Moderate"
+    : "Low";
+
+  const refinePct = proposal.refinementProbability != null ? Math.round(proposal.refinementProbability * 100) : null;
+
   return (
     <div className="space-y-3">
-      {/* Meta row */}
-      <div className="flex flex-wrap items-center gap-2 text-xs text-[color:var(--muted-foreground)]">
-        <ProposalStatusBadge status={proposal.status} />
-        {proposal.angleClassification && (
-          <span>{ANGLE_CLASS_LABELS[proposal.angleClassification]}</span>
-        )}
-        {proposal.estimatedStages != null && (
-          <span>{proposal.estimatedStages} stages estimated</span>
-        )}
-        {proposal.complexityScore != null && (
-          <span>Complexity {(proposal.complexityScore * 100).toFixed(0)}%</span>
-        )}
-        {proposal.refinementProbability != null && (
-          <span>Refinement prob. {(proposal.refinementProbability * 100).toFixed(0)}%</span>
-        )}
-        <span className="ml-auto">{new Date(proposal.generatedAt).toLocaleDateString()}</span>
+      {/* Status + date row */}
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex items-center gap-2">
+          <ProposalStatusBadge status={proposal.status} />
+          {proposal.angleClassification && (
+            <span className="rounded-full border border-[color:var(--border)] bg-[color:var(--card)] px-2.5 py-0.5 text-[11px] font-semibold text-[color:var(--foreground)]">
+              {ANGLE_CLASS_LABELS[proposal.angleClassification]}
+            </span>
+          )}
+        </div>
+        <span className="text-xs text-[color:var(--muted-foreground)]">
+          {new Date(proposal.generatedAt).toLocaleDateString()}
+        </span>
       </div>
+
+      {/* AI insight cards */}
+      {(proposal.estimatedStages != null || complexityPct != null || refinePct != null) && (
+        <div className="grid grid-cols-3 gap-2">
+          {proposal.estimatedStages != null && (
+            <div className="rounded-xl border border-[color:var(--border)] bg-[color:var(--card)] p-3 text-center">
+              <p className="text-lg font-bold text-[color:var(--primary)]">{proposal.estimatedStages}</p>
+              <p className="mt-0.5 text-[10px] font-medium text-[color:var(--muted-foreground)]">Est. Stages</p>
+            </div>
+          )}
+          {complexityPct != null && (
+            <div className="rounded-xl border border-[color:var(--border)] bg-[color:var(--card)] p-3">
+              <div className="flex items-center justify-between">
+                <p className="text-[10px] font-medium text-[color:var(--muted-foreground)]">Complexity</p>
+                <span className={`rounded-full px-1.5 py-0.5 text-[9px] font-bold text-white ${complexityColor}`}>
+                  {complexityLabel}
+                </span>
+              </div>
+              <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-slate-200 dark:bg-slate-800">
+                <div className={`h-full rounded-full transition-all duration-700 ${complexityColor}`} style={{ width: `${complexityPct}%` }} />
+              </div>
+              <p className="mt-1 text-xs font-semibold tabular-nums text-[color:var(--foreground)]">{complexityPct}%</p>
+            </div>
+          )}
+          {refinePct != null && (
+            <div className="rounded-xl border border-[color:var(--border)] bg-[color:var(--card)] p-3">
+              <p className="text-[10px] font-medium text-[color:var(--muted-foreground)]">Refinement</p>
+              <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-slate-200 dark:bg-slate-800">
+                <div className="h-full rounded-full bg-sky-500 transition-all duration-700" style={{ width: `${refinePct}%` }} />
+              </div>
+              <p className="mt-1 text-xs font-semibold tabular-nums text-[color:var(--foreground)]">{refinePct}%</p>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Ideal occlusion */}
       <Section title="Ideal Occlusion Targets">

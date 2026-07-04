@@ -54,7 +54,7 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="flex min-h-dvh flex-col items-center justify-center bg-[color:var(--background)] px-4 pb-8 pt-[env(safe-area-inset-top,0px)]">
+    <div className="animate-page-enter flex min-h-dvh flex-col items-center justify-center bg-[color:var(--background)] px-4 pb-8 pt-[env(safe-area-inset-top,0px)]">
       {/* Logo + wordmark */}
       <div className="mb-10 flex flex-col items-center gap-3">
         <div className="grid h-16 w-16 place-items-center rounded-[22px] bg-gradient-to-br from-[color:var(--primary)] to-[color:var(--clinical-highlight)] shadow-[0_8px_24px_rgba(15,159,143,0.3)]">

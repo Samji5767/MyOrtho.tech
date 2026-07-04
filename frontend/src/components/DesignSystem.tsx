@@ -1,4 +1,6 @@
-import React, { useEffect, useRef } from "react";
+"use client";
+
+import React, { useEffect, useId, useRef } from "react";
 import { LucideIcon } from "lucide-react";
 import { clsx } from "clsx";
 
@@ -120,17 +122,33 @@ export function DataRow({ label, value }: { label: string; value: React.ReactNod
   );
 }
 
-export function ProgressBar({ value, tone = "primary" }: { value: number; tone?: "primary" | "success" | "warning" | "danger" }) {
+export function ProgressBar({
+  value,
+  tone = "primary",
+  label,
+}: {
+  value: number;
+  tone?: "primary" | "success" | "warning" | "danger";
+  label?: string;
+}) {
   const color = {
     primary: "bg-primary",
     success: "bg-emerald-500",
     warning: "bg-amber-500",
     danger: "bg-rose-500"
   }[tone];
+  const clamped = Math.max(0, Math.min(100, value));
 
   return (
-    <div className="h-2 overflow-hidden rounded-full bg-slate-200 dark:bg-slate-800" aria-hidden="true">
-      <div className={clsx("h-full rounded-full transition-all duration-500", color)} style={{ width: `${Math.max(0, Math.min(100, value))}%` }} />
+    <div
+      role="progressbar"
+      aria-valuenow={clamped}
+      aria-valuemin={0}
+      aria-valuemax={100}
+      aria-label={label ?? `${clamped}% progress`}
+      className="h-2 overflow-hidden rounded-full bg-slate-200 dark:bg-slate-800"
+    >
+      <div className={clsx("h-full rounded-full transition-all duration-500", color)} style={{ width: `${clamped}%` }} />
     </div>
   );
 }
@@ -210,11 +228,12 @@ export function Input({
   hint?: string;
   icon?: LucideIcon;
 }) {
-  const id = useRef(`input-${Math.random().toString(36).slice(2)}`);
+  const uid = useId();
+  const id = `input-${uid}`;
   return (
     <div className={clsx("flex flex-col gap-1.5", className)}>
       {label && (
-        <label htmlFor={id.current} className="text-xs font-semibold text-foreground">
+        <label htmlFor={id} className="text-xs font-semibold text-foreground">
           {label}
         </label>
       )}
@@ -227,7 +246,7 @@ export function Input({
           />
         )}
         <input
-          id={id.current}
+          id={id}
           className={clsx(
             "h-10 w-full rounded-lg border bg-card px-3 text-sm text-foreground placeholder:text-muted-foreground transition focus:outline-none focus:ring-2",
             Icon && "pl-9",
@@ -236,17 +255,17 @@ export function Input({
               : "border-border focus:ring-primary/30",
           )}
           aria-invalid={!!error}
-          aria-describedby={error ? `${id.current}-err` : hint ? `${id.current}-hint` : undefined}
+          aria-describedby={error ? `${id}-err` : hint ? `${id}-hint` : undefined}
           {...props}
         />
       </div>
       {error && (
-        <p id={`${id.current}-err`} className="text-xs text-rose-600 dark:text-rose-400">
+        <p id={`${id}-err`} className="text-xs text-rose-600 dark:text-rose-400">
           {error}
         </p>
       )}
       {!error && hint && (
-        <p id={`${id.current}-hint`} className="text-xs text-secondary">
+        <p id={`${id}-hint`} className="text-xs text-secondary">
           {hint}
         </p>
       )}
@@ -266,16 +285,17 @@ export function Select({
   label?: string;
   error?: string;
 }) {
-  const id = useRef(`select-${Math.random().toString(36).slice(2)}`);
+  const uid = useId();
+  const id = `select-${uid}`;
   return (
     <div className={clsx("flex flex-col gap-1.5", className)}>
       {label && (
-        <label htmlFor={id.current} className="text-xs font-semibold text-foreground">
+        <label htmlFor={id} className="text-xs font-semibold text-foreground">
           {label}
         </label>
       )}
       <select
-        id={id.current}
+        id={id}
         className={clsx(
           "h-10 w-full rounded-lg border bg-card px-3 text-sm text-foreground transition focus:outline-none focus:ring-2 appearance-none",
           error
@@ -436,6 +456,82 @@ export function Tabs({
           </button>
         );
       })}
+    </div>
+  );
+}
+
+// ─── Tooltip ─────────────────────────────────────────────────────────────────
+
+export function Tooltip({
+  children,
+  content,
+  side = "top",
+}: {
+  children: React.ReactNode;
+  content: string;
+  side?: "top" | "bottom" | "left" | "right";
+}) {
+  const posClass = {
+    top:    "bottom-full left-1/2 -translate-x-1/2 mb-1.5",
+    bottom: "top-full left-1/2 -translate-x-1/2 mt-1.5",
+    left:   "right-full top-1/2 -translate-y-1/2 mr-1.5",
+    right:  "left-full top-1/2 -translate-y-1/2 ml-1.5",
+  }[side];
+
+  return (
+    <span className="group relative inline-flex">
+      {children}
+      <span
+        role="tooltip"
+        className={clsx(
+          "pointer-events-none absolute z-50 whitespace-nowrap rounded-lg border border-border bg-card px-2.5 py-1.5 text-[11px] font-medium text-foreground shadow-md opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100",
+          posClass,
+        )}
+      >
+        {content}
+      </span>
+    </span>
+  );
+}
+
+// ─── PageHeader ───────────────────────────────────────────────────────────────
+
+export function PageHeader({
+  eyebrow,
+  title,
+  description,
+  actions,
+  icon: Icon,
+}: {
+  eyebrow?: string;
+  title: string;
+  description?: string;
+  actions?: React.ReactNode;
+  icon?: LucideIcon;
+}) {
+  return (
+    <div className="flex items-start justify-between gap-4">
+      <div className="flex items-start gap-3">
+        {Icon && (
+          <div className="mt-0.5 grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-[color:var(--primary-glow)]">
+            <Icon size={18} className="text-[color:var(--primary)]" />
+          </div>
+        )}
+        <div className="min-w-0">
+          {eyebrow && (
+            <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-[color:var(--primary)]">
+              {eyebrow}
+            </p>
+          )}
+          <h1 className={clsx("font-semibold tracking-tight text-[color:var(--foreground)]", eyebrow ? "text-xl" : "text-2xl")}>
+            {title}
+          </h1>
+          {description && (
+            <p className="mt-0.5 text-xs text-[color:var(--muted-foreground)]">{description}</p>
+          )}
+        </div>
+      </div>
+      {actions && <div className="flex shrink-0 items-center gap-2">{actions}</div>}
     </div>
   );
 }

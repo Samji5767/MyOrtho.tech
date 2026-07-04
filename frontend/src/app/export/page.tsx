@@ -44,22 +44,28 @@ const FORMATS = [
     desc: "Standard binary mesh for printing",
     icon: Layers,
     tone: "primary" as const,
+    requiresApproval: false,
+    category: "3D Mesh",
   },
   {
     id: "stl_ascii",
     label: "STL ASCII",
     ext: ".stl",
-    desc: "ASCII mesh for compatibility",
+    desc: "ASCII mesh for broad compatibility",
     icon: Layers,
     tone: "info" as const,
+    requiresApproval: false,
+    category: "3D Mesh",
   },
   {
     id: "obj",
     label: "OBJ",
     ext: ".obj",
-    desc: "Wavefront OBJ with material",
+    desc: "Wavefront OBJ with material data",
     icon: Layers,
     tone: "info" as const,
+    requiresApproval: false,
+    category: "3D Mesh",
   },
   {
     id: "3mf",
@@ -68,38 +74,48 @@ const FORMATS = [
     desc: "3D Manufacturing Format",
     icon: Package,
     tone: "primary" as const,
+    requiresApproval: false,
+    category: "3D Mesh",
   },
   {
     id: "zip",
-    label: "Full Package ZIP",
+    label: "Full Package",
     ext: ".zip",
-    desc: "All arches + treatment plan",
+    desc: "All arches + treatment plan + reports",
     icon: Package,
     tone: "success" as const,
+    requiresApproval: true,
+    category: "Package",
   },
   {
     id: "pdf_report",
     label: "Clinical Report",
     ext: ".pdf",
-    desc: "PDF with measurements & notes",
+    desc: "PDF with measurements, notes & images",
     icon: FileText,
     tone: "warning" as const,
+    requiresApproval: true,
+    category: "Report",
   },
   {
     id: "csv",
     label: "CSV Measurements",
     ext: ".csv",
-    desc: "Tooth movements & IPR data",
+    desc: "Tooth movements & IPR data table",
     icon: FileText,
     tone: "neutral" as const,
+    requiresApproval: false,
+    category: "Data",
   },
   {
     id: "json",
-    label: "Treatment Plan JSON",
+    label: "Plan JSON",
     ext: ".json",
-    desc: "Machine-readable plan data",
+    desc: "Machine-readable treatment plan data",
     icon: FileText,
     tone: "neutral" as const,
+    requiresApproval: false,
+    category: "Data",
   },
 ];
 
@@ -228,35 +244,63 @@ function CaseSelector({
 // ─── Format grid ──────────────────────────────────────────────────────────────
 
 function FormatGrid({ caseId }: { caseId: string }) {
+  const byCategory = FORMATS.reduce<Record<string, typeof FORMATS>>((acc, f) => {
+    (acc[f.category] ??= []).push(f);
+    return acc;
+  }, {});
+
   return (
-    <div className="space-y-4">
-      <SectionHeader eyebrow="Available Formats" title="Export Options" />
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        {FORMATS.map((fmt) => {
-          const Icon = fmt.icon;
-          return (
-            <Card
-              key={fmt.id}
-              className="flex flex-col gap-2 p-3 cursor-default"
-            >
-              <div className="flex items-center gap-2">
-                <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-primary/10">
-                  <Icon size={14} className="text-primary" aria-hidden />
-                </span>
-                <span className="text-xs font-bold text-foreground">
-                  {fmt.label}
-                </span>
-              </div>
-              <p className="text-[11px] text-secondary leading-snug">
-                {fmt.desc}
-              </p>
-              <span className="mt-auto font-mono text-[10px] text-muted-foreground">
-                {fmt.ext}
-              </span>
-            </Card>
-          );
-        })}
+    <div className="space-y-5">
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-[color:var(--primary)]">
+            Available Formats
+          </p>
+          <h2 className="mt-0.5 text-lg font-semibold text-[color:var(--foreground)]">
+            Export Options
+          </h2>
+        </div>
+        <div className="flex items-center gap-2 rounded-full border border-amber-200/70 bg-amber-50/70 px-3 py-1.5 text-[10px] font-semibold text-amber-700 dark:border-amber-800/60 dark:bg-amber-950/30 dark:text-amber-400">
+          <Shield size={11} />
+          PHI requires approval
+        </div>
       </div>
+
+      {Object.entries(byCategory).map(([cat, fmts]) => (
+        <div key={cat}>
+          <p className="mb-2 text-[10px] font-bold uppercase tracking-[0.14em] text-[color:var(--muted-foreground)]">
+            {cat}
+          </p>
+          <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-4">
+            {fmts.map((fmt) => {
+              const Icon = fmt.icon;
+              return (
+                <Card key={fmt.id} className="flex flex-col gap-2 p-3 cursor-default">
+                  <div className="flex items-start justify-between gap-1">
+                    <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-[color:var(--primary-glow)]">
+                      <Icon size={13} className="text-[color:var(--primary)]" aria-hidden />
+                    </span>
+                    {fmt.requiresApproval && (
+                      <span className="rounded-full bg-amber-100 px-1.5 py-0.5 text-[9px] font-semibold text-amber-700 dark:bg-amber-900/40 dark:text-amber-400">
+                        PHI
+                      </span>
+                    )}
+                  </div>
+                  <div>
+                    <p className="text-xs font-bold text-[color:var(--foreground)]">{fmt.label}</p>
+                    <p className="mt-0.5 text-[10px] leading-snug text-[color:var(--muted-foreground)]">
+                      {fmt.desc}
+                    </p>
+                  </div>
+                  <span className="mt-auto font-mono text-[10px] text-[color:var(--muted-foreground)]">
+                    {fmt.ext}
+                  </span>
+                </Card>
+              );
+            })}
+          </div>
+        </div>
+      ))}
     </div>
   );
 }
@@ -292,26 +336,35 @@ function ExportPanelWrapper({ caseId }: { caseId: string }) {
 
   if (loading) {
     return (
-      <div className="flex items-center gap-2 py-8 text-sm text-secondary">
-        <Spinner size={16} /> Loading case details…
+      <div className="space-y-3">
+        <SkeletonBlock className="h-32 w-full" />
+        <SkeletonBlock className="h-24 w-full" />
+        <SkeletonBlock className="h-24 w-full" />
       </div>
     );
   }
 
   if (!planId) {
     return (
-      <Card className="p-6 text-center">
-        <Stethoscope size={24} className="mx-auto text-secondary opacity-50" />
-        <p className="mt-3 text-sm font-medium text-foreground">
-          No treatment plan found
+      <Card className="p-8 text-center">
+        <div className="mx-auto grid h-14 w-14 place-items-center rounded-2xl bg-[color:var(--primary-glow)]">
+          <Stethoscope size={22} className="text-[color:var(--primary)]" />
+        </div>
+        <p className="mt-4 text-base font-semibold text-[color:var(--foreground)]">
+          No treatment plan yet
         </p>
-        <p className="mt-1 text-xs text-secondary">
-          Create a treatment plan for this case before generating export packages.
+        <p className="mt-1.5 mx-auto max-w-xs text-sm text-[color:var(--muted-foreground)]">
+          Create and approve a treatment plan for this case before generating export packages.
         </p>
-        <div className="mt-4">
+        <div className="mt-5 flex flex-wrap justify-center gap-2">
           <Link href={`/treatment-plan?caseId=${caseId}`}>
             <Button variant="primary" size="sm">
               Go to Treatment Plan
+            </Button>
+          </Link>
+          <Link href={`/cases/${caseId}`}>
+            <Button variant="secondary" size="sm">
+              View Case
             </Button>
           </Link>
         </div>

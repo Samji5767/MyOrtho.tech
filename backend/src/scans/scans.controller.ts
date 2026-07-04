@@ -49,7 +49,7 @@ export class ScansController {
   }
 
   /**
-   * Upload a scan (STL / OBJ / PLY, max 250 MB).
+   * Upload a scan (STL / OBJ / PLY, max 500 MB).
    * Multipart field: file=<binary>, jawType=maxillary|mandibular|both
    */
   @Post()

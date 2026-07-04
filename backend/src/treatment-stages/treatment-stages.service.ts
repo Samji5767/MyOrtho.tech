@@ -280,12 +280,6 @@ export class TreatmentStagesService {
     const finalPositions  = (setup['tooth_positions']  as ToothState[]) ?? [];
     const initialPositions = (setup['initial_positions'] as ToothState[]) ?? [];
 
-    // Delete any existing stages for this setup
-    await this.pool.query(
-      `DELETE FROM treatment_stages WHERE digital_setup_id = $1 AND organization_id = $2`,
-      [setupId, orgId],
-    );
-
     // Compute per-tooth deltas
     const teethDeltas = computeDeltas(initialPositions, finalPositions);
 
@@ -404,30 +398,47 @@ export class TreatmentStagesService {
       });
     }
 
-    // ── Bulk insert ────────────────────────────────────────────────────────
+    // ── Atomic DELETE + bulk INSERT ────────────────────────────────────────
+    const client = await this.pool.connect();
     const insertedStages: TreatmentStage[] = [];
-    for (const row of stageRows) {
-      const { rows: inserted } = await this.pool.query<Record<string, unknown>>(
-        `INSERT INTO treatment_stages (
-           organization_id, digital_setup_id,
-           stage_number, stage_type,
-           tooth_positions, tooth_movements,
-           attachments, ipr_points, elastics, notes,
-           created_at
-         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, now())
-         RETURNING *`,
-        [
-          orgId, setupId,
-          row.stageNumber, row.stageType,
-          JSON.stringify(row.toothPositions),
-          JSON.stringify(row.toothMovements),
-          JSON.stringify(row.attachments),
-          JSON.stringify(row.iprPoints),
-          JSON.stringify(row.elastics),
-          row.notes,
-        ],
+    try {
+      await client.query('BEGIN');
+
+      await client.query(
+        `DELETE FROM treatment_stages WHERE digital_setup_id = $1 AND organization_id = $2`,
+        [setupId, orgId],
       );
-      insertedStages.push(mapStageRow(inserted[0]!));
+
+      for (const row of stageRows) {
+        const { rows: inserted } = await client.query<Record<string, unknown>>(
+          `INSERT INTO treatment_stages (
+             organization_id, digital_setup_id,
+             stage_number, stage_type,
+             tooth_positions, tooth_movements,
+             attachments, ipr_points, elastics, notes,
+             created_at
+           ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, now())
+           RETURNING *`,
+          [
+            orgId, setupId,
+            row.stageNumber, row.stageType,
+            JSON.stringify(row.toothPositions),
+            JSON.stringify(row.toothMovements),
+            JSON.stringify(row.attachments),
+            JSON.stringify(row.iprPoints),
+            JSON.stringify(row.elastics),
+            row.notes,
+          ],
+        );
+        insertedStages.push(mapStageRow(inserted[0]!));
+      }
+
+      await client.query('COMMIT');
+    } catch (err) {
+      await client.query('ROLLBACK');
+      throw err;
+    } finally {
+      client.release();
     }
 
     this.logger.log(

@@ -93,7 +93,9 @@ export class SegmentationService {
 
   private async verifyCase(caseId: string, orgId: string) {
     const { rows } = await this.pool.query(
-      `SELECT id FROM cases WHERE id = $1 AND organization_id = $2`,
+      `SELECT c.id FROM cases c
+         JOIN patients p ON p.id = c.patient_id
+         WHERE c.id = $1 AND p.organization_id = $2`,
       [caseId, orgId],
     );
     if (!rows.length) throw new NotFoundException('Case not found');

@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { fetchCase, type CaseDetail } from "@/lib/api/cases";
+import { ApiError } from "@/lib/api/client";
 import {
   Activity,
   ArrowLeft,
@@ -398,12 +399,18 @@ function SummaryTab({ profile, caseId }: { profile: CaseProfile; caseId: string 
 export default function CaseDetailClient({ id }: { id: string }) {
   const [tab, setTab] = useState<Tab>("summary");
   const [liveData, setLiveData] = useState<CaseDetail | null>(null);
-  const [dataSource, setDataSource] = useState<'api' | 'demo' | 'loading'>('loading');
+  const [dataSource, setDataSource] = useState<'api' | 'demo' | 'loading' | 'not_found'>('loading');
 
   useEffect(() => {
     fetchCase(id)
       .then(({ data, source }) => { setLiveData(data); setDataSource(source); })
-      .catch(() => setDataSource('demo'));
+      .catch((err) => {
+        if (err instanceof ApiError && err.status === 404) {
+          setDataSource('not_found');
+        } else {
+          setDataSource('demo');
+        }
+      });
   }, [id]);
 
   const profile = CASE_PROFILES[id] ?? {
@@ -433,6 +440,26 @@ export default function CaseDetailClient({ id }: { id: string }) {
   const patientName = liveData
     ? `${liveData.patient.firstName} ${liveData.patient.lastName}`
     : profile.patient;
+
+  if (dataSource === 'not_found') {
+    return (
+      <div className="flex flex-col items-center justify-center gap-4 px-6 py-24 text-center">
+        <div className="flex h-16 w-16 items-center justify-center rounded-2xl border border-border bg-card text-3xl">
+          🔍
+        </div>
+        <h1 className="text-xl font-semibold text-foreground">Case not found</h1>
+        <p className="max-w-xs text-sm text-secondary">
+          Case <span className="font-mono font-semibold">{id}</span> does not exist or you do not have access to it.
+        </p>
+        <Link
+          href="/cases"
+          className="mt-2 inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-indigo-700"
+        >
+          <ArrowLeft size={16} /> Back to Cases
+        </Link>
+      </div>
+    );
+  }
 
   return (
     <section className="animate-page-enter mx-auto w-full max-w-4xl pb-[calc(var(--tab-bar-height)+var(--sa-bottom)+1.5rem)]">

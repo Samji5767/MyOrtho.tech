@@ -24,7 +24,7 @@ const UPLOAD_DIR = process.env.UPLOADS_DIR ?? '/app/uploads';
           cb(null, `${Date.now()}-${Math.random().toString(36).slice(2)}${ext}`);
         },
       }),
-      limits: { fileSize: 250 * 1024 * 1024 }, // 250 MB
+      limits: { fileSize: 500 * 1024 * 1024 }, // 500 MB
       fileFilter: (_req, file, cb) => {
         const ext = path.extname(file.originalname).toLowerCase();
         if (['.stl', '.obj', '.ply'].includes(ext)) {

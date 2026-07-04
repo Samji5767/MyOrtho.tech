@@ -113,22 +113,22 @@ function PdlGauge({ pct }: { pct: number }) {
   const radius = 40;
   const circumference = Math.PI * radius;
   const offset = circumference - (clamped / 100) * circumference;
-  const color = pct >= 80 ? "#ef4444" : pct >= 60 ? "#f59e0b" : "#10b981";
+  const color = pct >= 80 ? "var(--clinical-danger)" : pct >= 60 ? "var(--clinical-warn)" : "var(--clinical-safe)";
 
   return (
     <div className="flex flex-col items-center">
       <svg width={100} height={60} viewBox="0 0 100 55">
-        <path d="M 10 50 A 40 40 0 0 1 90 50" fill="none" stroke="#e2e8f0" strokeWidth={10} strokeLinecap="round" />
+        <path d="M 10 50 A 40 40 0 0 1 90 50" fill="none" style={{ stroke: "var(--clinical-track)" }} strokeWidth={10} strokeLinecap="round" />
         <path
           d="M 10 50 A 40 40 0 0 1 90 50"
           fill="none"
-          stroke={color}
+          style={{ stroke: color }}
           strokeWidth={10}
           strokeLinecap="round"
           strokeDasharray={circumference}
           strokeDashoffset={offset}
         />
-        <text x={50} y={52} textAnchor="middle" fontSize={14} fontWeight="700" fill={color}>{clamped}%</text>
+        <text x={50} y={52} textAnchor="middle" fontSize={14} fontWeight="700" style={{ fill: color }}>{clamped}%</text>
       </svg>
       <p className="text-[10px] text-secondary">Max PDL Stress</p>
     </div>

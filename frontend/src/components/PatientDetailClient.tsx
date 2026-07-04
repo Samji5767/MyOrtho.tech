@@ -276,12 +276,12 @@ export default function PatientDetailClient({ id }: { id: string }) {
 
       {/* ── Quick actions ── */}
       <div className="flex flex-wrap gap-2">
-        <Link href="/studio">
+        <Link href={stats.activeCase ? `/studio?caseId=${encodeURIComponent(stats.activeCase.id)}` : "/studio"}>
           <Button variant="secondary" size="sm">
             <Layers size={14} /> Open Studio
           </Button>
         </Link>
-        <Link href={`/cases?new=1&patientId=${patient.id}`}>
+        <Link href={`/cases/new?patientId=${patient.id}`}>
           <Button variant="primary" size="sm">
             <Plus size={14} /> New Case
           </Button>

@@ -57,9 +57,9 @@ function qualityColor(score: number): string {
 }
 
 function qualityRingColor(score: number): string {
-  if (score >= 80) return '#10b981';
-  if (score >= 50) return '#f59e0b';
-  return '#ef4444';
+  if (score >= 80) return 'var(--clinical-safe)';
+  if (score >= 50) return 'var(--clinical-warn)';
+  return 'var(--clinical-danger)';
 }
 
 function qualityTone(score: number): 'success' | 'warning' | 'danger' {
@@ -103,11 +103,10 @@ function QualityScoreCircle({ score }: { score: number }) {
           cy={55}
           r={radius}
           fill="none"
-          stroke={color}
           strokeWidth={10}
           strokeDasharray={`${dash} ${circumference}`}
           strokeLinecap="round"
-          style={{ transition: 'stroke-dasharray 0.6s ease' }}
+          style={{ stroke: color, transition: 'stroke-dasharray 0.6s ease' }}
         />
       </svg>
       <div className="absolute flex flex-col items-center">

@@ -19,7 +19,7 @@ import {
   Wand2,
   type LucideIcon,
 } from "lucide-react";
-import { Button, Card, StatusBadge } from "@/components/DesignSystem";
+import { Button, Card, SkeletonBlock, StatusBadge } from "@/components/DesignSystem";
 import CADCapabilityMatrix from "@/components/CADCapabilityMatrix";
 import { fetchCase, type CaseDetail } from "@/lib/api/cases";
 import OrthoWorkflowRail from "@/components/OrthoWorkflowRail";
@@ -362,9 +362,12 @@ export default function StudioPage() {
 
       {/* Case context */}
       {caseLoading ? (
-        <div className="flex items-center gap-2 rounded-2xl border border-[color:var(--border)] bg-[color:var(--card)] px-4 py-3">
-          <Loader2 size={16} className="animate-spin text-[color:var(--muted-foreground)]" />
-          <span className="text-sm text-[color:var(--muted-foreground)]">Loading case…</span>
+        <div className="flex items-center gap-3 rounded-2xl border border-[color:var(--border)] bg-[color:var(--card)] px-4 py-3">
+          <SkeletonBlock className="h-8 w-8 rounded-full" />
+          <div className="flex-1 space-y-1.5">
+            <SkeletonBlock className="h-3.5 w-40" />
+            <SkeletonBlock className="h-3 w-24" />
+          </div>
         </div>
       ) : caseData ? (
         <CaseBanner caseData={caseData} />

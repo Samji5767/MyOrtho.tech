@@ -362,6 +362,7 @@ export default function CasesPage() {
   const [apiSource, setApiSource] = useState<"loading" | "api" | "demo">("loading");
 
   const sortRef = useRef<HTMLDivElement>(null);
+  const searchRef = useRef<HTMLInputElement>(null);
 
   // ── Load saved filter state from localStorage ──────────────────────────────
   useEffect(() => {
@@ -384,6 +385,24 @@ export default function CasesPage() {
       localStorage.setItem("cases-filter-v1", JSON.stringify({ filter, sortKey, doctorFilter }));
     } catch { /* ignore */ }
   }, [filter, sortKey, doctorFilter]);
+
+  // ── Keyboard shortcuts ────────────────────────────────────────────────
+  useEffect(() => {
+    const handleKey = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement;
+      const isEditable = target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable;
+      if (isEditable && e.key !== "Escape") return;
+      if (e.key === "/" && !isEditable) {
+        e.preventDefault();
+        searchRef.current?.focus();
+      } else if (e.key === "Escape") {
+        if (searchQuery) setSearchQuery("");
+        searchRef.current?.blur();
+      }
+    };
+    document.addEventListener("keydown", handleKey);
+    return () => document.removeEventListener("keydown", handleKey);
+  }, [searchQuery]);
 
   // ── Close sort dropdown on outside click ──────────────────────────────────
   useEffect(() => {
@@ -576,10 +595,12 @@ export default function CasesPage() {
             aria-hidden
           />
           <input
+            ref={searchRef}
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder="Search cases, patients, doctors…"
+            aria-label="Search cases"
             className="h-10 w-full rounded-xl border border-[color:var(--border)] bg-[color:var(--card)] pl-9 pr-9 text-sm text-[color:var(--foreground)] placeholder:text-[color:var(--muted-foreground)] transition focus:outline-none focus:ring-2 focus:ring-[color:var(--primary)]/30"
           />
           {searchQuery && (

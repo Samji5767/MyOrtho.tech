@@ -394,6 +394,58 @@ function SummaryTab({ profile, caseId }: { profile: CaseProfile; caseId: string 
   );
 }
 
+// ─── Workflow pipeline strip ──────────────────────────────────────────────────
+
+const PIPELINE_STEPS: { key: CaseStatus; label: string }[] = [
+  { key: "draft",            label: "Draft"    },
+  { key: "scan_review",      label: "Scan"     },
+  { key: "planning",         label: "Plan"     },
+  { key: "clinical_review",  label: "Review"   },
+  { key: "approved",         label: "Approved" },
+  { key: "active_treatment", label: "Active"   },
+  { key: "completed",        label: "Done"     },
+];
+const PIPELINE_ORDER = PIPELINE_STEPS.map((s) => s.key);
+
+function WorkflowPipeline({ status }: { status: CaseStatus }) {
+  const activeIdx = PIPELINE_ORDER.indexOf(status);
+  return (
+    <div className="mt-2.5 flex items-center" role="list" aria-label="Case workflow progress">
+      {PIPELINE_STEPS.map((step, i) => {
+        const done   = i <  activeIdx;
+        const active = i === activeIdx;
+        return (
+          <div
+            key={step.key}
+            className={`flex items-center ${i > 0 ? "flex-1 min-w-0" : "shrink-0"}`}
+          >
+            {i > 0 && (
+              <div
+                aria-hidden="true"
+                className={`h-px flex-1 min-w-[4px] transition-colors ${
+                  done || active ? "bg-[color:var(--primary)]" : "bg-[color:var(--border)]"
+                }`}
+              />
+            )}
+            <span
+              role="listitem"
+              aria-current={active ? "step" : undefined}
+              className={[
+                "shrink-0 rounded-full px-1.5 py-[2px] text-[9px] font-semibold whitespace-nowrap transition-colors",
+                done   ? "bg-[color:var(--primary)] text-[color:var(--primary-foreground)] opacity-70" : "",
+                active ? "bg-[color:var(--primary)] text-[color:var(--primary-foreground)]" : "",
+                !done && !active ? "border border-[color:var(--border)] bg-transparent text-[color:var(--muted-foreground)]" : "",
+              ].filter(Boolean).join(" ")}
+            >
+              {step.label}
+            </span>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 // ─── Client component ─────────────────────────────────────────────────────────
 
 export default function CaseDetailClient({ id }: { id: string }) {
@@ -453,7 +505,7 @@ export default function CaseDetailClient({ id }: { id: string }) {
         </p>
         <Link
           href="/cases"
-          className="mt-2 inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-indigo-700"
+          className="mt-2 inline-flex items-center gap-2 rounded-xl bg-[color:var(--primary)] px-4 py-2.5 text-sm font-semibold text-[color:var(--primary-foreground)] hover:opacity-90 transition-opacity"
         >
           <ArrowLeft size={16} /> Back to Cases
         </Link>
@@ -486,6 +538,9 @@ export default function CaseDetailClient({ id }: { id: string }) {
             </div>
           </div>
         </div>
+
+        {/* Case workflow pipeline */}
+        <WorkflowPipeline status={workflowStatus} />
 
         {/* Horizontally scrollable tab strip */}
         <div className="mt-3 -mx-4 sm:-mx-5 overflow-x-auto px-4 sm:px-5 scrollbar-none">

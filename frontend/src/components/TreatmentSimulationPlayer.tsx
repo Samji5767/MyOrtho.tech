@@ -57,10 +57,10 @@ function movementMagnitude(pos: { tx: number; ty: number; tz: number; rx: number
 }
 
 function toothColor(mag: number): string {
-  if (mag < 0.05) return '#e5e7eb'; // gray — minimal movement
-  if (mag < 0.5)  return '#bbf7d0'; // green — light
-  if (mag < 1.0)  return '#fde68a'; // amber — moderate
-  return '#fca5a5'; // red — significant
+  if (mag < 0.05) return 'var(--clinical-neutral-tint)';
+  if (mag < 0.5)  return 'var(--clinical-safe-tint)';
+  if (mag < 1.0)  return 'var(--clinical-warn-tint)';
+  return 'var(--clinical-danger-tint)';
 }
 
 function ToothGrid({ frame }: { frame: SimulationFrame }) {

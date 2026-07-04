@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import {
   createExportPackage,
   listExportPackages,
@@ -16,11 +16,11 @@ import {
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 const STATUS_STYLE: Record<string, string> = {
-  draft:     'bg-gray-100 text-gray-700 border-gray-300',
-  validated: 'bg-blue-100 text-blue-700 border-blue-300',
-  approved:  'bg-green-100 text-green-700 border-green-300',
-  exported:  'bg-emerald-100 text-emerald-700 border-emerald-300',
-  failed:    'bg-red-100 text-red-700 border-red-300',
+  draft:     'bg-[color:var(--card)] text-[color:var(--muted-foreground)] border-[color:var(--border)]',
+  validated: 'bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-300/50',
+  approved:  'bg-[color:var(--primary-glow)] text-[color:var(--primary)] border-[color:var(--primary)]/30',
+  exported:  'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-300/50',
+  failed:    'bg-rose-500/10 text-rose-600 dark:text-rose-400 border-rose-300/50',
 };
 
 const CHECK_STATUS_ICON: Record<string, string> = {
@@ -32,11 +32,11 @@ const CHECK_STATUS_ICON: Record<string, string> = {
 };
 
 const CHECK_STATUS_COLOR: Record<string, string> = {
-  passed:  'text-green-700',
-  failed:  'text-red-700',
-  warning: 'text-amber-600',
-  skipped: 'text-gray-400',
-  pending: 'text-gray-400',
+  passed:  'text-[color:var(--clinical-safe)]',
+  failed:  'text-[color:var(--clinical-danger)]',
+  warning: 'text-[color:var(--clinical-warn)]',
+  skipped: 'text-[color:var(--muted-foreground)]',
+  pending: 'text-[color:var(--muted-foreground)]',
 };
 
 const MODULE_ORDER = [
@@ -81,7 +81,7 @@ function ChecklistView({ items }: { items: ChecklistItem[] }) {
     <div className="space-y-3">
       {orderedModules.map(mod => (
         <div key={mod}>
-          <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-1">
+          <p className="text-[10px] font-semibold text-[color:var(--muted-foreground)] uppercase tracking-wide mb-1">
             {MODULE_LABELS[mod] ?? mod}
           </p>
           <ul className="space-y-0.5">
@@ -90,14 +90,14 @@ function ChecklistView({ items }: { items: ChecklistItem[] }) {
                 <span className={`font-mono font-bold shrink-0 w-4 text-center ${CHECK_STATUS_COLOR[item.status]}`}>
                   {CHECK_STATUS_ICON[item.status]}
                 </span>
-                <span className={item.isBlocking && item.status === 'failed' ? 'font-semibold text-red-800' : 'text-gray-700'}>
+                <span className={item.isBlocking && item.status === 'failed' ? 'font-semibold text-[color:var(--clinical-danger)]' : 'text-[color:var(--foreground)]'}>
                   {item.checkLabel}
                   {item.isBlocking && (
-                    <span className="ml-1 text-[10px] text-red-600">(blocking)</span>
+                    <span className="ml-1 text-[10px] text-[color:var(--clinical-danger)]">(blocking)</span>
                   )}
                 </span>
                 {item.message && (
-                  <span className="text-gray-400 text-[10px] shrink-0 ml-auto">{item.message}</span>
+                  <span className="text-[color:var(--muted-foreground)] text-[10px] shrink-0 ml-auto">{item.message}</span>
                 )}
               </li>
             ))}
@@ -142,11 +142,11 @@ function PackageCard({
   };
 
   return (
-    <div className="rounded border border-gray-200 bg-white">
+    <div className="rounded-xl border border-[color:var(--border)] bg-[color:var(--card)]">
       <div className="p-3 flex items-start gap-3">
         <div className="flex-1">
           <div className="flex items-center gap-2">
-            <span className="text-xs font-semibold text-gray-900">
+            <span className="text-xs font-semibold text-[color:var(--foreground)]">
               {EXPORT_TYPE_LABELS[pkg.exportType]}
             </span>
             <span className={`text-[10px] px-1.5 py-0.5 rounded border font-semibold capitalize ${STATUS_STYLE[pkg.status]}`}>
@@ -161,19 +161,19 @@ function PackageCard({
 
           {totalCount > 0 && (
             <div className="flex items-center gap-2 mt-1">
-              <span className="text-[10px] text-green-700">{passCount} passed</span>
-              {failCount > 0 && <span className="text-[10px] text-red-700">{failCount} failed</span>}
-              {warnCount > 0 && <span className="text-[10px] text-amber-600">{warnCount} warnings</span>}
-              <span className="text-[10px] text-gray-400">of {totalCount} checks</span>
+              <span className="text-[10px] text-[color:var(--clinical-safe)]">{passCount} passed</span>
+              {failCount > 0 && <span className="text-[10px] text-[color:var(--clinical-danger)]">{failCount} failed</span>}
+              {warnCount > 0 && <span className="text-[10px] text-[color:var(--clinical-warn)]">{warnCount} warnings</span>}
+              <span className="text-[10px] text-[color:var(--muted-foreground)]">of {totalCount} checks</span>
             </div>
           )}
 
           {/* Progress bar */}
           {totalCount > 0 && (
-            <div className="flex h-1.5 gap-0.5 mt-1.5 rounded-full overflow-hidden bg-gray-100">
-              <div className="bg-green-500 h-full" style={{ width: `${(passCount / totalCount) * 100}%` }} />
-              <div className="bg-amber-400 h-full" style={{ width: `${(warnCount / totalCount) * 100}%` }} />
-              <div className="bg-red-500 h-full" style={{ width: `${(failCount / totalCount) * 100}%` }} />
+            <div className="flex h-1.5 gap-0.5 mt-1.5 rounded-full overflow-hidden bg-[color:var(--border)]">
+              <div className="h-full bg-[color:var(--clinical-safe)]" style={{ width: `${(passCount / totalCount) * 100}%` }} />
+              <div className="h-full bg-[color:var(--clinical-warn)]" style={{ width: `${(warnCount / totalCount) * 100}%` }} />
+              <div className="h-full bg-[color:var(--clinical-danger)]" style={{ width: `${(failCount / totalCount) * 100}%` }} />
             </div>
           )}
         </div>
@@ -183,7 +183,7 @@ function PackageCard({
             <button
               onClick={() => act(() => validateExportPackage(caseId, planId, pkg.id))}
               disabled={loading}
-              className="px-2 py-1 text-xs bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50"
+              className="px-2 py-1 text-xs bg-[color:var(--primary)] text-[color:var(--primary-foreground)] rounded-lg hover:opacity-90 disabled:opacity-50"
             >
               Validate
             </button>
@@ -192,7 +192,7 @@ function PackageCard({
             <button
               onClick={() => act(() => approveExportPackage(caseId, planId, pkg.id))}
               disabled={loading}
-              className="px-2 py-1 text-xs bg-green-600 text-white rounded hover:bg-green-700 disabled:opacity-50"
+              className="px-2 py-1 text-xs bg-[color:var(--clinical-safe)] text-white rounded-lg hover:opacity-90 disabled:opacity-50"
             >
               Approve
             </button>
@@ -201,7 +201,7 @@ function PackageCard({
             <button
               onClick={() => act(() => markExported(caseId, planId, pkg.id, 'zip', 1024 * 1024))}
               disabled={loading}
-              className="px-2 py-1 text-xs bg-emerald-600 text-white rounded hover:bg-emerald-700 disabled:opacity-50"
+              className="px-2 py-1 text-xs bg-emerald-600 text-white rounded-lg hover:opacity-90 disabled:opacity-50"
             >
               Mark Exported
             </button>
@@ -209,7 +209,7 @@ function PackageCard({
           {totalCount > 0 && (
             <button
               onClick={() => setExpanded(e => !e)}
-              className="px-2 py-1 text-xs border border-gray-300 text-gray-600 rounded hover:bg-gray-50"
+              className="px-2 py-1 text-xs border border-[color:var(--border)] text-[color:var(--muted-foreground)] rounded-lg hover:text-[color:var(--foreground)] hover:bg-[color:var(--card)]"
             >
               {expanded ? 'Hide' : 'Details'}
             </button>
@@ -218,20 +218,20 @@ function PackageCard({
       </div>
 
       {error && (
-        <div className="mx-3 mb-2 text-xs text-red-700 bg-red-50 rounded p-2 border border-red-200">
+        <div className="mx-3 mb-2 text-xs text-[color:var(--clinical-danger)] bg-[color:var(--clinical-danger-tint)]/20 rounded-lg p-2 border border-[color:var(--clinical-danger)]/20">
           {error}
         </div>
       )}
 
       {expanded && totalCount > 0 && (
-        <div className="border-t border-gray-100 p-3">
+        <div className="border-t border-[color:var(--border)] p-3">
           <ChecklistView items={pkg.validationResults} />
         </div>
       )}
 
       {pkg.checksumSha256 && (
-        <div className="border-t border-gray-100 px-3 py-1.5">
-          <p className="text-[10px] text-gray-400 font-mono truncate">SHA-256: {pkg.checksumSha256}</p>
+        <div className="border-t border-[color:var(--border)] px-3 py-1.5">
+          <p className="text-[10px] text-[color:var(--muted-foreground)] font-mono truncate">SHA-256: {pkg.checksumSha256}</p>
         </div>
       )}
     </div>
@@ -263,6 +263,8 @@ export default function ExportPackagePanel({ caseId, planId }: Props) {
     }
   }, [caseId, planId]);
 
+  useEffect(() => { loadPackages(); }, [loadPackages]);
+
   const handleCreate = useCallback(async () => {
     setLoading(true); setError(null);
     try {
@@ -280,18 +282,18 @@ export default function ExportPackagePanel({ caseId, planId }: Props) {
   }, []);
 
   return (
-    <div className="rounded-lg border border-gray-200 bg-white shadow-sm">
+    <div className="rounded-2xl border border-[color:var(--border)] bg-[color:var(--card)] shadow-[var(--shadow-sm)]">
       {/* Header */}
-      <div className="border-b border-gray-200 px-4 py-3">
-        <h2 className="text-sm font-semibold text-gray-900">Clinical Export Package</h2>
-        <p className="text-xs text-gray-500 mt-0.5">
+      <div className="border-b border-[color:var(--border)] px-4 py-3">
+        <h2 className="text-sm font-semibold text-[color:var(--foreground)]">Clinical Export Package</h2>
+        <p className="text-xs text-[color:var(--muted-foreground)] mt-0.5">
           Structured export bundles with 14-check validation gate and clinician approval
         </p>
       </div>
 
       <div className="p-4 space-y-4">
         {error && (
-          <div className="text-xs text-red-700 bg-red-50 rounded p-3 border border-red-200">
+          <div className="text-xs text-[color:var(--clinical-danger)] bg-rose-500/10 rounded-xl p-3 border border-rose-500/20">
             {error}
           </div>
         )}
@@ -301,7 +303,7 @@ export default function ExportPackagePanel({ caseId, planId }: Props) {
           <select
             value={selectedType}
             onChange={e => setSelectedType(e.target.value as ExportType)}
-            className="text-xs border border-gray-300 rounded px-2 py-1.5 bg-white text-gray-800"
+            className="text-xs border border-[color:var(--border)] rounded-lg px-2 py-1.5 bg-[color:var(--card)] text-[color:var(--foreground)] focus:outline-none focus:ring-2 focus:ring-[color:var(--primary)]/30"
           >
             {EXPORT_TYPES.map(t => (
               <option key={t} value={t}>{EXPORT_TYPE_LABELS[t]}</option>
@@ -310,14 +312,14 @@ export default function ExportPackagePanel({ caseId, planId }: Props) {
           <button
             onClick={handleCreate}
             disabled={loading}
-            className="px-3 py-1.5 text-xs bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50"
+            className="px-3 py-1.5 text-xs bg-[color:var(--primary)] text-[color:var(--primary-foreground)] rounded-lg hover:opacity-90 disabled:opacity-50"
           >
             {loading ? 'Creating…' : 'Create Package'}
           </button>
           <button
             onClick={loadPackages}
             disabled={loading}
-            className="px-3 py-1.5 text-xs border border-gray-300 text-gray-600 rounded hover:bg-gray-50 disabled:opacity-50"
+            className="px-3 py-1.5 text-xs border border-[color:var(--border)] text-[color:var(--muted-foreground)] rounded-lg hover:text-[color:var(--foreground)] disabled:opacity-50"
           >
             {loading ? '…' : 'Refresh'}
           </button>
@@ -339,14 +341,14 @@ export default function ExportPackagePanel({ caseId, planId }: Props) {
         )}
 
         {packages.length === 0 && !loading && (
-          <p className="text-xs text-gray-500 italic">
-            Select an export type and click "Create Package" to begin the validation workflow.
+          <p className="text-xs text-[color:var(--muted-foreground)] italic">
+            Select an export type and click &ldquo;Create Package&rdquo; to begin the validation workflow.
           </p>
         )}
 
         {/* Workflow explanation */}
-        <div className="rounded border border-gray-100 bg-gray-50 p-3 text-xs text-gray-600 space-y-1">
-          <p className="font-semibold text-gray-700">Export workflow</p>
+        <div className="rounded-xl border border-[color:var(--border)] bg-[color:var(--primary-glow)] p-3 text-xs text-[color:var(--muted-foreground)] space-y-1">
+          <p className="font-semibold text-[color:var(--foreground)]">Export workflow</p>
           <p>1. <strong>Create</strong> — select export type and create checklist</p>
           <p>2. <strong>Validate</strong> — run all checks against current plan data</p>
           <p>3. <strong>Approve</strong> — clinician signs off (requires validated status)</p>
@@ -355,8 +357,8 @@ export default function ExportPackagePanel({ caseId, planId }: Props) {
       </div>
 
       {/* Disclaimer */}
-      <div className="border-t border-gray-200 px-4 py-2">
-        <p className="text-xs text-amber-700">
+      <div className="border-t border-[color:var(--border)] px-4 py-2">
+        <p className="text-xs text-[color:var(--clinical-warn)]">
           Clinician approval is required before export. Validated packages with blocking failures cannot be approved until issues are resolved.
         </p>
       </div>

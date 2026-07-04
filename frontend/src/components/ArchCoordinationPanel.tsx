@@ -169,11 +169,11 @@ function SyncTimeline({ allocations }: { allocations: ArchSyncAllocation[] }) {
             <div key={s} title={`Stage ${s}: ${u} upper, ${l} lower movements`} className="flex-shrink-0 w-5 space-y-0.5">
               <div
                 className="h-3 rounded-sm border"
-                style={{ backgroundColor: u > 0 ? `rgba(59,130,246,${Math.min(0.2 + u * 0.1, 1)})` : '#f3f4f6', borderColor: u > 0 ? '#93c5fd' : '#e5e7eb' }}
+                style={{ backgroundColor: u > 0 ? `rgba(59,130,246,${Math.min(0.2 + u * 0.1, 1)})` : 'var(--clinical-neutral-tint)', borderColor: u > 0 ? '#93c5fd' : 'var(--clinical-track)' }}
               />
               <div
                 className="h-3 rounded-sm border"
-                style={{ backgroundColor: l > 0 ? `rgba(16,185,129,${Math.min(0.2 + l * 0.1, 1)})` : '#f3f4f6', borderColor: l > 0 ? '#6ee7b7' : '#e5e7eb' }}
+                style={{ backgroundColor: l > 0 ? `rgba(16,185,129,${Math.min(0.2 + l * 0.1, 1)})` : 'var(--clinical-neutral-tint)', borderColor: l > 0 ? '#6ee7b7' : 'var(--clinical-track)' }}
               />
               {s % 5 === 0 && <div className="text-[8px] text-gray-400 text-center">{s}</div>}
             </div>

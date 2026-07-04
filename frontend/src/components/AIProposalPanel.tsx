@@ -243,17 +243,25 @@ function ProposalDetail({
   return (
     <div className="space-y-3">
       {/* Status + date row */}
-      <div className="flex items-center justify-between gap-2">
-        <div className="flex items-center gap-2">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <ProposalStatusBadge status={proposal.status} />
           {proposal.angleClassification && (
             <span className="rounded-full border border-[color:var(--border)] bg-[color:var(--card)] px-2.5 py-0.5 text-[11px] font-semibold text-[color:var(--foreground)]">
               {ANGLE_CLASS_LABELS[proposal.angleClassification]}
             </span>
           )}
+          {proposal.treatmentPlanId && (
+            <span className="rounded-full border border-[color:var(--primary)]/30 bg-[color:var(--primary)]/10 px-2 py-0.5 text-[10px] font-semibold text-[color:var(--primary)]">
+              Linked to plan
+            </span>
+          )}
         </div>
         <span className="text-xs text-[color:var(--muted-foreground)]">
           {new Date(proposal.generatedAt).toLocaleDateString()}
+          {proposal.predictedDurationWeeks != null && (
+            <> · ~{proposal.predictedDurationWeeks} weeks</>
+          )}
         </span>
       </div>
 
@@ -397,6 +405,22 @@ function ProposalDetail({
         </Section>
       )}
 
+      {/* Expansion recommendations */}
+      {proposal.expansionRecs.length > 0 && (
+        <Section title={`Expansion Recommendations (${proposal.expansionRecs.length})`}>
+          <div className="space-y-1.5">
+            {proposal.expansionRecs.map((rec, i) => (
+              <div key={i} className="flex items-center gap-3 rounded-lg border border-[color:var(--border)] px-3 py-2 text-xs">
+                <span className="font-semibold capitalize text-[color:var(--foreground)]">{rec.arch} arch</span>
+                <span className="text-[color:var(--muted-foreground)]">{rec.type}</span>
+                <span className="font-mono text-[color:var(--foreground)]">{rec.amountMm}mm</span>
+                <span className="ml-auto text-[color:var(--muted-foreground)]">Stage {rec.stage}</span>
+              </div>
+            ))}
+          </div>
+        </Section>
+      )}
+
       {/* AI notes */}
       {proposal.aiNotes && (
         <Section title="AI Notes">
@@ -475,13 +499,13 @@ export default function AIProposalPanel({ caseId }: { caseId: string }) {
     try {
       const list = await listProposals(caseId);
       setProposals(list);
-      if (list.length > 0 && !selected) setSelected(list[0]);
+      if (list.length > 0) setSelected((prev) => prev ?? list[0]);
     } catch {
       // leave empty
     } finally {
       setLoading(false);
     }
-  }, [caseId]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [caseId]);
 
   useEffect(() => { void load(); }, [load]);
 

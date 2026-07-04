@@ -14,6 +14,7 @@ import {
   Layers3,
   Loader2,
   Paperclip,
+  Pencil,
   Plus,
   RefreshCw,
   Scissors,
@@ -25,6 +26,7 @@ import {
   listPlans,
   createPlan,
   approvePlan,
+  updatePlan,
   listStages,
   generateStages,
   type TreatmentPlanSummary,
@@ -220,10 +222,12 @@ function PlanRow({
   plan,
   caseId,
   onApproved,
+  onUpdated,
 }: {
   plan: TreatmentPlanSummary;
   caseId: string;
   onApproved: (p: TreatmentPlanSummary) => void;
+  onUpdated: (p: TreatmentPlanSummary) => void;
 }) {
   const [expanded, setExpanded] = useState(false);
   const [activeTab, setActiveTab] = useState<PlanTab>("stages");
@@ -236,6 +240,13 @@ function PlanRow({
   const [approveError, setApproveError] = useState<string | null>(null);
   const [showApproveForm, setShowApproveForm] = useState(false);
   const [approveSignature, setApproveSignature] = useState("");
+  const [editingNotes, setEditingNotes] = useState(false);
+  const [notesDraft, setNotesDraft] = useState(plan.aiRecommendationNotes ?? "");
+  const [notesSaving, setNotesSaving] = useState(false);
+
+  useEffect(() => {
+    setNotesDraft(plan.aiRecommendationNotes ?? "");
+  }, [plan.aiRecommendationNotes]);
 
   async function loadStages() {
     setStagesLoading(true);
@@ -285,6 +296,23 @@ function PlanRow({
     }
   }
 
+  async function handleSaveNotes() {
+    const trimmed = notesDraft.trim();
+    if (trimmed === (plan.aiRecommendationNotes ?? "")) {
+      setEditingNotes(false);
+      return;
+    }
+    setNotesSaving(true);
+    try {
+      const updated = await updatePlan(caseId, plan.id, {
+        aiRecommendationNotes: trimmed || undefined,
+      });
+      onUpdated(updated);
+    } catch { /* swallow — user can retry */ }
+    setNotesSaving(false);
+    setEditingNotes(false);
+  }
+
   const activeStageData = stages.find((s) => s.stageNumber === activeStage);
 
   return (
@@ -307,14 +335,48 @@ function PlanRow({
               <StatusBadge tone="neutral">{plan.estimatedStages} stages</StatusBadge>
             </div>
             <p className="mt-0.5 text-xs text-[color:var(--muted-foreground)]">
-              Created {new Date(plan.createdAt).toLocaleDateString()}
+              Created {new Date(plan.createdAt).toLocaleDateString()} by {plan.createdByEmail}
               {plan.approvedAt && ` · Approved ${new Date(plan.approvedAt).toLocaleDateString()}`}
             </p>
-            {plan.aiRecommendationNotes && (
-              <p className="mt-0.5 text-xs italic text-[color:var(--muted-foreground)]">
-                {plan.aiRecommendationNotes}
-              </p>
+
+            {/* Inline-editable clinical notes */}
+            {editingNotes ? (
+              <div className="mt-1.5 space-y-1">
+                <textarea
+                  autoFocus
+                  rows={2}
+                  value={notesDraft}
+                  onChange={(e) => setNotesDraft(e.target.value)}
+                  onBlur={handleSaveNotes}
+                  onKeyDown={(e) => { if (e.key === "Escape") { setNotesDraft(plan.aiRecommendationNotes ?? ""); setEditingNotes(false); } }}
+                  placeholder="Add clinical notes…"
+                  className="w-full resize-none rounded-lg border border-[color:var(--primary)]/40 bg-[color:var(--background)] px-2.5 py-1.5 text-xs text-[color:var(--foreground)] placeholder:text-[color:var(--muted-foreground)] focus:outline-none focus:ring-1 focus:ring-[color:var(--primary)]/40"
+                />
+                {notesSaving && (
+                  <span className="text-[10px] text-[color:var(--muted-foreground)]">Saving…</span>
+                )}
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setEditingNotes(true)}
+                className="group mt-0.5 flex w-full items-start gap-1.5 rounded text-left text-xs hover:bg-[color:var(--muted)]/20"
+              >
+                <Pencil size={9} className="mt-0.5 shrink-0 opacity-0 transition-opacity group-hover:opacity-60" />
+                <span className={plan.aiRecommendationNotes ? "italic text-[color:var(--muted-foreground)]" : "text-[color:var(--muted-foreground)]/50"}>
+                  {plan.aiRecommendationNotes || "Click to add clinical notes…"}
+                </span>
+              </button>
             )}
+
+            {/* Per-plan AI disclaimer */}
+            {plan.aiDisclaimer && (
+              <div className="mt-1.5 flex items-start gap-1.5 rounded-lg border border-amber-200/60 bg-amber-50/60 px-2 py-1.5 text-[10px] text-amber-700 dark:border-amber-500/20 dark:bg-amber-500/10 dark:text-amber-300">
+                <AlertTriangle size={10} className="mt-px shrink-0" />
+                <span>{plan.aiDisclaimer}</span>
+              </div>
+            )}
+
             {generateError && (
               <p className="mt-1 text-xs text-rose-500">{generateError}</p>
             )}
@@ -620,6 +682,10 @@ export default function TreatmentPlansPanel({ caseId }: { caseId: string }) {
     setPlans((prev) => prev.map((p) => (p.id === updated.id ? { ...p, ...updated } : p)));
   }
 
+  function handleUpdated(updated: TreatmentPlanSummary) {
+    setPlans((prev) => prev.map((p) => (p.id === updated.id ? { ...p, ...updated } : p)));
+  }
+
   return (
     <div className="space-y-4">
       {/* AI disclaimer */}
@@ -689,6 +755,7 @@ export default function TreatmentPlansPanel({ caseId }: { caseId: string }) {
               plan={plan}
               caseId={caseId}
               onApproved={handleApproved}
+              onUpdated={handleUpdated}
             />
           ))
         )}

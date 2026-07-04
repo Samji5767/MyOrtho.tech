@@ -623,7 +623,7 @@ export function AISegmentationCenter({ caseId }: Props) {
                 <div className="flex items-center gap-1.5 text-[10px] text-[color:var(--muted-foreground)]">
                   <Cpu size={10} />
                   AI version: {activeJob.aiVersion} · Model: {MODEL_LABELS[activeJob.modelType]}
-                  {(activeJob.resultSummary as any)?.fallback && " · Rule-based fallback (configure AI_SEGMENTATION_URL for ML inference)"}
+                  {(activeJob.resultSummary as Record<string, unknown>).fallback === true && " · Rule-based fallback (configure AI_SEGMENTATION_URL for ML inference)"}
                 </div>
               </>
             )}

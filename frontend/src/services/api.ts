@@ -73,7 +73,25 @@ const mapPrintJob = (row: any): PrintJob => ({
   createdAt: row.created_at ? new Date(row.created_at).toISOString().split("T")[0] : ""
 });
 
-const mapAppointment = (row: any): any => ({
+type Appointment = {
+  id: string;
+  title: string;
+  dateTime: string;
+  doctor: string;
+};
+
+type BillingData = {
+  subscription: { planTier: string; monthlyPrice: number; status: string } | null;
+  meters: { caseExports: number; apiCalls: number; resinMl: number; storageGb: number };
+  invoices: unknown[];
+};
+
+type SupportMessage = {
+  sender: "patient" | "clinic";
+  text: string;
+};
+
+const mapAppointment = (row: any): Appointment => ({
   id: row.id,
   title: row.visit_reason,
   dateTime: new Date(row.scheduled_at).toLocaleDateString("en-US", {
@@ -321,14 +339,14 @@ export const apiService = {
     return getStoredData<any[]>(APPOINTMENTS_KEY, []);
   },
 
-  async createAppointment(title: string, dateTime: string, doctor: string): Promise<any> {
-    // TODO: createAppointment requires a patientId parameter for production use
+  async createAppointment(title: string, dateTime: string, doctor: string, patientId?: string): Promise<Appointment> {
     if (isSupabaseConfigured()) {
       await ensureAuth();
       const { data, error } = await supabase
         .from("appointments")
         .insert({
           dentist_id: profileId(),
+          ...(patientId ? { patient_id: patientId } : {}),
           scheduled_at: new Date(dateTime.replace(" at ", " ")).toISOString(),
           visit_reason: title,
           status: "scheduled"
@@ -341,8 +359,8 @@ export const apiService = {
         return mapAppointment(data);
       }
     }
-    const appts = getStoredData<any[]>(APPOINTMENTS_KEY, []);
-    const newAppt = { id: `local-${Date.now()}`, title, dateTime, doctor };
+    const appts = getStoredData<Appointment[]>(APPOINTMENTS_KEY, []);
+    const newAppt: Appointment = { id: `local-${Date.now()}`, title, dateTime, doctor };
     appts.push(newAppt);
     setStoredData(APPOINTMENTS_KEY, appts);
     return newAppt;
@@ -412,7 +430,7 @@ export const apiService = {
   },
 
   // Billing
-  async getBillingData(): Promise<any> {
+  async getBillingData(): Promise<BillingData | null> {
     if (isSupabaseConfigured()) {
       await ensureAuth();
       const { data: sub } = await supabase.from("billing_subscriptions").select("*").eq("organization_id", orgId()).maybeSingle();
@@ -498,7 +516,7 @@ export const apiService = {
     return getStoredData<any[]>(`${COMMUNICATIONS_KEY}_support_${caseId}`, []);
   },
 
-  async sendSupportMessage(caseId: string, sender: "patient" | "clinic", text: string): Promise<any> {
+  async sendSupportMessage(caseId: string, sender: "patient" | "clinic", text: string): Promise<SupportMessage> {
     const msg = { sender, text };
     if (isSupabaseConfigured()) {
       await ensureAuth();

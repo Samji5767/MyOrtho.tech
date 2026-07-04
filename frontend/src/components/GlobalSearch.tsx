@@ -1,132 +1,214 @@
 "use client";
 
-import React, { useState } from "react";
-import { 
-  Search, 
-  Sparkles, 
-  FileCode, 
-  Users, 
-  ClipboardList, 
-  MessageSquare, 
-  Printer, 
-  ArrowRight 
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
+import {
+  ClipboardList,
+  Search,
+  Users,
+  X,
 } from "lucide-react";
+import { fetchCases, type CaseListItem } from "@/lib/api/cases";
+import { fetchPatients, type PatientListItem } from "@/lib/api/patients";
+import { Spinner, StatusBadge } from "./DesignSystem";
 
-interface SearchResult {
-  id: string;
-  category: "patient" | "case" | "file" | "message" | "job";
-  title: string;
-  subtitle: string;
-  score?: number; // Semantic matching score
+type Category = "all" | "patients" | "cases";
+
+const CATEGORIES: { key: Category; label: string }[] = [
+  { key: "all", label: "All" },
+  { key: "patients", label: "Patients" },
+  { key: "cases", label: "Cases" },
+];
+
+function statusTone(status: string): "primary" | "success" | "warning" | "neutral" | "info" {
+  switch (status) {
+    case "active_treatment": return "success";
+    case "clinical_review":
+    case "scan_review":
+    case "planning": return "warning";
+    case "completed":
+    case "approved": return "primary";
+    default: return "info";
+  }
 }
 
 export default function GlobalSearch() {
   const [query, setQuery] = useState("");
-  const [useSemantic, setUseSemantic] = useState(false);
-  const [filter, setFilter] = useState<string>("all");
+  const [category, setCategory] = useState<Category>("all");
+  const [cases, setCases] = useState<CaseListItem[]>([]);
+  const [patients, setPatients] = useState<PatientListItem[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [loaded, setLoaded] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
 
-  const [results] = useState<SearchResult[]>([]);
+  const loadData = useCallback(async () => {
+    if (loaded) return;
+    setLoading(true);
+    const [casesRes, patientsRes] = await Promise.allSettled([
+      fetchCases(),
+      fetchPatients(),
+    ]);
+    if (casesRes.status === "fulfilled") setCases(casesRes.value.cases);
+    if (patientsRes.status === "fulfilled") setPatients(patientsRes.value.patients);
+    setLoading(false);
+    setLoaded(true);
+  }, [loaded]);
 
-  const filteredResults = results.filter(res => {
-    const matchesQuery = res.title.toLowerCase().includes(query.toLowerCase()) || res.subtitle.toLowerCase().includes(query.toLowerCase());
-    const matchesFilter = filter === "all" || res.category === filter;
-    return matchesQuery && matchesFilter;
-  });
+  useEffect(() => {
+    void loadData();
+  }, [loadData]);
+
+  const filteredCases = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    const all = category === "all" || category === "cases" ? cases : [];
+    if (!q) return all;
+    return all.filter(c =>
+      `${c.patient.firstName} ${c.patient.lastName}`.toLowerCase().includes(q) ||
+      (c.chiefComplaint ?? "").toLowerCase().includes(q) ||
+      c.status.includes(q) ||
+      c.id.toLowerCase().includes(q),
+    );
+  }, [cases, query, category]);
+
+  const filteredPatients = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    const all = category === "all" || category === "patients" ? patients : [];
+    if (!q) return all;
+    return all.filter(p =>
+      `${p.firstName} ${p.lastName}`.toLowerCase().includes(q),
+    );
+  }, [patients, query, category]);
+
+  const totalResults = filteredCases.length + filteredPatients.length;
+  const hasQuery = query.trim().length > 0;
 
   return (
-    <div className="space-y-6 text-xs">
-      
-      {/* Search Input Box */}
-      <div className="bg-card border border-border rounded-2xl p-6 shadow-sm space-y-4">
-        <div>
-          <h3 className="font-extrabold text-base flex items-center gap-2 text-primary">
-            <Search size={20} className="text-teal-400" />
-            Global Enterprise Search
-          </h3>
-          <p className="text-secondary text-[11px] mt-0.5">Locate patients, cases, STLs, messages, printing runs, or documentation across your clinic.</p>
-        </div>
-
-        <div className="flex flex-col sm:flex-row gap-3">
-          <div className="relative flex-1">
-            <Search size={14} className="absolute left-3 top-2.5 text-secondary" />
-            <input
-              type="text"
-              placeholder="Search patients, files, orders..."
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              className="w-full pl-9 pr-4 py-1.5 bg-slate-950/40 border border-border rounded-lg focus:outline-none focus:ring-1 focus:ring-teal-500"
-            />
-          </div>
-
-          <label className="flex items-center gap-2 px-3 py-1.5 bg-slate-900 border border-border rounded-lg cursor-pointer">
-            <input
-              type="checkbox"
-              checked={useSemantic}
-              onChange={(e) => setUseSemantic(e.target.checked)}
-              className="accent-teal-500 rounded"
-            />
-            <span className="font-semibold text-secondary flex items-center gap-1">
-              <Sparkles size={12} className="text-teal-400" /> AI Semantic Match
-            </span>
-          </label>
-        </div>
-
-        {/* Filter categories */}
-        <div className="flex flex-wrap gap-1.5 border-t border-border pt-3">
-          {["all", "patient", "case", "file", "message", "job"].map((cat) => (
+    <div className="space-y-4">
+      {/* Search input */}
+      <div className="relative">
+        <Search
+          size={16}
+          className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-secondary"
+          aria-hidden
+        />
+        <input
+          ref={inputRef}
+          type="text"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="Search patients, cases, IDs…"
+          className="h-11 w-full rounded-xl border border-border bg-card pl-10 pr-10 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
+          aria-label="Global search"
+          autoComplete="off"
+        />
+        <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-2">
+          {loading && <Spinner size={14} />}
+          {query && !loading && (
             <button
-              key={cat}
-              onClick={() => setFilter(cat)}
-              className={`px-3 py-1 rounded-md font-bold uppercase text-[9px] border transition-all ${
-                filter === cat 
-                  ? "bg-primary border-primary text-white" 
-                  : "bg-slate-950/20 border-border text-secondary hover:text-foreground"
-              }`}
+              onClick={() => setQuery("")}
+              aria-label="Clear"
+              className="text-secondary hover:text-foreground"
             >
-              {cat}
+              <X size={14} />
             </button>
-          ))}
-        </div>
-      </div>
-
-      {/* Search results list */}
-      <div className="bg-card border border-border rounded-2xl p-6 shadow-sm space-y-4 min-h-[300px]">
-        <h4 className="font-bold text-xs text-primary">Search Results</h4>
-        
-        <div className="space-y-3">
-          {filteredResults.map((res) => (
-            <div key={res.id} className="border border-border/80 rounded-xl p-4 bg-slate-900/10 flex justify-between items-center hover:bg-slate-900/20 transition-all cursor-pointer">
-              <div className="flex gap-3 items-center">
-                <div className="p-2 bg-slate-950/40 border border-border/80 rounded-lg text-teal-400">
-                  {res.category === "patient" && <Users size={16} />}
-                  {res.category === "case" && <ClipboardList size={16} />}
-                  {res.category === "file" && <FileCode size={16} />}
-                  {res.category === "message" && <MessageSquare size={16} />}
-                  {res.category === "job" && <Printer size={16} />}
-                </div>
-                <div>
-                  <span className="font-bold text-primary block">{res.title}</span>
-                  <span className="text-[10px] text-slate-400 block mt-0.5">{res.subtitle}</span>
-                </div>
-              </div>
-
-              {useSemantic && res.score && (
-                <div className="text-right">
-                  <span className="text-[9px] uppercase font-bold text-secondary block">AI Score</span>
-                  <span className="text-teal-400 font-extrabold block mt-0.5">{(res.score * 100).toFixed(0)}%</span>
-                </div>
-              )}
-            </div>
-          ))}
-
-          {filteredResults.length === 0 && (
-            <div className="text-center py-12 text-slate-400">
-              No records found. Add patients and cases to enable search.
-            </div>
           )}
         </div>
       </div>
 
+      {/* Category filter */}
+      <div className="flex gap-1.5">
+        {CATEGORIES.map((cat) => (
+          <button
+            key={cat.key}
+            onClick={() => setCategory(cat.key)}
+            className={[
+              "rounded-full px-3 py-1 text-xs font-semibold transition-all",
+              category === cat.key
+                ? "bg-primary text-primary-foreground"
+                : "border border-border bg-card text-secondary hover:text-foreground",
+            ].join(" ")}
+          >
+            {cat.label}
+          </button>
+        ))}
+      </div>
+
+      {/* Results */}
+      <div className="space-y-1 rounded-xl border border-border bg-card overflow-hidden">
+        {!hasQuery && !loading && (
+          <p className="px-4 py-6 text-center text-sm text-secondary">
+            Type to search patients and cases across your clinic.
+          </p>
+        )}
+
+        {hasQuery && totalResults === 0 && !loading && (
+          <div className="flex flex-col items-center gap-2 py-10 text-sm text-secondary">
+            <Search size={22} className="opacity-30" aria-hidden />
+            <span>No results for &ldquo;{query}&rdquo;</span>
+          </div>
+        )}
+
+        {/* Patient results */}
+        {filteredPatients.length > 0 && (
+          <div>
+            <p className="px-4 py-2 text-[10px] font-black uppercase tracking-[0.18em] text-muted-foreground border-b border-border">
+              Patients
+            </p>
+            {filteredPatients.map((p) => (
+              <Link
+                key={p.id}
+                href={`/patients/${p.id}`}
+                className="flex items-center gap-3 px-4 py-3 hover:bg-slate-100 dark:hover:bg-slate-900 transition-colors"
+              >
+                <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs font-bold text-primary">
+                  {p.firstName[0]}{p.lastName[0]}
+                </span>
+                <div className="min-w-0 flex-1">
+                  <span className="block truncate text-sm font-medium text-foreground">
+                    {p.firstName} {p.lastName}
+                  </span>
+                  <span className="block text-xs text-secondary">
+                    {p.caseCount} case{p.caseCount !== 1 ? "s" : ""}
+                  </span>
+                </div>
+                <Users size={14} className="shrink-0 text-secondary" aria-hidden />
+              </Link>
+            ))}
+          </div>
+        )}
+
+        {/* Case results */}
+        {filteredCases.length > 0 && (
+          <div>
+            <p className="px-4 py-2 text-[10px] font-black uppercase tracking-[0.18em] text-muted-foreground border-b border-border">
+              Cases
+            </p>
+            {filteredCases.map((c) => (
+              <Link
+                key={c.id}
+                href={`/cases/${c.id}`}
+                className="flex items-center gap-3 px-4 py-3 hover:bg-slate-100 dark:hover:bg-slate-900 transition-colors"
+              >
+                <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs font-bold text-primary">
+                  {c.patient.firstName[0]}{c.patient.lastName[0]}
+                </span>
+                <div className="min-w-0 flex-1">
+                  <span className="block truncate text-sm font-medium text-foreground">
+                    {c.patient.firstName} {c.patient.lastName}
+                  </span>
+                  <span className="block truncate text-xs text-secondary">
+                    {c.chiefComplaint ?? c.malocclusionClass ?? c.status}
+                  </span>
+                </div>
+                <StatusBadge tone={statusTone(c.status)}>
+                  {c.status.replace(/_/g, " ")}
+                </StatusBadge>
+                <ClipboardList size={14} className="shrink-0 text-secondary" aria-hidden />
+              </Link>
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   );
 }

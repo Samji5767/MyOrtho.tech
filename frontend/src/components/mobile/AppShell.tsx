@@ -2,12 +2,40 @@
 
 import type { ReactNode } from "react";
 import { useState, useEffect, useCallback, useRef } from "react";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { TopBar } from "./TopBar";
 import { TabBar, SidebarNav } from "./TabBar";
 import { AuthGate } from "@/components/AuthGate";
+import { CommandPalette } from "@/components/CommandPalette";
 import { isIOS, isNative } from "@/lib/capacitor/platform";
 import { hapticLight } from "@/lib/capacitor/haptics";
+
+// ─── Keyboard navigation shortcuts (H/P/W/S/C) ───────────────────────────────
+// Only fire when no input, textarea, or select element has focus.
+
+const NAV_SHORTCUTS: Record<string, string> = {
+  h: "/",
+  p: "/patients",
+  w: "/studio",
+  s: "/settings",
+  c: "/cases",
+};
+
+function useGlobalNavShortcuts() {
+  const router = useRouter();
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+      const tag = (document.activeElement?.tagName ?? "").toLowerCase();
+      if (["input", "textarea", "select", "[contenteditable]"].includes(tag)) return;
+      if (document.activeElement?.hasAttribute("contenteditable")) return;
+      const target = NAV_SHORTCUTS[e.key.toLowerCase()];
+      if (target) router.push(target);
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [router]);
+}
 
 // Public routes that bypass auth gate and suppress chrome (nav/top bar)
 const PUBLIC_PATHS = ["/login", "/onboarding"];
@@ -139,9 +167,10 @@ function useIsIPad(): boolean {
 export function AppShell({ children }: { children: ReactNode }) {
   const isIPad = useIsIPad();
   const pathname = usePathname() ?? '/';
+  useGlobalNavShortcuts();
 
   const openSearch = useCallback(() => {
-    window.dispatchEvent(new CustomEvent("open-global-search"));
+    window.dispatchEvent(new CustomEvent("open-command-palette"));
   }, []);
 
   const handleRefresh = useCallback(async () => {
@@ -178,6 +207,7 @@ export function AppShell({ children }: { children: ReactNode }) {
             <main>{children}</main>
           </AuthGate>
         </div>
+        <CommandPalette />
       </div>
     );
   }
@@ -195,6 +225,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         <main className="app-shell-content">{children}</main>
       </AuthGate>
       <TabBar />
+      <CommandPalette />
     </div>
   );
 }

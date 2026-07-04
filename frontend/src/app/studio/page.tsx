@@ -160,7 +160,7 @@ function ImportTab({ caseData }: { caseData: CaseDetail | null }) {
             <div>
               <p className="text-sm font-semibold text-[color:var(--foreground)]">Drop STL, OBJ, or PLY</p>
               <p className="mt-1 text-xs text-[color:var(--muted-foreground)]">
-                Max 50 MB · Full arch or individual teeth
+                Max 500 MB · Full arch or individual teeth
               </p>
             </div>
             <Link

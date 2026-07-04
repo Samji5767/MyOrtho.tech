@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { fetchCases, type CaseListItem } from "@/lib/api/cases";
 import {
@@ -11,7 +11,9 @@ import {
   Clock,
   FolderKanban,
   Plus,
+  Search,
   UploadCloud,
+  X,
 } from "lucide-react";
 import { Button, Card, ProgressBar, StatusBadge } from "@/components/DesignSystem";
 
@@ -220,6 +222,7 @@ function LiveCaseRow({ c }: { c: CaseListItem }) {
 export default function CasesPage() {
   const [previewMode, setPreviewMode] = useState(true);
   const [filter, setFilter] = useState<FilterKey>("all");
+  const [searchQuery, setSearchQuery] = useState("");
 
   // Live data (fetched when preview mode is off)
   const [apiCases, setApiCases] = useState<CaseListItem[]>([]);
@@ -234,7 +237,30 @@ export default function CasesPage() {
   }, [previewMode]);
 
   const cases = previewMode ? DEMO_CASES : [];
-  const visible = filterCases(cases, filter);
+
+  const filteredBySearch = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    if (!q) return cases;
+    return cases.filter(c =>
+      c.patient.toLowerCase().includes(q) ||
+      c.type.toLowerCase().includes(q) ||
+      c.doctor.toLowerCase().includes(q) ||
+      c.id.toLowerCase().includes(q),
+    );
+  }, [cases, searchQuery]);
+
+  const filteredApiCases = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    if (!q) return apiCases;
+    return apiCases.filter(c =>
+      `${c.patient.firstName} ${c.patient.lastName}`.toLowerCase().includes(q) ||
+      (c.chiefComplaint ?? "").toLowerCase().includes(q) ||
+      (c.malocclusionClass ?? "").toLowerCase().includes(q) ||
+      c.id.toLowerCase().includes(q),
+    );
+  }, [apiCases, searchQuery]);
+
+  const visible = filterCases(filteredBySearch, filter);
 
   const slaCount   = cases.filter(c => c.slaRisk).length;
   const reviewCount = cases.filter(c => c.status === "clinical_review" || c.status === "scan_review").length;
@@ -316,6 +342,27 @@ export default function CasesPage() {
           </span>
           <StatusBadge tone="danger">SLA risk</StatusBadge>
         </Card>
+      </div>
+
+      {/* Search input */}
+      <div className="relative">
+        <Search size={15} className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-[color:var(--muted-foreground)]" aria-hidden />
+        <input
+          type="text"
+          value={searchQuery}
+          onChange={e => setSearchQuery(e.target.value)}
+          placeholder="Search cases, patients, doctors…"
+          className="h-10 w-full rounded-xl border border-[color:var(--border)] bg-[color:var(--card)] pl-9 pr-9 text-sm text-[color:var(--foreground)] placeholder:text-[color:var(--muted-foreground)] transition focus:outline-none focus:ring-2 focus:ring-[color:var(--primary)]/30"
+        />
+        {searchQuery && (
+          <button
+            onClick={() => setSearchQuery("")}
+            aria-label="Clear search"
+            className="absolute right-3 top-1/2 -translate-y-1/2 text-[color:var(--muted-foreground)] hover:text-[color:var(--foreground)]"
+          >
+            <X size={14} />
+          </button>
+        )}
       </div>
 
       {/* Content */}
@@ -403,7 +450,14 @@ export default function CasesPage() {
             </div>
           ) : (
             <div className="divide-y divide-[color:var(--border)]">
-              {apiCases.map(c => <LiveCaseRow key={c.id} c={c} />)}
+              {filteredApiCases.length === 0 ? (
+                <div className="flex flex-col items-center gap-2 py-10 text-center">
+                  <Search size={20} className="text-[color:var(--muted-foreground)]" />
+                  <p className="text-sm text-[color:var(--muted-foreground)]">No cases match &ldquo;{searchQuery}&rdquo;</p>
+                </div>
+              ) : (
+                filteredApiCases.map(c => <LiveCaseRow key={c.id} c={c} />)
+              )}
             </div>
           )}
         </Card>

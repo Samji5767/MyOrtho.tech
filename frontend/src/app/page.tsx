@@ -39,8 +39,8 @@ const PIPELINE: PipelineStep[] = [
   { n: 2, label: "AI Segment",     sub: "Tooth detection & labelling", icon: Target,   href: "/studio",         color: "bg-violet-500/10 text-violet-600 dark:text-violet-400" },
   { n: 3, label: "CAD Design",     sub: "Aligner & attachment design", icon: Box,      href: "/studio",         color: "bg-indigo-500/10 text-indigo-600 dark:text-indigo-400" },
   { n: 4, label: "Treatment Plan", sub: "Movement sequencing & IPR",   icon: Wand2,    href: "/treatment-plan", color: "bg-teal-500/10 text-teal-600 dark:text-teal-400" },
-  { n: 5, label: "Export & Print",  sub: "STL, 3MF, OBJ for any printer", icon: Download, href: "/cases",       color: "bg-amber-500/10 text-amber-600 dark:text-amber-400" },
-  { n: 6, label: "Delivery",       sub: "Ship to clinic",              icon: Package,  href: "/cases",          color: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400" },
+  { n: 5, label: "Export & Print",  sub: "STL, 3MF, OBJ for any printer", icon: Download, href: "/export",      color: "bg-amber-500/10 text-amber-600 dark:text-amber-400" },
+  { n: 6, label: "Delivery",       sub: "Ship to clinic",              icon: Package,  href: "/export",         color: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400" },
 ];
 
 // ─── Quick-access shortcuts ───────────────────────────────────────────────────
@@ -52,7 +52,7 @@ const SHORTCUTS: Shortcut[] = [
   { label: "Patients",           sub: "Patient records",              icon: Users,        href: "/patients" },
   { label: "CAD Design Studio",  sub: "3D aligner & CAD workspace",   icon: Box,          href: "/studio" },
   { label: "AI Copilot",         sub: "Treatment proposal & review",  icon: Brain,        href: "/studio" },
-  { label: "Export & Downloads", sub: "Printer-ready file exports",   icon: Download,     href: "/cases" },
+  { label: "Export & Downloads", sub: "Printer-ready file exports",   icon: Download,     href: "/export" },
   { label: "Settings",           sub: "Preferences & admin",          icon: Settings,     href: "/settings" },
 ];
 

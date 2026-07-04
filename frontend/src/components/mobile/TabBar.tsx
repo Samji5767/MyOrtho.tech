@@ -131,7 +131,7 @@ const SIDEBAR_GROUPS: SidebarGroup[] = [
   {
     label: 'Export',
     items: [
-      { href: '/cases', label: 'Export & Downloads', icon: Download },
+      { href: '/export', label: 'Export & Downloads', icon: Download },
     ],
   },
   {

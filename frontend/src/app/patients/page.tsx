@@ -16,7 +16,7 @@ import {
 } from "lucide-react";
 import NativeSheet from "@/components/NativeSheet";
 import { Button, Card, StatusBadge } from "@/components/DesignSystem";
-import { api } from "@/lib/api/client";
+import { fetchPatients } from "@/lib/api/patients";
 
 interface Patient {
   id: string;
@@ -36,8 +36,8 @@ export default function PatientsPage() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    api.get<Patient[]>('/api/patients')
-      .then(setPatients)
+    fetchPatients()
+      .then(({ patients: data }) => setPatients(data as Patient[]))
       .catch((e: Error) => setError(e?.message ?? 'Failed to load patients'))
       .finally(() => setLoading(false));
   }, []);

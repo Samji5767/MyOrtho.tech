@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useEffect, useRef } from "react";
 import { LucideIcon } from "lucide-react";
 import { clsx } from "clsx";
 
@@ -192,5 +192,290 @@ export function Spinner({ size = 16, className }: { size?: number; className?: s
       <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
       <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
     </svg>
+  );
+}
+
+// ─── Input ────────────────────────────────────────────────────────────────────
+
+export function Input({
+  label,
+  error,
+  hint,
+  icon: Icon,
+  className,
+  ...props
+}: React.InputHTMLAttributes<HTMLInputElement> & {
+  label?: string;
+  error?: string;
+  hint?: string;
+  icon?: LucideIcon;
+}) {
+  const id = useRef(`input-${Math.random().toString(36).slice(2)}`);
+  return (
+    <div className={clsx("flex flex-col gap-1.5", className)}>
+      {label && (
+        <label htmlFor={id.current} className="text-xs font-semibold text-foreground">
+          {label}
+        </label>
+      )}
+      <div className="relative">
+        {Icon && (
+          <Icon
+            size={15}
+            className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-secondary"
+            aria-hidden
+          />
+        )}
+        <input
+          id={id.current}
+          className={clsx(
+            "h-10 w-full rounded-lg border bg-card px-3 text-sm text-foreground placeholder:text-muted-foreground transition focus:outline-none focus:ring-2",
+            Icon && "pl-9",
+            error
+              ? "border-rose-500 focus:ring-rose-500/30"
+              : "border-border focus:ring-primary/30",
+          )}
+          aria-invalid={!!error}
+          aria-describedby={error ? `${id.current}-err` : hint ? `${id.current}-hint` : undefined}
+          {...props}
+        />
+      </div>
+      {error && (
+        <p id={`${id.current}-err`} className="text-xs text-rose-600 dark:text-rose-400">
+          {error}
+        </p>
+      )}
+      {!error && hint && (
+        <p id={`${id.current}-hint`} className="text-xs text-secondary">
+          {hint}
+        </p>
+      )}
+    </div>
+  );
+}
+
+// ─── Select ───────────────────────────────────────────────────────────────────
+
+export function Select({
+  label,
+  error,
+  className,
+  children,
+  ...props
+}: React.SelectHTMLAttributes<HTMLSelectElement> & {
+  label?: string;
+  error?: string;
+}) {
+  const id = useRef(`select-${Math.random().toString(36).slice(2)}`);
+  return (
+    <div className={clsx("flex flex-col gap-1.5", className)}>
+      {label && (
+        <label htmlFor={id.current} className="text-xs font-semibold text-foreground">
+          {label}
+        </label>
+      )}
+      <select
+        id={id.current}
+        className={clsx(
+          "h-10 w-full rounded-lg border bg-card px-3 text-sm text-foreground transition focus:outline-none focus:ring-2 appearance-none",
+          error
+            ? "border-rose-500 focus:ring-rose-500/30"
+            : "border-border focus:ring-primary/30",
+        )}
+        aria-invalid={!!error}
+        {...props}
+      >
+        {children}
+      </select>
+      {error && (
+        <p className="text-xs text-rose-600 dark:text-rose-400">{error}</p>
+      )}
+    </div>
+  );
+}
+
+// ─── Modal ────────────────────────────────────────────────────────────────────
+
+export function Modal({
+  open,
+  onClose,
+  title,
+  children,
+  footer,
+  size = "md",
+}: {
+  open: boolean;
+  onClose: () => void;
+  title?: string;
+  children: React.ReactNode;
+  footer?: React.ReactNode;
+  size?: "sm" | "md" | "lg";
+}) {
+  const overlayRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const prev = document.activeElement as HTMLElement | null;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    document.addEventListener("keydown", onKey);
+    overlayRef.current?.focus();
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      prev?.focus();
+    };
+  }, [open, onClose]);
+
+  if (!open) return null;
+
+  const sizeClass = {
+    sm: "max-w-sm",
+    md: "max-w-lg",
+    lg: "max-w-2xl",
+  }[size];
+
+  return (
+    <div
+      ref={overlayRef}
+      tabIndex={-1}
+      className="fixed inset-0 z-[9998] flex items-center justify-center px-4"
+      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
+      role="dialog"
+      aria-modal="true"
+      aria-label={title}
+    >
+      <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" />
+      <div
+        className={clsx(
+          "relative w-full animate-scale-in overflow-hidden rounded-2xl border border-border bg-card shadow-2xl",
+          sizeClass,
+        )}
+      >
+        {title && (
+          <div className="flex items-center justify-between border-b border-border px-5 py-4">
+            <h2 className="text-base font-semibold text-foreground">{title}</h2>
+            <button
+              onClick={onClose}
+              aria-label="Close"
+              className="rounded-md p-1 text-secondary transition hover:bg-slate-100 hover:text-foreground dark:hover:bg-slate-800"
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" aria-hidden>
+                <path d="M18 6L6 18M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+        )}
+        <div className="px-5 py-4">{children}</div>
+        {footer && (
+          <div className="flex justify-end gap-2 border-t border-border px-5 py-3">
+            {footer}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ─── Tabs ─────────────────────────────────────────────────────────────────────
+
+export function Tabs({
+  tabs,
+  activeTab,
+  onTabChange,
+  className,
+}: {
+  tabs: { key: string; label: string; icon?: LucideIcon }[];
+  activeTab: string;
+  onTabChange: (key: string) => void;
+  className?: string;
+}) {
+  const listRef = useRef<HTMLDivElement>(null);
+
+  const handleKeyDown = (e: React.KeyboardEvent, key: string) => {
+    const keys = tabs.map((t) => t.key);
+    const idx = keys.indexOf(key);
+    if (e.key === "ArrowRight") {
+      e.preventDefault();
+      onTabChange(keys[(idx + 1) % keys.length]);
+    } else if (e.key === "ArrowLeft") {
+      e.preventDefault();
+      onTabChange(keys[(idx - 1 + keys.length) % keys.length]);
+    }
+  };
+
+  return (
+    <div
+      ref={listRef}
+      role="tablist"
+      className={clsx(
+        "flex gap-0.5 rounded-xl border border-border bg-slate-100/80 p-1 dark:bg-slate-900/80",
+        className,
+      )}
+    >
+      {tabs.map((tab) => {
+        const isActive = tab.key === activeTab;
+        const Icon = tab.icon;
+        return (
+          <button
+            key={tab.key}
+            role="tab"
+            aria-selected={isActive}
+            onClick={() => onTabChange(tab.key)}
+            onKeyDown={(e) => handleKeyDown(e, tab.key)}
+            tabIndex={isActive ? 0 : -1}
+            className={clsx(
+              "flex flex-1 items-center justify-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition-all",
+              isActive
+                ? "bg-card text-foreground shadow-sm"
+                : "text-secondary hover:text-foreground",
+            )}
+          >
+            {Icon && <Icon size={13} aria-hidden />}
+            {tab.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+// ─── AlertBanner ──────────────────────────────────────────────────────────────
+
+export function AlertBanner({
+  tone = "info",
+  title,
+  children,
+  onDismiss,
+}: {
+  tone?: Tone;
+  title?: string;
+  children: React.ReactNode;
+  onDismiss?: () => void;
+}) {
+  return (
+    <div
+      role="alert"
+      className={clsx(
+        "flex items-start gap-3 rounded-xl border px-4 py-3 text-sm",
+        toneClass[tone],
+      )}
+    >
+      <div className="flex-1">
+        {title && <p className="font-semibold">{title}</p>}
+        <p className={clsx("leading-relaxed", title && "mt-0.5 text-xs")}>{children}</p>
+      </div>
+      {onDismiss && (
+        <button
+          onClick={onDismiss}
+          aria-label="Dismiss"
+          className="shrink-0 opacity-60 hover:opacity-100"
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" aria-hidden>
+            <path d="M18 6L6 18M6 6l12 12" />
+          </svg>
+        </button>
+      )}
+    </div>
   );
 }

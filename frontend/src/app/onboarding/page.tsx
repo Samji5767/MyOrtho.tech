@@ -327,6 +327,8 @@ export default function OnboardingPage() {
                 <label className="text-xs font-semibold text-[color:var(--foreground)]">Organization name</label>
                 <input
                   type="text"
+                  autoComplete="organization"
+                  maxLength={120}
                   value={orgName}
                   onChange={e => setOrgName(e.target.value)}
                   placeholder="e.g. Bright Smiles Orthodontics"

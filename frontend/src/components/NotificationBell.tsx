@@ -142,7 +142,7 @@ export default function NotificationBell() {
                   <button
                     aria-label="Dismiss notification"
                     onClick={(e) => { e.stopPropagation(); handleDismiss(n.id); }}
-                    className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-foreground transition-opacity shrink-0 mt-0.5"
+                    className="text-muted-foreground hover:text-foreground transition-opacity shrink-0 mt-0.5 sm:opacity-0 sm:group-hover:opacity-100"
                   >
                     <X size={12} />
                   </button>

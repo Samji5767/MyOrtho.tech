@@ -49,11 +49,15 @@ export default function ClinicalAlertsPanel({ caseId }: Props) {
   };
 
   const acknowledge = async (id: string) => {
-    await fetch(`/api/cds/alerts/${id}/acknowledge`, {
-      method: 'PATCH',
-      credentials: "include",
-    });
-    await load();
+    try {
+      await fetch(`/api/cds/alerts/${id}/acknowledge`, {
+        method: 'PATCH',
+        credentials: "include",
+      });
+      await load();
+    } catch (e) {
+      console.error("[ClinicalAlertsPanel] acknowledge failed:", e);
+    }
   };
 
   const active = alerts.filter(a => !a.isAcknowledged);

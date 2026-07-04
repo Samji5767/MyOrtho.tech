@@ -444,6 +444,9 @@ export default function NewCaseWizard() {
                 <div className="relative">
                   <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-[color:var(--muted-foreground)]" />
                   <input
+                    type="search"
+                    inputMode="search"
+                    autoComplete="off"
                     className={INPUT + " pl-8"}
                     placeholder="Search by name…"
                     value={search}
@@ -503,6 +506,10 @@ export default function NewCaseWizard() {
                 <div className="grid gap-3 sm:grid-cols-2">
                   <Field label="First name" required>
                     <input
+                      type="text"
+                      autoCapitalize="words"
+                      autoComplete="given-name"
+                      maxLength={80}
                       className={INPUT}
                       placeholder="Jane"
                       value={newPatient.firstName}
@@ -511,6 +518,10 @@ export default function NewCaseWizard() {
                   </Field>
                   <Field label="Last name" required>
                     <input
+                      type="text"
+                      autoCapitalize="words"
+                      autoComplete="family-name"
+                      maxLength={80}
                       className={INPUT}
                       placeholder="Smith"
                       value={newPatient.lastName}

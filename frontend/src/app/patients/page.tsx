@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertCircle,
   ArrowUpDown,
@@ -74,6 +74,21 @@ export default function PatientsPage() {
   const [patients, setPatients] = useState<Patient[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const searchRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === "/" && document.activeElement !== searchRef.current) {
+        e.preventDefault();
+        searchRef.current?.focus();
+      } else if (e.key === "Escape" && document.activeElement === searchRef.current) {
+        setQuery("");
+        searchRef.current?.blur();
+      }
+    };
+    document.addEventListener("keydown", handler);
+    return () => document.removeEventListener("keydown", handler);
+  }, []);
 
   useEffect(() => {
     fetchPatients()
@@ -144,10 +159,12 @@ export default function PatientsPage() {
               aria-hidden
             />
             <input
+              ref={searchRef}
               type="search"
-              placeholder="Search by name…"
+              placeholder="Search by name… ( / )"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
+              aria-label="Search patients"
               className="h-10 w-full rounded-xl border border-[color:var(--border)] bg-[color:var(--background)] pl-9 pr-8 text-sm text-[color:var(--foreground)] outline-none placeholder:text-[color:var(--muted-foreground)] focus:border-[color:var(--primary)] focus:ring-2 focus:ring-[color:var(--primary-glow)] transition-all"
             />
             {query && (

@@ -14,17 +14,17 @@ import {
 
 function scoreBar(score: number | null, label: string): JSX.Element {
   const pct = score != null ? Math.min(score * 100, 100) : 0;
-  const color = pct >= 80 ? 'bg-green-500' : pct >= 60 ? 'bg-amber-400' : 'bg-red-500';
+  const barColor = pct >= 80 ? 'var(--clinical-safe)' : pct >= 60 ? 'var(--clinical-warn)' : 'var(--clinical-danger)';
   return (
     <div className="space-y-0.5">
       <div className="flex justify-between text-xs">
-        <span className="text-gray-600">{label}</span>
-        <span className="font-mono font-medium">
+        <span className="text-[color:var(--muted-foreground)]">{label}</span>
+        <span className="font-mono font-medium text-[color:var(--foreground)]">
           {score != null ? `${(score * 100).toFixed(0)}%` : '—'}
         </span>
       </div>
-      <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
-        <div className={`h-full rounded-full ${color}`} style={{ width: `${pct}%` }} />
+      <div className="h-1.5 rounded-full overflow-hidden bg-[color:var(--clinical-track)]">
+        <div className="h-full rounded-full" style={{ width: `${pct}%`, backgroundColor: barColor }} />
       </div>
     </div>
   );
@@ -33,13 +33,16 @@ function scoreBar(score: number | null, label: string): JSX.Element {
 function metricDelta(label: string, initial: number | null, final: number | null, unit: string): JSX.Element {
   const delta = initial != null && final != null ? final - initial : null;
   return (
-    <div className="text-xs">
-      <span className="text-gray-500">{label}: </span>
-      <span className="font-mono">{initial?.toFixed(1) ?? '—'}{unit}</span>
-      <span className="text-gray-400 mx-1">→</span>
-      <span className="font-mono font-semibold">{final?.toFixed(1) ?? '—'}{unit}</span>
+    <div className="text-xs text-[color:var(--muted-foreground)]">
+      <span>{label}: </span>
+      <span className="font-mono text-[color:var(--foreground)]">{initial?.toFixed(1) ?? '—'}{unit}</span>
+      <span className="mx-1">→</span>
+      <span className="font-mono font-semibold text-[color:var(--foreground)]">{final?.toFixed(1) ?? '—'}{unit}</span>
       {delta != null && (
-        <span className={`ml-1 ${delta < 0 ? 'text-green-700' : delta > 0 ? 'text-amber-700' : 'text-gray-500'}`}>
+        <span
+          className="ml-1 font-mono"
+          style={{ color: delta < 0 ? 'var(--clinical-safe)' : delta > 0 ? 'var(--clinical-warn)' : 'var(--muted-foreground)' }}
+        >
           ({delta > 0 ? '+' : ''}{delta.toFixed(1)}{unit})
         </span>
       )}
@@ -76,19 +79,19 @@ function ToothGrid({ frame }: { frame: SimulationFrame }) {
                 key={fdi}
                 title={pos ? `FDI ${fdi}: tx${pos.tx.toFixed(2)} ty${pos.ty.toFixed(2)} rx${pos.rx.toFixed(1)}°` : `FDI ${fdi}`}
                 style={{ backgroundColor: toothColor(mag) }}
-                className="flex-1 aspect-square rounded-sm border border-gray-300 text-center leading-none"
+                className="flex-1 aspect-square rounded-sm border border-[color:var(--border)] text-center leading-none"
               >
-                <span className="text-[7px] text-gray-600 font-mono">{fdi}</span>
+                <span className="text-[7px] text-[color:var(--muted-foreground)] font-mono">{fdi}</span>
               </div>
             );
           })}
         </div>
       ))}
-      <div className="flex items-center gap-3 text-xs text-gray-500 mt-1">
-        <span className="flex items-center gap-1"><span className="inline-block w-3 h-3 rounded-sm bg-gray-200 border border-gray-300" /> Minimal</span>
-        <span className="flex items-center gap-1"><span className="inline-block w-3 h-3 rounded-sm bg-green-200 border border-gray-300" /> Light</span>
-        <span className="flex items-center gap-1"><span className="inline-block w-3 h-3 rounded-sm bg-amber-200 border border-gray-300" /> Moderate</span>
-        <span className="flex items-center gap-1"><span className="inline-block w-3 h-3 rounded-sm bg-red-200 border border-gray-300" /> Significant</span>
+      <div className="flex flex-wrap items-center gap-3 text-xs text-[color:var(--muted-foreground)] mt-1">
+        <span className="flex items-center gap-1"><span className="inline-block w-3 h-3 rounded-sm border border-[color:var(--border)]" style={{ backgroundColor: 'var(--clinical-neutral-tint)' }} /> Minimal</span>
+        <span className="flex items-center gap-1"><span className="inline-block w-3 h-3 rounded-sm border border-[color:var(--border)]" style={{ backgroundColor: 'var(--clinical-safe-tint)' }} /> Light</span>
+        <span className="flex items-center gap-1"><span className="inline-block w-3 h-3 rounded-sm border border-[color:var(--border)]" style={{ backgroundColor: 'var(--clinical-warn-tint)' }} /> Moderate</span>
+        <span className="flex items-center gap-1"><span className="inline-block w-3 h-3 rounded-sm border border-[color:var(--border)]" style={{ backgroundColor: 'var(--clinical-danger-tint)' }} /> Significant</span>
       </div>
     </div>
   );
@@ -99,26 +102,24 @@ function ToothGrid({ frame }: { frame: SimulationFrame }) {
 function FrameMetrics({ frame }: { frame: SimulationFrame }) {
   return (
     <div className="grid grid-cols-2 gap-2 text-xs">
-      <div className="rounded border border-gray-200 p-2">
-        <div className="text-gray-500 mb-0.5">Upper Arch Width</div>
-        <div className="font-mono font-semibold">{frame.upperArchWidthMm?.toFixed(1) ?? '—'}mm</div>
-      </div>
-      <div className="rounded border border-gray-200 p-2">
-        <div className="text-gray-500 mb-0.5">Lower Arch Width</div>
-        <div className="font-mono font-semibold">{frame.lowerArchWidthMm?.toFixed(1) ?? '—'}mm</div>
-      </div>
-      <div className="rounded border border-gray-200 p-2">
-        <div className="text-gray-500 mb-0.5">Overjet</div>
-        <div className="font-mono font-semibold">{frame.overjetMm?.toFixed(2) ?? '—'}mm</div>
-      </div>
-      <div className="rounded border border-gray-200 p-2">
-        <div className="text-gray-500 mb-0.5">Overbite</div>
-        <div className="font-mono font-semibold">{frame.overbiteM?.toFixed(2) ?? '—'}mm</div>
-      </div>
+      {[
+        { label: 'Upper Arch Width', value: frame.upperArchWidthMm?.toFixed(1), unit: 'mm' },
+        { label: 'Lower Arch Width', value: frame.lowerArchWidthMm?.toFixed(1), unit: 'mm' },
+        { label: 'Overjet', value: frame.overjetMm?.toFixed(2), unit: 'mm' },
+        { label: 'Overbite', value: frame.overbiteM?.toFixed(2), unit: 'mm' },
+      ].map(({ label, value, unit }) => (
+        <div key={label} className="rounded border border-[color:var(--border)] bg-[color:var(--card)] p-2">
+          <div className="text-[color:var(--muted-foreground)] mb-0.5">{label}</div>
+          <div className="font-mono font-semibold text-[color:var(--foreground)]">{value ?? '—'}{value != null ? unit : ''}</div>
+        </div>
+      ))}
       {frame.midlineDeviationMm != null && (
-        <div className="col-span-2 rounded border border-gray-200 p-2">
-          <div className="text-gray-500 mb-0.5">Midline Deviation</div>
-          <div className={`font-mono font-semibold ${Math.abs(frame.midlineDeviationMm) > 0.5 ? 'text-amber-700' : 'text-green-700'}`}>
+        <div className="col-span-2 rounded border border-[color:var(--border)] bg-[color:var(--card)] p-2">
+          <div className="text-[color:var(--muted-foreground)] mb-0.5">Midline Deviation</div>
+          <div
+            className="font-mono font-semibold"
+            style={{ color: Math.abs(frame.midlineDeviationMm) > 0.5 ? 'var(--clinical-warn)' : 'var(--clinical-safe)' }}
+          >
             {frame.midlineDeviationMm.toFixed(3)}mm
           </div>
         </div>
@@ -197,27 +198,55 @@ export default function TreatmentSimulationPlayer({ caseId, planId }: Props) {
     await loadFrame(s);
   }, [loadFrame]);
 
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (!sim) return;
+      const target = e.target as HTMLElement;
+      if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT') return;
+      if (e.key === ' ') {
+        e.preventDefault();
+        setPlaying(p => !p);
+      } else if (e.key === 'ArrowLeft') {
+        e.preventDefault();
+        const prev = Math.max(1, stageRef.current - 1);
+        stageRef.current = prev;
+        setStage(prev);
+        void loadFrame(prev);
+      } else if (e.key === 'ArrowRight') {
+        e.preventDefault();
+        const next = Math.min(sim.totalFrames, stageRef.current + 1);
+        stageRef.current = next;
+        setStage(next);
+        void loadFrame(next);
+      }
+    };
+    document.addEventListener('keydown', handler);
+    return () => document.removeEventListener('keydown', handler);
+  }, [sim, loadFrame]);
+
   return (
-    <div className="rounded-lg border border-gray-200 bg-white shadow-sm">
+    <div className="rounded-lg border border-[color:var(--border)] bg-[color:var(--card)]" style={{ boxShadow: 'var(--shadow-sm)' }}>
       {/* Header */}
-      <div className="border-b border-gray-200 px-4 py-3 flex items-center justify-between">
+      <div className="border-b border-[color:var(--border)] px-4 py-3 flex items-center justify-between">
         <div>
-          <h2 className="text-sm font-semibold text-gray-900">Treatment Simulation Player</h2>
-          <p className="text-xs text-gray-500 mt-0.5">
+          <h2 className="text-sm font-semibold text-[color:var(--foreground)]">Treatment Simulation Player</h2>
+          <p className="text-xs text-[color:var(--muted-foreground)] mt-0.5">
             Linear interpolation simulation across all aligner stages
           </p>
         </div>
         <button
+          type="button"
           onClick={runGenerate}
           disabled={loading}
-          className="px-3 py-1.5 text-xs bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50"
+          className="px-3 py-1.5 text-xs rounded font-medium disabled:opacity-50 transition-colors"
+          style={{ backgroundColor: 'var(--primary)', color: 'var(--primary-foreground)' }}
         >
           {loading ? 'Generating…' : sim ? 'Re-Generate' : 'Generate Simulation'}
         </button>
       </div>
 
       {error && (
-        <div className="mx-4 mt-3 text-xs text-red-700 bg-red-50 rounded p-3 border border-red-200">
+        <div className="mx-4 mt-3 text-xs rounded p-3 border text-red-700 bg-red-50 border-red-200 dark:text-rose-400 dark:bg-rose-950/30 dark:border-rose-800/50">
           {error}
         </div>
       )}
@@ -231,7 +260,7 @@ export default function TreatmentSimulationPlayer({ caseId, planId }: Props) {
             {scoreBar(sim.smileArcScore, 'Smile Arc Score')}
           </div>
 
-          <div className="flex gap-4 flex-wrap text-xs text-gray-600 pt-1">
+          <div className="flex gap-4 flex-wrap text-xs text-[color:var(--muted-foreground)] pt-1">
             {metricDelta('Overjet', sim.overjetInitialMm, sim.overjetFinalMm, 'mm')}
             {metricDelta('Overbite', sim.overbiteInitialMm, sim.overbiteFinalmm, 'mm')}
             <span className="text-gray-400">
@@ -244,14 +273,27 @@ export default function TreatmentSimulationPlayer({ caseId, planId }: Props) {
       {/* Stage slider + playback */}
       {sim && (
         <div className="px-4 pb-3 space-y-2">
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2">
             <button
+              type="button"
               onClick={() => setPlaying(p => !p)}
-              className={`px-3 py-1 text-xs rounded font-medium ${
-                playing ? 'bg-amber-100 text-amber-800 border border-amber-300' : 'bg-green-100 text-green-800 border border-green-300'
-              }`}
+              aria-label={playing ? 'Pause simulation' : 'Play simulation'}
+              className="shrink-0 px-3 py-1 text-xs rounded font-medium border transition-colors"
+              style={playing
+                ? { backgroundColor: 'var(--clinical-warn-tint)', color: 'var(--clinical-warn)', borderColor: 'var(--clinical-warn)' }
+                : { backgroundColor: 'var(--clinical-safe-tint)', color: 'var(--clinical-safe)', borderColor: 'var(--clinical-safe)' }
+              }
             >
               {playing ? 'Pause' : 'Play'}
+            </button>
+            <button
+              type="button"
+              disabled={stage <= 1}
+              onClick={() => { const s = Math.max(1, stage - 1); stageRef.current = s; setStage(s); void loadFrame(s); }}
+              aria-label="Previous stage"
+              className="shrink-0 px-2 py-1 text-xs rounded border border-[color:var(--border)] bg-[color:var(--card)] text-[color:var(--muted-foreground)] hover:text-[color:var(--foreground)] disabled:opacity-40 transition-colors"
+            >
+              ‹
             </button>
             <input
               type="range"
@@ -259,17 +301,33 @@ export default function TreatmentSimulationPlayer({ caseId, planId }: Props) {
               max={sim.totalFrames}
               value={stage}
               onChange={handleSlider}
-              className="flex-1 accent-blue-600"
+              className="flex-1"
+              style={{ accentColor: 'var(--primary)' }}
             />
-            <span className="text-xs font-mono text-gray-700 w-16 text-right">
-              Stage {stage}/{sim.totalFrames}
+            <button
+              type="button"
+              disabled={stage >= sim.totalFrames}
+              onClick={() => { const s = Math.min(sim.totalFrames, stage + 1); stageRef.current = s; setStage(s); void loadFrame(s); }}
+              aria-label="Next stage"
+              className="shrink-0 px-2 py-1 text-xs rounded border border-[color:var(--border)] bg-[color:var(--card)] text-[color:var(--muted-foreground)] hover:text-[color:var(--foreground)] disabled:opacity-40 transition-colors"
+            >
+              ›
+            </button>
+            <span className="shrink-0 text-xs font-mono text-[color:var(--muted-foreground)] w-16 text-right tabular-nums">
+              {stage}/{sim.totalFrames}
             </span>
             {currentFrame?.isKeyframe && (
-              <span className="text-xs bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded border border-blue-200">
-                Keyframe
+              <span
+                className="shrink-0 text-xs px-1.5 py-0.5 rounded border"
+                style={{ backgroundColor: 'var(--primary-glow)', color: 'var(--primary)', borderColor: 'var(--primary-glow)' }}
+              >
+                Key
               </span>
             )}
           </div>
+          <p className="text-[10px] text-[color:var(--muted-foreground)]">
+            Space to play/pause · ‹ › to step · click to jump
+          </p>
         </div>
       )}
 
@@ -283,38 +341,41 @@ export default function TreatmentSimulationPlayer({ caseId, planId }: Props) {
 
       {/* Arch coordination */}
       {archCoord && (
-        <div className="border-t border-gray-200 px-4 py-3 space-y-1">
-          <p className="text-xs font-semibold text-gray-700">Arch Coordination</p>
+        <div className="border-t border-[color:var(--border)] px-4 py-3 space-y-1">
+          <p className="text-xs font-semibold text-[color:var(--foreground)]">Arch Coordination</p>
           <div className="grid grid-cols-3 gap-2 text-xs">
-            <div className="rounded border border-gray-200 p-2 text-center">
-              <div className="font-mono font-semibold">{archCoord.upperExpansionMm.toFixed(2)}mm</div>
-              <div className="text-gray-500">Upper Exp.</div>
+            <div className="rounded border border-[color:var(--border)] bg-[color:var(--card)] p-2 text-center">
+              <div className="font-mono font-semibold text-[color:var(--foreground)]">{archCoord.upperExpansionMm.toFixed(2)}mm</div>
+              <div className="text-[color:var(--muted-foreground)]">Upper Exp.</div>
             </div>
-            <div className="rounded border border-gray-200 p-2 text-center">
-              <div className="font-mono font-semibold">{archCoord.lowerExpansionMm.toFixed(2)}mm</div>
-              <div className="text-gray-500">Lower Exp.</div>
+            <div className="rounded border border-[color:var(--border)] bg-[color:var(--card)] p-2 text-center">
+              <div className="font-mono font-semibold text-[color:var(--foreground)]">{archCoord.lowerExpansionMm.toFixed(2)}mm</div>
+              <div className="text-[color:var(--muted-foreground)]">Lower Exp.</div>
             </div>
-            <div className="rounded border border-gray-200 p-2 text-center">
-              <div className={`font-mono font-semibold ${archCoord.imbalanceMm < 1 ? 'text-green-700' : archCoord.imbalanceMm < 2.5 ? 'text-amber-700' : 'text-red-700'}`}>
+            <div className="rounded border border-[color:var(--border)] bg-[color:var(--card)] p-2 text-center">
+              <div
+                className="font-mono font-semibold"
+                style={{ color: archCoord.imbalanceMm < 1 ? 'var(--clinical-safe)' : archCoord.imbalanceMm < 2.5 ? 'var(--clinical-warn)' : 'var(--clinical-danger)' }}
+              >
                 {archCoord.imbalanceMm.toFixed(2)}mm
               </div>
-              <div className="text-gray-500">Imbalance</div>
+              <div className="text-[color:var(--muted-foreground)]">Imbalance</div>
             </div>
           </div>
-          <p className="text-xs text-gray-600 italic">{archCoord.recommendation}</p>
+          <p className="text-xs text-[color:var(--muted-foreground)] italic">{archCoord.recommendation}</p>
         </div>
       )}
 
       {/* Empty state */}
       {!sim && !loading && (
-        <div className="px-4 pb-4 text-xs text-gray-500 italic">
-          Click "Generate Simulation" to build the stage-by-stage treatment animation from movement prescriptions.
+        <div className="px-4 pb-4 text-xs text-[color:var(--muted-foreground)] italic">
+          Click &quot;Generate Simulation&quot; to build the stage-by-stage treatment animation from movement prescriptions.
         </div>
       )}
 
       {/* Disclaimer */}
-      <div className="border-t border-gray-200 px-4 py-2">
-        <p className="text-xs text-amber-700">
+      <div className="border-t border-[color:var(--border)] px-4 py-2">
+        <p className="text-xs" style={{ color: 'var(--clinical-warn)' }}>
           Simulation uses linear interpolation for visualization only. Actual tooth movement may differ. Clinical assessment required before approving treatment export.
         </p>
       </div>

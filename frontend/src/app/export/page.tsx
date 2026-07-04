@@ -58,12 +58,32 @@ const FORMATS = [
     category: "3D Mesh",
   },
   {
+    id: "ply",
+    label: "PLY",
+    ext: ".ply",
+    desc: "Polygon mesh with color and normals",
+    icon: Layers,
+    tone: "info" as const,
+    requiresApproval: false,
+    category: "3D Mesh",
+  },
+  {
     id: "obj",
     label: "OBJ",
     ext: ".obj",
     desc: "Wavefront OBJ with material data",
     icon: Layers,
     tone: "info" as const,
+    requiresApproval: false,
+    category: "3D Mesh",
+  },
+  {
+    id: "off",
+    label: "OFF",
+    ext: ".off",
+    desc: "Object File Format for mesh interchange",
+    icon: Layers,
+    tone: "neutral" as const,
     requiresApproval: false,
     category: "3D Mesh",
   },
@@ -375,6 +395,90 @@ function ExportPanelWrapper({ caseId }: { caseId: string }) {
   return <ExportPackagePanel caseId={caseId} planId={planId} />;
 }
 
+// ─── Printer compatibility ────────────────────────────────────────────────────
+
+const PRINTER_COMPAT = [
+  { name: "3Shape Trios",        type: "Scanner",  formats: ["STL", "PLY", "OBJ"] },
+  { name: "Medit i700",          type: "Scanner",  formats: ["STL", "PLY", "OBJ"] },
+  { name: "iTero Element",       type: "Scanner",  formats: ["STL", "PLY"] },
+  { name: "Carestream CS 3600",  type: "Scanner",  formats: ["STL", "PLY"] },
+  { name: "Exocad DentalCAD",    type: "CAD",      formats: ["STL", "PLY", "OBJ", "OFF"] },
+  { name: "Dental Wings",        type: "CAD",      formats: ["STL", "OBJ", "3MF"] },
+  { name: "Maestro 3D",          type: "CAD",      formats: ["STL", "OBJ"] },
+  { name: "OnyxCeph",            type: "Planning", formats: ["STL", "OBJ"] },
+  { name: "uLab Systems",        type: "Planning", formats: ["STL"] },
+  { name: "ArchForm",            type: "Planning", formats: ["STL", "OBJ"] },
+  { name: "SprintRay Pro",       type: "Printer",  formats: ["STL", "3MF"] },
+  { name: "Asiga MAX",           type: "Printer",  formats: ["STL", "3MF"] },
+  { name: "Ackuretta Ackuray",   type: "Printer",  formats: ["STL", "3MF"] },
+  { name: "Formlabs Form 3B+",   type: "Printer",  formats: ["STL", "3MF", "PLY"] },
+  { name: "NextDent 5100",       type: "Printer",  formats: ["STL", "3MF"] },
+] as const;
+
+const TYPE_BADGE: Record<string, string> = {
+  Scanner: "text-sky-700 bg-sky-50 dark:text-sky-300 dark:bg-sky-950/40",
+  CAD:     "text-violet-700 bg-violet-50 dark:text-violet-300 dark:bg-violet-950/40",
+  Planning:"text-emerald-700 bg-emerald-50 dark:text-emerald-300 dark:bg-emerald-950/40",
+  Printer: "text-amber-700 bg-amber-50 dark:text-amber-300 dark:bg-amber-950/40",
+};
+
+function PrinterCompatibility() {
+  return (
+    <div className="space-y-4">
+      <div>
+        <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-[color:var(--primary)]">
+          Device Compatibility
+        </p>
+        <h2 className="mt-0.5 text-lg font-semibold text-[color:var(--foreground)]">
+          Compatible Systems
+        </h2>
+        <p className="mt-1 text-sm text-[color:var(--muted-foreground)]">
+          Common orthodontic scanners, CAD systems, and 3D printers that accept these export formats.
+          Verify support with your specific device model and firmware.
+        </p>
+      </div>
+      <div className="overflow-x-auto rounded-xl border border-[color:var(--border)]">
+        <table className="w-full text-xs">
+          <thead>
+            <tr className="border-b border-[color:var(--border)] bg-[color:var(--card)]">
+              <th className="px-4 py-2.5 text-left font-semibold text-[color:var(--foreground)]">System</th>
+              <th className="px-3 py-2.5 text-left font-semibold text-[color:var(--foreground)]">Type</th>
+              <th className="px-3 py-2.5 text-left font-semibold text-[color:var(--foreground)]">Accepted Formats</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-[color:var(--border)] bg-[color:var(--card)]">
+            {PRINTER_COMPAT.map((row) => (
+              <tr key={row.name} className="transition-colors hover:bg-[color:var(--primary-glow)]">
+                <td className="px-4 py-2 font-medium text-[color:var(--foreground)]">{row.name}</td>
+                <td className="px-3 py-2">
+                  <span className={`inline-block rounded-full px-2 py-0.5 text-[10px] font-semibold ${TYPE_BADGE[row.type] ?? ""}`}>
+                    {row.type}
+                  </span>
+                </td>
+                <td className="px-3 py-2">
+                  <div className="flex flex-wrap gap-1">
+                    {row.formats.map((f) => (
+                      <span
+                        key={f}
+                        className="rounded border border-[color:var(--border)] bg-[color:var(--background)] px-1.5 py-0.5 font-mono text-[10px] text-[color:var(--foreground)]"
+                      >
+                        {f}
+                      </span>
+                    ))}
+                  </div>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <p className="text-[10px] text-[color:var(--muted-foreground)]">
+        Compatibility is based on published format specifications. MyOrtho makes no certification claims — always confirm acceptance with your device manufacturer.
+      </p>
+    </div>
+  );
+}
+
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 function ExportPageContent() {
@@ -409,6 +513,7 @@ function ExportPageContent() {
         <>
           <CaseSelector onSelect={handleSelect} />
           <FormatGrid caseId="" />
+          <PrinterCompatibility />
           <ComplianceNotice />
         </>
       ) : (

@@ -7,10 +7,10 @@ import { STLLoader } from "three/examples/jsm/loaders/STLLoader.js";
 import { PLYLoader } from "three/examples/jsm/loaders/PLYLoader.js";
 import { OBJLoader } from "three/examples/jsm/loaders/OBJLoader.js";
 import * as THREE from "three";
-import { Camera, Download, Expand, Eye, FlipHorizontal2, Maximize2, RotateCcw, Ruler, Scissors, UploadCloud } from "lucide-react";
+import { ArrowDown, ArrowUp, Camera, Expand, Eye, FlipHorizontal2, Grid3x3, Maximize2, RotateCcw, Ruler, Scissors, Sun, UploadCloud } from "lucide-react";
 import { Button, Card, DataRow, ProgressBar, StatusBadge } from "@/components/DesignSystem";
 
-type ViewPreset = "occlusal" | "side" | "front" | "top" | "bottom";
+type ViewPreset = "occlusal" | "side" | "right" | "front" | "top" | "bottom" | "perspective";
 
 type ModelStats = {
   fileName: string;
@@ -54,11 +54,22 @@ export interface Viewer3DProps {
 }
 
 const viewPresets: Record<ViewPreset, [number, number, number]> = {
-  occlusal: [0, 8, 0.1],
-  side: [8, 1.5, 0],
-  front: [0, 1.5, 8],
-  top: [0, 10, 0.1],
-  bottom: [0, -10, 0.1]
+  occlusal:    [0,  8,   0.1],
+  side:        [8,  1.5, 0],
+  right:       [-8, 1.5, 0],
+  front:       [0,  1.5, 8],
+  top:         [0,  10,  0.1],
+  bottom:      [0, -10,  0.1],
+  perspective: [4,  5,   8],
+};
+
+type LightingPreset = "studio" | "clinical" | "dark" | "bright";
+
+const LIGHTING_CONFIGS: Record<LightingPreset, { ambient: number; directional: number; exposure: number }> = {
+  studio:   { ambient: 0.55, directional: 2.10, exposure: 1.05 },
+  clinical: { ambient: 0.72, directional: 1.50, exposure: 1.00 },
+  dark:     { ambient: 0.28, directional: 1.85, exposure: 0.90 },
+  bright:   { ambient: 0.90, directional: 2.75, exposure: 1.20 },
 };
 
 function createDemoArchGeometry() {
@@ -260,12 +271,16 @@ function DentalModel({
   geometry,
   clipping,
   measurementMode,
+  opacity,
+  wireframe,
   onPick,
   onHover,
 }: {
   geometry: THREE.BufferGeometry;
   clipping: boolean;
   measurementMode: boolean;
+  opacity: number;
+  wireframe: boolean;
   onPick: (point: THREE.Vector3) => void;
   onHover: (point: THREE.Vector3 | null) => void;
 }) {
@@ -292,10 +307,13 @@ function DentalModel({
         color="#f8fafc"
         roughness={0.38}
         metalness={0.02}
-        clearcoat={0.35}
+        clearcoat={wireframe ? 0 : 0.35}
         clearcoatRoughness={0.4}
-        transmission={0.04}
+        transmission={wireframe ? 0 : 0.04}
         thickness={0.22}
+        transparent={opacity < 1}
+        opacity={opacity}
+        wireframe={wireframe}
         clippingPlanes={clipping ? [clippingPlane] : []}
         side={THREE.DoubleSide}
       />
@@ -303,7 +321,13 @@ function DentalModel({
   );
 }
 
-function Scene({ geometry, preset, resetSignal, clipping, measurementMode, measureType, measurePoints, setMeasurePoints, hoverPoint, setHoverPoint, onMeasurementComplete }: {
+function RendererConfig({ exposure }: { exposure: number }) {
+  const { gl } = useThree();
+  useEffect(() => { gl.toneMappingExposure = exposure; }, [gl, exposure]);
+  return null;
+}
+
+function Scene({ geometry, preset, resetSignal, clipping, measurementMode, measureType, measurePoints, setMeasurePoints, hoverPoint, setHoverPoint, onMeasurementComplete, opacity, wireframe, lighting, showAxes }: {
   geometry: THREE.BufferGeometry;
   preset: ViewPreset;
   resetSignal: number;
@@ -315,19 +339,27 @@ function Scene({ geometry, preset, resetSignal, clipping, measurementMode, measu
   hoverPoint: THREE.Vector3 | null;
   setHoverPoint: React.Dispatch<React.SetStateAction<THREE.Vector3 | null>>;
   onMeasurementComplete: (points: THREE.Vector3[], type: MeasureType) => void;
+  opacity: number;
+  wireframe: boolean;
+  lighting: LightingPreset;
+  showAxes: boolean;
 }) {
   const pointsNeeded = measureType === "angle" ? 3 : 2;
+  const lc = LIGHTING_CONFIGS[lighting];
 
   return (
     <>
+      <RendererConfig exposure={lc.exposure} />
       <PerspectiveCamera makeDefault fov={35} position={[0, 7, 7]} />
       <CameraFrame geometry={geometry} preset={preset} resetSignal={resetSignal} />
-      <ambientLight intensity={0.55} />
-      <directionalLight position={[4, 8, 6]} intensity={2.1} castShadow shadow-mapSize={[2048, 2048]} />
+      <ambientLight intensity={lc.ambient} />
+      <directionalLight position={[4, 8, 6]} intensity={lc.directional} castShadow shadow-mapSize={[2048, 2048]} />
       <DentalModel
         geometry={geometry}
         clipping={clipping}
         measurementMode={measurementMode}
+        opacity={opacity}
+        wireframe={wireframe}
         onPick={(point) =>
           setMeasurePoints((prev) => {
             const next = prev.length >= pointsNeeded ? [point] : [...prev, point];
@@ -356,6 +388,7 @@ function Scene({ geometry, preset, resetSignal, clipping, measurementMode, measu
         maxPolarAngle={Math.PI - 0.3}
       />
       <gridHelper args={[12, 24, "#486072", "#253342"]} position={[0, -1.24, 0]} />
+      {showAxes && <axesHelper args={[3]} />}
     </>
   );
 }
@@ -374,6 +407,10 @@ export default function Viewer3D() {
   const [renameValue, setRenameValue] = useState("");
   const [loadingProgress, setLoadingProgress] = useState<number | null>(null);
   const [resetSignal, setResetSignal] = useState(0);
+  const [lighting, setLighting] = useState<LightingPreset>("clinical");
+  const [wireframe, setWireframe] = useState(false);
+  const [modelOpacity, setModelOpacity] = useState(1.0);
+  const [showAxes, setShowAxes] = useState(false);
   const [viewerNode, setViewerNode] = useState<HTMLDivElement | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -655,6 +692,10 @@ export default function Viewer3D() {
                 hoverPoint={hoverPoint}
                 setHoverPoint={setHoverPoint}
                 onMeasurementComplete={addMeasurement}
+                opacity={modelOpacity}
+                wireframe={wireframe}
+                lighting={lighting}
+                showAxes={showAxes}
               />
             </Suspense>
           </Canvas>
@@ -682,14 +723,72 @@ export default function Viewer3D() {
             {([
               ["occlusal", Maximize2],
               ["side", FlipHorizontal2],
+              ["right", FlipHorizontal2],
               ["front", Eye],
-              ["top", Download],
-              ["bottom", UploadCloud]
+              ["top", ArrowDown],
+              ["bottom", ArrowUp],
+              ["perspective", Camera],
             ] as [ViewPreset, React.ComponentType<{ size?: number }>][]).map(([view, Icon]) => (
               <Button key={view} variant={preset === view ? "primary" : "secondary"} size="sm" onClick={() => setPreset(view)}>
                 <Icon size={14} /> {view}
               </Button>
             ))}
+          </div>
+        </Card>
+
+        <Card className="p-4">
+          <div className="flex items-center justify-between">
+            <h3 className="text-sm font-semibold text-foreground">Display</h3>
+            <Sun className="text-primary" size={18} />
+          </div>
+          <div className="mt-4 space-y-4">
+            <div>
+              <p className="mb-2 text-xs font-semibold uppercase tracking-widest text-secondary">Lighting</p>
+              <div className="grid grid-cols-2 gap-2">
+                {(["studio", "clinical", "dark", "bright"] as LightingPreset[]).map((l) => (
+                  <Button key={l} variant={lighting === l ? "primary" : "secondary"} size="sm" onClick={() => setLighting(l)}>
+                    {l.charAt(0).toUpperCase() + l.slice(1)}
+                  </Button>
+                ))}
+              </div>
+            </div>
+            <div>
+              <p className="mb-2 text-xs font-semibold uppercase tracking-widest text-secondary">Surface mode</p>
+              <div className="flex gap-2">
+                <Button variant={!wireframe ? "primary" : "secondary"} size="sm" className="flex-1" onClick={() => setWireframe(false)}>Shaded</Button>
+                <Button variant={wireframe ? "primary" : "secondary"} size="sm" className="flex-1" onClick={() => setWireframe(true)}><Grid3x3 size={14} /> Wire</Button>
+              </div>
+            </div>
+            <div>
+              <div className="mb-2 flex items-center justify-between">
+                <p className="text-xs font-semibold uppercase tracking-widest text-secondary">Opacity</p>
+                <span className="text-xs tabular-nums text-secondary">{Math.round(modelOpacity * 100)}%</span>
+              </div>
+              <input
+                type="range"
+                min={0.15}
+                max={1}
+                step={0.01}
+                value={modelOpacity}
+                onChange={(e) => setModelOpacity(parseFloat(e.target.value))}
+                className="w-full"
+                style={{ accentColor: "var(--primary)" }}
+              />
+            </div>
+            <div className="flex items-center justify-between">
+              <p className="text-xs font-semibold uppercase tracking-widest text-secondary">Axes helper</p>
+              <button
+                type="button"
+                onClick={() => setShowAxes(v => !v)}
+                className={[
+                  "relative inline-flex h-5 w-9 items-center rounded-full transition-colors focus-ring",
+                  showAxes ? "bg-[color:var(--primary)]" : "bg-[color:var(--border)]",
+                ].join(" ")}
+                aria-label="Toggle axes helper"
+              >
+                <span className={["inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow transition-transform", showAxes ? "translate-x-4" : "translate-x-0.5"].join(" ")} />
+              </button>
+            </div>
           </div>
         </Card>
 

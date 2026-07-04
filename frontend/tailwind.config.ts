@@ -29,6 +29,20 @@ const config: Config = {
           blue: "#0284c7",
           glow: "rgba(13, 148, 136, 0.15)",
         },
+        // Download Center design tokens
+        dl: {
+          bg: "var(--dl-bg)",
+          surface: "var(--dl-surface)",
+          border: "var(--dl-border)",
+          text: "var(--dl-text)",
+          muted: "var(--dl-muted)",
+          accent: "var(--dl-accent)",
+          "accent-hover": "var(--dl-accent-hover)",
+          "accent-glow": "var(--dl-accent-glow)",
+        },
+      },
+      fontFamily: {
+        dl: ["var(--dl-font)", "system-ui", "-apple-system", "sans-serif"],
       },
       boxShadow: {
         glow: "0 0 15px var(--primary-glow)",

@@ -85,6 +85,7 @@ import { FhirModule } from './fhir/fhir.module';
 import { EmergencyProtocolsModule } from './emergency-protocols/emergency-protocols.module';
 import { BillingModule } from './billing/billing.module';
 import { OrgBrandingModule } from './org-branding/org-branding.module';
+import { ReleasesModule } from './releases/releases.module';
 
 @Module({
   imports: [
@@ -182,6 +183,7 @@ import { OrgBrandingModule } from './org-branding/org-branding.module';
     EmergencyProtocolsModule,
     BillingModule,
     OrgBrandingModule,
+    ReleasesModule,
   ],
   providers: [
     {

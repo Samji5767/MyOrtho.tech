@@ -1,0 +1,8 @@
+{
+  "provider": "generic",
+  "url": "https://releases.myortho.tech/desktop/",
+  "channel": "stable",
+  "updaterCacheDirName": "myortho-updater",
+  "publishAutoUpdate": false,
+  "_note": "Desktop packaging is pending. This config is a placeholder for electron-updater."
+}

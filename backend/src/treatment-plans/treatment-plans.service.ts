@@ -84,7 +84,7 @@ export class TreatmentPlansService {
     );
     if (!rows[0]) throw new NotFoundException('Treatment plan not found');
     await this.pool.query(
-      `UPDATE cases SET status = 'pending_approval', updated_at = now()
+      `UPDATE cases SET status = 'clinical_review', updated_at = now()
        WHERE id = $1 AND status = 'planning'`,
       [caseId],
     );

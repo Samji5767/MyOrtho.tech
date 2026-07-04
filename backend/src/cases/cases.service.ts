@@ -159,31 +159,44 @@ export class CasesService {
     dto: CreateCaseDto,
     opts: { actorEmail?: string; ipAddress?: string } = {},
   ) {
-    // Verify patient belongs to org
-    const { rows: patRows } = await this.pool.query(
-      'SELECT id FROM patients WHERE id = $1 AND organization_id = $2',
-      [dto.patientId, orgId],
-    );
-    if (!patRows[0]) {
-      throw new ForbiddenException('Patient not found in this organization');
+    const client: PoolClient = await this.pool.connect();
+    let newId: string;
+    try {
+      await client.query('BEGIN');
+
+      // Verify patient belongs to org
+      const { rows: patRows } = await client.query(
+        'SELECT id FROM patients WHERE id = $1 AND organization_id = $2',
+        [dto.patientId, orgId],
+      );
+      if (!patRows[0]) {
+        throw new ForbiddenException('Patient not found in this organization');
+      }
+
+      const { rows } = await client.query(
+        `INSERT INTO cases
+           (patient_id, assigned_to, status, chief_complaint, malocclusion_class, notes)
+         VALUES ($1, $2, 'draft', $3, $4, $5)
+         RETURNING id`,
+        [
+          dto.patientId,
+          createdBy,
+          dto.chiefComplaint ?? null,
+          dto.malocclusionClass ?? null,
+          dto.notes ?? null,
+        ],
+      );
+
+      newId = rows[0].id as string;
+      await client.query('COMMIT');
+    } catch (err) {
+      await client.query('ROLLBACK');
+      throw err;
+    } finally {
+      client.release();
     }
 
-    const { rows } = await this.pool.query(
-      `INSERT INTO cases
-         (patient_id, assigned_to, status, chief_complaint, malocclusion_class, notes)
-       VALUES ($1, $2, 'draft', $3, $4, $5)
-       RETURNING id`,
-      [
-        dto.patientId,
-        createdBy,
-        dto.chiefComplaint ?? null,
-        dto.malocclusionClass ?? null,
-        dto.notes ?? null,
-      ],
-    );
-
-    const newId = rows[0].id as string;
-
+    // Audit log is best-effort — case is already committed
     await this.auditService.log({
       organizationId: orgId,
       actorId: createdBy,

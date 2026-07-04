@@ -55,8 +55,8 @@ export class AiOrchestratorService {
 
     await this.pool
       .query(
-        `UPDATE cases SET status = 'segmenting', updated_at = now()
-         WHERE id = $1 AND status IN ('scan_uploaded', 'draft')`,
+        `UPDATE cases SET status = 'segmentation', updated_at = now()
+         WHERE id = $1 AND status IN ('scan_review', 'draft')`,
         [caseId],
       )
       .catch((e) => this.logger.warn(`Failed to advance case status: ${String(e)}`));

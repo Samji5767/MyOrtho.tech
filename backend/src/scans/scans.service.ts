@@ -38,6 +38,48 @@ export class ScansService {
 
   constructor(@Inject(PG_POOL) private readonly pool: Pool) {}
 
+  // ── Magic byte validation ────────────────────────────────────────────────────
+
+  private validateScanMagicBytes(file: Express.Multer.File, ext: string) {
+    // Read first 256 bytes from the file on disk (multer writes to temp path)
+    let header: Buffer;
+    try {
+      const fd = fs.openSync(file.path, 'r');
+      header = Buffer.alloc(256);
+      const bytesRead = fs.readSync(fd, header, 0, 256, 0);
+      fs.closeSync(fd);
+      header = header.subarray(0, bytesRead);
+    } catch {
+      fs.unlink(file.path, () => undefined);
+      throw new BadRequestException('Could not read uploaded file');
+    }
+
+    const isPly = header.subarray(0, 3).toString('ascii') === 'ply';
+    const isAsciiStl = /^solid\s/i.test(header.toString('ascii', 0, 80));
+    // Binary STL: 80-byte header + uint32 triangle count (>0). No universal magic bytes,
+    // but it must be at least 84 bytes and the triangle count must be non-zero.
+    const isBinaryStl =
+      header.length >= 84 &&
+      header.readUInt32LE(80) > 0 &&
+      header.length >= 84 + header.readUInt32LE(80) * 0; // structure check only
+    // OBJ: ASCII lines starting with v, vt, vn, f, #, mtllib, o, g, usemtl
+    const isObj = /^(#|v |vt |vn |f |o |g |mtllib|usemtl)/m.test(
+      header.toString('ascii', 0, 256),
+    );
+
+    const valid =
+      (ext === 'ply' && isPly) ||
+      (ext === 'stl' && (isAsciiStl || isBinaryStl)) ||
+      (ext === 'obj' && isObj);
+
+    if (!valid) {
+      fs.unlink(file.path, () => undefined);
+      throw new BadRequestException(
+        `File content does not match declared format .${ext}`,
+      );
+    }
+  }
+
   // ── Scans ───────────────────────────────────────────────────────────────────
 
   async findByCaseId(caseId: string, orgId: string) {
@@ -82,6 +124,9 @@ export class ScansService {
       throw new BadRequestException(`File format must be one of: ${VALID_FORMATS.join(', ')}`);
     }
 
+    // Magic byte / file-content validation — reject files that don't match their declared extension
+    this.validateScanMagicBytes(file, ext);
+
     // Move from multer temp dir to organised storage
     const destDir = path.join(UPLOAD_DIR, 'scans', orgId, caseId);
     fs.mkdirSync(destDir, { recursive: true });
@@ -97,9 +142,9 @@ export class ScansService {
     );
     const scan = rows[0];
 
-    // Advance case status draft → scan_uploaded (no-op if already further along)
+    // Advance case status draft → scan_review (no-op if already further along)
     await this.pool.query(
-      `UPDATE cases SET status = 'scan_uploaded', updated_at = now()
+      `UPDATE cases SET status = 'scan_review', updated_at = now()
        WHERE id = $1 AND status = 'draft'`,
       [caseId],
     );
@@ -184,8 +229,8 @@ export class ScansService {
     );
 
     await this.pool.query(
-      `UPDATE cases SET status = 'segmenting', updated_at = now()
-       WHERE id = $1 AND status IN ('scan_uploaded', 'draft')`,
+      `UPDATE cases SET status = 'segmentation', updated_at = now()
+       WHERE id = $1 AND status IN ('scan_review', 'draft')`,
       [caseId],
     );
 
@@ -283,7 +328,7 @@ export class ScansService {
         await this.pool
           .query(
             `UPDATE cases SET status = 'planning', updated_at = now()
-             WHERE id = $1 AND status = 'segmenting'`,
+             WHERE id = $1 AND status = 'segmentation'`,
             [dbJob.case_id as string],
           )
           .catch(() => undefined);

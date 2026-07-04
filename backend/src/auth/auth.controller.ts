@@ -167,6 +167,17 @@ export class AuthController {
     @Req() req: Request,
     @Res({ passthrough: true }) res: Response,
   ) {
+    const ip = getIp(req);
+    if (!(await this.authService.checkRateLimit(ip))) {
+      await this.auditService.log({
+        resourceType: 'auth',
+        action: 'auth.rate_limited',
+        actorEmail: body.email,
+        ipAddress: ip,
+      });
+      throw new HttpException('Too many registration attempts. Please wait a minute.', HttpStatus.TOO_MANY_REQUESTS);
+    }
+
     const { email, password, fullName, clinicName } = body;
     if (!email || !password || !fullName || !clinicName) {
       throw new HttpException('email, password, fullName and clinicName are required', HttpStatus.BAD_REQUEST);

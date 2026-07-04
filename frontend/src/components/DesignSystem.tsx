@@ -76,7 +76,7 @@ export function SectionHeader({
   );
 }
 
-export function MetricCard({
+export const MetricCard = React.memo(function MetricCard({
   label,
   value,
   helper,
@@ -103,26 +103,26 @@ export function MetricCard({
       </div>
     </Card>
   );
-}
+});
 
-export function StatusBadge({ children, tone = "neutral" }: { children: React.ReactNode; tone?: Tone }) {
+export const StatusBadge = React.memo(function StatusBadge({ children, tone = "neutral" }: { children: React.ReactNode; tone?: Tone }) {
   return (
     <span className={clsx("inline-flex items-center rounded-full border px-2.5 py-1 text-[11px] font-bold uppercase tracking-wide", toneClass[tone])}>
       {children}
     </span>
   );
-}
+});
 
-export function DataRow({ label, value }: { label: string; value: React.ReactNode }) {
+export const DataRow = React.memo(function DataRow({ label, value }: { label: string; value: React.ReactNode }) {
   return (
     <div className="flex items-center justify-between gap-4 border-b border-border/60 py-2 text-sm last:border-0">
       <span className="text-secondary">{label}</span>
       <span className="font-medium text-foreground text-right">{value}</span>
     </div>
   );
-}
+});
 
-export function ProgressBar({
+export const ProgressBar = React.memo(function ProgressBar({
   value,
   tone = "primary",
   label,
@@ -151,9 +151,9 @@ export function ProgressBar({
       <div className={clsx("h-full rounded-full transition-all duration-500", color)} style={{ width: `${clamped}%` }} />
     </div>
   );
-}
+});
 
-export function EmptyState({ icon: Icon, title, body }: { icon: LucideIcon; title: string; body: string }) {
+export const EmptyState = React.memo(function EmptyState({ icon: Icon, title, body }: { icon: LucideIcon; title: string; body: string }) {
   return (
     <div className="flex min-h-[220px] flex-col items-center justify-center rounded-lg border border-dashed border-border bg-slate-50/70 p-8 text-center dark:bg-slate-950/30">
       <Icon className="text-primary" size={28} />
@@ -161,9 +161,9 @@ export function EmptyState({ icon: Icon, title, body }: { icon: LucideIcon; titl
       <p className="mt-2 max-w-sm text-sm leading-6 text-secondary">{body}</p>
     </div>
   );
-}
+});
 
-export function LiveDot({ tone = "success" }: { tone?: "success" | "warning" | "danger" }) {
+export const LiveDot = React.memo(function LiveDot({ tone = "success" }: { tone?: "success" | "warning" | "danger" }) {
   const colorMap = { success: "bg-emerald-500", warning: "bg-amber-500", danger: "bg-rose-500" };
   return (
     <span className="relative inline-flex h-2 w-2 shrink-0">
@@ -171,11 +171,11 @@ export function LiveDot({ tone = "success" }: { tone?: "success" | "warning" | "
       <span className={clsx("relative inline-flex h-2 w-2 rounded-full", colorMap[tone])} />
     </span>
   );
-}
+});
 
-export function SkeletonBlock({ className }: { className?: string }) {
+export const SkeletonBlock = React.memo(function SkeletonBlock({ className }: { className?: string }) {
   return <div className={clsx("animate-skeleton rounded-lg", className)} aria-hidden />;
-}
+});
 
 export function Badge({ count, max = 99, className }: { count: number; max?: number; className?: string }) {
   if (count <= 0) return null;

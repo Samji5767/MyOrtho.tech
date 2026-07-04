@@ -35,26 +35,26 @@ import {
   Zap,
 } from "lucide-react";
 import dynamic from "next/dynamic";
-import ScanPanel from "@/components/ScanPanel";
-import TreatmentPlansPanel from "@/components/TreatmentPlansPanel";
-import ToothTransformPanel from "@/components/ToothTransformPanel";
-import ClinicalAnalysisPanel from "@/components/ClinicalAnalysisPanel";
 import { Card, DataRow, ProgressBar, StatusBadge } from "@/components/DesignSystem";
 import ClinicalWorkflow, { type CaseStatus, type WorkflowEvent } from "@/components/ClinicalWorkflow";
-import AuditTrail from "@/components/AuditTrail";
-import PatientPhotosPanel from "@/components/PatientPhotosPanel";
-import CephalometricPanel from "@/components/CephalometricPanel";
-import AIProposalPanel from "@/components/AIProposalPanel";
-import PreExportQAPanel from "@/components/PreExportQAPanel";
-import ScanProcessingPanel from "@/components/ScanProcessingPanel";
-import CbctFusionPanel from "@/components/CbctFusionPanel";
-import ClinicalReportsPanel from "@/components/ClinicalReportsPanel";
-import ClinicalAlertsPanel from "@/components/ClinicalAlertsPanel";
-import OcclusionPanel from "@/components/OcclusionPanel";
-import RadiologyPanel from "@/components/RadiologyPanel";
-import AttachmentPlanner from "@/components/AttachmentPlanner";
-import IPRPlanner from "@/components/IPRPlanner";
-import RetentionProtocolPanel from "@/components/RetentionProtocolPanel";
+
+const ScanPanel = dynamic(() => import("@/components/ScanPanel"), { ssr: false });
+const TreatmentPlansPanel = dynamic(() => import("@/components/TreatmentPlansPanel"), { ssr: false });
+const ToothTransformPanel = dynamic(() => import("@/components/ToothTransformPanel"), { ssr: false });
+const ClinicalAnalysisPanel = dynamic(() => import("@/components/ClinicalAnalysisPanel"), { ssr: false });
+const AuditTrail = dynamic(() => import("@/components/AuditTrail"), { ssr: false });
+const PatientPhotosPanel = dynamic(() => import("@/components/PatientPhotosPanel"), { ssr: false });
+const CephalometricPanel = dynamic(() => import("@/components/CephalometricPanel"), { ssr: false });
+const AIProposalPanel = dynamic(() => import("@/components/AIProposalPanel"), { ssr: false });
+const PreExportQAPanel = dynamic(() => import("@/components/PreExportQAPanel"), { ssr: false });
+const ScanProcessingPanel = dynamic(() => import("@/components/ScanProcessingPanel"), { ssr: false });
+const CbctFusionPanel = dynamic(() => import("@/components/CbctFusionPanel"), { ssr: false });
+const ClinicalReportsPanel = dynamic(() => import("@/components/ClinicalReportsPanel"), { ssr: false });
+const ClinicalAlertsPanel = dynamic(() => import("@/components/ClinicalAlertsPanel"), { ssr: false });
+const OcclusionPanel = dynamic(() => import("@/components/OcclusionPanel"), { ssr: false });
+const RadiologyPanel = dynamic(() => import("@/components/RadiologyPanel"), { ssr: false });
+const AttachmentPlanner = dynamic(() => import("@/components/AttachmentPlanner"), { ssr: false });
+const IPRPlanner = dynamic(() => import("@/components/IPRPlanner"), { ssr: false });
 
 const AISegmentationCenter = dynamic(
   () => import("@/components/AISegmentationCenter").then((m) => ({ default: m.AISegmentationCenter })),

@@ -303,12 +303,13 @@ export function Select({
             : "border-border focus:ring-primary/30",
         )}
         aria-invalid={!!error}
+        aria-describedby={error ? `${id}-err` : undefined}
         {...props}
       >
         {children}
       </select>
       {error && (
-        <p className="text-xs text-rose-600 dark:text-rose-400">{error}</p>
+        <p id={`${id}-err`} className="text-xs text-rose-600 dark:text-rose-400">{error}</p>
       )}
     </div>
   );
@@ -471,6 +472,9 @@ export function Tooltip({
   content: string;
   side?: "top" | "bottom" | "left" | "right";
 }) {
+  const uid = useId();
+  const tooltipId = `tooltip-${uid}`;
+
   const posClass = {
     top:    "bottom-full left-1/2 -translate-x-1/2 mb-1.5",
     bottom: "top-full left-1/2 -translate-x-1/2 mt-1.5",
@@ -479,9 +483,10 @@ export function Tooltip({
   }[side];
 
   return (
-    <span className="group relative inline-flex">
+    <span className="group relative inline-flex" aria-describedby={tooltipId}>
       {children}
       <span
+        id={tooltipId}
         role="tooltip"
         className={clsx(
           "pointer-events-none absolute z-50 whitespace-nowrap rounded-lg border border-border bg-card px-2.5 py-1.5 text-[11px] font-medium text-foreground shadow-md opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100",

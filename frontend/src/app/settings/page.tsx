@@ -84,9 +84,10 @@ function ClinicalFlagsCard() {
               type="button"
               role="switch"
               aria-checked={!!flags[key]}
+              aria-label={label}
               onClick={() => toggle(key)}
               className={[
-                "relative mt-0.5 h-6 w-11 shrink-0 rounded-full transition-colors focus:outline-none",
+                "relative mt-0.5 h-6 w-11 shrink-0 rounded-full transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--primary)] focus-visible:ring-offset-2",
                 flags[key]
                   ? "bg-[color:var(--primary)]"
                   : "bg-[color-mix(in_srgb,var(--border)_80%,transparent)]",
@@ -236,8 +237,9 @@ export default function SettingsPage() {
               <button
                 key={option.value}
                 type="button"
+                aria-pressed={active}
                 onClick={() => setTheme(option.value as typeof theme)}
-                className={`flex flex-col gap-2 rounded-2xl border px-3 py-3 text-left transition-transform duration-200 active:scale-95 ${
+                className={`flex flex-col gap-2 rounded-2xl border px-3 py-3 text-left transition-transform duration-200 active:scale-95 focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--primary)] focus-visible:ring-offset-2 ${
                   active
                     ? "border-[color:var(--primary)] bg-[color:var(--primary-glow)] text-[color:var(--foreground)]"
                     : "border-[color:var(--border)] bg-[color:var(--card)] text-[color:var(--muted-foreground)]"
@@ -636,8 +638,9 @@ function ModeButton({ active, onClick, label }: { active: boolean; onClick: () =
   return (
     <button
       type="button"
+      aria-pressed={active}
       onClick={onClick}
-      className={`flex-1 rounded-full px-4 py-3 text-sm font-semibold transition-transform duration-200 active:scale-95 ${
+      className={`flex-1 rounded-full px-4 py-3 text-sm font-semibold transition-transform duration-200 active:scale-95 focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--primary)] focus-visible:ring-offset-2 ${
         active ? "bg-[color:var(--primary)] text-[color:var(--primary-foreground)]" : "text-[color:var(--muted-foreground)]"
       }`}
     >

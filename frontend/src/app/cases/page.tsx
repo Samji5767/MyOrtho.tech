@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { fetchCases, type CaseListItem } from "@/lib/api/cases";
 import {
@@ -172,12 +173,13 @@ function statusToProgress(status: string): number {
 // ─── Demo CaseRow ─────────────────────────────────────────────────────────────
 
 function CaseRow({
-  c, bulkMode, selected, onToggleSelect,
+  c, bulkMode, selected, onToggleSelect, onArchive,
 }: {
   c: DemoCase;
   bulkMode: boolean;
   selected: boolean;
   onToggleSelect: (id: string) => void;
+  onArchive: (id: string) => void;
 }) {
   const statusMeta = STATUS_META[c.status];
 
@@ -257,9 +259,9 @@ function CaseRow({
               <div className="hidden items-center gap-0.5 group-hover:flex">
                 <button
                   type="button"
-                  title="Archive case (connect backend to enable)"
-                  disabled
-                  className="grid h-6 w-6 place-items-center rounded text-[color:var(--muted-foreground)] opacity-40 cursor-not-allowed"
+                  title="Archive case"
+                  onClick={(e) => { e.preventDefault(); onArchive(c.id); }}
+                  className="grid h-6 w-6 place-items-center rounded text-[color:var(--muted-foreground)] transition hover:bg-[color:var(--border)]/70 hover:text-[color:var(--foreground)]"
                 >
                   <Archive size={11} />
                 </button>
@@ -350,6 +352,7 @@ function LiveCaseRow({ c }: { c: CaseListItem }) {
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function CasesPage() {
+  const router = useRouter();
   const [previewMode, setPreviewMode] = useState(true);
   const [filter, setFilter] = useState<FilterKey>("all");
   const [sortKey, setSortKey] = useState<SortKey>("newest");
@@ -361,6 +364,7 @@ export default function CasesPage() {
 
   const [apiCases, setApiCases] = useState<CaseListItem[]>([]);
   const [apiSource, setApiSource] = useState<"loading" | "api" | "demo">("loading");
+  const [hiddenDemoCaseIds, setHiddenDemoCaseIds] = useState<Set<string>>(new Set());
 
   const sortRef = useRef<HTMLDivElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
@@ -396,6 +400,9 @@ export default function CasesPage() {
       if (e.key === "/" && !isEditable) {
         e.preventDefault();
         searchRef.current?.focus();
+      } else if (e.key === "n" && !isEditable) {
+        e.preventDefault();
+        router.push("/cases/new");
       } else if (e.key === "Escape") {
         if (searchQuery) setSearchQuery("");
         searchRef.current?.blur();
@@ -403,7 +410,7 @@ export default function CasesPage() {
     };
     document.addEventListener("keydown", handleKey);
     return () => document.removeEventListener("keydown", handleKey);
-  }, [searchQuery]);
+  }, [searchQuery, router]);
 
   // ── Close sort dropdown on outside click ──────────────────────────────────
   useEffect(() => {
@@ -461,17 +468,40 @@ export default function CasesPage() {
     }
   }, [selectedIds, clearBulk]);
 
+  const handleArchiveCase = useCallback(async (id: string) => {
+    if (previewMode) {
+      setHiddenDemoCaseIds((prev) => { const next = new Set(prev); next.add(id); return next; });
+      return;
+    }
+    try {
+      await fetch(`/api/cases/${id}/status`, {
+        method: "PATCH",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: "archived" }),
+      });
+      setApiCases((prev) => prev.filter((c) => c.id !== id));
+    } catch (e) {
+      console.error("[CasesPage] archive failed:", e);
+    }
+  }, [previewMode]);
+
   // ── Derived data ───────────────────────────────────────────────────────────
+  const visibleDemoCases = useMemo(
+    () => DEMO_CASES.filter((c) => !hiddenDemoCaseIds.has(c.id)),
+    [hiddenDemoCaseIds],
+  );
+
   const filteredBySearch = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
-    if (!q) return DEMO_CASES;
-    return DEMO_CASES.filter((c) =>
+    if (!q) return visibleDemoCases;
+    return visibleDemoCases.filter((c) =>
       c.patient.toLowerCase().includes(q) ||
       c.type.toLowerCase().includes(q) ||
       c.doctor.toLowerCase().includes(q) ||
       c.id.toLowerCase().includes(q),
     );
-  }, [searchQuery]);
+  }, [searchQuery, visibleDemoCases]);
 
   const filteredByDoctor = useMemo(
     () => doctorFilter === "all" ? filteredBySearch : filteredBySearch.filter((c) => c.doctor === doctorFilter),
@@ -621,7 +651,7 @@ export default function CasesPage() {
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Search cases, patients, doctors…"
+            placeholder="Search cases, patients, doctors… ( / )"
             aria-label="Search cases"
             className="h-10 w-full rounded-xl border border-[color:var(--border)] bg-[color:var(--card)] pl-9 pr-9 text-sm text-[color:var(--foreground)] placeholder:text-[color:var(--muted-foreground)] transition focus:outline-none focus:ring-2 focus:ring-[color:var(--primary)]/30"
           />
@@ -788,6 +818,7 @@ export default function CasesPage() {
                   bulkMode={bulkMode}
                   selected={selectedIds.has(c.id)}
                   onToggleSelect={toggleSelect}
+                  onArchive={handleArchiveCase}
                 />
               ))
             )}

@@ -57,11 +57,9 @@ type FilterTab = "all" | "upper" | "lower" | "active" | "retention";
 
 function AlignerCard({
   aligner,
-  token,
   onUpdated,
 }: {
   aligner: AlignerDesign;
-  token: string;
   onUpdated: (updated: AlignerDesign) => void;
 }) {
   const [expanded, setExpanded] = useState(false);
@@ -87,10 +85,8 @@ function AlignerCard({
     try {
       const res = await fetch(`/api/aligner-design/${aligner.id}`, {
         method: "PATCH",
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
-        },
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ thicknessMm: thickness, hasRelief, label }),
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -328,10 +324,8 @@ function AlignerCard({
 
 export default function AlignerPreviewPanel({
   setupId,
-  token,
 }: {
   setupId?: string;
-  token: string;
 }) {
   const [aligners, setAligners] = useState<AlignerDesign[]>([]);
   const [loading, setLoading] = useState(false);
@@ -346,7 +340,7 @@ export default function AlignerPreviewPanel({
     try {
       const res = await fetch(
         `/api/aligner-design?setupId=${encodeURIComponent(setupId)}`,
-        { headers: { Authorization: `Bearer ${token}` } }
+        { credentials: "include" }
       );
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const json = await res.json();
@@ -356,7 +350,7 @@ export default function AlignerPreviewPanel({
     } finally {
       setLoading(false);
     }
-  }, [setupId, token]);
+  }, [setupId]);
 
   useEffect(() => {
     loadAligners();
@@ -371,10 +365,8 @@ export default function AlignerPreviewPanel({
         `/api/aligner-design/generate/${setupId}`,
         {
           method: "POST",
-          headers: {
-            Authorization: `Bearer ${token}`,
-            "Content-Type": "application/json",
-          },
+          credentials: "include",
+          headers: { "Content-Type": "application/json" },
         }
       );
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -518,7 +510,6 @@ export default function AlignerPreviewPanel({
             <AlignerCard
               key={a.id}
               aligner={a}
-              token={token}
               onUpdated={handleUpdated}
             />
           ))}

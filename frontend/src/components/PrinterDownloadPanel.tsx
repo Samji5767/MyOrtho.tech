@@ -449,13 +449,11 @@ function CompatibilityTable() {
 interface PrinterDownloadPanelProps {
   caseId: string;
   setupId?: string;
-  token?: string;
 }
 
 export default function PrinterDownloadPanel({
   caseId,
   setupId,
-  token,
 }: PrinterDownloadPanelProps) {
   const [files, setFiles] = useState<PrinterFile[]>([]);
   const [loading, setLoading] = useState(true);
@@ -466,7 +464,7 @@ export default function PrinterDownloadPanel({
     setLoading(true);
     try {
       const res = await fetch(`/api/stl-uploads?caseId=${caseId}`, {
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
+        credentials: "include",
       });
       if (!res.ok) throw new Error("api-unavailable");
       const data = await res.json();
@@ -521,7 +519,7 @@ export default function PrinterDownloadPanel({
     } finally {
       setLoading(false);
     }
-  }, [caseId, token]);
+  }, [caseId]);
 
   useEffect(() => {
     loadFiles();
@@ -533,7 +531,7 @@ export default function PrinterDownloadPanel({
       setDlState((s) => ({ ...s, [file.id]: "downloading" }));
       try {
         const res = await fetch(file.url, {
-          headers: token ? { Authorization: `Bearer ${token}` } : {},
+          credentials: "include",
         });
         if (!res.ok) throw new Error("fetch-failed");
         const blob = await res.blob();
@@ -551,7 +549,7 @@ export default function PrinterDownloadPanel({
         setDlState((s) => ({ ...s, [file.id]: "error" }));
       }
     },
-    [token],
+    [],
   );
 
   // Group files by format

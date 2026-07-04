@@ -356,7 +356,7 @@ function AIRationaleCard({ rationale, confidence }: { rationale: string; confide
 
 // ─── Main Component ───────────────────────────────────────────────────────────
 
-export default function TreatmentGoalsPanel({ caseId, token }: { caseId: string; token: string }) {
+export default function TreatmentGoalsPanel({ caseId }: { caseId: string }) {
   const [goals, setGoals] = useState<TreatmentGoals | null>(null);
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
@@ -373,14 +373,13 @@ export default function TreatmentGoalsPanel({ caseId, token }: { caseId: string;
     angle_class: "I",
   });
 
-  const authHeaders = { Authorization: `Bearer ${token}`, "Content-Type": "application/json" };
+  const authHeaders = { "Content-Type": "application/json" };
 
   const fetchGoals = useCallback(async () => {
-    const authHeaders = { Authorization: `Bearer ${token}`, "Content-Type": "application/json" };
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`/api/treatment-goals?caseId=${caseId}`, { headers: authHeaders });
+      const res = await fetch(`/api/treatment-goals?caseId=${caseId}`, { credentials: "include", headers: { "Content-Type": "application/json" } });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json() as TreatmentGoals | null;
       setGoals(data);
@@ -390,7 +389,7 @@ export default function TreatmentGoalsPanel({ caseId, token }: { caseId: string;
     } finally {
       setLoading(false);
     }
-  }, [caseId, token]);
+  }, [caseId]);
 
   useEffect(() => { fetchGoals(); }, [fetchGoals]);
 
@@ -401,6 +400,7 @@ export default function TreatmentGoalsPanel({ caseId, token }: { caseId: string;
     try {
       const res = await fetch("/api/treatment-goals/generate", {
         method: "POST",
+        credentials: "include",
         headers: authHeaders,
         body: JSON.stringify({
           caseId,
@@ -428,6 +428,7 @@ export default function TreatmentGoalsPanel({ caseId, token }: { caseId: string;
     try {
       const res = await fetch(`/api/treatment-goals/${goals.id}/approve`, {
         method: "POST",
+        credentials: "include",
         headers: authHeaders,
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -446,6 +447,7 @@ export default function TreatmentGoalsPanel({ caseId, token }: { caseId: string;
     try {
       const res = await fetch(`/api/treatment-goals/${goals.id}`, {
         method: "PATCH",
+        credentials: "include",
         headers: authHeaders,
         body: JSON.stringify({
           predicted_aligners: parseInt(editDraft.aligner_count) || goals.predicted_aligners,

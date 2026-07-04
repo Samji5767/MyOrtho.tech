@@ -170,13 +170,21 @@ export default function IPRPlanner({ caseId, planId }: Props) {
   }, [caseId, planId]);
 
   async function handleAdd(dto: CreateIprItemDto) {
-    const item = await addIprItem(caseId, planId, dto);
-    setItems((prev) => [...prev, item]);
+    try {
+      const item = await addIprItem(caseId, planId, dto);
+      setItems((prev) => [...prev, item]);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to add IPR site');
+    }
   }
 
   async function handleDelete(id: string) {
-    await deleteIprItem(caseId, planId, id);
-    setItems((prev) => prev.filter((i) => i.id !== id));
+    try {
+      await deleteIprItem(caseId, planId, id);
+      setItems((prev) => prev.filter((i) => i.id !== id));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to delete IPR site');
+    }
   }
 
   async function handleRecommend() {

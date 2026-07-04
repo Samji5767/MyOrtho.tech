@@ -68,11 +68,9 @@ function countBySeverity(suggestions: AISuggestion[], severity: SeverityLevel): 
 
 function SuggestionCard({
   suggestion,
-  token,
   onUpdated,
 }: {
   suggestion: AISuggestion;
-  token: string;
   onUpdated: (updated: AISuggestion) => void;
 }) {
   const [expanded, setExpanded] = useState(false);
@@ -80,15 +78,13 @@ function SuggestionCard({
   const [applying, setApplying] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
 
-  const authHeaders = { Authorization: `Bearer ${token}`, "Content-Type": "application/json" };
-
   const handleAcknowledge = async () => {
     setAcknowledging(true);
     setActionError(null);
     try {
       const res = await fetch(`/api/ai-suggestions/${suggestion.id}/acknowledge`, {
         method: "POST",
-        headers: authHeaders,
+        credentials: "include",
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const updated = await res.json() as AISuggestion;
@@ -106,7 +102,7 @@ function SuggestionCard({
     try {
       const res = await fetch(`/api/ai-suggestions/${suggestion.id}/apply`, {
         method: "POST",
-        headers: authHeaders,
+        credentials: "include",
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const updated = await res.json() as AISuggestion;
@@ -217,23 +213,20 @@ function SuggestionCard({
 
 // ─── Main Component ───────────────────────────────────────────────────────────
 
-export default function AIClinicalAssistantPanel({ setupId, token }: { setupId?: string; token: string }) {
+export default function AIClinicalAssistantPanel({ setupId }: { setupId?: string }) {
   const [suggestions, setSuggestions] = useState<AISuggestion[]>([]);
   const [loading, setLoading] = useState(false);
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showActiveOnly, setShowActiveOnly] = useState(true);
 
-  const authHeaders = { Authorization: `Bearer ${token}`, "Content-Type": "application/json" };
-
   const fetchSuggestions = useCallback(async () => {
     if (!setupId) return;
-    const authHeaders = { Authorization: `Bearer ${token}`, "Content-Type": "application/json" };
     setLoading(true);
     setError(null);
     try {
       const res = await fetch(`/api/ai-suggestions?setupId=${setupId}&onlyActive=${showActiveOnly}`, {
-        headers: authHeaders,
+        credentials: "include",
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json() as AISuggestion[];
@@ -243,7 +236,7 @@ export default function AIClinicalAssistantPanel({ setupId, token }: { setupId?:
     } finally {
       setLoading(false);
     }
-  }, [setupId, token, showActiveOnly]);
+  }, [setupId, showActiveOnly]);
 
   useEffect(() => { fetchSuggestions(); }, [fetchSuggestions]);
 
@@ -254,7 +247,7 @@ export default function AIClinicalAssistantPanel({ setupId, token }: { setupId?:
     try {
       const res = await fetch(`/api/ai-suggestions/generate/${setupId}`, {
         method: "POST",
-        headers: authHeaders,
+        credentials: "include",
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json() as AISuggestion[];
@@ -377,7 +370,6 @@ export default function AIClinicalAssistantPanel({ setupId, token }: { setupId?:
             <SuggestionCard
               key={s.id}
               suggestion={s}
-              token={token}
               onUpdated={handleUpdated}
             />
           ))}

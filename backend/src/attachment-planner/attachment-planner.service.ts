@@ -127,8 +127,8 @@ export class AttachmentPlannerService {
   async deleteAttachment(attachmentId: string, planId: string, caseId: string, orgId: string) {
     await this.verifyOwnership(caseId, orgId);
     const { rowCount } = await this.pool.query(
-      `DELETE FROM treatment_attachments WHERE id = $1 AND treatment_plan_id = $2`,
-      [attachmentId, planId],
+      `DELETE FROM treatment_attachments WHERE id = $1 AND treatment_plan_id = $2 AND case_id = $3`,
+      [attachmentId, planId, caseId],
     );
     if (!rowCount) throw new NotFoundException('Attachment not found');
     return { deleted: true };

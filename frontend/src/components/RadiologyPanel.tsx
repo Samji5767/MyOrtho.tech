@@ -7,11 +7,11 @@ interface RadiologyImage {
   captureDate: string | null; notes: string | null; createdAt: string;
 }
 
-interface Props { patientId: string; caseId?: string; token: string }
+interface Props { patientId: string; caseId?: string }
 
 const IMAGE_TYPES = ['panoramic', 'periapical', 'bitewing', 'lateral_ceph', 'cbct', 'intraoral', 'photo'];
 
-export default function RadiologyPanel({ patientId, caseId, token }: Props) {
+export default function RadiologyPanel({ patientId, caseId }: Props) {
   const [images, setImages] = useState<RadiologyImage[]>([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
@@ -25,10 +25,10 @@ export default function RadiologyPanel({ patientId, caseId, token }: Props) {
       const params = new URLSearchParams({ patientId });
       if (caseId) params.set('caseId', caseId);
       if (filter) params.set('imageType', filter);
-      const r = await fetch(`/api/radiology?${params}`, { headers: { Authorization: `Bearer ${token}` } });
+      const r = await fetch(`/api/radiology?${params}`, { credentials: "include" });
       if (r.ok) setImages(await r.json());
     } finally { setLoading(false); }
-  }, [patientId, caseId, token, filter]);
+  }, [patientId, caseId, filter]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -38,7 +38,8 @@ export default function RadiologyPanel({ patientId, caseId, token }: Props) {
     try {
       await fetch('/api/radiology', {
         method: 'POST',
-        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        credentials: "include",
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ...form, patientId, caseId: caseId ?? null, captureDate: form.captureDate || null, notes: form.notes || null }),
       });
       setForm({ imageType: 'panoramic', fileUrl: '', captureDate: '', notes: '' });
@@ -48,7 +49,7 @@ export default function RadiologyPanel({ patientId, caseId, token }: Props) {
   };
 
   const remove = async (id: string) => {
-    await fetch(`/api/radiology/${id}`, { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } });
+    await fetch(`/api/radiology/${id}`, { method: 'DELETE', credentials: "include" });
     await load();
   };
 

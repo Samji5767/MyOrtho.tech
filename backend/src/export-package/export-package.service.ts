@@ -213,6 +213,12 @@ export class ExportPackageService {
   ): Promise<ExportPackage> {
     await this.verifyPlan(planId, caseId, orgId);
 
+    const pkgOwnerCheck = await this.db.query(
+      `SELECT id FROM export_packages WHERE id=$1 AND organization_id=$2`,
+      [packageId, orgId],
+    );
+    if (pkgOwnerCheck.rowCount === 0) throw new NotFoundException('Export package not found');
+
     const items = await this.db.query(
       `SELECT * FROM export_checklist_items WHERE package_id=$1 ORDER BY check_key`,
       [packageId],

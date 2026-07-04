@@ -257,8 +257,9 @@ function CaseRow({
               <div className="hidden items-center gap-0.5 group-hover:flex">
                 <button
                   type="button"
-                  title="Archive case"
-                  className="grid h-6 w-6 place-items-center rounded text-[color:var(--muted-foreground)] transition hover:bg-[color:var(--border)]/70 hover:text-[color:var(--foreground)]"
+                  title="Archive case (connect backend to enable)"
+                  disabled
+                  className="grid h-6 w-6 place-items-center rounded text-[color:var(--muted-foreground)] opacity-40 cursor-not-allowed"
                 >
                   <Archive size={11} />
                 </button>
@@ -438,6 +439,27 @@ export default function CasesPage() {
     setSelectedIds(new Set());
     setBulkMode(false);
   }, []);
+
+  const handleBulkArchive = useCallback(async () => {
+    const ids = Array.from(selectedIds);
+    if (!ids.length) return;
+    try {
+      await Promise.all(
+        ids.map((id) =>
+          fetch(`/api/cases/${id}/status`, {
+            method: "PATCH",
+            credentials: "include",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ status: "archived" }),
+          }),
+        ),
+      );
+      setApiCases((prev) => prev.filter((c) => !selectedIds.has(c.id)));
+      clearBulk();
+    } catch (e) {
+      console.error("[CasesPage] bulk archive failed:", e);
+    }
+  }, [selectedIds, clearBulk]);
 
   // ── Derived data ───────────────────────────────────────────────────────────
   const filteredBySearch = useMemo(() => {
@@ -867,6 +889,7 @@ export default function CasesPage() {
             </span>
             <button
               type="button"
+              onClick={() => void handleBulkArchive()}
               className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold text-[color:var(--muted-foreground)] transition hover:bg-[color:var(--border)]/50 hover:text-[color:var(--foreground)]"
             >
               <Archive size={12} /> Archive

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, Suspense } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import {
@@ -113,7 +113,7 @@ function CaseSelector({ onSelect }: { onSelect: (c: CaseListItem) => void }) {
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
-export default function TreatmentPlanPage() {
+function TreatmentPlanPageContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const caseId = searchParams?.get("caseId") ?? null;
@@ -213,5 +213,13 @@ export default function TreatmentPlanPage() {
         </Card>
       )}
     </section>
+  );
+}
+
+export default function TreatmentPlanPage() {
+  return (
+    <Suspense fallback={<div className="flex min-h-[60vh] items-center justify-center text-sm text-[color:var(--muted-foreground)]">Loading treatment plans…</div>}>
+      <TreatmentPlanPageContent />
+    </Suspense>
   );
 }

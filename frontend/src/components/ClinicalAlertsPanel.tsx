@@ -8,7 +8,7 @@ interface ClinicalAlert {
   acknowledgedBy: string | null; createdAt: string;
 }
 
-interface Props { caseId: string; token: string }
+interface Props { caseId: string }
 
 const SEVERITY_COLOR: Record<string, string> = {
   critical: 'bg-red-50 border-red-300 text-red-800',
@@ -17,7 +17,7 @@ const SEVERITY_COLOR: Record<string, string> = {
   low: 'bg-blue-50 border-blue-300 text-blue-800',
 };
 
-export default function ClinicalAlertsPanel({ caseId, token }: Props) {
+export default function ClinicalAlertsPanel({ caseId }: Props) {
   const [alerts, setAlerts] = useState<ClinicalAlert[]>([]);
   const [loading, setLoading] = useState(true);
   const [running, setRunning] = useState(false);
@@ -27,11 +27,11 @@ export default function ClinicalAlertsPanel({ caseId, token }: Props) {
     setLoading(true);
     try {
       const r = await fetch(`/api/cds/alerts?caseId=${caseId}`, {
-        headers: { Authorization: `Bearer ${token}` },
+        credentials: "include",
       });
       if (r.ok) setAlerts(await r.json());
     } finally { setLoading(false); }
-  }, [caseId, token]);
+  }, [caseId]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -40,7 +40,8 @@ export default function ClinicalAlertsPanel({ caseId, token }: Props) {
     try {
       await fetch(`/api/cds/run-checks`, {
         method: 'POST',
-        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        credentials: "include",
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ caseId }),
       });
       await load();
@@ -50,7 +51,7 @@ export default function ClinicalAlertsPanel({ caseId, token }: Props) {
   const acknowledge = async (id: string) => {
     await fetch(`/api/cds/alerts/${id}/acknowledge`, {
       method: 'PATCH',
-      headers: { Authorization: `Bearer ${token}` },
+      credentials: "include",
     });
     await load();
   };

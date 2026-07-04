@@ -137,21 +137,21 @@ function PdlGauge({ pct }: { pct: number }) {
 
 // ─── Main Component ───────────────────────────────────────────────────────────
 
-export default function BiomechanicsPanel({ setupId, token }: { setupId?: string; token: string }) {
+export default function BiomechanicsPanel({ setupId }: { setupId?: string }) {
   const [result, setResult] = useState<BiomechanicsResult | null>(null);
   const [loading, setLoading] = useState(false);
   const [running, setRunning] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const authHeaders = { Authorization: `Bearer ${token}`, "Content-Type": "application/json" };
-
   const fetchResult = useCallback(async () => {
     if (!setupId) return;
-    const authHeaders = { Authorization: `Bearer ${token}`, "Content-Type": "application/json" };
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`/api/biomechanics/${setupId}`, { headers: authHeaders });
+      const res = await fetch(`/api/biomechanics/${setupId}`, {
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+      });
       if (res.status === 404) { setResult(null); return; }
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json() as BiomechanicsResult;
@@ -161,7 +161,7 @@ export default function BiomechanicsPanel({ setupId, token }: { setupId?: string
     } finally {
       setLoading(false);
     }
-  }, [setupId, token]);
+  }, [setupId]);
 
   useEffect(() => { fetchResult(); }, [fetchResult]);
 
@@ -172,7 +172,8 @@ export default function BiomechanicsPanel({ setupId, token }: { setupId?: string
     try {
       const res = await fetch(`/api/biomechanics/${setupId}`, {
         method: "POST",
-        headers: authHeaders,
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json() as BiomechanicsResult;

@@ -216,18 +216,30 @@ export default function RefinementPanel({ caseId, planId }: Props) {
   }, [caseId, planId]);
 
   async function handleCreate(dto: CreateRefinementDto) {
-    const cycle = await createRefinementCycle(caseId, planId, dto);
-    setCycles((prev) => [cycle, ...prev]);
+    try {
+      const cycle = await createRefinementCycle(caseId, planId, dto);
+      setCycles((prev) => [cycle, ...prev]);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to create refinement cycle');
+    }
   }
 
   async function handleDelete(id: string) {
-    await deleteRefinementCycle(caseId, planId, id);
-    setCycles((prev) => prev.filter((c) => c.id !== id));
+    try {
+      await deleteRefinementCycle(caseId, planId, id);
+      setCycles((prev) => prev.filter((c) => c.id !== id));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to delete refinement cycle');
+    }
   }
 
   async function handleAdvance(id: string, status: RefinementCycle["status"]) {
-    const updated = await updateRefinementStatus(caseId, planId, id, status);
-    setCycles((prev) => prev.map((c) => c.id === id ? updated : c));
+    try {
+      const updated = await updateRefinementStatus(caseId, planId, id, status);
+      setCycles((prev) => prev.map((c) => c.id === id ? updated : c));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to update refinement status');
+    }
   }
 
   useEffect(() => { void load(); }, [load]);

@@ -197,7 +197,7 @@ function ShortcutCard({ s }: { s: Shortcut }) {
 function CaseRow({ c }: { c: CaseListItem }) {
   const { label, cls } = caseStatusBadge(c.status);
   const patientName = `${c.patient.firstName} ${c.patient.lastName}`;
-  const initials = [c.patient.firstName[0], c.patient.lastName[0]].join("").toUpperCase();
+  const initials = [(c.patient.firstName?.[0] ?? ''), (c.patient.lastName?.[0] ?? '')].join("").toUpperCase();
   const date = new Date(c.updatedAt).toLocaleDateString("en-US", { month: "short", day: "numeric" });
 
   return (

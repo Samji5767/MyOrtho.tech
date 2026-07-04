@@ -170,7 +170,7 @@ export class AiProposalService {
     await this.verifyCase(caseId, orgId);
 
     // Pull latest clinical analysis to enrich proposal if not provided
-    if (!dto.upperCrowdingMm || !dto.boltonOverall) {
+    if (dto.upperCrowdingMm == null || dto.boltonOverall == null) {
       const { rows } = await this.pool.query(
         `SELECT * FROM case_analyses WHERE case_id = $1 ORDER BY created_at DESC LIMIT 1`,
         [caseId],

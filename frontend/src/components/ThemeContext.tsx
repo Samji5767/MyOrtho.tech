@@ -37,7 +37,11 @@ function applyTheme(theme: ThemePreference) {
 
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
   const [theme, setThemeState] = useState<ThemePreference>("system");
-  const resolvedTheme = useMemo(() => resolveTheme(theme), [theme]);
+  const [systemTheme, setSystemTheme] = useState<ResolvedTheme>(getSystemTheme);
+  const resolvedTheme = useMemo(
+    () => theme === "system" ? systemTheme : theme,
+    [theme, systemTheme],
+  );
 
   useEffect(() => {
     const storedTheme = safeStorage.get(STORAGE_KEY);
@@ -48,7 +52,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   useEffect(() => {
-    applyTheme(theme);
+    applyTheme(theme === "system" ? systemTheme : theme);
     safeStorage.set(STORAGE_KEY, theme);
 
     if (theme !== "system") {
@@ -56,7 +60,11 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     }
 
     const mediaQuery = window.matchMedia("(prefers-color-scheme: dark)");
-    const handleChange = () => applyTheme("system");
+    const handleChange = (e: MediaQueryListEvent) => {
+      const next: ResolvedTheme = e.matches ? "dark" : "light";
+      setSystemTheme(next);
+      applyTheme("system");
+    };
 
     if (typeof mediaQuery.addEventListener === "function") {
       mediaQuery.addEventListener("change", handleChange);
@@ -65,7 +73,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
 
     mediaQuery.addListener(handleChange);
     return () => mediaQuery.removeListener(handleChange);
-  }, [theme]);
+  }, [theme, systemTheme]);
 
   const setTheme = (nextTheme: ThemePreference) => {
     setThemeState(nextTheme);

@@ -230,7 +230,7 @@ export default function NewCaseModal({ onClose, onCreated }: NewCaseModalProps) 
                       className="flex w-full items-center gap-3 rounded-xl border border-[color:var(--border)] bg-[color:var(--card)] px-3 py-3 text-left transition-colors hover:border-[color:var(--primary)] active:scale-[0.99]"
                     >
                       <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[color:var(--primary-glow)] text-sm font-bold text-[color:var(--primary)]">
-                        {p.firstName[0]}{p.lastName[0]}
+                        {p.firstName?.[0] ?? ''}{p.lastName?.[0] ?? ''}
                       </span>
                       <div className="min-w-0 flex-1">
                         <p className="truncate text-sm font-semibold text-[color:var(--foreground)]">

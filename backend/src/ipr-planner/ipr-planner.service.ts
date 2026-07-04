@@ -110,8 +110,8 @@ export class IprPlannerService {
   async deleteItem(itemId: string, planId: string, caseId: string, orgId: string) {
     await this.verifyOwnership(caseId, orgId);
     const { rowCount } = await this.pool.query(
-      `DELETE FROM ipr_plan_items WHERE id = $1 AND treatment_plan_id = $2`,
-      [itemId, planId],
+      `DELETE FROM ipr_plan_items WHERE id = $1 AND treatment_plan_id = $2 AND case_id = $3`,
+      [itemId, planId, caseId],
     );
     if (!rowCount) throw new NotFoundException('IPR item not found');
     return { deleted: true };

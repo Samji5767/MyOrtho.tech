@@ -26,8 +26,8 @@ export class NotificationsController {
   @Post('mark-read')
   @HttpCode(HttpStatus.NO_CONTENT)
   markRead(@Req() req: Request, @Body() body: { ids: string[] }) {
-    const { id } = this.user(req);
-    return this.svc.markRead(body.ids ?? [], id);
+    const { id, orgId } = this.user(req);
+    return this.svc.markRead(body.ids ?? [], id, orgId);
   }
 
   @Post('mark-all-read')

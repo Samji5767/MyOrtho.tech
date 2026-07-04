@@ -581,49 +581,49 @@ export default function CaseDetailClient({ id }: { id: string }) {
 
         {/* STL / Scans */}
         {tab === "scans"          && <ScanPanel caseId={id} />}
-        {tab === "scan-validation" && <ScanValidationPanel caseId={id} uploadId={scanId} token="" />}
+        {tab === "scan-validation" && <ScanValidationPanel caseId={id} uploadId={scanId} />}
         {tab === "processing"     && <ScanProcessingPanel caseId={id} scanId={scanId ?? ''} />}
 
         {/* AI Segmentation */}
         {tab === "segment"        && <AISegmentationCenter caseId={id} />}
-        {tab === "segmentation"   && <ToothSegmentationPanel uploadId={scanId ?? ""} token="" />}
-        {tab === "pipeline"       && <TreatmentPipelinePanel caseId={id} token="" />}
+        {tab === "segmentation"   && <ToothSegmentationPanel uploadId={scanId ?? ""} />}
+        {tab === "pipeline"       && <TreatmentPipelinePanel caseId={id} />}
 
         {/* Treatment Planning */}
         {tab === "plans"          && <TreatmentPlansPanel caseId={id} />}
-        {tab === "tx-goals"       && <TreatmentGoalsPanel caseId={id} token="" />}
+        {tab === "tx-goals"       && <TreatmentGoalsPanel caseId={id} />}
         {tab === "proposal"       && <AIProposalPanel caseId={id} />}
 
         {/* CAD */}
-        {tab === "cad-studio"     && <CADWorkspacePanel caseId={id} token="" />}
+        {tab === "cad-studio"     && <CADWorkspacePanel caseId={id} />}
         {tab === "movements"      && <ToothTransformPanel caseId={id} />}
-        {tab === "biomechanics"   && <BiomechanicsPanel setupId={setupId} token="" />}
+        {tab === "biomechanics"   && <BiomechanicsPanel setupId={setupId} />}
 
         {/* Attachments & IPR */}
         {tab === "attachments"    && <AttachmentPlanner caseId={id} planId={planId ?? ''} />}
         {tab === "ipr"            && <IPRPlanner caseId={id} planId={planId ?? ''} />}
 
         {/* Staging & Aligners */}
-        {tab === "stages"         && <TreatmentStagesPanel setupId={setupId} token="" />}
+        {tab === "stages"         && <TreatmentStagesPanel setupId={setupId} />}
         {tab === "aligner-staging" && <AlignerStaging caseId={id} patientName={patientName} />}
-        {tab === "aligner-preview" && <AlignerPreviewPanel setupId={setupId} token="" />}
+        {tab === "aligner-preview" && <AlignerPreviewPanel setupId={setupId} />}
 
         {/* QA & Export */}
-        {tab === "qa-report"      && <QAReportPanel setupId={setupId} token="" />}
+        {tab === "qa-report"      && <QAReportPanel setupId={setupId} />}
         {tab === "export"         && <PreExportQAPanel caseId={id} />}
-        {tab === "downloads"      && <PrinterDownloadPanel caseId={id} setupId={setupId} token="" />}
+        {tab === "downloads"      && <PrinterDownloadPanel caseId={id} setupId={setupId} />}
 
         {/* Analysis & Imaging */}
         {tab === "analysis"       && <ClinicalAnalysisPanel caseId={id} />}
-        {tab === "clinical-deep"  && <ClinicalAnalysisDeepPanel caseId={id} uploadId={scanId} token="" />}
-        {tab === "occlusion"      && <OcclusionPanel caseId={id} token="" />}
+        {tab === "clinical-deep"  && <ClinicalAnalysisDeepPanel caseId={id} uploadId={scanId} />}
+        {tab === "occlusion"      && <OcclusionPanel caseId={id} />}
         {tab === "ceph"           && <CephalometricPanel caseId={id} />}
         {tab === "cbct"           && <CbctFusionPanel caseId={id} stlScanId={scanId ?? ''} />}
-        {tab === "radiology"      && <RadiologyPanel patientId={liveData?.patient.id ?? id} caseId={id} token="" />}
+        {tab === "radiology"      && <RadiologyPanel patientId={liveData?.patient.id ?? id} caseId={id} />}
 
         {/* AI & Clinical */}
-        {tab === "ai-assistant"   && <AIClinicalAssistantPanel setupId={setupId} token="" />}
-        {tab === "alerts"         && <ClinicalAlertsPanel caseId={id} token="" />}
+        {tab === "ai-assistant"   && <AIClinicalAssistantPanel setupId={setupId} />}
+        {tab === "alerts"         && <ClinicalAlertsPanel caseId={id} />}
 
         {/* Documentation */}
         {tab === "reports"        && <ClinicalReportsPanel caseId={id} planId={planId} />}

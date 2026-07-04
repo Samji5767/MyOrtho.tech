@@ -162,14 +162,12 @@ function ActiveStepPanel({
   step,
   pipeline,
   caseId,
-  token,
   onAdvance,
   advancing,
 }: {
   step: number | null;
   pipeline: Pipeline;
   caseId: string;
-  token: string;
   onAdvance: () => void;
   advancing: boolean;
 }) {
@@ -262,10 +260,8 @@ function ActiveStepPanel({
 
 export default function TreatmentPipelinePanel({
   caseId,
-  token,
 }: {
   caseId: string;
-  token: string;
 }) {
   const [pipeline, setPipeline] = useState<Pipeline | null>(null);
   const [loading, setLoading] = useState(true);
@@ -428,7 +424,7 @@ export default function TreatmentPipelinePanel({
             step={selectedStep}
             pipeline={pipeline}
             caseId={caseId}
-            token={token}
+
             onAdvance={() => void handleAdvance()}
             advancing={advancing}
           />

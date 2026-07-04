@@ -60,13 +60,13 @@ export class NotificationsService {
     return Number(rows[0]?.count ?? 0);
   }
 
-  async markRead(ids: string[], userId: string): Promise<void> {
+  async markRead(ids: string[], userId: string, orgId: string): Promise<void> {
     if (!ids.length) return;
     const placeholders = ids.map((_, i) => `$${i + 3}`).join(',');
     await this.pool.query(
       `UPDATE notifications SET read_at = now()
-       WHERE user_id = $1 AND read_at IS NULL AND id IN (${placeholders})`,
-      [userId, ...ids],
+       WHERE user_id = $1 AND organization_id = $2 AND read_at IS NULL AND id IN (${placeholders})`,
+      [userId, orgId, ...ids],
     );
   }
 

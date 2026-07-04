@@ -243,6 +243,7 @@ function PlanRow({
   const [editingNotes, setEditingNotes] = useState(false);
   const [notesDraft, setNotesDraft] = useState(plan.aiRecommendationNotes ?? "");
   const [notesSaving, setNotesSaving] = useState(false);
+  const notesEscapedRef = useRef(false);
 
   useEffect(() => {
     setNotesDraft(plan.aiRecommendationNotes ?? "");
@@ -308,9 +309,12 @@ function PlanRow({
         aiRecommendationNotes: trimmed || undefined,
       });
       onUpdated(updated);
-    } catch { /* swallow — user can retry */ }
-    setNotesSaving(false);
-    setEditingNotes(false);
+      setEditingNotes(false);
+    } catch (e) {
+      console.error("[TreatmentPlansPanel] save notes failed:", e);
+    } finally {
+      setNotesSaving(false);
+    }
   }
 
   const activeStageData = stages.find((s) => s.stageNumber === activeStage);
@@ -347,8 +351,8 @@ function PlanRow({
                   rows={2}
                   value={notesDraft}
                   onChange={(e) => setNotesDraft(e.target.value)}
-                  onBlur={handleSaveNotes}
-                  onKeyDown={(e) => { if (e.key === "Escape") { setNotesDraft(plan.aiRecommendationNotes ?? ""); setEditingNotes(false); } }}
+                  onBlur={() => { if (!notesEscapedRef.current) void handleSaveNotes(); notesEscapedRef.current = false; }}
+                  onKeyDown={(e) => { if (e.key === "Escape") { notesEscapedRef.current = true; setNotesDraft(plan.aiRecommendationNotes ?? ""); setEditingNotes(false); } }}
                   placeholder="Add clinical notes…"
                   className="w-full resize-none rounded-lg border border-[color:var(--primary)]/40 bg-[color:var(--background)] px-2.5 py-1.5 text-xs text-[color:var(--foreground)] placeholder:text-[color:var(--muted-foreground)] focus:outline-none focus:ring-1 focus:ring-[color:var(--primary)]/40"
                 />
@@ -359,7 +363,7 @@ function PlanRow({
             ) : (
               <button
                 type="button"
-                onClick={() => setEditingNotes(true)}
+                onClick={() => { notesEscapedRef.current = false; setEditingNotes(true); }}
                 className="group mt-0.5 flex w-full items-start gap-1.5 rounded text-left text-xs hover:bg-[color:var(--muted)]/20"
               >
                 <Pencil size={9} className="mt-0.5 shrink-0 opacity-0 transition-opacity group-hover:opacity-60" />
@@ -534,7 +538,7 @@ function PlanRow({
               )}
 
               {activeTab === "biomechanics" && (
-                <BiomechanicsPanel setupId={plan.id} token="" />
+                <BiomechanicsPanel setupId={plan.id} />
               )}
 
               {activeTab === "attachments" && (

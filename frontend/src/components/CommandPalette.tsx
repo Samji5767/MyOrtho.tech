@@ -236,7 +236,9 @@ export function CommandPalette() {
   }, [flatItems]);
 
   useEffect(() => {
-    if (open) setTimeout(() => inputRef.current?.focus(), 20);
+    if (!open) return;
+    const t = setTimeout(() => inputRef.current?.focus(), 20);
+    return () => clearTimeout(t);
   }, [open]);
 
   useEffect(() => {

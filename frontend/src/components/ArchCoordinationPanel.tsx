@@ -147,7 +147,7 @@ function CheckpointCard({
 // ─── Sync timeline strip ──────────────────────────────────────────────────────
 
 function SyncTimeline({ allocations }: { allocations: ArchSyncAllocation[] }) {
-  const maxSync = Math.max(...allocations.map(a => a.synchronizedStage), 1);
+  const maxSync = allocations.reduce((m, a) => Math.max(m, a.synchronizedStage), 1);
   const upperByStage = new Map<number, number>();
   const lowerByStage = new Map<number, number>();
 

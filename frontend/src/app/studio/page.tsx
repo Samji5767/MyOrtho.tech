@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, Suspense } from "react";
 import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
@@ -328,7 +328,7 @@ function PreviewTab({ caseData }: { caseData: CaseDetail | null }) {
 
 // ─── Studio page ──────────────────────────────────────────────────────────────
 
-export default function StudioPage() {
+function StudioPageContent() {
   const searchParams = useSearchParams();
   const caseId = searchParams?.get("caseId") ?? null;
 
@@ -415,5 +415,13 @@ export default function StudioPage() {
       </div>
     </section>
     </CasePlanningProvider>
+  );
+}
+
+export default function StudioPage() {
+  return (
+    <Suspense fallback={<div className="flex min-h-[60vh] items-center justify-center text-sm text-[color:var(--muted-foreground)]">Loading studio…</div>}>
+      <StudioPageContent />
+    </Suspense>
   );
 }

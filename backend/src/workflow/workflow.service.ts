@@ -1,7 +1,8 @@
-import { Injectable, Inject, BadRequestException, Logger } from '@nestjs/common';
+import { Injectable, Inject, BadRequestException, ForbiddenException, Logger } from '@nestjs/common';
 import type { Pool } from 'pg';
 import { PG_POOL } from '../database/database.module';
 import { AuditService } from '../audit/audit.service';
+import { hasPermission } from '../auth/permissions';
 
 // Valid case status values — must exactly match the case_status enum in schema.sql
 export const CASE_STATUSES = [
@@ -78,6 +79,14 @@ export class WorkflowService {
       if (!allowed.includes(input.toStatus)) {
         throw new BadRequestException(
           `Transition from '${fromStatus}' to '${input.toStatus}' is not permitted`,
+        );
+      }
+
+      // Privileged statuses require additional permissions beyond cases:write
+      const APPROVE_STATUSES: CaseStatus[] = ['approved'];
+      if (APPROVE_STATUSES.includes(input.toStatus) && !hasPermission(input.actorRole, 'cases:approve')) {
+        throw new ForbiddenException(
+          `Role '${input.actorRole}' does not have permission to approve cases`,
         );
       }
 

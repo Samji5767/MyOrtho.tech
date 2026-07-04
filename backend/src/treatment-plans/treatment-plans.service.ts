@@ -75,25 +75,38 @@ export class TreatmentPlansService {
 
   async approvePlan(planId: string, caseId: string, orgId: string, doctorId: string, signature: string) {
     await this.verifyCaseOwnership(caseId, orgId);
-    const { rows } = await this.pool.query(
-      `UPDATE treatment_plans
-       SET doctor_approval = true, doctor_signature = $1, approved_at = now(), updated_at = now()
-       WHERE id = $2 AND case_id = $3
-       RETURNING id, doctor_approval, approved_at`,
-      [signature, planId, caseId],
-    );
-    if (!rows[0]) throw new NotFoundException('Treatment plan not found');
-    await this.pool.query(
-      `UPDATE cases SET status = 'clinical_review', updated_at = now()
-       WHERE id = $1 AND status = 'planning'`,
-      [caseId],
-    );
-    this.logger.log(`Plan ${planId} approved by ${doctorId} for case ${caseId}`);
-    return {
-      id: rows[0].id as string,
-      doctorApproval: rows[0].doctor_approval as boolean,
-      approvedAt: rows[0].approved_at as Date,
-    };
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+      const { rows } = await client.query(
+        `UPDATE treatment_plans
+         SET doctor_approval = true, doctor_signature = $1, approved_at = now(), updated_at = now()
+         WHERE id = $2 AND case_id = $3 AND doctor_approval = false
+         RETURNING id, doctor_approval, approved_at`,
+        [signature, planId, caseId],
+      );
+      if (!rows[0]) {
+        await client.query('ROLLBACK');
+        throw new NotFoundException('Treatment plan not found or already approved');
+      }
+      await client.query(
+        `UPDATE cases SET status = 'clinical_review', updated_at = now()
+         WHERE id = $1 AND status = 'planning'`,
+        [caseId],
+      );
+      await client.query('COMMIT');
+      this.logger.log(`Plan ${planId} approved by ${doctorId} for case ${caseId}`);
+      return {
+        id: rows[0].id as string,
+        doctorApproval: rows[0].doctor_approval as boolean,
+        approvedAt: rows[0].approved_at as Date,
+      };
+    } catch (err) {
+      await client.query('ROLLBACK');
+      throw err;
+    } finally {
+      client.release();
+    }
   }
 
   // ── Aligner Stages ───────────────────────────────────────────────────────────
@@ -101,9 +114,12 @@ export class TreatmentPlansService {
   async listStages(planId: string, caseId: string, orgId: string) {
     await this.verifyCaseOwnership(caseId, orgId);
     const { rows } = await this.pool.query(
-      `SELECT id, treatment_plan_id, stage_number, movement_data, created_at
-       FROM aligner_stages WHERE treatment_plan_id = $1 ORDER BY stage_number`,
-      [planId],
+      `SELECT s.id, s.treatment_plan_id, s.stage_number, s.movement_data, s.created_at
+       FROM aligner_stages s
+       JOIN treatment_plans tp ON tp.id = s.treatment_plan_id
+       WHERE s.treatment_plan_id = $1 AND tp.case_id = $2
+       ORDER BY s.stage_number`,
+      [planId, caseId],
     );
     return rows.map((r) => ({
       id: r['id'] as string,
@@ -154,7 +170,7 @@ export class TreatmentPlansService {
     sets.push(`updated_at = now()`);
     vals.push(planId, caseId);
     const { rows } = await this.pool.query(
-      `UPDATE treatment_plans SET ${sets.join(', ')} WHERE id = $${vals.length - 1} AND case_id = $${vals.length} RETURNING id`,
+      `UPDATE treatment_plans SET ${sets.join(', ')} WHERE id = $${vals.length - 1} AND case_id = $${vals.length} AND doctor_approval = false RETURNING id`,
       vals,
     );
     if (!rows[0]) throw new NotFoundException('Treatment plan not found');

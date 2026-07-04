@@ -220,10 +220,8 @@ function ToothDetailList({ segments }: { segments: ToothSegment[] }) {
 
 export default function ToothSegmentationPanel({
   uploadId,
-  token,
 }: {
   uploadId: string;
-  token: string;
 }) {
   const [archType, setArchType] = useState<ArchType>('upper');
   const [job, setJob] = useState<SegmentationJob | null>(null);

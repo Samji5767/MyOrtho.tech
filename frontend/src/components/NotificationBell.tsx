@@ -56,18 +56,30 @@ export default function NotificationBell() {
   }, []);
 
   const handleMarkAll = async () => {
-    await markAllRead();
-    setItems((prev) => prev.map((n) => ({ ...n, isRead: true, readAt: new Date().toISOString() })));
+    try {
+      await markAllRead();
+      setItems((prev) => prev.map((n) => ({ ...n, isRead: true, readAt: new Date().toISOString() })));
+    } catch {
+      // non-critical — user can retry
+    }
   };
 
   const handleMarkOne = async (id: string) => {
-    await markRead([id]);
-    setItems((prev) => prev.map((n) => n.id === id ? { ...n, isRead: true, readAt: new Date().toISOString() } : n));
+    try {
+      await markRead([id]);
+      setItems((prev) => prev.map((n) => n.id === id ? { ...n, isRead: true, readAt: new Date().toISOString() } : n));
+    } catch {
+      // non-critical — user can retry
+    }
   };
 
   const handleDismiss = async (id: string) => {
-    await dismissNotification(id);
-    setItems((prev) => prev.filter((n) => n.id !== id));
+    try {
+      await dismissNotification(id);
+      setItems((prev) => prev.filter((n) => n.id !== id));
+    } catch {
+      // non-critical — user can retry
+    }
   };
 
   return (

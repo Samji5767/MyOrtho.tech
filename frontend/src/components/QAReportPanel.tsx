@@ -218,10 +218,8 @@ function Section({
 
 export default function QAReportPanel({
   setupId,
-  token,
 }: {
   setupId?: string;
-  token: string;
 }) {
   const [data, setData] = useState<QAResult | null>(null);
   const [loading, setLoading] = useState(false);
@@ -234,7 +232,7 @@ export default function QAReportPanel({
     setError(null);
     try {
       const res = await fetch(`/api/treatment-qa/${setupId}`, {
-        headers: { Authorization: `Bearer ${token}` },
+        credentials: "include",
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       setData(await res.json());
@@ -243,7 +241,7 @@ export default function QAReportPanel({
     } finally {
       setLoading(false);
     }
-  }, [setupId, token]);
+  }, [setupId]);
 
   useEffect(() => {
     loadReport();
@@ -256,7 +254,8 @@ export default function QAReportPanel({
     try {
       const res = await fetch(`/api/treatment-qa/${setupId}`, {
         method: "POST",
-        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       setData(await res.json());

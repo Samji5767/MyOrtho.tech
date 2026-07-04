@@ -228,11 +228,9 @@ function NumericInput({
 export default function ClinicalAnalysisDeepPanel({
   caseId,
   uploadId,
-  token,
 }: {
   caseId: string;
   uploadId?: string;
-  token: string;
 }) {
   const [form, setForm] = useState<AnalysisForm>({
     overjet: '',

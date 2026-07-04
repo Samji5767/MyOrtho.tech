@@ -158,11 +158,11 @@ function IssueRow({ issue }: { issue: ValidationResult['issues'][number] }) {
 export default function ScanValidationPanel({
   uploadId: initialUploadId,
   caseId,
-  token,
+  onComplete,
 }: {
   uploadId?: string;
   caseId: string;
-  token: string;
+  onComplete?: () => void;
 }) {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -441,7 +441,7 @@ export default function ScanValidationPanel({
 
           {/* Advance Button */}
           {validationResult.overallStatus !== 'fail' && (
-            <Button variant="primary" className="w-full">
+            <Button variant="primary" className="w-full" onClick={onComplete}>
               Process Scan <ChevronRight size={16} />
             </Button>
           )}

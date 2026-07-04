@@ -139,6 +139,7 @@ export default function TreatmentSimulationPlayer({ caseId, planId }: Props) {
   const [currentFrame, setCurrentFrame] = useState<SimulationFrame | null>(null);
   const [archCoord, setArchCoord] = useState<ArchCoordination | null>(null);
   const [stage, setStage] = useState(1);
+  const stageRef = useRef(1);
   const [playing, setPlaying] = useState(false);
   const [loading, setLoading] = useState(false);
   const [frameLoading, setFrameLoading] = useState(false);
@@ -150,6 +151,7 @@ export default function TreatmentSimulationPlayer({ caseId, planId }: Props) {
     try {
       const result = await generateSimulation(caseId, planId);
       setSim(result);
+      stageRef.current = 1;
       setStage(1);
       const [frame, coord] = await Promise.all([
         getSimulationFrame(caseId, planId, 1),
@@ -180,17 +182,17 @@ export default function TreatmentSimulationPlayer({ caseId, planId }: Props) {
   useEffect(() => {
     if (!playing || !sim) return;
     intervalRef.current = setInterval(() => {
-      setStage(prev => {
-        const next = prev >= sim.totalFrames ? 1 : prev + 1;
-        loadFrame(next);
-        return next;
-      });
+      const next = stageRef.current >= sim.totalFrames ? 1 : stageRef.current + 1;
+      stageRef.current = next;
+      setStage(next);
+      void loadFrame(next);
     }, 400);
     return () => { if (intervalRef.current) clearInterval(intervalRef.current); };
   }, [playing, sim, loadFrame]);
 
   const handleSlider = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
     const s = parseInt(e.target.value, 10);
+    stageRef.current = s;
     setStage(s);
     await loadFrame(s);
   }, [loadFrame]);

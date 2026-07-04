@@ -18,6 +18,12 @@ function assertRequiredEnv(): void {
   }
   const encKey = process.env.ENCRYPTION_KEY ?? '';
   if (!encKey || encKey.length < 32) {
+    if (process.env.NODE_ENV === 'production') {
+      throw new Error(
+        'ENCRYPTION_KEY must be set to at least 32 characters in production. ' +
+        'Generate one with: openssl rand -hex 32',
+      );
+    }
     console.warn(
       '[WARN] ENCRYPTION_KEY is not set or too short. ' +
       'PHI encryption will be degraded. Set before production launch.',

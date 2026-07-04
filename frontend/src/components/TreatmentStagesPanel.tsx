@@ -127,11 +127,9 @@ function StageCard({
 
 function StageDetail({
   stage,
-  token,
   onNotesUpdated,
 }: {
   stage: TreatmentStage;
-  token: string;
   onNotesUpdated: (stageId: string, notes: string) => void;
 }) {
   const [editingNotes, setEditingNotes] = useState(false);
@@ -139,15 +137,14 @@ function StageDetail({
   const [savingNotes, setSavingNotes] = useState(false);
   const [notesError, setNotesError] = useState<string | null>(null);
 
-  const authHeaders = { Authorization: `Bearer ${token}`, "Content-Type": "application/json" };
-
   const handleSaveNotes = async () => {
     setSavingNotes(true);
     setNotesError(null);
     try {
       const res = await fetch(`/api/treatment-stages/${stage.id}/notes`, {
         method: "PATCH",
-        headers: authHeaders,
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ notes: notesDraft }),
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -286,7 +283,7 @@ function StageDetail({
 
 // ─── Main Component ───────────────────────────────────────────────────────────
 
-export default function TreatmentStagesPanel({ setupId, token }: { setupId?: string; token: string }) {
+export default function TreatmentStagesPanel({ setupId }: { setupId?: string }) {
   const [stages, setStages] = useState<TreatmentStage[]>([]);
   const [loading, setLoading] = useState(false);
   const [generating, setGenerating] = useState(false);
@@ -297,15 +294,12 @@ export default function TreatmentStagesPanel({ setupId, token }: { setupId?: str
   const scrollRef = useRef<HTMLDivElement>(null);
   const previewTimer = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  const authHeaders = { Authorization: `Bearer ${token}`, "Content-Type": "application/json" };
-
   const fetchStages = useCallback(async () => {
     if (!setupId) return;
-    const authHeaders = { Authorization: `Bearer ${token}`, "Content-Type": "application/json" };
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`/api/treatment-stages?setupId=${setupId}`, { headers: authHeaders });
+      const res = await fetch(`/api/treatment-stages?setupId=${setupId}`, { credentials: "include" });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json() as TreatmentStage[];
       setStages(data);
@@ -314,7 +308,7 @@ export default function TreatmentStagesPanel({ setupId, token }: { setupId?: str
     } finally {
       setLoading(false);
     }
-  }, [setupId, token]);
+  }, [setupId]);
 
   useEffect(() => { fetchStages(); }, [fetchStages]);
 
@@ -332,7 +326,7 @@ export default function TreatmentStagesPanel({ setupId, token }: { setupId?: str
     try {
       const res = await fetch(`/api/treatment-stages/generate/${setupId}`, {
         method: "POST",
-        headers: authHeaders,
+        credentials: "include",
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json() as TreatmentStage[];
@@ -521,7 +515,6 @@ export default function TreatmentStagesPanel({ setupId, token }: { setupId?: str
               </div>
               <StageDetail
                 stage={selectedStage}
-                token={token}
                 onNotesUpdated={handleNotesUpdated}
               />
             </div>

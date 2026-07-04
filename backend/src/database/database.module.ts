@@ -21,9 +21,9 @@ export const PG_POOL = 'PG_POOL';
         pool.on('error', (err: Error) => {
           console.error('[PG Pool] Unexpected client error:', err.message);
         });
-        pool.on('connect', () => {
+        pool.on('connect', (client) => {
           // Apply session-level query timeout on every new connection
-          pool.query('SET statement_timeout = 30000').catch(() => {});
+          client.query('SET statement_timeout = 30000').catch(() => {});
         });
         return pool;
       },

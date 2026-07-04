@@ -242,19 +242,15 @@ function ToothEditorPanel({
   fdi,
   movement,
   setupId,
-  token,
   onMovementUpdated,
 }: {
   fdi: number;
   movement: ToothMovement;
   setupId: string;
-  token: string;
   onMovementUpdated: (m: ToothMovement) => void;
 }) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  const authHeaders = { Authorization: `Bearer ${token}`, "Content-Type": "application/json" };
 
   const applyDelta = async (movementType: string, deltaValue: number) => {
     setSaving(true);
@@ -262,7 +258,8 @@ function ToothEditorPanel({
     try {
       const res = await fetch(`/api/digital-setup/${setupId}/move`, {
         method: "PATCH",
-        headers: authHeaders,
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ toothFdi: fdi, movementType, deltaValue }),
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -281,7 +278,7 @@ function ToothEditorPanel({
     try {
       const res = await fetch(`/api/digital-setup/${setupId}/reset-tooth/${fdi}`, {
         method: "PATCH",
-        headers: authHeaders,
+        credentials: "include",
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const updated = await res.json() as ToothMovement;
@@ -409,11 +406,9 @@ function ToothEditorPanel({
 
 export default function CADWorkspacePanel({
   caseId,
-  token,
   onRunBiomechanics,
 }: {
   caseId: string;
-  token: string;
   onRunBiomechanics?: (setupId: string) => void;
 }) {
   const [setups, setSetups] = useState<DigitalSetup[]>([]);
@@ -424,14 +419,11 @@ export default function CADWorkspacePanel({
   const [approving, setApproving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const authHeaders = { Authorization: `Bearer ${token}`, "Content-Type": "application/json" };
-
   const fetchSetups = useCallback(async () => {
-    const authHeaders = { Authorization: `Bearer ${token}`, "Content-Type": "application/json" };
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`/api/digital-setup?caseId=${caseId}`, { headers: authHeaders });
+      const res = await fetch(`/api/digital-setup?caseId=${caseId}`, { credentials: "include" });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json() as DigitalSetup[];
       setSetups(data);
@@ -441,7 +433,7 @@ export default function CADWorkspacePanel({
     } finally {
       setLoading(false);
     }
-  }, [caseId, token]);
+  }, [caseId]);
 
   useEffect(() => { fetchSetups(); }, [fetchSetups]);
 
@@ -451,7 +443,8 @@ export default function CADWorkspacePanel({
     try {
       const res = await fetch("/api/digital-setup", {
         method: "POST",
-        headers: authHeaders,
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ caseId }),
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -473,7 +466,7 @@ export default function CADWorkspacePanel({
     try {
       const res = await fetch(`/api/digital-setup/${activeSetup.id}/approve`, {
         method: "POST",
-        headers: authHeaders,
+        credentials: "include",
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const updated = await res.json() as DigitalSetup;
@@ -628,7 +621,6 @@ export default function CADWorkspacePanel({
                 fdi={selectedTooth}
                 movement={getMovement(selectedTooth)}
                 setupId={activeSetup.id}
-                token={token}
                 onMovementUpdated={handleMovementUpdated}
               />
             </Card>

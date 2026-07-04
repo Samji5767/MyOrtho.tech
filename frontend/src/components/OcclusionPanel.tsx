@@ -9,9 +9,9 @@ interface OcclusionAnalysis {
   tmjFindings: string | null; notes: string | null; createdAt: string;
 }
 
-interface Props { caseId: string; token: string }
+interface Props { caseId: string }
 
-export default function OcclusionPanel({ caseId, token }: Props) {
+export default function OcclusionPanel({ caseId }: Props) {
   const [analyses, setAnalyses] = useState<OcclusionAnalysis[]>([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
@@ -25,10 +25,10 @@ export default function OcclusionPanel({ caseId, token }: Props) {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const r = await fetch(`/api/cases/${caseId}/occlusion`, { headers: { Authorization: `Bearer ${token}` } });
+      const r = await fetch(`/api/cases/${caseId}/occlusion`, { credentials: "include" });
       if (r.ok) setAnalyses(await r.json());
     } finally { setLoading(false); }
-  }, [caseId, token]);
+  }, [caseId]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -37,7 +37,8 @@ export default function OcclusionPanel({ caseId, token }: Props) {
     try {
       await fetch(`/api/cases/${caseId}/occlusion`, {
         method: 'POST',
-        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        credentials: "include",
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           analysisDate: form.analysisDate,
           angleClass: form.angleClass || null,

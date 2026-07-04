@@ -197,18 +197,30 @@ export default function AttachmentPlanner({ caseId, planId }: Props) {
   }, [caseId, planId]);
 
   async function handleAdd(dto: CreateAttachmentDto) {
-    const att = await addAttachment(caseId, planId, dto);
-    setAttachments((prev) => [...prev, att]);
+    try {
+      const att = await addAttachment(caseId, planId, dto);
+      setAttachments((prev) => [...prev, att]);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to add attachment');
+    }
   }
 
   async function handleDelete(id: string) {
-    await deleteAttachment(caseId, planId, id);
-    setAttachments((prev) => prev.filter((a) => a.id !== id));
+    try {
+      await deleteAttachment(caseId, planId, id);
+      setAttachments((prev) => prev.filter((a) => a.id !== id));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to delete attachment');
+    }
   }
 
   async function handleApprove(id: string) {
-    const updated = await approveAttachment(caseId, planId, id);
-    setAttachments((prev) => prev.map((a) => a.id === id ? updated : a));
+    try {
+      const updated = await approveAttachment(caseId, planId, id);
+      setAttachments((prev) => prev.map((a) => a.id === id ? updated : a));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to approve attachment');
+    }
   }
 
   async function handleRecommend() {

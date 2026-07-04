@@ -493,15 +493,17 @@ export default function AIProposalPanel({ caseId }: { caseId: string }) {
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState<AIProposal | null>(null);
   const [showForm, setShowForm] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
+    setLoadError(null);
     try {
       const list = await listProposals(caseId);
       setProposals(list);
       if (list.length > 0) setSelected((prev) => prev ?? list[0]);
-    } catch {
-      // leave empty
+    } catch (e) {
+      setLoadError(e instanceof Error ? e.message : 'Failed to load proposals');
     } finally {
       setLoading(false);
     }
@@ -547,6 +549,10 @@ export default function AIProposalPanel({ caseId }: { caseId: string }) {
 
       {/* Generate form */}
       {showForm && <GenerateForm caseId={caseId} onGenerated={handleGenerated} />}
+
+      {loadError && (
+        <div className="text-xs text-red-600 dark:text-red-400 px-1">{loadError}</div>
+      )}
 
       {/* Loading */}
       {loading ? (

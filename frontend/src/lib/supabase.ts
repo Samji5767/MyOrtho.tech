@@ -26,11 +26,12 @@ export async function ensureAuth(): Promise<void> {
     try {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) {
-        // TODO: Implement proper auth flow — redirect to login or use OAuth
         console.warn("MyOrtho: No active Supabase session. Connect backend authentication.");
       }
     } catch (err) {
       console.warn("MyOrtho: Supabase auth check failed:", err);
+    } finally {
+      authPromise = null;
     }
   })();
 

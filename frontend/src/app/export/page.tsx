@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, Suspense } from "react";
 import Link from "next/link";
 import { useSearchParams, useRouter } from "next/navigation";
 import {
@@ -377,7 +377,7 @@ function ExportPanelWrapper({ caseId }: { caseId: string }) {
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
-export default function ExportPage() {
+function ExportPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const caseId = searchParams.get("caseId");
@@ -427,5 +427,13 @@ export default function ExportPage() {
         </>
       )}
     </section>
+  );
+}
+
+export default function ExportPage() {
+  return (
+    <Suspense fallback={<div className="flex min-h-[60vh] items-center justify-center text-sm text-[color:var(--muted-foreground)]">Loading export…</div>}>
+      <ExportPageContent />
+    </Suspense>
   );
 }

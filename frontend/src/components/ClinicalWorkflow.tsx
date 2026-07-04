@@ -3,6 +3,7 @@
 import React, { useState } from "react";
 import { Activity, Archive, CheckCircle2, ChevronRight, Clock, FileEdit, FlaskConical, Scan, ShieldCheck, XCircle } from "lucide-react";
 import { Button, Card, StatusBadge } from "@/components/DesignSystem";
+import { api } from "@/lib/api/client";
 
 export type CaseStatus =
   | "draft"
@@ -244,14 +245,12 @@ export default function ClinicalWorkflow({
 
     try {
       if (caseId !== "DEMO-001") {
-        await fetch(`/api/cases/${caseId}/status`, {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ status: action.toStatus, notes }),
-        });
+        await api.patch(`/api/cases/${caseId}/status`, { status: action.toStatus, notes });
       }
-    } catch {
-      // backend not connected — UI-only update
+    } catch (err) {
+      console.error("[ClinicalWorkflow] status transition failed:", err);
+      setSubmitting(false);
+      return;
     }
 
     setStatus(action.toStatus);

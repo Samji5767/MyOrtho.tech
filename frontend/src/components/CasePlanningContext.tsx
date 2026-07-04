@@ -134,17 +134,8 @@ const DEFAULT_MEASUREMENTS: PlanningMeasurement[] = [
 export const INITIAL_STATE: CasePlanningState = {
   caseId: null,
   movements: {},
-  attachments: [
-    { id: "att_demo_1", fdi: 13, type: "Rotation",             surface: "Buccal", stage: 1 },
-    { id: "att_demo_2", fdi: 23, type: "Rotation",             surface: "Buccal", stage: 1 },
-    { id: "att_demo_3", fdi: 14, type: "Vertical Rectangular", surface: "Buccal", stage: 2 },
-    { id: "att_demo_4", fdi: 24, type: "Vertical Rectangular", surface: "Buccal", stage: 2 },
-  ],
-  iprEntries: [
-    { id: "ipr_demo_1", toothA: 12, toothB: 13, amount: 0.20, stage: 3, safety: "safe" },
-    { id: "ipr_demo_2", toothA: 22, toothB: 23, amount: 0.20, stage: 3, safety: "safe" },
-    { id: "ipr_demo_3", toothA: 32, toothB: 33, amount: 0.25, stage: 5, safety: "safe" },
-  ],
+  attachments: [],
+  iprEntries: [],
   measurements: DEFAULT_MEASUREMENTS,
   workflowSteps: {},
   currentStage: 0,

@@ -9,7 +9,7 @@ Behaviour by configuration:
     This is reported explicitly in the response.
 
 Supports: STL, PLY, OBJ, OFF (via trimesh)
-Jaw types: maxillary, mandibular, combined
+Jaw types: maxillary, mandibular, combined, auto (geometry-based detection)
 """
 
 import os
@@ -106,9 +106,10 @@ class OrthoSegmentationEngine:
             )
 
         jaw_type = jaw_type.lower()
-        if jaw_type not in ("maxillary", "mandibular", "combined"):
+        if jaw_type not in ("maxillary", "mandibular", "combined", "auto"):
             raise SegmentationError(
-                f"Invalid jaw_type '{jaw_type}'. Use 'maxillary', 'mandibular', or 'combined'."
+                f"Invalid jaw_type '{jaw_type}'. "
+                f"Use 'maxillary', 'mandibular', 'combined', or 'auto'."
             )
 
         t0 = time.monotonic()
@@ -116,11 +117,21 @@ class OrthoSegmentationEngine:
         voxel_tensor = self._voxelize(mesh)
         preprocess_ms = int((time.monotonic() - t0) * 1000)
 
+        # Resolve "auto" → geometry-based detection before postprocessing
+        detected_jaw_type = jaw_type
+        if jaw_type == "auto":
+            detected_jaw_type = self._detect_jaw_type(mesh)
+            logger.info(
+                f"Auto jaw-type detection resolved '{jaw_type}' → '{detected_jaw_type}' "
+                f"for file {os.path.basename(file_path)}"
+            )
+
         t1 = time.monotonic()
         logits, softmax_probs = self._infer(voxel_tensor)
         infer_ms = int((time.monotonic() - t1) * 1000)
 
-        result = self._postprocess(logits, softmax_probs, jaw_type, mesh, file_path)
+        result = self._postprocess(logits, softmax_probs, detected_jaw_type, mesh, file_path)
+        result["requested_jaw_type"] = jaw_type
         result["timing"] = {
             "preprocess_ms": preprocess_ms,
             "inference_ms": infer_ms,
@@ -133,6 +144,90 @@ class OrthoSegmentationEngine:
                 "A trained checkpoint (DSC ≥ 0.85 per class) is required for clinical use."
             )
         return result
+
+    # ── Auto jaw-type detection ───────────────────────────────────────────────
+
+    def _detect_jaw_type(self, mesh: trimesh.Trimesh) -> str:
+        """
+        Heuristically detect whether a scan is maxillary, mandibular, or a full-arch
+        (combined) scan from mesh geometry alone.
+
+        Strategy:
+          1. Use SVD (PCA) to find the arch's principal axes. The axis of minimum
+             variance is perpendicular to the occlusal plane (the "height" axis).
+          2. Along this height axis, measure the surface-area asymmetry between the
+             two halves of the mesh.
+             - Maxillary: strong asymmetry because the palate dome contributes large
+               surface area on one side. The palate:occlusal area ratio typically
+               exceeds 1.4.
+             - Mandibular: comparatively symmetric (lingual surface ≈ occlusal area).
+          3. Bounding-box check: maxillary arches are taller along the height axis
+             relative to arch width (ratio > 0.32 for typical palate scans).
+
+        Falls back to "combined" when the scan does not clearly resemble a single arch.
+        """
+        try:
+            vertices = mesh.vertices
+            centroid = vertices.mean(axis=0)
+            centered = vertices - centroid
+
+            # Find axis of minimum variance (perpendicular to occlusal plane)
+            try:
+                _, _, Vt = np.linalg.svd(centered, full_matrices=False)
+                height_axis = Vt[-1]
+            except Exception:
+                height_axis = np.array([0.0, 0.0, 1.0])
+
+            # Split faces into two halves along the height axis
+            face_centroids = mesh.triangles_center   # (N, 3)
+            proj = face_centroids @ height_axis      # (N,) scalar projections
+            median_proj = float(np.median(proj))
+
+            top_mask = proj >= median_proj
+            bot_mask = ~top_mask
+
+            top_area = float(mesh.area_faces[top_mask].sum()) if top_mask.any() else 0.0
+            bot_area = float(mesh.area_faces[bot_mask].sum()) if bot_mask.any() else 0.0
+
+            area_ratio = (max(top_area, bot_area) / min(top_area, bot_area)
+                          if min(top_area, bot_area) > 0 else 1.0)
+
+            # Bounding-box height ratio along principal axes
+            arch_height = float(np.abs(proj.max() - proj.min()))
+            xy_extent = float(max(mesh.extents[0], mesh.extents[1]))
+            height_ratio = arch_height / xy_extent if xy_extent > 0 else 0.0
+
+            # Strong asymmetry (palate on one side) → single arch
+            if area_ratio > 1.4:
+                # Determine which jaw by the face-normal mean along height_axis
+                top_normals = (mesh.face_normals[top_mask] @ height_axis).mean() if top_mask.any() else 0.0
+                # If the larger half has normals pointing away from the arch (outward from dome)
+                # the larger half is the palate → maxillary; otherwise mandibular
+                if top_area > bot_area:
+                    return "maxillary" if top_normals > 0 else "mandibular"
+                else:
+                    bot_normals = (mesh.face_normals[bot_mask] @ height_axis).mean() if bot_mask.any() else 0.0
+                    return "maxillary" if bot_normals < 0 else "mandibular"
+
+            # Tall relative to width suggests maxillary with prominent palate
+            if height_ratio > 0.32:
+                return "maxillary"
+
+            # Shallow (flat) scan typical of mandibular impression or wax bite
+            if height_ratio < 0.18:
+                return "mandibular"
+
+            # Cannot determine confidently → scan all 32 teeth
+            logger.info(
+                f"Auto jaw-type detection inconclusive "
+                f"(area_ratio={area_ratio:.2f}, height_ratio={height_ratio:.2f}); "
+                "defaulting to 'combined'"
+            )
+            return "combined"
+
+        except Exception as exc:
+            logger.warning(f"Auto jaw-type detection failed ({exc}); defaulting to 'combined'")
+            return "combined"
 
     # ── Per-tooth mesh extraction ─────────────────────────────────────────────
 
@@ -198,6 +293,25 @@ class OrthoSegmentationEngine:
             if extracted == 0:
                 logger.warning("Per-tooth extraction produced no output files")
                 return None
+
+            # Export gingiva: faces assigned to the background channel (0)
+            # These are the soft-tissue / gingival surfaces not attributed to any tooth.
+            gingiva_mask = face_labels == 0
+            if int(gingiva_mask.sum()) >= 20:
+                try:
+                    g_faces = mesh.faces[gingiva_mask]
+                    g_unique, g_inv = np.unique(g_faces, return_inverse=True)
+                    g_verts = mesh.vertices[g_unique]
+                    g_mesh = trimesh.Trimesh(
+                        vertices=g_verts,
+                        faces=g_inv.reshape(-1, 3),
+                        process=False,
+                    )
+                    g_path = os.path.join(output_dir, "gingiva.stl")
+                    g_mesh.export(g_path)
+                    logger.info(f"Exported gingiva mesh ({int(gingiva_mask.sum())} faces) → {g_path}")
+                except Exception as g_exc:
+                    logger.warning(f"Gingiva export failed: {g_exc}")
 
             logger.info(f"Extracted {extracted} tooth meshes → {output_dir}")
             return output_dir

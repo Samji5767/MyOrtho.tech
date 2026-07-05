@@ -178,7 +178,7 @@ class SegmentationRequest(BaseModel):
     case_id: str
     scan_id: str
     file_path: str
-    jaw_type: str  # "maxillary" | "mandibular" | "combined"
+    jaw_type: str  # "maxillary" | "mandibular" | "combined" | "auto"
 
 
 class HollowRequest(BaseModel):

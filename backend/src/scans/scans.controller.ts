@@ -50,7 +50,8 @@ export class ScansController {
 
   /**
    * Upload a scan (STL / OBJ / PLY, max 500 MB).
-   * Multipart field: file=<binary>, jawType=maxillary|mandibular|both
+   * Multipart field: file=<binary>, jawType=auto|maxillary|mandibular|both
+   * Defaults to "auto" (geometry-based detection in the AI engine).
    */
   @Post()
   @HttpCode(HttpStatus.CREATED)
@@ -63,7 +64,7 @@ export class ScansController {
   ) {
     if (!file) throw new BadRequestException('Multipart field "file" is required');
     const user = getUser(req);
-    const jawType = (req.body as { jawType?: string })?.jawType ?? 'maxillary';
+    const jawType = (req.body as { jawType?: string })?.jawType ?? 'auto';
     return this.scansService.create(caseId, user.orgId!, user.id, file, jawType, user.email);
   }
 

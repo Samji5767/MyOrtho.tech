@@ -36,7 +36,7 @@ const ACCEPTED_EXTS = ".stl,.obj,.ply";
 const MAX_MB = 250;
 const POLL_MS = 3_000;
 
-type JawType = "maxillary" | "mandibular" | "both";
+type JawType = "auto" | "maxillary" | "mandibular" | "both";
 
 interface ActiveJob {
   scanId: string;
@@ -78,7 +78,7 @@ export default function ScanPanel({ caseId }: { caseId: string }) {
 
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
-  const [jawType, setJawType] = useState<JawType>("maxillary");
+  const [jawType, setJawType] = useState<JawType>("auto");
   const fileRef = useRef<HTMLInputElement>(null);
 
   const [jobs, setJobs] = useState<Record<string, ActiveJob>>({});
@@ -202,7 +202,7 @@ export default function ScanPanel({ caseId }: { caseId: string }) {
           {/* Jaw selector */}
           <div className="flex flex-wrap items-center gap-2">
             <span className="text-xs font-medium text-[color:var(--muted-foreground)]">Jaw:</span>
-            {(["maxillary", "mandibular", "both"] as JawType[]).map((j) => (
+            {(["auto", "maxillary", "mandibular", "both"] as JawType[]).map((j) => (
               <button
                 key={j}
                 type="button"
@@ -214,7 +214,7 @@ export default function ScanPanel({ caseId }: { caseId: string }) {
                     : "border border-[color:var(--border)] text-[color:var(--muted-foreground)] hover:text-[color:var(--foreground)]",
                 ].join(" ")}
               >
-                {j.charAt(0).toUpperCase() + j.slice(1)}
+                {j === "auto" ? "Auto-detect" : j.charAt(0).toUpperCase() + j.slice(1)}
               </button>
             ))}
           </div>

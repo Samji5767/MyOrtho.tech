@@ -19,7 +19,7 @@ const AI_ENGINE_HEADERS = (): Record<string, string> => ({
   'Content-Type': 'application/json',
   ...(INTERNAL_API_SECRET ? { 'X-Internal-Token': INTERNAL_API_SECRET } : {}),
 });
-const VALID_JAW_TYPES = ['maxillary', 'mandibular', 'both'] as const;
+const VALID_JAW_TYPES = ['maxillary', 'mandibular', 'both', 'auto'] as const;
 const VALID_FORMATS = ['stl', 'obj', 'ply'] as const;
 
 const SEG_DISCLAIMER =
@@ -195,6 +195,10 @@ export class ScansService {
 
     let aiJobId: string;
     try {
+      // Translate backend jaw_type values to AI engine values:
+      // 'both' → 'combined'  (legacy UI option; AI engine uses 'combined')
+      // 'auto' → 'auto'      (geometry-based detection handled by AI engine)
+      const aiJawType = scan.jaw_type === 'both' ? 'combined' : (scan.jaw_type as string);
       const res = await fetch(`${AI_ENGINE_URL}/ai/segment`, {
         method: 'POST',
         headers: AI_ENGINE_HEADERS(),
@@ -202,7 +206,7 @@ export class ScansService {
           case_id: caseId,
           scan_id: scanId,
           file_path: scan.file_path as string,
-          jaw_type: scan.jaw_type as string,
+          jaw_type: aiJawType,
         }),
         signal: AbortSignal.timeout(12_000),
       });

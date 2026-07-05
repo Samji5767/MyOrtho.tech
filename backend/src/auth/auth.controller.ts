@@ -97,7 +97,6 @@ export class AuthController {
         orgId: payload.orgId,
         isOnboarded: payload.isOnboarded,
       },
-      token,
     };
   }
 
@@ -210,7 +209,6 @@ export class AuthController {
         orgId: payload.orgId,
         isOnboarded: payload.isOnboarded,
       },
-      token,
     };
   }
 

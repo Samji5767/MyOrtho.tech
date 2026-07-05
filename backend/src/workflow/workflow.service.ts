@@ -22,17 +22,19 @@ export const CASE_STATUSES = [
 
 export type CaseStatus = (typeof CASE_STATUSES)[number];
 
-// Allowed transitions: from → allowed next statuses
+// Allowed transitions: from → allowed next statuses.
+// 'archived' and 'cancelled' are allowed from every active state so clinicians
+// can retire a case at any point without being blocked by workflow step order.
 const TRANSITIONS: Record<CaseStatus, CaseStatus[]> = {
-  draft:            ['scan_review', 'cancelled'],
-  scan_review:      ['segmentation', 'draft', 'cancelled'],
-  segmentation:     ['planning', 'scan_review', 'cancelled'],
-  planning:         ['clinical_review', 'segmentation', 'cancelled'],
-  clinical_review:  ['approved', 'planning'],
-  approved:         ['active_treatment', 'clinical_review'],
-  active_treatment: ['monitoring', 'retention', 'completed'],
-  monitoring:       ['retention', 'active_treatment', 'completed'],
-  retention:        ['completed'],
+  draft:            ['scan_review', 'cancelled', 'archived'],
+  scan_review:      ['segmentation', 'draft', 'cancelled', 'archived'],
+  segmentation:     ['planning', 'scan_review', 'cancelled', 'archived'],
+  planning:         ['clinical_review', 'segmentation', 'cancelled', 'archived'],
+  clinical_review:  ['approved', 'planning', 'archived'],
+  approved:         ['active_treatment', 'clinical_review', 'archived'],
+  active_treatment: ['monitoring', 'retention', 'completed', 'archived'],
+  monitoring:       ['retention', 'active_treatment', 'completed', 'archived'],
+  retention:        ['completed', 'archived'],
   completed:        ['archived'],
   archived:         [],
   cancelled:        [],

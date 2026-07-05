@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { fetchCases, type CaseListItem } from "@/lib/api/cases";
+import { fetchCases, transitionCase, type CaseListItem } from "@/lib/api/cases";
 import {
   AlertCircle,
   AlertTriangle,
@@ -451,16 +451,7 @@ export default function CasesPage() {
     const ids = Array.from(selectedIds);
     if (!ids.length) return;
     try {
-      await Promise.all(
-        ids.map((id) =>
-          fetch(`/api/cases/${id}/status`, {
-            method: "PATCH",
-            credentials: "include",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ status: "archived" }),
-          }),
-        ),
-      );
+      await Promise.all(ids.map((id) => transitionCase(id, "archived")));
       setApiCases((prev) => prev.filter((c) => !selectedIds.has(c.id)));
       clearBulk();
     } catch (e) {
@@ -474,12 +465,7 @@ export default function CasesPage() {
       return;
     }
     try {
-      await fetch(`/api/cases/${id}/status`, {
-        method: "PATCH",
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ status: "archived" }),
-      });
+      await transitionCase(id, "archived");
       setApiCases((prev) => prev.filter((c) => c.id !== id));
     } catch (e) {
       console.error("[CasesPage] archive failed:", e);

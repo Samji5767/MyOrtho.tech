@@ -133,3 +133,105 @@ describe('CasesService.update', () => {
       .rejects.toThrow(ForbiddenException);
   });
 });
+
+// ─── create — organization_id fix (migration 034) ─────────────────────────────
+
+describe('CasesService.create', () => {
+  it('INSERT includes organization_id as the 3rd bound parameter', async () => {
+    const PAT_ID2 = 'pat-33333333';
+    const pool = makePool([
+      [{ id: PAT_ID2 }],       // patient ownership check
+      [{ id: CASE_ID }],       // INSERT INTO cases RETURNING id
+      [makeRow(ORG_A)],        // findOne post-create
+      [{}],                    // linked resources
+    ]);
+    const svc = makeService(pool);
+
+    await svc.create(ORG_A, 'actor-1', { patientId: PAT_ID2 });
+
+    const insertCall = (pool.query as jest.Mock).mock.calls.find(
+      ([sql]: [string]) => sql.includes('INSERT INTO cases'),
+    );
+    expect(insertCall).toBeDefined();
+    const [sql, params] = insertCall!;
+    // organization_id must appear in the column list
+    expect(sql).toMatch(/organization_id/);
+    // orgId must be in the bound params
+    expect(params).toContain(ORG_A);
+  });
+
+  it('INSERT binds orgId before chiefComplaint (position 3)', async () => {
+    const PAT_ID2 = 'pat-33333333';
+    const COMPLAINT = 'Test complaint';
+    const pool = makePool([
+      [{ id: PAT_ID2 }],
+      [{ id: CASE_ID }],
+      [makeRow(ORG_A)],
+      [{}],
+    ]);
+    const svc = makeService(pool);
+
+    await svc.create(ORG_A, 'actor-1', { patientId: PAT_ID2, chiefComplaint: COMPLAINT });
+
+    const insertCall = (pool.query as jest.Mock).mock.calls.find(
+      ([sql]: [string]) => sql.includes('INSERT INTO cases'),
+    );
+    const [, params] = insertCall!;
+    const orgIndex = params.indexOf(ORG_A);
+    const complaintIndex = params.indexOf(COMPLAINT);
+    // orgId must appear before chiefComplaint in the param array
+    expect(orgIndex).toBeGreaterThan(-1);
+    expect(complaintIndex).toBeGreaterThan(orgIndex);
+  });
+});
+
+// ─── createWithNewPatient — organization_id fix (migration 034) ────────────────
+
+describe('CasesService.createWithNewPatient', () => {
+  it('INSERT INTO cases includes organization_id', async () => {
+    const NEW_PAT_ID = 'pat-44444444';
+    const pool = makePool([
+      [{ id: NEW_PAT_ID }],    // INSERT INTO patients RETURNING id
+      [{ id: CASE_ID }],       // INSERT INTO cases RETURNING id
+      [makeRow(ORG_A)],        // findOne post-create
+      [{}],                    // linked resources
+    ]);
+    const svc = makeService(pool);
+
+    await svc.createWithNewPatient(ORG_A, 'actor-1', {
+      patient: { firstName: 'Jane', lastName: 'Doe', dateOfBirth: '1990-01-01' },
+    });
+
+    const caseInsert = (pool.query as jest.Mock).mock.calls.find(
+      ([sql]: [string]) => sql.includes('INSERT INTO cases'),
+    );
+    expect(caseInsert).toBeDefined();
+    const [sql, params] = caseInsert!;
+    expect(sql).toMatch(/organization_id/);
+    expect(params).toContain(ORG_A);
+  });
+
+  it('patient INSERT and case INSERT both use the same orgId', async () => {
+    const NEW_PAT_ID = 'pat-44444444';
+    const pool = makePool([
+      [{ id: NEW_PAT_ID }],
+      [{ id: CASE_ID }],
+      [makeRow(ORG_A)],
+      [{}],
+    ]);
+    const svc = makeService(pool);
+
+    await svc.createWithNewPatient(ORG_A, 'actor-1', {
+      patient: { firstName: 'Jane', lastName: 'Doe' },
+    });
+
+    const patInsert = (pool.query as jest.Mock).mock.calls.find(
+      ([sql]: [string]) => sql.includes('INSERT INTO patients'),
+    );
+    const caseInsert = (pool.query as jest.Mock).mock.calls.find(
+      ([sql]: [string]) => sql.includes('INSERT INTO cases'),
+    );
+    expect((patInsert![1] as unknown[]).includes(ORG_A)).toBe(true);
+    expect((caseInsert![1] as unknown[]).includes(ORG_A)).toBe(true);
+  });
+});

@@ -18,6 +18,27 @@ interface OrgMember {
   lastLogin: string | null;
 }
 
+// Raw shape returned by /api/admin/users (flat array, snake_case)
+interface RawMember {
+  id: string;
+  email: string;
+  full_name: string;
+  role: string;
+  created_at: string;
+  last_login_at: string | null;
+}
+
+function normalizeMember(r: RawMember): OrgMember {
+  return {
+    id: r.id,
+    email: r.email,
+    name: r.full_name,
+    role: r.role,
+    createdAt: r.created_at,
+    lastLogin: r.last_login_at,
+  };
+}
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function toneCls(tone: ReturnType<typeof roleTone>): string {
@@ -56,7 +77,10 @@ export default function AdminUsersPage() {
     if (!isAdmin) return;
     fetch("/api/admin/users", { credentials: "include" })
       .then(r => r.ok ? r.json() : Promise.reject(r.status))
-      .then((data: { members: OrgMember[] }) => setMembers(data.members ?? []))
+      .then((data: RawMember[] | { members: RawMember[] }) => {
+        const raw = Array.isArray(data) ? data : (data.members ?? []);
+        setMembers(raw.map(normalizeMember));
+      })
       .catch(() => setMembers([]))
       .finally(() => setLoading(false));
   }, [isAdmin]);

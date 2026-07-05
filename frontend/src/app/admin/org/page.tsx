@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Building2, MapPin, Phone, Globe, Mail, Save, ShieldAlert } from "lucide-react";
+import { Building2, Save, ShieldAlert } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { Button, SkeletonBlock } from "@/components/DesignSystem";
 
@@ -10,13 +10,17 @@ import { Button, SkeletonBlock } from "@/components/DesignSystem";
 
 interface OrgProfile {
   name: string;
-  email: string;
-  phone: string;
-  website: string;
-  address: string;
-  city: string;
-  country: string;
-  npiNumber: string;
+  type: string;
+}
+
+// Raw shape returned by /api/admin/orgs
+interface RawOrg {
+  id: string;
+  name: string;
+  type: string;
+  created_at: string;
+  user_count?: number;
+  credit_balance?: number;
 }
 
 // ─── Field component ──────────────────────────────────────────────────────────
@@ -55,10 +59,7 @@ function Field({
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
-const EMPTY: OrgProfile = {
-  name: "", email: "", phone: "", website: "",
-  address: "", city: "", country: "", npiNumber: "",
-};
+const EMPTY: OrgProfile = { name: "", type: "clinic" };
 
 export default function AdminOrgPage() {
   const { user } = useAuth();
@@ -76,12 +77,17 @@ export default function AdminOrgPage() {
 
   useEffect(() => {
     if (!isAdmin) return;
-    fetch("/api/admin/org", { credentials: "include" })
+    fetch("/api/admin/orgs", { credentials: "include" })
       .then(r => r.ok ? r.json() : Promise.reject(r.status))
-      .then((data: OrgProfile) => setProfile({ ...EMPTY, ...data }))
+      .then((data: RawOrg[]) => {
+        const org = Array.isArray(data)
+          ? data.find(o => o.id === user?.orgId) ?? data[0]
+          : null;
+        if (org) setProfile({ name: org.name, type: org.type });
+      })
       .catch(() => {})
       .finally(() => setLoading(false));
-  }, [isAdmin]);
+  }, [isAdmin, user?.orgId]);
 
   function set(key: keyof OrgProfile) {
     return (v: string) => setProfile(p => ({ ...p, [key]: v }));
@@ -90,7 +96,7 @@ export default function AdminOrgPage() {
   async function handleSave() {
     setSaving(true);
     try {
-      await fetch("/api/admin/org", {
+      await fetch("/api/admin/orgs", {
         method: "PATCH",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
@@ -122,7 +128,7 @@ export default function AdminOrgPage() {
 
       {loading ? (
         <div className="flex flex-col gap-4">
-          {[1, 2, 3, 4, 5].map(i => <SkeletonBlock key={i} className="h-12 rounded-xl" />)}
+          {[1, 2].map(i => <SkeletonBlock key={i} className="h-12 rounded-xl" />)}
         </div>
       ) : (
         <div className="space-y-6">
@@ -134,37 +140,21 @@ export default function AdminOrgPage() {
             </h2>
             <div className="grid gap-4 sm:grid-cols-2">
               <Field label="Clinic name" icon={<Building2 size={11} />} value={profile.name} onChange={set("name")} placeholder="Smile Orthodontics" />
-              <Field label="NPI number" icon={<Building2 size={11} />} value={profile.npiNumber} onChange={set("npiNumber")} placeholder="1234567890" />
-            </div>
-          </div>
-
-          {/* Contact */}
-          <div className="rounded-xl border border-[color:var(--border)] bg-[color:var(--card)] p-5">
-            <h2 className="mb-4 flex items-center gap-2 text-sm font-semibold text-[color:var(--foreground)]">
-              <Mail size={15} className="text-[color:var(--primary)]" />
-              Contact
-            </h2>
-            <div className="grid gap-4 sm:grid-cols-2">
-              <Field label="Email" type="email" icon={<Mail size={11} />} value={profile.email} onChange={set("email")} placeholder="info@yourclinic.com" />
-              <Field label="Phone" type="tel" icon={<Phone size={11} />} value={profile.phone} onChange={set("phone")} placeholder="+1 (555) 000-0000" />
-              <div className="sm:col-span-2">
-                <Field label="Website" type="url" icon={<Globe size={11} />} value={profile.website} onChange={set("website")} placeholder="https://yourclinic.com" />
+              <div>
+                <label className="mb-1.5 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-[color:var(--muted-foreground)]">
+                  <Building2 size={11} />
+                  Type
+                </label>
+                <select
+                  value={profile.type}
+                  onChange={e => set("type")(e.target.value)}
+                  className="w-full rounded-xl border border-[color:var(--border)] bg-[color:var(--background)] px-4 py-2.5 text-sm text-[color:var(--foreground)] focus:border-[color:var(--primary)] focus:outline-none"
+                >
+                  <option value="clinic">Clinic</option>
+                  <option value="lab">Lab</option>
+                  <option value="enterprise">Enterprise</option>
+                </select>
               </div>
-            </div>
-          </div>
-
-          {/* Location */}
-          <div className="rounded-xl border border-[color:var(--border)] bg-[color:var(--card)] p-5">
-            <h2 className="mb-4 flex items-center gap-2 text-sm font-semibold text-[color:var(--foreground)]">
-              <MapPin size={15} className="text-[color:var(--primary)]" />
-              Location
-            </h2>
-            <div className="grid gap-4 sm:grid-cols-2">
-              <div className="sm:col-span-2">
-                <Field label="Street address" icon={<MapPin size={11} />} value={profile.address} onChange={set("address")} placeholder="123 Main St, Suite 100" />
-              </div>
-              <Field label="City" icon={<MapPin size={11} />} value={profile.city} onChange={set("city")} placeholder="San Francisco" />
-              <Field label="Country" icon={<Globe size={11} />} value={profile.country} onChange={set("country")} placeholder="United States" />
             </div>
           </div>
 

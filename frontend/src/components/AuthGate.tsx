@@ -5,7 +5,7 @@ import { useRouter, usePathname } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 
 // These paths are accessible without authentication
-const PUBLIC_PATHS = ["/login", "/onboarding"];
+const PUBLIC_PATHS = ["/login", "/onboarding", "/signup", "/trust", "/download"];
 
 function isPublicPath(pathname: string): boolean {
   return PUBLIC_PATHS.some(

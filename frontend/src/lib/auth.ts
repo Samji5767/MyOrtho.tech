@@ -1,4 +1,12 @@
-// Auth API helpers — same-origin relative paths so nginx /api/ proxy handles routing.
+// Auth API helpers.
+// BASE is empty in production Docker builds (no ARG at build time), so all paths
+// are relative and nginx /api/ proxy handles routing. In local dev, set
+// NEXT_PUBLIC_API_URL=http://localhost:4000 in .env so the dev server reaches
+// the backend directly (no nginx in local dev).
+const BASE =
+  typeof process !== 'undefined'
+    ? (process.env.NEXT_PUBLIC_API_URL ?? '')
+    : '';
 
 export interface AuthUser {
   id: string;
@@ -11,7 +19,7 @@ export interface AuthUser {
 
 export async function fetchSession(): Promise<AuthUser | null> {
   try {
-    const res = await fetch(`/api/auth/session`, {
+    const res = await fetch(`${BASE}/api/auth/session`, {
       credentials: 'include',
       headers: { 'Content-Type': 'application/json' },
     });
@@ -25,7 +33,7 @@ export async function fetchSession(): Promise<AuthUser | null> {
 
 export async function login(email: string, password: string): Promise<{ user: AuthUser } | { error: string }> {
   try {
-    const res = await fetch(`/api/auth/login`, {
+    const res = await fetch(`${BASE}/api/auth/login`, {
       method: 'POST',
       credentials: 'include',
       headers: { 'Content-Type': 'application/json' },
@@ -46,7 +54,7 @@ export async function register(
   clinicName: string,
 ): Promise<{ user: AuthUser } | { error: string }> {
   try {
-    const res = await fetch(`/api/auth/register`, {
+    const res = await fetch(`${BASE}/api/auth/register`, {
       method: 'POST',
       credentials: 'include',
       headers: { 'Content-Type': 'application/json' },
@@ -62,7 +70,7 @@ export async function register(
 
 export async function logout(): Promise<void> {
   try {
-    await fetch(`/api/auth/logout`, {
+    await fetch(`${BASE}/api/auth/logout`, {
       method: 'POST',
       credentials: 'include',
     });

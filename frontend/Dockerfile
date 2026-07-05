@@ -3,6 +3,12 @@ WORKDIR /app
 COPY package*.json ./
 RUN npm ci
 COPY . .
+# NEXT_PUBLIC_API_URL is a build-time variable baked into the static bundle.
+# Pass it via `docker build --build-arg NEXT_PUBLIC_API_URL=https://api.myortho.tech`
+# or via the `args:` block in docker-compose.yml. Leaving it empty keeps the
+# relative-path behavior so nginx /api/ proxy handles routing.
+ARG NEXT_PUBLIC_API_URL=
+ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
 RUN npm run build
 
 # next.config.js uses output: 'export' with distDir: 'next-build', which means

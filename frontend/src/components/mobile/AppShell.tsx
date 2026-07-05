@@ -38,7 +38,7 @@ function useGlobalNavShortcuts() {
 }
 
 // Public routes that bypass auth gate and suppress chrome (nav/top bar)
-const PUBLIC_PATHS = ["/login", "/onboarding", "/"];
+const PUBLIC_PATHS = ["/login", "/onboarding", "/", "/signup", "/trust", "/download"];
 function isPublicPath(p: string) {
   return PUBLIC_PATHS.some(pub => p === pub || p === pub + "/" || p.startsWith(pub + "/"));
 }

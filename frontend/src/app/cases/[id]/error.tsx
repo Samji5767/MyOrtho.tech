@@ -12,7 +12,9 @@ export default function CaseDetailError({
   reset: () => void;
 }) {
   useEffect(() => {
-    console.error("[CaseDetailError]", error);
+    if (process.env.NODE_ENV !== "production") {
+      console.error("[CaseDetailError]", error);
+    }
   }, [error]);
 
   return (

@@ -58,7 +58,7 @@ export const ROLE_PERMISSIONS: Record<string, Permission[]> = {
   ],
 
   orthodontist: [
-    'patients:read',
+    'patients:read', 'patients:write',
     'cases:read', 'cases:write', 'cases:approve',
     'analytics:read',
   ],

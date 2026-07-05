@@ -1,8 +1,13 @@
 "use client";
 
+import { useEffect } from "react";
+import { useRouter } from "next/navigation";
 import dynamic from "next/dynamic";
 import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
+import { useAuth } from "@/context/AuthContext";
+
+const ADMIN_ROLES = ["admin", "super_admin"];
 
 const PlatformHealthPanel = dynamic(
   () => import("@/components/PlatformHealthPanel"),
@@ -10,6 +15,19 @@ const PlatformHealthPanel = dynamic(
 );
 
 export default function PlatformHealthPage() {
+  const { status, user } = useAuth();
+  const router = useRouter();
+
+  useEffect(() => {
+    if (status === "loading") return;
+    if (status === "unauthenticated" || !user || !ADMIN_ROLES.includes(user.role)) {
+      router.replace("/dashboard");
+    }
+  }, [status, user, router]);
+
+  if (status === "loading") return null;
+  if (!user || !ADMIN_ROLES.includes(user.role)) return null;
+
   return (
     <section className="mx-auto max-w-4xl pb-20 px-4 sm:px-5 pt-4 space-y-6">
       <div className="flex items-center gap-3 mb-2">

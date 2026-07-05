@@ -1,7 +1,12 @@
 "use client";
 
+import { useEffect } from "react";
+import { useRouter } from "next/navigation";
 import { ShieldAlert, Users, Building2, Settings2, Activity } from "lucide-react";
 import Link from "next/link";
+import { useAuth } from "@/context/AuthContext";
+
+const ADMIN_ROLES = ["admin", "super_admin"];
 
 const ADMIN_SECTIONS = [
   {
@@ -31,6 +36,19 @@ const ADMIN_SECTIONS = [
 ];
 
 export default function AdminPage() {
+  const { status, user } = useAuth();
+  const router = useRouter();
+
+  useEffect(() => {
+    if (status === "loading") return;
+    if (status === "unauthenticated" || !user || !ADMIN_ROLES.includes(user.role)) {
+      router.replace("/dashboard");
+    }
+  }, [status, user, router]);
+
+  if (status === "loading") return null;
+  if (!user || !ADMIN_ROLES.includes(user.role)) return null;
+
   return (
     <div className="mx-auto max-w-4xl px-4 py-8 sm:px-6">
       <div className="mb-6 flex items-center gap-2 rounded-xl border border-rose-200/60 bg-rose-50/60 px-4 py-3 text-sm text-rose-700 dark:border-rose-700/30 dark:bg-rose-900/10 dark:text-rose-400">

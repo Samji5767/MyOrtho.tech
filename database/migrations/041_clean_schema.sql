@@ -71,7 +71,7 @@ CREATE INDEX IF NOT EXISTS idx_segmented_teeth_upload ON segmented_teeth (stl_up
 
 -- ─── tooth_movements ──────────────────────────────────────────────────────────
 
-DO $ BEGIN
+DO $$ BEGIN
   IF NOT EXISTS (
     SELECT 1 FROM information_schema.tables
     WHERE table_schema = 'public' AND table_name = 'tooth_movements'
@@ -104,11 +104,11 @@ DO $ BEGIN
     CREATE INDEX idx_tooth_movements_setup   ON tooth_movements (setup_id);
     CREATE INDEX idx_tooth_movements_stage   ON tooth_movements (case_id, stage_index);
   END IF;
-END $;
+END $$;
 
 -- ─── attachments ──────────────────────────────────────────────────────────────
 
-DO $ BEGIN
+DO $$ BEGIN
   IF NOT EXISTS (
     SELECT 1 FROM information_schema.tables
     WHERE table_schema = 'public' AND table_name = 'attachments'
@@ -136,11 +136,11 @@ DO $ BEGIN
     CREATE INDEX idx_attachments_case   ON attachments (case_id);
     CREATE INDEX idx_attachments_setup  ON attachments (setup_id);
   END IF;
-END $;
+END $$;
 
 -- ─── ipr_points ───────────────────────────────────────────────────────────────
 
-DO $ BEGIN
+DO $$ BEGIN
   IF NOT EXISTS (
     SELECT 1 FROM information_schema.tables
     WHERE table_schema = 'public' AND table_name = 'ipr_points'
@@ -164,11 +164,11 @@ DO $ BEGIN
     CREATE INDEX idx_ipr_points_case   ON ipr_points (case_id);
     CREATE INDEX idx_ipr_points_stage  ON ipr_points (case_id, stage_index);
   END IF;
-END $;
+END $$;
 
 -- ─── aligner_stages ───────────────────────────────────────────────────────────
 
-DO $ BEGIN
+DO $$ BEGIN
   IF NOT EXISTS (
     SELECT 1 FROM information_schema.tables
     WHERE table_schema = 'public' AND table_name = 'aligner_stages'
@@ -196,11 +196,11 @@ DO $ BEGIN
     CREATE INDEX idx_aligner_stages_setup   ON aligner_stages (setup_id);
     CREATE INDEX idx_aligner_stages_status  ON aligner_stages (case_id, status);
   END IF;
-END $;
+END $$;
 
 -- ─── treatment_reports ────────────────────────────────────────────────────────
 
-DO $ BEGIN
+DO $$ BEGIN
   IF NOT EXISTS (
     SELECT 1 FROM information_schema.tables
     WHERE table_schema = 'public' AND table_name = 'treatment_reports'
@@ -225,11 +225,11 @@ DO $ BEGIN
     CREATE INDEX idx_treatment_reports_case ON treatment_reports (case_id);
     CREATE INDEX idx_treatment_reports_org  ON treatment_reports (organization_id);
   END IF;
-END $;
+END $$;
 
 -- ─── exports ──────────────────────────────────────────────────────────────────
 
-DO $ BEGIN
+DO $$ BEGIN
   IF NOT EXISTS (
     SELECT 1 FROM information_schema.tables
     WHERE table_schema = 'public' AND table_name = 'exports'
@@ -255,11 +255,11 @@ DO $ BEGIN
     CREATE INDEX idx_exports_case    ON exports (case_id);
     CREATE INDEX idx_exports_status  ON exports (status) WHERE status IN ('pending', 'generating');
   END IF;
-END $;
+END $$;
 
 -- ─── ai_jobs ──────────────────────────────────────────────────────────────────
 
-DO $ BEGIN
+DO $$ BEGIN
   IF NOT EXISTS (
     SELECT 1 FROM information_schema.tables
     WHERE table_schema = 'public' AND table_name = 'ai_jobs'
@@ -289,11 +289,11 @@ DO $ BEGIN
     CREATE INDEX idx_ai_jobs_status  ON ai_jobs (status) WHERE status IN ('queued', 'running');
     CREATE INDEX idx_ai_jobs_type    ON ai_jobs (job_type, created_at DESC);
   END IF;
-END $;
+END $$;
 
 -- ─── RLS policies ─────────────────────────────────────────────────────────────
 
-DO $ BEGIN
+DO $$ BEGIN
   -- stl_uploads
   IF NOT EXISTS (
     SELECT 1 FROM pg_policies WHERE tablename = 'stl_uploads' AND policyname = 'stl_uploads_org_isolation'
@@ -340,4 +340,4 @@ DO $ BEGIN
     CREATE POLICY treatment_reports_org_isolation ON treatment_reports
       USING (organization_id = app_current_org_id());
   END IF;
-END $;
+END $$;

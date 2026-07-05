@@ -37,6 +37,12 @@ function assertRequiredEnv(): void {
     );
   }
   const adminPw = process.env.MYORTHO_ADMIN_PASSWORD ?? '';
+  if (!adminPw && process.env.NODE_ENV === 'production') {
+    throw new Error(
+      'MYORTHO_ADMIN_PASSWORD must be set in production. ' +
+      'Generate one with: openssl rand -base64 24',
+    );
+  }
   if (!adminPw) {
     console.warn(
       '[WARN] MYORTHO_ADMIN_PASSWORD is not set. The bootstrap admin account will use ' +

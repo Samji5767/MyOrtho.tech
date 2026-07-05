@@ -112,14 +112,15 @@ class OrthoSegmentationEngine:
             )
 
         t0 = time.monotonic()
-        voxel_tensor = self._preprocess(file_path)
+        mesh = self._load_mesh(file_path)
+        voxel_tensor = self._voxelize(mesh)
         preprocess_ms = int((time.monotonic() - t0) * 1000)
 
         t1 = time.monotonic()
         logits, softmax_probs = self._infer(voxel_tensor)
         infer_ms = int((time.monotonic() - t1) * 1000)
 
-        result = self._postprocess(logits, softmax_probs, jaw_type)
+        result = self._postprocess(logits, softmax_probs, jaw_type, mesh, file_path)
         result["timing"] = {
             "preprocess_ms": preprocess_ms,
             "inference_ms": infer_ms,
@@ -132,6 +133,78 @@ class OrthoSegmentationEngine:
                 "A trained checkpoint (DSC ≥ 0.85 per class) is required for clinical use."
             )
         return result
+
+    # ── Per-tooth mesh extraction ─────────────────────────────────────────────
+
+    def _extract_tooth_meshes(
+        self,
+        labels: np.ndarray,          # (D, H, W) argmax channel labels
+        mesh: trimesh.Trimesh,
+        file_path: str,
+        detected_teeth: list,
+    ) -> str | None:
+        """
+        Assign each face of the original mesh to its nearest voxel label, then
+        group faces by FDI tooth channel and export each group as a separate STL.
+
+        Returns the output directory path, or None on failure.
+        """
+        try:
+            target = 128
+            pitch = max(mesh.extents) / target if max(mesh.extents) > 0 else 1.0
+            origin = mesh.bounds[0]
+
+            # Face centroids in mesh space → voxel integer coordinates
+            face_centroids = mesh.triangles_center           # (N, 3)
+            voxel_coords = ((face_centroids - origin) / pitch).astype(int)
+            voxel_coords = np.clip(voxel_coords, 0, target - 1)
+
+            # Channel label for every face
+            face_labels = labels[
+                voxel_coords[:, 0],
+                voxel_coords[:, 1],
+                voxel_coords[:, 2],
+            ]
+
+            # Output directory alongside the source file
+            stem = os.path.splitext(os.path.basename(file_path))[0]
+            output_dir = os.path.join(os.path.dirname(file_path), f"seg_{stem}")
+            os.makedirs(output_dir, exist_ok=True)
+
+            extracted = 0
+            for fdi in detected_teeth:
+                if fdi not in _CHANNEL_TO_FDI:
+                    continue
+                channel_idx = _CHANNEL_TO_FDI.index(fdi)
+                face_mask = face_labels == channel_idx
+                if int(face_mask.sum()) < 20:
+                    continue
+
+                tooth_faces = mesh.faces[face_mask]
+                # Re-index vertices to only those used by these faces
+                unique_verts, inverse = np.unique(tooth_faces, return_inverse=True)
+                tooth_verts = mesh.vertices[unique_verts]
+                new_faces = inverse.reshape(-1, 3)
+
+                tooth_mesh = trimesh.Trimesh(
+                    vertices=tooth_verts,
+                    faces=new_faces,
+                    process=False,
+                )
+                out_path = os.path.join(output_dir, f"tooth_fdi_{fdi}.stl")
+                tooth_mesh.export(out_path)
+                extracted += 1
+
+            if extracted == 0:
+                logger.warning("Per-tooth extraction produced no output files")
+                return None
+
+            logger.info(f"Extracted {extracted} tooth meshes → {output_dir}")
+            return output_dir
+
+        except Exception as exc:
+            logger.error(f"Per-tooth mesh extraction failed: {exc}")
+            return None
 
     # ── Preprocessing ─────────────────────────────────────────────────────────
 
@@ -192,9 +265,11 @@ class OrthoSegmentationEngine:
 
     def _postprocess(
         self,
-        labels: np.ndarray,       # (D, H, W) integer class labels
-        probs: np.ndarray,        # (33, D, H, W) softmax probabilities
+        labels: np.ndarray,               # (D, H, W) integer class labels
+        probs: np.ndarray,                # (33, D, H, W) softmax probabilities
         jaw_type: str,
+        mesh: "trimesh.Trimesh | None" = None,
+        file_path: str | None = None,
     ) -> dict:
         """
         Extract per-tooth detection results and confidence maps from inference output.
@@ -235,16 +310,23 @@ class OrthoSegmentationEngine:
             else:
                 missing_teeth.append(fdi)
 
+        # ── Per-tooth mesh extraction ─────────────────────────────────────────
+        segmented_mesh_path = None
+        if mesh is not None and file_path is not None and detected_teeth:
+            segmented_mesh_path = self._extract_tooth_meshes(
+                labels, mesh, file_path, detected_teeth
+            )
+
         return {
             "success": True,
             "jaw_type": jaw_type,
             "tooth_ids": detected_teeth,
             "missing_teeth": missing_teeth,
             "confidence_scores": confidence_scores,
-            "confidence_maps": confidence_maps,     # per-tooth mean probability
+            "confidence_maps": confidence_maps,
             "confidence_threshold": CONFIDENCE_THRESHOLD,
             "voxel_resolution": 128,
-            "segmented_mesh_path": None,            # populated when mesh extraction is implemented
+            "segmented_mesh_path": segmented_mesh_path,
             "message": (
                 f"Segmentation complete. "
                 f"Detected {len(detected_teeth)}/{len(candidate_teeth)} teeth "

@@ -74,3 +74,6 @@ export const approveAlignerPlan = (caseId: string, planId: string, notes?: strin
 
 export const markStlReady = (caseId: string, planId: string, exportPath: string) =>
   api.post<AlignerGenerationPlan>(`${base(caseId, planId)}/stl-ready`, { exportPath });
+
+export const generateStlExport = (caseId: string, planId: string) =>
+  api.post<AlignerGenerationPlan>(`${base(caseId, planId)}/generate-stl`, {});

@@ -83,4 +83,13 @@ export class AlignerGenerationController {
   ) {
     return this.svc.markStlReady(caseId, req.user.orgId, planId, body.exportPath);
   }
+
+  @Post('api/cases/:caseId/plans/:planId/aligner-generation/generate-stl')
+  generateStl(
+    @Req() req: any,
+    @Param('caseId') caseId: string,
+    @Param('planId') planId: string,
+  ) {
+    return this.svc.generateStl(caseId, req.user.orgId, planId);
+  }
 }

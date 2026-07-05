@@ -206,6 +206,31 @@ class AutoStageRequest(BaseModel):
     max_step_mm: float = 0.25
 
 
+class ToothPrescription(BaseModel):
+    tooth_number: int          # FDI code e.g. 11, 21, 31
+    translation_mesial_mm: float = 0.0
+    translation_distal_mm: float = 0.0
+    translation_buccal_mm: float = 0.0
+    translation_lingual_mm: float = 0.0
+    rotation_deg: float = 0.0
+    torque_deg: float = 0.0
+    intrusion_mm: float = 0.0
+    extrusion_mm: float = 0.0
+    mesialization_mm: float = 0.0
+    distalization_mm: float = 0.0
+    expansion_mm: float = 0.0
+    constriction_mm: float = 0.0
+    total_stages: int = 1
+
+
+class GenerateStageStlsRequest(BaseModel):
+    plan_id: str
+    case_id: str
+    segmented_mesh_dir: str          # directory containing tooth_fdi_{N}.stl files
+    prescriptions: list[ToothPrescription]
+    total_active_stages: int
+
+
 # ── Background segmentation task (async, with timeout) ───────────────────────
 
 async def run_segmentation_task(job_id: str, req: SegmentationRequest) -> None:
@@ -420,6 +445,120 @@ async def generate_stages(req: AutoStageRequest):
         return {"tooth_id": req.tooth_id, "total_stages": stages_count, "steps": steps}
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@app.post(
+    "/ai/generate-stage-stls",
+    dependencies=[Depends(require_auth)],
+)
+async def generate_stage_stls(req: GenerateStageStlsRequest):
+    """
+    Read per-tooth STL files from segmented_mesh_dir, apply per-stage movement
+    transforms derived from movement prescriptions, and write one combined-arch
+    STL per active stage.  Returns the output directory path.
+
+    Coordinate convention (simplified arch-frame approximation):
+      +X = mesial, +Y = buccal, +Z = extrusion
+    """
+    import zipfile
+    import math
+
+    safe_dir = _assert_safe_path(req.segmented_mesh_dir)
+    if not os.path.isdir(safe_dir):
+        raise HTTPException(status_code=400, detail="segmented_mesh_dir does not exist")
+
+    try:
+        loop = asyncio.get_event_loop()
+        result = await loop.run_in_executor(
+            _executor,
+            lambda: _build_stage_stls(safe_dir, req),
+        )
+        return result
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+def _build_stage_stls(seg_dir: str, req: "GenerateStageStlsRequest") -> dict:
+    """Synchronous worker: build per-stage STL files and zip them."""
+    import zipfile
+    import math
+
+    # Load all available tooth meshes
+    tooth_meshes: dict[int, "trimesh.Trimesh"] = {}
+    for p in os.listdir(seg_dir):
+        if p.startswith("tooth_fdi_") and p.endswith(".stl"):
+            try:
+                fdi = int(p[len("tooth_fdi_"):-len(".stl")])
+                tooth_meshes[fdi] = trimesh.load(
+                    os.path.join(seg_dir, p), force="mesh"
+                )
+            except Exception:
+                continue
+
+    if not tooth_meshes:
+        raise ValueError("No tooth STL files found in segmented_mesh_dir")
+
+    presc_by_tooth = {p.tooth_number: p for p in req.prescriptions}
+    output_dir = os.path.join(seg_dir, f"stages_{req.plan_id}")
+    os.makedirs(output_dir, exist_ok=True)
+
+    for stage in range(1, req.total_active_stages + 1):
+        stage_meshes = []
+        for fdi, base_mesh in tooth_meshes.items():
+            presc = presc_by_tooth.get(fdi)
+            if presc is None:
+                stage_meshes.append(base_mesh.copy())
+                continue
+
+            total_s = max(1, presc.total_stages)
+            # Linear interpolation fraction at this stage
+            frac = min(1.0, stage / total_s)
+
+            # Cumulative translation vector (arch-frame approximation)
+            tx = (presc.translation_mesial_mm - presc.translation_distal_mm
+                  + presc.mesialization_mm - presc.distalization_mm) * frac
+            ty = (presc.translation_buccal_mm - presc.translation_lingual_mm
+                  + presc.expansion_mm - presc.constriction_mm) * frac
+            tz = (presc.extrusion_mm - presc.intrusion_mm) * frac
+            translation = np.array([tx, ty, tz])
+
+            # Rotation around Z through tooth centroid (long-axis rotation)
+            rot_deg = presc.rotation_deg * frac
+            rot_rad = math.radians(rot_deg)
+            centroid = base_mesh.centroid
+
+            moved = base_mesh.copy()
+            moved.vertices = moved.vertices + translation
+            if abs(rot_rad) > 1e-6:
+                cos_r, sin_r = math.cos(rot_rad), math.sin(rot_rad)
+                verts = moved.vertices - centroid
+                x_rot = verts[:, 0] * cos_r - verts[:, 1] * sin_r
+                y_rot = verts[:, 0] * sin_r + verts[:, 1] * cos_r
+                verts[:, 0] = x_rot
+                verts[:, 1] = y_rot
+                moved.vertices = verts + centroid
+
+            stage_meshes.append(moved)
+
+        if stage_meshes:
+            combined = trimesh.util.concatenate(stage_meshes)
+            stage_path = os.path.join(output_dir, f"stage_{stage:03d}.stl")
+            combined.export(stage_path)
+
+    # Zip the stage STL files
+    zip_path = os.path.join(seg_dir, f"aligner_plan_{req.plan_id}.zip")
+    with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
+        for fname in sorted(os.listdir(output_dir)):
+            if fname.endswith(".stl"):
+                zf.write(os.path.join(output_dir, fname), fname)
+
+    return {
+        "success": True,
+        "plan_id": req.plan_id,
+        "stages_generated": req.total_active_stages,
+        "output_dir": output_dir,
+        "zip_path": zip_path,
+    }
 
 
 @app.get(

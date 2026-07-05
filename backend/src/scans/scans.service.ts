@@ -150,7 +150,8 @@ export class ScansService {
     );
 
     this.logger.log(`Scan ${scan.id as string} uploaded for case ${caseId} by ${actorEmail}`);
-    return {
+
+    const result = {
       id: scan.id as string,
       caseId,
       jawType,
@@ -159,6 +160,16 @@ export class ScansService {
       fileSizeBytes: file.size,
       createdAt: scan.created_at as Date,
     };
+
+    // Auto-trigger segmentation immediately after upload (fire-and-forget)
+    void this.triggerSegmentation(caseId, scan.id as string, orgId, actorEmail)
+      .catch(err =>
+        this.logger.warn(
+          `Auto-segmentation enqueue failed for scan ${scan.id as string}: ${String(err)}`,
+        ),
+      );
+
+    return result;
   }
 
   // ── Segmentation ────────────────────────────────────────────────────────────
@@ -311,14 +322,15 @@ export class ScansService {
         await this.pool
           .query(
             `INSERT INTO segmentation_results
-               (case_id, scan_id, teeth_confidence_scores, missing_teeth)
-             VALUES ($1, $2, $3, $4::int[])
+               (case_id, scan_id, teeth_confidence_scores, missing_teeth, segmented_mesh_path)
+             VALUES ($1, $2, $3, $4::int[], $5)
              ON CONFLICT DO NOTHING`,
             [
               dbJob.case_id as string,
               dbJob.scan_id as string,
               JSON.stringify(aiStatus['teeth_confidence'] ?? {}),
               aiStatus['missing_teeth'] ?? [],
+              (aiStatus['segmented_mesh_path'] as string | null) ?? null,
             ],
           )
           .catch((e) =>

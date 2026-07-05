@@ -1,7 +1,14 @@
-import { Injectable, Inject, NotFoundException, ServiceUnavailableException, Logger } from '@nestjs/common';
+import { Injectable, Inject, NotFoundException, ServiceUnavailableException, InternalServerErrorException, Logger } from '@nestjs/common';
 import * as fs from 'fs';
 import type { Pool } from 'pg';
 import { PG_POOL } from '../database/database.module';
+
+const AI_ENGINE_URL = process.env.AI_ENGINE_URL ?? 'http://ai-engine:8000';
+const INTERNAL_API_SECRET = process.env.INTERNAL_API_SECRET ?? '';
+const AI_ENGINE_HEADERS = (): Record<string, string> => ({
+  'Content-Type': 'application/json',
+  ...(INTERNAL_API_SECRET ? { 'X-Internal-Token': INTERNAL_API_SECRET } : {}),
+});
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -678,6 +685,101 @@ export class AlignerGenerationService {
     }
 
     return summaries;
+  }
+
+  // ── STL generation ─────────────────────────────────────────────────────────
+
+  async generateStl(
+    caseId: string,
+    orgId: string,
+    planId: string,
+  ): Promise<AlignerGenerationPlan> {
+    await this.verifyPlan(planId, caseId, orgId);
+
+    // Load the generation plan (needs to exist and be approved)
+    const planRes = await this.db.query(
+      `SELECT * FROM aligner_generation_plans WHERE plan_id=$1 AND organization_id=$2`,
+      [planId, orgId],
+    );
+    if (planRes.rowCount === 0) throw new NotFoundException('No generation plan — run /generate first');
+    const plan = rowToPlan(planRes.rows[0]);
+
+    if (plan.status === 'draft') {
+      throw new ServiceUnavailableException('Approve the generation plan before generating STL files');
+    }
+
+    // Find the latest completed segmentation result for this case
+    const segRes = await this.db.query(
+      `SELECT segmented_mesh_path
+         FROM segmentation_results
+        WHERE case_id=$1 AND segmented_mesh_path IS NOT NULL
+        ORDER BY created_at DESC
+        LIMIT 1`,
+      [caseId],
+    );
+    if (segRes.rowCount === 0 || !segRes.rows[0]['segmented_mesh_path']) {
+      throw new ServiceUnavailableException(
+        'No segmented tooth meshes available. Upload a scan and wait for segmentation to complete.',
+      );
+    }
+    const segmentedMeshDir = segRes.rows[0]['segmented_mesh_path'] as string;
+
+    // Load movement prescriptions
+    const prescRes = await this.db.query(
+      `SELECT tooth_number,
+              translation_mesial_mm, translation_distal_mm,
+              translation_buccal_mm, translation_lingual_mm,
+              rotation_deg, torque_deg,
+              intrusion_mm, extrusion_mm,
+              mesialization_mm, distalization_mm,
+              expansion_mm, constriction_mm
+         FROM movement_prescriptions WHERE plan_id=$1`,
+      [planId],
+    );
+
+    // Compute stages per tooth (mirrors computeStagesPerTooth logic)
+    const prescriptions = prescRes.rows.map(r => {
+      const transMm =
+        (r['translation_mesial_mm'] as number) + (r['translation_distal_mm'] as number) +
+        (r['translation_buccal_mm'] as number) + (r['translation_lingual_mm'] as number);
+      const rotDeg  = Math.abs(r['rotation_deg'] as number);
+      const vertMm  = (r['intrusion_mm'] as number) + (r['extrusion_mm'] as number);
+      const archMm  = (r['mesialization_mm'] as number) + (r['distalization_mm'] as number) +
+                      (r['expansion_mm'] as number) + (r['constriction_mm'] as number);
+      const stages  = Math.max(1, Math.ceil(Math.max(
+        transMm / 0.25, rotDeg / 2.0, vertMm / 0.30, archMm / 0.25,
+      )));
+      return { ...r, total_stages: stages };
+    });
+
+    // Call AI engine to generate per-stage STL files
+    let aiResult: { zip_path: string };
+    try {
+      const res = await fetch(`${AI_ENGINE_URL}/ai/generate-stage-stls`, {
+        method: 'POST',
+        headers: AI_ENGINE_HEADERS(),
+        body: JSON.stringify({
+          plan_id: planId,
+          case_id: caseId,
+          segmented_mesh_dir: segmentedMeshDir,
+          prescriptions,
+          total_active_stages: plan.totalActiveStages,
+        }),
+        signal: AbortSignal.timeout(180_000),
+      });
+      if (!res.ok) {
+        const body = await res.text().catch(() => '');
+        throw new Error(`AI engine ${res.status}: ${body}`);
+      }
+      aiResult = (await res.json()) as { zip_path: string };
+    } catch (err) {
+      this.log.error(`STL generation failed: ${String(err)}`);
+      throw new InternalServerErrorException(
+        'STL generation failed. Ensure the AI engine is running and segmented meshes exist.',
+      );
+    }
+
+    return this.markStlReady(caseId, orgId, planId, aiResult.zip_path);
   }
 
   // ── STL file streaming ─────────────────────────────────────────────────────

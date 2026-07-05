@@ -146,6 +146,9 @@ export default function ScanPanel({ caseId }: { caseId: string }) {
     try {
       const scan = await uploadScan(caseId, file, jawType);
       setScans((prev) => [scan, ...prev]);
+      // Backend auto-triggers segmentation; reload jobs after a short delay
+      // so the new queued job appears without a manual page refresh.
+      setTimeout(() => { void loadScans(); }, 1_500);
     } catch (e) {
       setUploadError(e instanceof ApiError ? e.message : "Upload failed");
     } finally {

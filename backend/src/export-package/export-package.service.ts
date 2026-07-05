@@ -1,4 +1,4 @@
-import { Injectable, Inject, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
+import { Injectable, Inject, NotFoundException, BadRequestException, ForbiddenException, Logger } from '@nestjs/common';
 import type { Pool } from 'pg';
 import { PG_POOL } from '../database/database.module';
 
@@ -288,6 +288,10 @@ export class ExportPackageService {
       throw new BadRequestException('Package must be clinician-approved before export');
     }
 
+    // Check billing BEFORE marking exported so a failed payment never
+    // leaves the package in 'exported' state with no charge recorded.
+    await this.recordExportTransaction(orgId, planId, packageId);
+
     // checksum_sha256 is null until real file bytes are produced by the
     // manufacturing pipeline; the caller must supply a real SHA-256 once
     // actual export files exist.
@@ -298,9 +302,6 @@ export class ExportPackageService {
        WHERE id=$3 AND organization_id=$4`,
       [format, fileSizeBytes, packageId, orgId],
     );
-
-    // Record export transaction for PAYG billing gate
-    await this.recordExportTransaction(orgId, planId, packageId);
 
     return this.loadPackage(packageId, orgId);
   }
@@ -357,6 +358,12 @@ export class ExportPackageService {
           succeeded ? 'completed' : 'failed',
         ],
       );
+
+      if (!succeeded) {
+        throw new ForbiddenException(
+          'Insufficient export credits. Add PAYG credits to your account before exporting.',
+        );
+      }
     }
   }
 

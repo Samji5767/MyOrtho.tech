@@ -35,11 +35,11 @@ export default function LoginPage() {
     // Refresh auth context so all downstream components see the new user
     await refresh();
 
-    // Redirect to the originally requested route, or home
-    let destination = "/";
+    // Redirect to the originally requested route, or the dashboard
+    let destination = "/dashboard";
     try {
       const saved = sessionStorage.getItem("mo_redirect");
-      if (saved && saved !== "/login") {
+      if (saved && saved !== "/login" && saved !== "/") {
         destination = saved;
         sessionStorage.removeItem("mo_redirect");
       }

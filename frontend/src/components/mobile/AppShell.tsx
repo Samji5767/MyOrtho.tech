@@ -14,7 +14,7 @@ import { hapticLight } from "@/lib/capacitor/haptics";
 // Only fire when no input, textarea, or select element has focus.
 
 const NAV_SHORTCUTS: Record<string, string> = {
-  h: "/",
+  h: "/dashboard",
   p: "/patients",
   w: "/studio",
   s: "/settings",
@@ -38,7 +38,7 @@ function useGlobalNavShortcuts() {
 }
 
 // Public routes that bypass auth gate and suppress chrome (nav/top bar)
-const PUBLIC_PATHS = ["/login", "/onboarding"];
+const PUBLIC_PATHS = ["/login", "/onboarding", "/"];
 function isPublicPath(p: string) {
   return PUBLIC_PATHS.some(pub => p === pub || p === pub + "/" || p.startsWith(pub + "/"));
 }

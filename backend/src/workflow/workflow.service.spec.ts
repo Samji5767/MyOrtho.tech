@@ -7,15 +7,21 @@ const CASE_ID = 'case-workflow-test';
 const ORG_ID  = 'org-workflow-test';
 const ACTOR   = 'actor-workflow-1';
 
-function makePool(overrideRows?: unknown[][]) {
+// WorkflowService.transition uses pool.connect() → client, not pool.query directly.
+// clientRows is the sequence of { rows } returned by client.query() calls:
+//   [BEGIN, SELECT FOR UPDATE, UPDATE cases, INSERT workflow_events, COMMIT]
+// For rejected transitions the sequence is shorter:
+//   [BEGIN, SELECT FOR UPDATE, ROLLBACK]
+function makePool(clientRows: unknown[][]) {
   let callIndex = 0;
-  const defaultRows: unknown[][] = [
-    [{ status: 'draft' }],  // SELECT FOR UPDATE
-    [],                      // UPDATE cases
-    [],                      // INSERT workflow_events
-  ];
-  const rows = overrideRows ?? defaultRows;
-  return { query: jest.fn(async () => ({ rows: rows[callIndex++] ?? [] })) };
+  const client = {
+    query: jest.fn(async () => ({ rows: clientRows[callIndex++] ?? [] })),
+    release: jest.fn(),
+  };
+  return {
+    connect: jest.fn(async () => client),
+    _client: client,
+  };
 }
 
 function makeAudit() {
@@ -38,23 +44,23 @@ describe('WorkflowService.allowedTransitions', () => {
   it.each(ACTIVE_STATUSES)(
     "'archived' is reachable from '%s'",
     (status) => {
-      const svc = makeService(makePool());
+      const svc = makeService(makePool([]));
       expect(svc.allowedTransitions(status)).toContain('archived');
     },
   );
 
   it("'archived' is NOT reachable from 'archived' (terminal state)", () => {
-    const svc = makeService(makePool());
+    const svc = makeService(makePool([]));
     expect(svc.allowedTransitions('archived')).not.toContain('archived');
   });
 
   it("'archived' is NOT reachable from 'cancelled' (terminal state)", () => {
-    const svc = makeService(makePool());
+    const svc = makeService(makePool([]));
     expect(svc.allowedTransitions('cancelled')).not.toContain('archived');
   });
 
   it('every status in CASE_STATUSES has an entry in TRANSITIONS', () => {
-    const svc = makeService(makePool());
+    const svc = makeService(makePool([]));
     for (const status of CASE_STATUSES) {
       // allowedTransitions returns [] for missing entries; we want defined entries
       expect(svc.allowedTransitions(status)).toBeDefined();
@@ -66,7 +72,8 @@ describe('WorkflowService.allowedTransitions', () => {
 
 describe('WorkflowService.transition', () => {
   it('rejects archived → archived with BadRequestException', async () => {
-    const pool = makePool([[{ status: 'archived' }], [], []]);
+    // client.query sequence: BEGIN, SELECT FOR UPDATE (→ archived), ROLLBACK
+    const pool = makePool([[], [{ status: 'archived' }], []]);
     const svc = makeService(pool);
 
     await expect(
@@ -79,7 +86,8 @@ describe('WorkflowService.transition', () => {
   });
 
   it('accepts draft → archived transition (SQL UPDATE issued)', async () => {
-    const pool = makePool([[{ status: 'draft' }], [], []]);
+    // client.query sequence: BEGIN, SELECT FOR UPDATE (→ draft), UPDATE, INSERT events, COMMIT
+    const pool = makePool([[], [{ status: 'draft' }], [], [], []]);
     const svc = makeService(pool);
 
     const result = await svc.transition({
@@ -91,7 +99,7 @@ describe('WorkflowService.transition', () => {
     expect(result.fromStatus).toBe('draft');
     expect(result.toStatus).toBe('archived');
 
-    const updateCall = (pool.query as jest.Mock).mock.calls.find(
+    const updateCall = (pool._client.query as jest.Mock).mock.calls.find(
       ([sql]: [string]) => sql.includes('UPDATE cases SET status'),
     );
     expect(updateCall).toBeDefined();

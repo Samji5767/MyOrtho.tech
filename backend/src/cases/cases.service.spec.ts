@@ -30,10 +30,27 @@ function makeRow(orgId: string) {
   };
 }
 
+// Pool for non-transactional methods (update, findOne) — pool.query only
 function makePool(rows: unknown[][]) {
   let callIndex = 0;
   return {
     query: jest.fn(async () => ({ rows: rows[callIndex++] ?? [] })),
+  };
+}
+
+// Pool for transactional methods (create, createWithNewPatient) —
+// pool.connect() returns a client; pool.query is used by findOne after commit.
+function makeTransactionPool(clientRows: unknown[][], poolRows: unknown[][]) {
+  let clientIdx = 0;
+  let poolIdx = 0;
+  const client = {
+    query: jest.fn(async () => ({ rows: clientRows[clientIdx++] ?? [] })),
+    release: jest.fn(),
+  };
+  return {
+    connect: jest.fn(async () => client),
+    query: jest.fn(async () => ({ rows: poolRows[poolIdx++] ?? [] })),
+    _client: client,
   };
 }
 
@@ -50,6 +67,15 @@ function makeAudit() {
 }
 
 function makeService(pool: ReturnType<typeof makePool>) {
+  return new CasesService(
+    pool as any,
+    makeAudit() as any,
+    makeWorkflow() as any,
+    { encrypt: (v: unknown) => v, decrypt: (v: unknown) => v } as any,
+  );
+}
+
+function makeTransactionService(pool: ReturnType<typeof makeTransactionPool>) {
   return new CasesService(
     pool as any,
     makeAudit() as any,
@@ -139,17 +165,17 @@ describe('CasesService.update', () => {
 describe('CasesService.create', () => {
   it('INSERT includes organization_id as the 3rd bound parameter', async () => {
     const PAT_ID2 = 'pat-33333333';
-    const pool = makePool([
-      [{ id: PAT_ID2 }],       // patient ownership check
-      [{ id: CASE_ID }],       // INSERT INTO cases RETURNING id
-      [makeRow(ORG_A)],        // findOne post-create
-      [{}],                    // linked resources
-    ]);
-    const svc = makeService(pool);
+    // client.query sequence: BEGIN, patient ownership SELECT, INSERT cases, COMMIT
+    // pool.query sequence: findOne JOIN, linked resources
+    const pool = makeTransactionPool(
+      [[], [{ id: PAT_ID2 }], [{ id: CASE_ID }], []],
+      [[makeRow(ORG_A)], [{}]],
+    );
+    const svc = makeTransactionService(pool);
 
     await svc.create(ORG_A, 'actor-1', { patientId: PAT_ID2 });
 
-    const insertCall = (pool.query as jest.Mock).mock.calls.find(
+    const insertCall = (pool._client.query as jest.Mock).mock.calls.find(
       ([sql]: [string]) => sql.includes('INSERT INTO cases'),
     );
     expect(insertCall).toBeDefined();
@@ -163,17 +189,15 @@ describe('CasesService.create', () => {
   it('INSERT binds orgId before chiefComplaint (position 3)', async () => {
     const PAT_ID2 = 'pat-33333333';
     const COMPLAINT = 'Test complaint';
-    const pool = makePool([
-      [{ id: PAT_ID2 }],
-      [{ id: CASE_ID }],
-      [makeRow(ORG_A)],
-      [{}],
-    ]);
-    const svc = makeService(pool);
+    const pool = makeTransactionPool(
+      [[], [{ id: PAT_ID2 }], [{ id: CASE_ID }], []],
+      [[makeRow(ORG_A)], [{}]],
+    );
+    const svc = makeTransactionService(pool);
 
     await svc.create(ORG_A, 'actor-1', { patientId: PAT_ID2, chiefComplaint: COMPLAINT });
 
-    const insertCall = (pool.query as jest.Mock).mock.calls.find(
+    const insertCall = (pool._client.query as jest.Mock).mock.calls.find(
       ([sql]: [string]) => sql.includes('INSERT INTO cases'),
     );
     const [, params] = insertCall!;
@@ -190,19 +214,19 @@ describe('CasesService.create', () => {
 describe('CasesService.createWithNewPatient', () => {
   it('INSERT INTO cases includes organization_id', async () => {
     const NEW_PAT_ID = 'pat-44444444';
-    const pool = makePool([
-      [{ id: NEW_PAT_ID }],    // INSERT INTO patients RETURNING id
-      [{ id: CASE_ID }],       // INSERT INTO cases RETURNING id
-      [makeRow(ORG_A)],        // findOne post-create
-      [{}],                    // linked resources
-    ]);
-    const svc = makeService(pool);
+    // client.query sequence: BEGIN, INSERT patients, INSERT cases, COMMIT
+    // pool.query sequence: findOne JOIN, linked resources
+    const pool = makeTransactionPool(
+      [[], [{ id: NEW_PAT_ID }], [{ id: CASE_ID }], []],
+      [[makeRow(ORG_A)], [{}]],
+    );
+    const svc = makeTransactionService(pool);
 
     await svc.createWithNewPatient(ORG_A, 'actor-1', {
       patient: { firstName: 'Jane', lastName: 'Doe', dateOfBirth: '1990-01-01' },
     });
 
-    const caseInsert = (pool.query as jest.Mock).mock.calls.find(
+    const caseInsert = (pool._client.query as jest.Mock).mock.calls.find(
       ([sql]: [string]) => sql.includes('INSERT INTO cases'),
     );
     expect(caseInsert).toBeDefined();
@@ -213,22 +237,20 @@ describe('CasesService.createWithNewPatient', () => {
 
   it('patient INSERT and case INSERT both use the same orgId', async () => {
     const NEW_PAT_ID = 'pat-44444444';
-    const pool = makePool([
-      [{ id: NEW_PAT_ID }],
-      [{ id: CASE_ID }],
-      [makeRow(ORG_A)],
-      [{}],
-    ]);
-    const svc = makeService(pool);
+    const pool = makeTransactionPool(
+      [[], [{ id: NEW_PAT_ID }], [{ id: CASE_ID }], []],
+      [[makeRow(ORG_A)], [{}]],
+    );
+    const svc = makeTransactionService(pool);
 
     await svc.createWithNewPatient(ORG_A, 'actor-1', {
       patient: { firstName: 'Jane', lastName: 'Doe' },
     });
 
-    const patInsert = (pool.query as jest.Mock).mock.calls.find(
+    const patInsert = (pool._client.query as jest.Mock).mock.calls.find(
       ([sql]: [string]) => sql.includes('INSERT INTO patients'),
     );
-    const caseInsert = (pool.query as jest.Mock).mock.calls.find(
+    const caseInsert = (pool._client.query as jest.Mock).mock.calls.find(
       ([sql]: [string]) => sql.includes('INSERT INTO cases'),
     );
     expect((patInsert![1] as unknown[]).includes(ORG_A)).toBe(true);

@@ -3,7 +3,7 @@ import { api, uploadFile } from './client';
 export interface ScanRecord {
   id: string;
   caseId: string;
-  jawType: 'maxillary' | 'mandibular' | 'both';
+  jawType: 'auto' | 'maxillary' | 'mandibular' | 'both';
   originalFilename: string;
   fileFormat: string;
   fileSizeBytes: number;
@@ -30,7 +30,7 @@ export function listScans(caseId: string): Promise<ScanRecord[]> {
 export function uploadScan(
   caseId: string,
   file: File,
-  jawType: 'maxillary' | 'mandibular' | 'both',
+  jawType: 'auto' | 'maxillary' | 'mandibular' | 'both',
 ): Promise<ScanRecord> {
   const form = new FormData();
   form.append('file', file);

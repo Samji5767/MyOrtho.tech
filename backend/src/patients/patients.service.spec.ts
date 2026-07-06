@@ -1,4 +1,4 @@
-import { ForbiddenException, NotFoundException } from '@nestjs/common';
+import { NotFoundException } from '@nestjs/common';
 import { PatientsService } from './patients.service';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -94,11 +94,12 @@ describe('PatientsService.update', () => {
     expect(result.id).toBe(PAT_ID);
   });
 
-  it('findOne throws ForbiddenException on cross-org access', async () => {
-    const pool = makePool([[makeRow(ORG_B)]]);  // row belongs to ORG_B
+  it('findOne throws NotFoundException on cross-org access', async () => {
+    // SQL WHERE p.id=$1 AND p.organization_id=$2 returns no rows for cross-tenant
+    const pool = makePool([[]]);
     const svc = makeService(pool);
 
     await expect(svc.update(PAT_ID, ORG_A, 'actor-1', { firstName: 'Hacker' }))
-      .rejects.toThrow(ForbiddenException);
+      .rejects.toThrow(NotFoundException);
   });
 });

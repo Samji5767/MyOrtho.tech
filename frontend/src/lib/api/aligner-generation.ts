@@ -77,3 +77,27 @@ export const markStlReady = (caseId: string, planId: string, exportPath: string)
 
 export const generateStlExport = (caseId: string, planId: string) =>
   api.post<AlignerGenerationPlan>(`${base(caseId, planId)}/generate-stl`, {});
+
+export interface QualityIssue {
+  code: string;
+  severity: 'info' | 'warning' | 'error';
+  message: string;
+}
+
+export interface QualityReport {
+  overallScore: number;
+  meshIntegrity: number;
+  printability: number;
+  minThicknessMm: number;
+  overhangCount: number;
+  estimatedResinGrams: number;
+  estimatedPrintTimeMinutes: number;
+  estimatedCostUsd: number;
+  batchCount: number;
+  stageCount: number;
+  issues: QualityIssue[];
+  generatedAt: string;
+}
+
+export const getQualityReport = (caseId: string, planId: string) =>
+  api.get<QualityReport>(`${base(caseId, planId)}/quality-report`);

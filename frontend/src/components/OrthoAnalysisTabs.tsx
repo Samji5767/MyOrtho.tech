@@ -38,6 +38,26 @@ const AlignerStaging = dynamic(() => import("@/components/AlignerStaging"), {
   loading: () => <div className="h-48 animate-skeleton rounded-xl" />,
 });
 
+const ClinicalScoreDashboardDynamic = dynamic(
+  () => import("@/components/ClinicalScoreDashboard").then((m) => ({ default: m.ClinicalScoreDashboard })),
+  { ssr: false, loading: () => <div className="h-64 animate-skeleton rounded-xl" /> },
+);
+
+const TreatmentSimulationPlayerDynamic = dynamic(
+  () => import("@/components/TreatmentSimulationPlayer"),
+  { ssr: false, loading: () => <div className="h-64 animate-skeleton rounded-xl" /> },
+);
+
+const ManufacturingReadinessPanelDynamic = dynamic(
+  () => import("@/components/ManufacturingReadinessPanel").then((m) => ({ default: m.ManufacturingReadinessPanel })),
+  { ssr: false, loading: () => <div className="h-64 animate-skeleton rounded-xl" /> },
+);
+
+const PatientReportPanelDynamic = dynamic(
+  () => import("@/components/PatientReportPanel").then((m) => ({ default: m.PatientReportPanel })),
+  { ssr: false, loading: () => <div className="h-40 animate-skeleton rounded-xl" /> },
+);
+
 // ─── Shared utilities ─────────────────────────────────────────────────────────
 
 function EstimatedBadge() {
@@ -75,18 +95,26 @@ type AnalysisTab =
   | "ipr"
   | "staging"
   | "review"
-  | "export";
+  | "export"
+  | "dashboard"
+  | "simulation"
+  | "manufacturing"
+  | "patient";
 
 const ANALYSIS_TABS: { key: AnalysisTab; label: string }[] = [
-  { key: "overview",     label: "Overview"   },
-  { key: "measurements", label: "Measurements" },
-  { key: "occlusion",   label: "Occlusion"  },
-  { key: "movements",   label: "Movements"  },
-  { key: "attachments", label: "Attachments"},
-  { key: "ipr",         label: "IPR"        },
-  { key: "staging",     label: "Staging"    },
-  { key: "review",      label: "Review"     },
-  { key: "export",      label: "Export"     },
+  { key: "overview",       label: "Overview"      },
+  { key: "dashboard",      label: "Dashboard"     },
+  { key: "simulation",     label: "Simulation"    },
+  { key: "measurements",   label: "Measurements"  },
+  { key: "occlusion",      label: "Occlusion"     },
+  { key: "movements",      label: "Movements"     },
+  { key: "attachments",    label: "Attachments"   },
+  { key: "ipr",            label: "IPR"           },
+  { key: "staging",        label: "Staging"       },
+  { key: "manufacturing",  label: "Manufacturing" },
+  { key: "patient",        label: "Patient"       },
+  { key: "review",         label: "Review"        },
+  { key: "export",         label: "Export"        },
 ];
 
 // ─── FDI tooth list helper ────────────────────────────────────────────────────
@@ -1021,15 +1049,68 @@ function ExportTab({ caseId, patientName }: { caseId: string | null; patientName
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// SHARED: requires case + plan placeholder
+// ─────────────────────────────────────────────────────────────────────────────
+
+function RequiresCasePlan({ feature }: { feature: string }) {
+  return (
+    <div className="flex flex-col items-center gap-3 py-10 text-center">
+      <Activity size={28} className="text-[color:var(--muted-foreground)]" />
+      <p className="text-sm font-semibold text-[color:var(--foreground)]">Case and plan required</p>
+      <p className="text-xs text-[color:var(--muted-foreground)]">
+        Load a case and generate a treatment plan to access {feature}.
+      </p>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// TAB: DASHBOARD (Phase 3C)
+// ─────────────────────────────────────────────────────────────────────────────
+
+function DashboardTab({ caseId, planId }: { caseId: string | null; planId: string | null }) {
+  if (!caseId || !planId) return <RequiresCasePlan feature="the clinical scoring dashboard" />;
+  return <ClinicalScoreDashboardDynamic caseId={caseId} planId={planId} />;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// TAB: SIMULATION (Phase 3B)
+// ─────────────────────────────────────────────────────────────────────────────
+
+function SimulationTab({ caseId, planId }: { caseId: string | null; planId: string | null }) {
+  if (!caseId || !planId) return <RequiresCasePlan feature="treatment simulation" />;
+  return <TreatmentSimulationPlayerDynamic caseId={caseId} planId={planId} />;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// TAB: MANUFACTURING (Phase 3D)
+// ─────────────────────────────────────────────────────────────────────────────
+
+function ManufacturingTab({ caseId, planId }: { caseId: string | null; planId: string | null }) {
+  if (!caseId || !planId) return <RequiresCasePlan feature="manufacturing readiness" />;
+  return <ManufacturingReadinessPanelDynamic caseId={caseId} planId={planId} />;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// TAB: PATIENT (Phase 3E)
+// ─────────────────────────────────────────────────────────────────────────────
+
+function PatientTab({ caseId, planId }: { caseId: string | null; planId: string | null }) {
+  if (!caseId || !planId) return <RequiresCasePlan feature="the patient report" />;
+  return <PatientReportPanelDynamic caseId={caseId} planId={planId} />;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // MAIN COMPONENT
 // ─────────────────────────────────────────────────────────────────────────────
 
 interface OrthoAnalysisTabsProps {
   caseId: string | null;
   patientName: string;
+  planId?: string | null;
 }
 
-export default function OrthoAnalysisTabs({ caseId, patientName }: OrthoAnalysisTabsProps) {
+export default function OrthoAnalysisTabs({ caseId, patientName, planId = null }: OrthoAnalysisTabsProps) {
   const [activeTab, setActiveTab] = useState<AnalysisTab>("overview");
 
   return (
@@ -1055,15 +1136,19 @@ export default function OrthoAnalysisTabs({ caseId, patientName }: OrthoAnalysis
 
       {/* Tab content */}
       <div className="p-4">
-        {activeTab === "overview"     && <OverviewTab     caseId={caseId} patientName={patientName} />}
-        {activeTab === "measurements" && <MeasurementsTab />}
-        {activeTab === "occlusion"    && <OcclusionTab    />}
-        {activeTab === "movements"    && <MovementsTab    />}
-        {activeTab === "attachments"  && <AttachmentsTab  />}
-        {activeTab === "ipr"          && <IPRTab          />}
-        {activeTab === "staging"      && <StagingTab      caseId={caseId} patientName={patientName} />}
-        {activeTab === "review"       && <ReviewTab       caseId={caseId} />}
-        {activeTab === "export"       && <ExportTab       caseId={caseId} patientName={patientName} />}
+        {activeTab === "overview"       && <OverviewTab      caseId={caseId} patientName={patientName} />}
+        {activeTab === "dashboard"      && <DashboardTab     caseId={caseId} planId={planId} />}
+        {activeTab === "simulation"     && <SimulationTab    caseId={caseId} planId={planId} />}
+        {activeTab === "measurements"   && <MeasurementsTab />}
+        {activeTab === "occlusion"      && <OcclusionTab    />}
+        {activeTab === "movements"      && <MovementsTab    />}
+        {activeTab === "attachments"    && <AttachmentsTab  />}
+        {activeTab === "ipr"            && <IPRTab          />}
+        {activeTab === "staging"        && <StagingTab      caseId={caseId} patientName={patientName} />}
+        {activeTab === "manufacturing"  && <ManufacturingTab caseId={caseId} planId={planId} />}
+        {activeTab === "patient"        && <PatientTab      caseId={caseId} planId={planId} />}
+        {activeTab === "review"         && <ReviewTab       caseId={caseId} />}
+        {activeTab === "export"         && <ExportTab       caseId={caseId} patientName={patientName} />}
       </div>
     </div>
   );

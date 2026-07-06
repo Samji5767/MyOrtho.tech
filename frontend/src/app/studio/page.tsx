@@ -259,7 +259,7 @@ function CadTab({ caseData }: { caseData: CaseDetail | null }) {
 
 // ─── Plan tab ─────────────────────────────────────────────────────────────────
 
-function PlanTab({ caseData }: { caseData: CaseDetail | null }) {
+function PlanTab({ caseData, planId }: { caseData: CaseDetail | null; planId: string | null }) {
   const caseId      = caseData?.id      ?? null;
   const patientName = caseData
     ? `${caseData.patient.firstName} ${caseData.patient.lastName}`
@@ -276,7 +276,7 @@ function PlanTab({ caseData }: { caseData: CaseDetail | null }) {
       {/* Pronto-style workflow rail */}
       <OrthoWorkflowRail caseId={caseId} />
       {/* Analysis / planning tabs */}
-      <OrthoAnalysisTabs caseId={caseId} patientName={patientName} />
+      <OrthoAnalysisTabs caseId={caseId} patientName={patientName} planId={planId} />
     </div>
   );
 }
@@ -331,6 +331,7 @@ function PreviewTab({ caseData }: { caseData: CaseDetail | null }) {
 function StudioPageContent() {
   const searchParams = useSearchParams();
   const caseId = searchParams?.get("caseId") ?? null;
+  const planId = searchParams?.get("planId") ?? null;
 
   const [activeTab, setActiveTab] = useState<StudioTab>("import");
   const [caseData, setCaseData] = useState<CaseDetail | null>(null);
@@ -410,7 +411,7 @@ function StudioPageContent() {
         {activeTab === "import"  && <ImportTab  caseData={caseData} />}
         {activeTab === "viewer"  && <ViewerTab  caseData={caseData} />}
         {activeTab === "cad"     && <CadTab     caseData={caseData} />}
-        {activeTab === "plan"    && <PlanTab    caseData={caseData} />}
+        {activeTab === "plan"    && <PlanTab    caseData={caseData} planId={planId} />}
         {activeTab === "preview" && <PreviewTab caseData={caseData} />}
       </div>
     </section>

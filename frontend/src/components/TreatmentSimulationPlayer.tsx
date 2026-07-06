@@ -9,6 +9,7 @@ import {
   SimulationFrame,
   ArchCoordination,
 } from '@/lib/api/treatment-simulation';
+import { getAlignerGenerationPlan } from '@/lib/api/aligner-generation';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -146,6 +147,12 @@ export default function TreatmentSimulationPlayer({ caseId, planId }: Props) {
   const [frameLoading, setFrameLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const [alignerChangeWeeks, setAlignerChangeWeeks] = useState(2);
+  const [abMode, setAbMode] = useState(false);
+  const [stageB, setStageB] = useState(1);
+  const stageBRef = useRef(1);
+  const [frameB, setFrameB] = useState<SimulationFrame | null>(null);
+  const [frameBLoading, setFrameBLoading] = useState(false);
 
   const runGenerate = useCallback(async () => {
     setLoading(true); setError(null);
@@ -160,6 +167,10 @@ export default function TreatmentSimulationPlayer({ caseId, planId }: Props) {
       ]);
       setCurrentFrame(frame);
       setArchCoord(coord);
+      // Non-blocking: fetch aligner plan for duration estimate
+      getAlignerGenerationPlan(caseId, planId)
+        .then((p) => { if (p.alignerChangeWeeks) setAlignerChangeWeeks(p.alignerChangeWeeks); })
+        .catch(() => { /* use default 2-week cadence */ });
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -177,6 +188,19 @@ export default function TreatmentSimulationPlayer({ caseId, planId }: Props) {
       setError((e as Error).message);
     } finally {
       setFrameLoading(false);
+    }
+  }, [caseId, planId, sim]);
+
+  const loadFrameB = useCallback(async (s: number) => {
+    if (!sim) return;
+    setFrameBLoading(true);
+    try {
+      const frame = await getSimulationFrame(caseId, planId, s);
+      setFrameB(frame);
+    } catch {
+      // silently ignore B-frame errors
+    } finally {
+      setFrameBLoading(false);
     }
   }, [caseId, planId, sim]);
 
@@ -264,7 +288,8 @@ export default function TreatmentSimulationPlayer({ caseId, planId }: Props) {
             {metricDelta('Overjet', sim.overjetInitialMm, sim.overjetFinalMm, 'mm')}
             {metricDelta('Overbite', sim.overbiteInitialMm, sim.overbiteFinalmm, 'mm')}
             <span className="text-gray-400">
-              {sim.totalFrames} stages · {sim.generationDurationMs ? `${sim.generationDurationMs}ms` : ''}
+              {sim.totalFrames} stages · ~{sim.totalFrames * alignerChangeWeeks}w total
+              {sim.generationDurationMs ? ` · ${sim.generationDurationMs}ms` : ''}
             </span>
           </div>
         </div>
@@ -273,6 +298,25 @@ export default function TreatmentSimulationPlayer({ caseId, planId }: Props) {
       {/* Stage slider + playback */}
       {sim && (
         <div className="px-4 pb-3 space-y-2">
+          {/* Milestone ticks */}
+          <div className="relative h-5 mx-[1.5rem]">
+            {[0.25, 0.5, 0.75].map((frac) => {
+              const milestoneStage = Math.round(frac * sim.totalFrames);
+              const pct = ((milestoneStage - 1) / Math.max(sim.totalFrames - 1, 1)) * 100;
+              const labels: Record<number, string> = { 0.25: '¼', 0.5: 'Mid', 0.75: '¾' };
+              return (
+                <div
+                  key={frac}
+                  className="absolute flex flex-col items-center"
+                  style={{ left: `${pct}%`, transform: 'translateX(-50%)' }}
+                >
+                  <div className="h-2 w-px bg-[color:var(--border)]" />
+                  <span className="text-[8px] font-mono text-[color:var(--muted-foreground)]">{labels[frac]}</span>
+                </div>
+              );
+            })}
+          </div>
+
           <div className="flex items-center gap-2">
             <button
               type="button"
@@ -325,9 +369,50 @@ export default function TreatmentSimulationPlayer({ caseId, planId }: Props) {
               </span>
             )}
           </div>
-          <p className="text-[10px] text-[color:var(--muted-foreground)]">
-            Space to play/pause · ‹ › to step · click to jump
-          </p>
+          <div className="flex items-center justify-between">
+            <p className="text-[10px] text-[color:var(--muted-foreground)]">
+              Space to play/pause · ‹ › to step · click to jump
+            </p>
+            <button
+              type="button"
+              onClick={() => {
+                setAbMode(v => !v);
+                if (!abMode) void loadFrameB(stageB);
+              }}
+              className={[
+                "shrink-0 px-2 py-1 text-[10px] rounded border font-semibold transition-colors",
+                abMode
+                  ? "border-amber-400 bg-amber-50/60 text-amber-700 dark:bg-amber-900/10 dark:text-amber-400"
+                  : "border-[color:var(--border)] text-[color:var(--muted-foreground)] hover:text-[color:var(--foreground)]",
+              ].join(" ")}
+            >
+              A/B Compare
+            </button>
+          </div>
+
+          {/* A/B comparison second slider */}
+          {abMode && (
+            <div className="flex items-center gap-2 border-t border-[color:var(--border)] pt-2">
+              <span className="shrink-0 text-[10px] font-bold text-amber-600 uppercase">B:</span>
+              <input
+                type="range"
+                min={1}
+                max={sim.totalFrames}
+                value={stageB}
+                onChange={(e) => {
+                  const s = parseInt(e.target.value, 10);
+                  stageBRef.current = s;
+                  setStageB(s);
+                  void loadFrameB(s);
+                }}
+                className="flex-1"
+                style={{ accentColor: 'var(--clinical-warn)' }}
+              />
+              <span className="shrink-0 text-xs font-mono text-amber-600 w-16 text-right tabular-nums">
+                {stageB}/{sim.totalFrames}
+              </span>
+            </div>
+          )}
         </div>
       )}
 
@@ -335,7 +420,24 @@ export default function TreatmentSimulationPlayer({ caseId, planId }: Props) {
       {currentFrame && (
         <div className={`px-4 pb-4 space-y-4 ${frameLoading ? 'opacity-50' : ''}`}>
           <ToothGrid frame={currentFrame} />
-          <FrameMetrics frame={currentFrame} />
+          {abMode && frameB ? (
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <p className="text-[10px] font-bold uppercase tracking-wide text-[color:var(--muted-foreground)] mb-1.5">
+                  Stage {stage} (A)
+                </p>
+                <FrameMetrics frame={currentFrame} />
+              </div>
+              <div className={frameBLoading ? "opacity-50" : ""}>
+                <p className="text-[10px] font-bold uppercase tracking-wide text-amber-600 mb-1.5">
+                  Stage {stageB} (B)
+                </p>
+                <FrameMetrics frame={frameB} />
+              </div>
+            </div>
+          ) : (
+            <FrameMetrics frame={currentFrame} />
+          )}
         </div>
       )}
 

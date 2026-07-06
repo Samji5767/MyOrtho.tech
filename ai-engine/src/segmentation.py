@@ -98,6 +98,13 @@ class OrthoSegmentationEngine:
         Returns a dict with detected teeth, per-tooth confidence, and metadata.
         Raises SegmentationError on unrecoverable failure.
         """
+        if not self.weights_loaded:
+            raise SegmentationError(
+                "Segmentation engine is not configured: MODEL_CHECKPOINT environment variable "
+                "is not set or the checkpoint file could not be loaded. "
+                "Set MODEL_CHECKPOINT to a trained checkpoint before running segmentation."
+            )
+
         ext = os.path.splitext(file_path)[1].lower()
         if ext not in SUPPORTED_EXTENSIONS:
             raise SegmentationError(

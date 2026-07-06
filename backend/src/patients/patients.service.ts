@@ -61,15 +61,12 @@ export class PatientsService {
               COUNT(c.id)::int AS case_count
        FROM patients p
        LEFT JOIN cases c ON c.patient_id = p.id
-       WHERE p.id = $1
+       WHERE p.id = $1 AND p.organization_id = $2
        GROUP BY p.id`,
-      [id],
+      [id, orgId],
     );
     const row = rows[0];
     if (!row) throw new NotFoundException(`Patient ${id} not found`);
-    if (row.organization_id !== orgId) {
-      throw new ForbiddenException('Access denied');
-    }
     return this.formatPatient(row, true);
   }
 

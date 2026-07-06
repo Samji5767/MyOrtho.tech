@@ -146,7 +146,8 @@ export class WorkflowService {
        FROM workflow_events we
        LEFT JOIN auth_users au ON au.id = we.actor_id
        WHERE we.case_id = $1
-       ORDER BY we.created_at ASC`,
+       ORDER BY we.created_at ASC
+       LIMIT 200`,
       [caseId],
     );
     return rows;

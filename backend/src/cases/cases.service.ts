@@ -95,15 +95,12 @@ export class CasesService {
        FROM cases c
        JOIN patients p ON p.id = c.patient_id
        LEFT JOIN auth_users au ON au.id = c.assigned_to
-       WHERE c.id = $1`,
-      [id],
+       WHERE c.id = $1 AND p.organization_id = $2`,
+      [id, orgId],
     );
 
     const row = rows[0];
     if (!row) throw new NotFoundException(`Case ${id} not found`);
-    if (row.organization_id !== orgId) {
-      throw new ForbiddenException('Access denied to this case');
-    }
 
     const history = await this.workflowService.getHistory(id);
     const allowedTransitions = this.workflowService.allowedTransitions(

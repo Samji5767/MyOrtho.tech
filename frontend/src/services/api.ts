@@ -160,19 +160,7 @@ export const apiService = {
         return mapPatient(data);
       }
     }
-    const patients = getStoredData<Patient[]>(PATIENTS_KEY, []);
-    const newPatient: Patient = {
-      id: `local-${Date.now()}`,
-      firstName,
-      lastName,
-      dob,
-      gender,
-      clinicalNotes,
-      createdAt: new Date().toISOString().split("T")[0]
-    };
-    patients.push(newPatient);
-    setStoredData(PATIENTS_KEY, patients);
-    return newPatient;
+    throw new Error("Failed to create patient: Supabase is not configured or returned an error");
   },
 
   // Cases
@@ -181,7 +169,8 @@ export const apiService = {
       await ensureAuth();
       const { data, error } = await supabase
         .from("cases")
-        .select("*, patients(*)");
+        .select("*, patients(*)")
+        .eq("organization_id", orgId());
       if (error) {
         console.error("Supabase getCases error:", error.message);
       } else if (data) {
@@ -210,19 +199,7 @@ export const apiService = {
         return mapCase(data);
       }
     }
-    const cases = getStoredData<Case[]>(CASES_KEY, []);
-    const newCase: Case = {
-      id: `local-${Date.now()}`,
-      patientId,
-      patientName,
-      status: "draft",
-      notes,
-      createdAt: new Date().toISOString().split("T")[0],
-      updatedAt: new Date().toISOString().split("T")[0]
-    };
-    cases.push(newCase);
-    setStoredData(CASES_KEY, cases);
-    return newCase;
+    throw new Error("Failed to create case: Supabase is not configured or returned an error");
   },
 
   async updateCaseStatus(id: string, status: Case["status"]): Promise<Case> {

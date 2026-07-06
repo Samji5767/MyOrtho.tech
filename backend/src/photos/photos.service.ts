@@ -3,7 +3,9 @@ import {
   Inject,
   NotFoundException,
   ForbiddenException,
+  BadRequestException,
 } from '@nestjs/common';
+import * as path from 'path';
 import type { Pool } from 'pg';
 import { PG_POOL } from '../database/database.module';
 
@@ -69,6 +71,11 @@ export class PhotosService {
 
   async create(caseId: string, orgId: string, dto: UploadPhotoDto): Promise<PatientPhoto> {
     await this.verifyCase(caseId, orgId);
+    const uploadRoot = path.resolve(process.env.UPLOADS_DIR ?? '/uploads');
+    const resolved = path.resolve(dto.filePath);
+    if (!resolved.startsWith(uploadRoot + path.sep) && resolved !== uploadRoot) {
+      throw new BadRequestException('Invalid file path');
+    }
     const { rows } = await this.pool.query(
       `INSERT INTO patient_photos
          (case_id, photo_type, file_path, file_size_bytes,

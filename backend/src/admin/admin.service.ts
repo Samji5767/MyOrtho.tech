@@ -180,7 +180,7 @@ export class AdminService {
         dto.enabled ?? null,
         dto.description ?? null,
         dto.rolloutPercentage ?? null,
-        dto.allowedOrgIds ? `{${dto.allowedOrgIds.map(id => `"${id}"`).join(',')}}` : null,
+        dto.allowedOrgIds ?? null,
       ],
     );
     const r = rows[0];

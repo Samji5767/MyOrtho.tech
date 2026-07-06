@@ -68,9 +68,18 @@ export class SsoPublicController {
     @Query('error') error: string,
   ) {
     if (error) {
+      // Validate against RFC 6749 §4.1.2.1 + OIDC Core §3.1.2.6 error codes
+      // to prevent reflected XSS from arbitrary IdP-supplied error strings.
+      const OIDC_ERROR_CODES = new Set([
+        'access_denied', 'server_error', 'temporarily_unavailable',
+        'invalid_request', 'unauthorized_client', 'unsupported_response_type',
+        'invalid_scope', 'login_required', 'consent_required',
+        'interaction_required', 'request_not_supported',
+      ]);
+      const safeError = OIDC_ERROR_CODES.has(error) ? error : 'server_error';
       return {
         status: 'error',
-        message: `Identity provider returned an error: ${error}. SSO login failed.`,
+        message: `Identity provider returned an error: ${safeError}. SSO login failed.`,
       };
     }
     return {

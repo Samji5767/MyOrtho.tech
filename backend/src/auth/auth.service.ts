@@ -18,6 +18,7 @@ export interface AuthUserRow {
   role: string;
   organization_id: string | null;
   is_onboarded: boolean;
+  is_active: boolean;
 }
 
 export interface SessionPayload {
@@ -176,6 +177,10 @@ export class AuthService implements OnModuleInit {
 
     const valid = await bcrypt.compare(password, user.password_hash);
     if (!valid) throw new UnauthorizedException('Invalid email or password');
+
+    if (user.is_active === false) {
+      throw new UnauthorizedException('Account is disabled');
+    }
 
     await this.pool.query(
       'UPDATE auth_users SET last_login_at = now(), updated_at = now() WHERE id = $1',

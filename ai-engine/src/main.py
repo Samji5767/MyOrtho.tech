@@ -293,7 +293,7 @@ async def run_segmentation_task(job_id: str, req: SegmentationRequest) -> None:
                 "status": "failed",
                 "case_id": req.case_id,
                 "scan_id": req.scan_id,
-                "error": str(exc),
+                "error": "Segmentation processing error",
                 "completed_at": datetime.now(timezone.utc).isoformat(),
             },
         )
@@ -395,7 +395,8 @@ async def hollow_mesh(req: HollowRequest):
     except HTTPException:
         raise
     except Exception as exc:
-        raise HTTPException(status_code=500, detail=str(exc)) from exc
+        logger.error("hollow_mesh error: %s", exc)
+        raise HTTPException(status_code=500, detail="Internal processing error") from exc
 
 
 @app.post(
@@ -407,7 +408,8 @@ async def detect_landmarks(req: LandmarkRequest):
     try:
         return landmark_detector.detect_landmarks(safe_path, req.tooth_id)
     except Exception as exc:
-        raise HTTPException(status_code=500, detail=str(exc)) from exc
+        logger.error("detect_landmarks error: %s", exc)
+        raise HTTPException(status_code=500, detail="Internal processing error") from exc
 
 
 @app.post(
@@ -420,7 +422,8 @@ async def check_collision(req: CollisionRequest):
         arr_b = np.array(req.centerline_b)
         return root_predictor.calculate_root_collision(arr_a, arr_b, req.min_clearance_mm)
     except Exception as exc:
-        raise HTTPException(status_code=500, detail=str(exc)) from exc
+        logger.error("check_collision error: %s", exc)
+        raise HTTPException(status_code=500, detail="Internal processing error") from exc
 
 
 @app.post(
@@ -444,7 +447,8 @@ async def generate_stages(req: AutoStageRequest):
         ]
         return {"tooth_id": req.tooth_id, "total_stages": stages_count, "steps": steps}
     except Exception as exc:
-        raise HTTPException(status_code=500, detail=str(exc)) from exc
+        logger.error("generate_stages error: %s", exc)
+        raise HTTPException(status_code=500, detail="Internal processing error") from exc
 
 
 @app.post(
@@ -475,7 +479,8 @@ async def generate_stage_stls(req: GenerateStageStlsRequest):
         )
         return result
     except Exception as exc:
-        raise HTTPException(status_code=500, detail=str(exc)) from exc
+        logger.error("generate_stage_stls error: %s", exc)
+        raise HTTPException(status_code=500, detail="Internal processing error") from exc
 
 
 def _build_stage_stls(seg_dir: str, req: "GenerateStageStlsRequest") -> dict:

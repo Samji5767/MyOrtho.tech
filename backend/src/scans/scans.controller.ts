@@ -43,6 +43,7 @@ export class ScansController {
 
   /** List all scans for a case. */
   @Get()
+  @RequirePermission('cases:read')
   listScans(@Req() req: Request, @Param('caseId') caseId: string) {
     const user = getUser(req);
     return this.scansService.findByCaseId(caseId, user.orgId!);
@@ -75,6 +76,7 @@ export class ScansController {
    */
   @Post(':scanId/segment')
   @HttpCode(HttpStatus.ACCEPTED)
+  @RequirePermission('cases:write')
   triggerSegmentation(
     @Req() req: Request,
     @Param('caseId') caseId: string,
@@ -107,6 +109,7 @@ export class ScansController {
 
   /** List all persisted segmentation jobs for a case (survives backend restart). */
   @Get('segmentation-jobs')
+  @RequirePermission('cases:read')
   listSegmentationJobs(@Req() req: Request, @Param('caseId') caseId: string) {
     const user = getUser(req);
     return this.scansService.listJobsForCase(caseId, user.orgId!);
@@ -115,11 +118,12 @@ export class ScansController {
 
 /** Polls AI-engine segmentation job status (by job ID). */
 @Controller('api/segment-jobs')
-@UseGuards(AuthGuard)
+@UseGuards(AuthGuard, PermissionsGuard)
 export class SegmentJobsController {
   constructor(private readonly scansService: ScansService) {}
 
   @Get(':jobId')
+  @RequirePermission('cases:read')
   getJobStatus(@Req() req: Request, @Param('jobId') jobId: string) {
     const user = (req as Request & { user?: AuthUser }).user;
     if (!user?.orgId) throw new UnauthorizedException();
@@ -129,6 +133,7 @@ export class SegmentJobsController {
   /** Retry a failed segmentation job. */
   @Post(':jobId/retry')
   @HttpCode(HttpStatus.ACCEPTED)
+  @RequirePermission('cases:write')
   retryJob(@Req() req: Request, @Param('jobId') jobId: string) {
     const user = (req as Request & { user?: AuthUser }).user;
     if (!user?.orgId) throw new UnauthorizedException();

@@ -45,6 +45,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     void refresh();
+    // Re-validate session every 10 minutes to catch server-side expiry/revocation.
+    const interval = setInterval(() => void refresh(), 10 * 60 * 1000);
+    return () => clearInterval(interval);
   }, [refresh]);
 
   return (

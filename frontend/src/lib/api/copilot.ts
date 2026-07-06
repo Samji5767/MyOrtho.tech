@@ -1,4 +1,4 @@
-const BASE = '/api';
+import { api } from './client';
 
 export interface CopilotSuggestion {
   id: string;
@@ -36,66 +36,44 @@ export interface CopilotConversation {
   updatedAt: string;
 }
 
-export async function startConversation(
+export const startConversation = (
   caseId: string,
   planId?: string,
-): Promise<CopilotConversation> {
-  const res = await fetch(`${BASE}/cases/${caseId}/copilot/conversations`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ planId }),
-  });
-  if (!res.ok) throw new Error(await res.text());
-  return res.json();
-}
+): Promise<CopilotConversation> =>
+  api.post<CopilotConversation>(`/api/cases/${caseId}/copilot/conversations`, { planId });
 
-export async function listConversations(caseId: string): Promise<CopilotConversation[]> {
-  const res = await fetch(`${BASE}/cases/${caseId}/copilot/conversations`);
-  if (!res.ok) throw new Error(await res.text());
-  return res.json();
-}
+export const listConversations = (caseId: string): Promise<CopilotConversation[]> =>
+  api.get<CopilotConversation[]>(`/api/cases/${caseId}/copilot/conversations`);
 
-export async function sendMessage(
+export const sendMessage = (
   caseId: string,
   conversationId: string,
   content: string,
-): Promise<CopilotMessage> {
-  const res = await fetch(
-    `${BASE}/cases/${caseId}/copilot/conversations/${conversationId}/messages`,
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ content }),
-    },
+): Promise<CopilotMessage> =>
+  api.post<CopilotMessage>(
+    `/api/cases/${caseId}/copilot/conversations/${conversationId}/messages`,
+    { content },
   );
-  if (!res.ok) throw new Error(await res.text());
-  return res.json();
-}
 
-export async function getMessages(
+export const getMessages = (
   caseId: string,
   conversationId: string,
-): Promise<CopilotMessage[]> {
-  const res = await fetch(
-    `${BASE}/cases/${caseId}/copilot/conversations/${conversationId}/messages`,
+): Promise<CopilotMessage[]> =>
+  api.get<CopilotMessage[]>(
+    `/api/cases/${caseId}/copilot/conversations/${conversationId}/messages`,
   );
-  if (!res.ok) throw new Error(await res.text());
-  return res.json();
-}
 
-export async function listSuggestions(
+export const listSuggestions = (
   caseId: string,
   planId?: string,
-): Promise<CopilotSuggestion[]> {
+): Promise<CopilotSuggestion[]> => {
   const url = planId
-    ? `${BASE}/cases/${caseId}/copilot/suggestions?planId=${planId}`
-    : `${BASE}/cases/${caseId}/copilot/suggestions`;
-  const res = await fetch(url);
-  if (!res.ok) throw new Error(await res.text());
-  return res.json();
-}
+    ? `/api/cases/${caseId}/copilot/suggestions?planId=${planId}`
+    : `/api/cases/${caseId}/copilot/suggestions`;
+  return api.get<CopilotSuggestion[]>(url);
+};
 
-// ─── Streaming (SSE) ─────────────────────────────────────────────────────────
+// ─── Streaming (SSE) — must use raw fetch; api client does not support streaming ─
 
 export interface StreamEvent {
   type: 'meta' | 'delta' | 'done' | 'error';
@@ -107,16 +85,19 @@ export interface StreamEvent {
   sources?: Array<{ title: string; source: string }>;
 }
 
+const STREAM_BASE = typeof process !== 'undefined' ? (process.env.NEXT_PUBLIC_API_URL ?? '') : '';
+
 export async function* streamMessage(
   caseId: string,
   conversationId: string,
   content: string,
 ): AsyncGenerator<StreamEvent> {
   const res = await fetch(
-    `${BASE}/cases/${caseId}/copilot/conversations/${conversationId}/stream`,
+    `${STREAM_BASE}/api/cases/${caseId}/copilot/conversations/${conversationId}/stream`,
     {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
       body: JSON.stringify({ content }),
     },
   );
@@ -147,20 +128,13 @@ export async function* streamMessage(
   }
 }
 
-export async function resolveSuggestion(
+export const resolveSuggestion = (
   caseId: string,
   suggestionId: string,
   status: 'acknowledged' | 'dismissed' | 'applied',
   clinicianNote?: string,
-): Promise<CopilotSuggestion> {
-  const res = await fetch(
-    `${BASE}/cases/${caseId}/copilot/suggestions/${suggestionId}/resolve`,
-    {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ status, clinicianNote }),
-    },
+): Promise<CopilotSuggestion> =>
+  api.patch<CopilotSuggestion>(
+    `/api/cases/${caseId}/copilot/suggestions/${suggestionId}/resolve`,
+    { status, clinicianNote },
   );
-  if (!res.ok) throw new Error(await res.text());
-  return res.json();
-}

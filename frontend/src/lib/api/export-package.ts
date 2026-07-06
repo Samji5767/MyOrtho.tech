@@ -1,4 +1,4 @@
-const BASE = '/api';
+import { api } from './client';
 
 export type ExportType = 'lab_full' | 'aligner_stl' | 'treatment_summary' | 'patient_instructions' | 'insurance_report';
 
@@ -38,70 +38,47 @@ export const EXPORT_TYPE_LABELS: Record<ExportType, string> = {
   insurance_report:     'Insurance Report',
 };
 
-export async function createExportPackage(
+export const createExportPackage = (
   caseId: string,
   planId: string,
   exportType: ExportType,
-): Promise<ExportPackage> {
-  const res = await fetch(`${BASE}/cases/${caseId}/plans/${planId}/export-packages`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ exportType }),
-  });
-  if (!res.ok) throw new Error(await res.text());
-  return res.json();
-}
+): Promise<ExportPackage> =>
+  api.post<ExportPackage>(`/api/cases/${caseId}/plans/${planId}/export-packages`, { exportType });
 
-export async function listExportPackages(
+export const listExportPackages = (
   caseId: string,
   planId: string,
-): Promise<ExportPackage[]> {
-  const res = await fetch(`${BASE}/cases/${caseId}/plans/${planId}/export-packages`);
-  if (!res.ok) throw new Error(await res.text());
-  return res.json();
-}
+): Promise<ExportPackage[]> =>
+  api.get<ExportPackage[]>(`/api/cases/${caseId}/plans/${planId}/export-packages`);
 
-export async function validateExportPackage(
+export const validateExportPackage = (
   caseId: string,
   planId: string,
   packageId: string,
-): Promise<ExportPackage> {
-  const res = await fetch(
-    `${BASE}/cases/${caseId}/plans/${planId}/export-packages/${packageId}/validate`,
-    { method: 'POST' },
+): Promise<ExportPackage> =>
+  api.post<ExportPackage>(
+    `/api/cases/${caseId}/plans/${planId}/export-packages/${packageId}/validate`,
+    {},
   );
-  if (!res.ok) throw new Error(await res.text());
-  return res.json();
-}
 
-export async function approveExportPackage(
+export const approveExportPackage = (
   caseId: string,
   planId: string,
   packageId: string,
-): Promise<ExportPackage> {
-  const res = await fetch(
-    `${BASE}/cases/${caseId}/plans/${planId}/export-packages/${packageId}/approve`,
-    { method: 'POST' },
+): Promise<ExportPackage> =>
+  api.post<ExportPackage>(
+    `/api/cases/${caseId}/plans/${planId}/export-packages/${packageId}/approve`,
+    {},
   );
-  if (!res.ok) throw new Error(await res.text());
-  return res.json();
-}
 
-export async function markExported(
+export const markExported = (
   caseId: string,
   planId: string,
   packageId: string,
   format: string,
   fileSizeBytes: number,
-): Promise<ExportPackage> {
-  const res = await fetch(
-    `${BASE}/cases/${caseId}/plans/${planId}/export-packages/${packageId}/mark-exported`,
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ format, fileSizeBytes }),
-    },
+): Promise<ExportPackage> =>
+  api.post<ExportPackage>(
+    `/api/cases/${caseId}/plans/${planId}/export-packages/${packageId}/mark-exported`,
+    { format, fileSizeBytes },
   );
-  if (!res.ok) throw new Error(await res.text());
-  return res.json();
-}

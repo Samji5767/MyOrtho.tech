@@ -1,4 +1,4 @@
-const BASE = '/api';
+import { api } from './client';
 
 export interface AttachmentLibraryEntry {
   id: string;
@@ -64,65 +64,48 @@ export interface AttachmentOptimizationResult {
   manufacturingIssues: ManufacturingValidation['issues'];
 }
 
-export async function getAttachmentLibrary(
+export const getAttachmentLibrary = (
   caseId: string,
   planId: string,
-): Promise<AttachmentLibraryEntry[]> {
-  const res = await fetch(`${BASE}/cases/${caseId}/plans/${planId}/attachments/library`);
-  if (!res.ok) throw new Error(await res.text());
-  return res.json();
-}
+): Promise<AttachmentLibraryEntry[]> =>
+  api.get<AttachmentLibraryEntry[]>(`/api/cases/${caseId}/plans/${planId}/attachments/library`);
 
-export async function createCustomAttachment(
+export const createCustomAttachment = (
   caseId: string,
   planId: string,
   body: Partial<AttachmentLibraryEntry>,
-): Promise<AttachmentLibraryEntry> {
-  const res = await fetch(`${BASE}/cases/${caseId}/plans/${planId}/attachments/library/custom`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  });
-  if (!res.ok) throw new Error(await res.text());
-  return res.json();
-}
+): Promise<AttachmentLibraryEntry> =>
+  api.post<AttachmentLibraryEntry>(
+    `/api/cases/${caseId}/plans/${planId}/attachments/library/custom`,
+    body,
+  );
 
-export async function optimizeAttachments(
+export const optimizeAttachments = (
   caseId: string,
   planId: string,
-): Promise<AttachmentOptimizationResult> {
-  const res = await fetch(`${BASE}/cases/${caseId}/plans/${planId}/attachments/optimize`, {
-    method: 'POST',
-  });
-  if (!res.ok) throw new Error(await res.text());
-  return res.json();
-}
+): Promise<AttachmentOptimizationResult> =>
+  api.post<AttachmentOptimizationResult>(
+    `/api/cases/${caseId}/plans/${planId}/attachments/optimize`,
+    {},
+  );
 
-export async function getAttachmentForceAnalysis(
+export const getAttachmentForceAnalysis = (
   caseId: string,
   planId: string,
-): Promise<AttachmentForceVector[]> {
-  const res = await fetch(`${BASE}/cases/${caseId}/plans/${planId}/attachments/force-analysis`);
-  if (!res.ok) throw new Error(await res.text());
-  return res.json();
-}
+): Promise<AttachmentForceVector[]> =>
+  api.get<AttachmentForceVector[]>(`/api/cases/${caseId}/plans/${planId}/attachments/force-analysis`);
 
-export async function getAttachmentCollisions(
+export const getAttachmentCollisions = (
   caseId: string,
   planId: string,
-): Promise<AttachmentCollision[]> {
-  const res = await fetch(`${BASE}/cases/${caseId}/plans/${planId}/attachments/collisions`);
-  if (!res.ok) throw new Error(await res.text());
-  return res.json();
-}
+): Promise<AttachmentCollision[]> =>
+  api.get<AttachmentCollision[]>(`/api/cases/${caseId}/plans/${planId}/attachments/collisions`);
 
-export async function validateAttachmentManufacturing(
+export const validateAttachmentManufacturing = (
   caseId: string,
   planId: string,
-): Promise<ManufacturingValidation> {
-  const res = await fetch(`${BASE}/cases/${caseId}/plans/${planId}/attachments/validate-manufacturing`, {
-    method: 'POST',
-  });
-  if (!res.ok) throw new Error(await res.text());
-  return res.json();
-}
+): Promise<ManufacturingValidation> =>
+  api.post<ManufacturingValidation>(
+    `/api/cases/${caseId}/plans/${planId}/attachments/validate-manufacturing`,
+    {},
+  );

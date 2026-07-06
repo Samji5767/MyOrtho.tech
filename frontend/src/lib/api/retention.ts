@@ -1,4 +1,4 @@
-const BASE = '/api';
+import { api } from './client';
 
 export type RetainerType = 'essix_full' | 'essix_partial' | 'hawley' | 'fixed_lingual' | 'vivera' | 'combo';
 
@@ -35,42 +35,17 @@ export interface WearPhase {
   clinicalInstruction: string | null;
 }
 
-export async function generateRetentionProtocol(
-  caseId: string,
-  planId: string,
-): Promise<RetentionProtocol> {
-  const res = await fetch(`${BASE}/cases/${caseId}/plans/${planId}/retention/generate`, {
-    method: 'POST',
-  });
-  if (!res.ok) throw new Error(await res.text());
-  return res.json();
-}
+const base = (caseId: string, planId: string) =>
+  `/api/cases/${caseId}/plans/${planId}/retention`;
 
-export async function getRetentionProtocol(
-  caseId: string,
-  planId: string,
-): Promise<RetentionProtocol> {
-  const res = await fetch(`${BASE}/cases/${caseId}/plans/${planId}/retention`);
-  if (!res.ok) throw new Error(await res.text());
-  return res.json();
-}
+export const generateRetentionProtocol = (caseId: string, planId: string): Promise<RetentionProtocol> =>
+  api.post<RetentionProtocol>(`${base(caseId, planId)}/generate`, {});
 
-export async function getWearSchedule(
-  caseId: string,
-  planId: string,
-): Promise<WearPhase[]> {
-  const res = await fetch(`${BASE}/cases/${caseId}/plans/${planId}/retention/wear-schedule`);
-  if (!res.ok) throw new Error(await res.text());
-  return res.json();
-}
+export const getRetentionProtocol = (caseId: string, planId: string): Promise<RetentionProtocol> =>
+  api.get<RetentionProtocol>(base(caseId, planId));
 
-export async function approveRetentionProtocol(
-  caseId: string,
-  planId: string,
-): Promise<RetentionProtocol> {
-  const res = await fetch(`${BASE}/cases/${caseId}/plans/${planId}/retention/approve`, {
-    method: 'POST',
-  });
-  if (!res.ok) throw new Error(await res.text());
-  return res.json();
-}
+export const getWearSchedule = (caseId: string, planId: string): Promise<WearPhase[]> =>
+  api.get<WearPhase[]>(`${base(caseId, planId)}/wear-schedule`);
+
+export const approveRetentionProtocol = (caseId: string, planId: string): Promise<RetentionProtocol> =>
+  api.post<RetentionProtocol>(`${base(caseId, planId)}/approve`, {});

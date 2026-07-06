@@ -1,4 +1,4 @@
-const BASE = '/api';
+import { api } from './client';
 
 export interface Vec3 { x: number; y: number; z: number }
 
@@ -51,37 +51,23 @@ export interface ProcessingJob {
   createdAt: string;
 }
 
-export async function runAutoOrient(caseId: string, scanId: string): Promise<OrientationResult> {
-  const res = await fetch(`${BASE}/cases/${caseId}/scans/${scanId}/processing/orient`, { method: 'POST' });
-  if (!res.ok) throw new Error(await res.text());
-  return res.json();
-}
+export const runAutoOrient = (caseId: string, scanId: string): Promise<OrientationResult> =>
+  api.post<OrientationResult>(`/api/cases/${caseId}/scans/${scanId}/processing/orient`, {});
 
-export async function runAutoCleanup(caseId: string, scanId: string): Promise<CleanupResult> {
-  const res = await fetch(`${BASE}/cases/${caseId}/scans/${scanId}/processing/cleanup`, { method: 'POST' });
-  if (!res.ok) throw new Error(await res.text());
-  return res.json();
-}
+export const runAutoCleanup = (caseId: string, scanId: string): Promise<CleanupResult> =>
+  api.post<CleanupResult>(`/api/cases/${caseId}/scans/${scanId}/processing/cleanup`, {});
 
-export async function assignToothIds(
+export const assignToothIds = (
   caseId: string,
   scanId: string,
   segmentationJobId?: string,
-): Promise<ToothIdResult[]> {
-  const res = await fetch(`${BASE}/cases/${caseId}/scans/${scanId}/processing/tooth-id`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ segmentationJobId }),
+): Promise<ToothIdResult[]> =>
+  api.post<ToothIdResult[]>(`/api/cases/${caseId}/scans/${scanId}/processing/tooth-id`, {
+    segmentationJobId,
   });
-  if (!res.ok) throw new Error(await res.text());
-  return res.json();
-}
 
-export async function getToothIds(caseId: string, scanId: string): Promise<ToothIdResult[]> {
-  const res = await fetch(`${BASE}/cases/${caseId}/scans/${scanId}/processing/tooth-id`);
-  if (!res.ok) throw new Error(await res.text());
-  return res.json();
-}
+export const getToothIds = (caseId: string, scanId: string): Promise<ToothIdResult[]> =>
+  api.get<ToothIdResult[]>(`/api/cases/${caseId}/scans/${scanId}/processing/tooth-id`);
 
 export async function confirmToothId(
   caseId: string,
@@ -89,19 +75,18 @@ export async function confirmToothId(
   fdiNumber: number,
   newFdi?: number,
 ): Promise<void> {
+  const base = typeof process !== 'undefined' ? (process.env.NEXT_PUBLIC_API_URL ?? '') : '';
   const res = await fetch(
-    `${BASE}/cases/${caseId}/scans/${scanId}/processing/tooth-id/${fdiNumber}/confirm`,
+    `${base}/api/cases/${caseId}/scans/${scanId}/processing/tooth-id/${fdiNumber}/confirm`,
     {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
       body: JSON.stringify({ newFdi }),
     },
   );
   if (!res.ok) throw new Error(await res.text());
 }
 
-export async function listProcessingJobs(caseId: string, scanId: string): Promise<ProcessingJob[]> {
-  const res = await fetch(`${BASE}/cases/${caseId}/scans/${scanId}/processing/jobs`);
-  if (!res.ok) throw new Error(await res.text());
-  return res.json();
-}
+export const listProcessingJobs = (caseId: string, scanId: string): Promise<ProcessingJob[]> =>
+  api.get<ProcessingJob[]>(`/api/cases/${caseId}/scans/${scanId}/processing/jobs`);

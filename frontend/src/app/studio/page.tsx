@@ -331,18 +331,24 @@ function PreviewTab({ caseData }: { caseData: CaseDetail | null }) {
 
 function StudioPageContent() {
   const searchParams = useSearchParams();
-  const caseId = searchParams?.get("caseId") ?? null;
-  const planId = searchParams?.get("planId") ?? null;
+  const caseId     = searchParams?.get("caseId")  ?? null;
+  const planIdParam = searchParams?.get("planId") ?? null;
 
-  const [activeTab, setActiveTab] = useState<StudioTab>("import");
-  const [caseData, setCaseData] = useState<CaseDetail | null>(null);
-  const [caseLoading, setCaseLoading] = useState(false);
+  const [activeTab,      setActiveTab]      = useState<StudioTab>("import");
+  const [caseData,       setCaseData]       = useState<CaseDetail | null>(null);
+  const [caseLoading,    setCaseLoading]    = useState(false);
+  const [effectivePlanId, setEffectivePlanId] = useState<string | null>(planIdParam);
 
   useEffect(() => {
     if (!caseId) { setCaseData(null); return; }
     setCaseLoading(true);
     fetchCase(caseId)
-      .then(({ data }) => { setCaseData(data); setCaseLoading(false); })
+      .then(({ data }) => {
+        setCaseData(data);
+        // Resolve planId from URL param first; fall back to the case's active plan
+        setEffectivePlanId(prev => prev ?? data.linkedResources?.planId ?? null);
+        setCaseLoading(false);
+      })
       .catch(() => setCaseLoading(false));
   }, [caseId]);
 
@@ -413,7 +419,7 @@ function StudioPageContent() {
           {activeTab === "import"  && <ImportTab  caseData={caseData} />}
           {activeTab === "viewer"  && <ViewerTab  caseData={caseData} />}
           {activeTab === "cad"     && <CadTab     caseData={caseData} />}
-          {activeTab === "plan"    && <PlanTab    caseData={caseData} planId={planId} />}
+          {activeTab === "plan"    && <PlanTab    caseData={caseData} planId={effectivePlanId} />}
           {activeTab === "preview" && <PreviewTab caseData={caseData} />}
         </div>
       </RuntimeErrorBoundary>

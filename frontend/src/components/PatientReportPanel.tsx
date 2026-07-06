@@ -14,6 +14,7 @@ import {
   ListChecks,
 } from "lucide-react";
 import { getWearSchedule, type WearPhase } from "@/lib/api/retention";
+import { api } from "@/lib/api/client";
 
 // ─── Treatment summary type (from reports API) ─────────────────────────────────
 
@@ -34,14 +35,8 @@ interface TreatmentSummary {
   generatedAt: string;
 }
 
-async function fetchTreatmentSummary(caseId: string, planId: string): Promise<TreatmentSummary> {
-  const res = await fetch(`/api/cases/${caseId}/reports/treatment-summary`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ planId }),
-  });
-  if (!res.ok) throw new Error(await res.text());
-  return res.json() as Promise<TreatmentSummary>;
+function fetchTreatmentSummary(caseId: string, planId: string): Promise<TreatmentSummary> {
+  return api.post<TreatmentSummary>(`/api/cases/${caseId}/reports/treatment-summary`, { planId });
 }
 
 // ─── Wear phase card ───────────────────────────────────────────────────────────

@@ -1,4 +1,4 @@
-const BASE = '/api';
+import { api } from './client';
 
 export interface ToothPosition {
   tx: number; ty: number; tz: number;
@@ -39,41 +39,27 @@ export interface ArchCoordination {
   recommendation: string;
 }
 
-export async function generateSimulation(
+export const generateSimulation = (
   caseId: string,
   planId: string,
-): Promise<TreatmentSimulation> {
-  const res = await fetch(`${BASE}/cases/${caseId}/plans/${planId}/simulation/generate`, {
-    method: 'POST',
-  });
-  if (!res.ok) throw new Error(await res.text());
-  return res.json();
-}
+): Promise<TreatmentSimulation> =>
+  api.post<TreatmentSimulation>(`/api/cases/${caseId}/plans/${planId}/simulation/generate`, {});
 
-export async function getSimulation(
+export const getSimulation = (
   caseId: string,
   planId: string,
-): Promise<TreatmentSimulation> {
-  const res = await fetch(`${BASE}/cases/${caseId}/plans/${planId}/simulation`);
-  if (!res.ok) throw new Error(await res.text());
-  return res.json();
-}
+): Promise<TreatmentSimulation> =>
+  api.get<TreatmentSimulation>(`/api/cases/${caseId}/plans/${planId}/simulation`);
 
-export async function getSimulationFrame(
+export const getSimulationFrame = (
   caseId: string,
   planId: string,
   stageNum: number,
-): Promise<SimulationFrame> {
-  const res = await fetch(`${BASE}/cases/${caseId}/plans/${planId}/simulation/frames/${stageNum}`);
-  if (!res.ok) throw new Error(await res.text());
-  return res.json();
-}
+): Promise<SimulationFrame> =>
+  api.get<SimulationFrame>(`/api/cases/${caseId}/plans/${planId}/simulation/frames/${stageNum}`);
 
-export async function getArchCoordination(
+export const getArchCoordination = (
   caseId: string,
   planId: string,
-): Promise<ArchCoordination> {
-  const res = await fetch(`${BASE}/cases/${caseId}/plans/${planId}/simulation/arch-coordination`);
-  if (!res.ok) throw new Error(await res.text());
-  return res.json();
-}
+): Promise<ArchCoordination> =>
+  api.get<ArchCoordination>(`/api/cases/${caseId}/plans/${planId}/simulation/arch-coordination`);

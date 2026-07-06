@@ -1,4 +1,4 @@
-const BASE = '/api';
+import { api } from './client';
 
 export interface CbctScan {
   id: string;
@@ -48,7 +48,7 @@ export interface BoneSegment {
 export type FileFormat = 'dicom' | 'dcm_zip' | 'nifti' | 'raw';
 export type RegistrationMethod = 'icp' | 'surface_match' | 'landmark' | 'manual';
 
-export async function registerCbctScan(
+export const registerCbctScan = (
   caseId: string,
   data: {
     filePath: string;
@@ -61,69 +61,40 @@ export async function registerCbctScan(
     ma?: number;
     acquisitionDate?: string;
   },
-): Promise<CbctScan> {
-  const res = await fetch(`${BASE}/cases/${caseId}/cbct/scans`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(data),
-  });
-  if (!res.ok) throw new Error(await res.text());
-  return res.json();
-}
+): Promise<CbctScan> =>
+  api.post<CbctScan>(`/api/cases/${caseId}/cbct/scans`, data);
 
-export async function listCbctScans(caseId: string): Promise<CbctScan[]> {
-  const res = await fetch(`${BASE}/cases/${caseId}/cbct/scans`);
-  if (!res.ok) throw new Error(await res.text());
-  return res.json();
-}
+export const listCbctScans = (caseId: string): Promise<CbctScan[]> =>
+  api.get<CbctScan[]>(`/api/cases/${caseId}/cbct/scans`);
 
-export async function createFusion(
+export const createFusion = (
   caseId: string,
   cbctScanId: string,
   stlScanId: string,
   registrationMethod: RegistrationMethod = 'icp',
-): Promise<CbctFusion> {
-  const res = await fetch(`${BASE}/cases/${caseId}/cbct/fusions`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ cbctScanId, stlScanId, registrationMethod }),
+): Promise<CbctFusion> =>
+  api.post<CbctFusion>(`/api/cases/${caseId}/cbct/fusions`, {
+    cbctScanId,
+    stlScanId,
+    registrationMethod,
   });
-  if (!res.ok) throw new Error(await res.text());
-  return res.json();
-}
 
-export async function listFusions(caseId: string): Promise<CbctFusion[]> {
-  const res = await fetch(`${BASE}/cases/${caseId}/cbct/fusions`);
-  if (!res.ok) throw new Error(await res.text());
-  return res.json();
-}
+export const listFusions = (caseId: string): Promise<CbctFusion[]> =>
+  api.get<CbctFusion[]>(`/api/cases/${caseId}/cbct/fusions`);
 
-export async function reviewFusion(caseId: string, fusionId: string): Promise<CbctFusion> {
-  const res = await fetch(`${BASE}/cases/${caseId}/cbct/fusions/${fusionId}/review`, { method: 'PATCH' });
-  if (!res.ok) throw new Error(await res.text());
-  return res.json();
-}
+export const reviewFusion = (caseId: string, fusionId: string): Promise<CbctFusion> =>
+  api.patch<CbctFusion>(`/api/cases/${caseId}/cbct/fusions/${fusionId}/review`, {});
 
-export async function listBoneSegments(caseId: string, fusionId: string): Promise<BoneSegment[]> {
-  const res = await fetch(`${BASE}/cases/${caseId}/cbct/fusions/${fusionId}/segments`);
-  if (!res.ok) throw new Error(await res.text());
-  return res.json();
-}
+export const listBoneSegments = (caseId: string, fusionId: string): Promise<BoneSegment[]> =>
+  api.get<BoneSegment[]>(`/api/cases/${caseId}/cbct/fusions/${fusionId}/segments`);
 
-export async function updateSegmentDensity(
+export const updateSegmentDensity = (
   caseId: string,
   fusionId: string,
   segmentId: string,
   densityHu: number,
-): Promise<BoneSegment> {
-  const res = await fetch(
-    `${BASE}/cases/${caseId}/cbct/fusions/${fusionId}/segments/${segmentId}/density`,
-    {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ densityHu }),
-    },
+): Promise<BoneSegment> =>
+  api.patch<BoneSegment>(
+    `/api/cases/${caseId}/cbct/fusions/${fusionId}/segments/${segmentId}/density`,
+    { densityHu },
   );
-  if (!res.ok) throw new Error(await res.text());
-  return res.json();
-}

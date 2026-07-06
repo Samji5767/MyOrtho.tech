@@ -1,4 +1,4 @@
-const BASE = '/api';
+import { api } from './client';
 
 export interface ArchCoordinationPlan {
   id: string;
@@ -42,78 +42,57 @@ export interface ArchSyncAllocation {
   isActive: boolean;
 }
 
-export async function coordinatePlan(
+export const coordinatePlan = (
   caseId: string,
   planId: string,
   strategy: 'simultaneous' | 'upper_first' | 'lower_first' | 'alternating',
   expansionCoordination?: boolean,
-): Promise<ArchCoordinationPlan> {
-  const res = await fetch(`${BASE}/cases/${caseId}/plans/${planId}/arch-coordination/coordinate`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ strategy, expansionCoordination }),
-  });
-  if (!res.ok) throw new Error(await res.text());
-  return res.json();
-}
+): Promise<ArchCoordinationPlan> =>
+  api.post<ArchCoordinationPlan>(
+    `/api/cases/${caseId}/plans/${planId}/arch-coordination/coordinate`,
+    { strategy, expansionCoordination },
+  );
 
-export async function getCoordinationPlan(
+export const getCoordinationPlan = (
   caseId: string,
   planId: string,
-): Promise<ArchCoordinationPlan> {
-  const res = await fetch(`${BASE}/cases/${caseId}/plans/${planId}/arch-coordination`);
-  if (!res.ok) throw new Error(await res.text());
-  return res.json();
-}
+): Promise<ArchCoordinationPlan> =>
+  api.get<ArchCoordinationPlan>(`/api/cases/${caseId}/plans/${planId}/arch-coordination`);
 
-export async function getCheckpoints(
+export const getCheckpoints = (
   caseId: string,
   planId: string,
-): Promise<ArchCheckpoint[]> {
-  const res = await fetch(`${BASE}/cases/${caseId}/plans/${planId}/arch-coordination/checkpoints`);
-  if (!res.ok) throw new Error(await res.text());
-  return res.json();
-}
+): Promise<ArchCheckpoint[]> =>
+  api.get<ArchCheckpoint[]>(`/api/cases/${caseId}/plans/${planId}/arch-coordination/checkpoints`);
 
-export async function evaluateCheckpoint(
+export const evaluateCheckpoint = (
   caseId: string,
   planId: string,
   checkpointId: string,
   status: 'passed' | 'failed' | 'deferred',
   clinicalNote?: string,
-): Promise<ArchCheckpoint> {
-  const res = await fetch(
-    `${BASE}/cases/${caseId}/plans/${planId}/arch-coordination/checkpoints/${checkpointId}/evaluate`,
-    {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ status, clinicalNote }),
-    },
+): Promise<ArchCheckpoint> =>
+  api.patch<ArchCheckpoint>(
+    `/api/cases/${caseId}/plans/${planId}/arch-coordination/checkpoints/${checkpointId}/evaluate`,
+    { status, clinicalNote },
   );
-  if (!res.ok) throw new Error(await res.text());
-  return res.json();
-}
 
-export async function getSyncAllocations(
+export const getSyncAllocations = (
   caseId: string,
   planId: string,
   arch?: 'upper' | 'lower',
-): Promise<ArchSyncAllocation[]> {
+): Promise<ArchSyncAllocation[]> => {
   const url = arch
-    ? `${BASE}/cases/${caseId}/plans/${planId}/arch-coordination/sync-allocations?arch=${arch}`
-    : `${BASE}/cases/${caseId}/plans/${planId}/arch-coordination/sync-allocations`;
-  const res = await fetch(url);
-  if (!res.ok) throw new Error(await res.text());
-  return res.json();
-}
+    ? `/api/cases/${caseId}/plans/${planId}/arch-coordination/sync-allocations?arch=${arch}`
+    : `/api/cases/${caseId}/plans/${planId}/arch-coordination/sync-allocations`;
+  return api.get<ArchSyncAllocation[]>(url);
+};
 
-export async function approveCoordinationPlan(
+export const approveCoordinationPlan = (
   caseId: string,
   planId: string,
-): Promise<ArchCoordinationPlan> {
-  const res = await fetch(`${BASE}/cases/${caseId}/plans/${planId}/arch-coordination/approve`, {
-    method: 'POST',
-  });
-  if (!res.ok) throw new Error(await res.text());
-  return res.json();
-}
+): Promise<ArchCoordinationPlan> =>
+  api.post<ArchCoordinationPlan>(
+    `/api/cases/${caseId}/plans/${planId}/arch-coordination/approve`,
+    {},
+  );

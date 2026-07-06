@@ -1,4 +1,4 @@
-const BASE = '/api';
+import { api } from './client';
 
 export interface IprEnamelEstimate {
   fdiA: number;
@@ -34,31 +34,20 @@ export interface IprOptimizationResult {
   }>;
 }
 
-export async function optimizeIpr(
+export const optimizeIpr = (
   caseId: string,
   planId: string,
-): Promise<IprOptimizationResult> {
-  const res = await fetch(`${BASE}/cases/${caseId}/plans/${planId}/ipr/optimize`, {
-    method: 'POST',
-  });
-  if (!res.ok) throw new Error(await res.text());
-  return res.json();
-}
+): Promise<IprOptimizationResult> =>
+  api.post<IprOptimizationResult>(`/api/cases/${caseId}/plans/${planId}/ipr/optimize`, {});
 
-export async function getIprEnamelAnalysis(
+export const getIprEnamelAnalysis = (
   caseId: string,
   planId: string,
-): Promise<IprEnamelEstimate[]> {
-  const res = await fetch(`${BASE}/cases/${caseId}/plans/${planId}/ipr/enamel-analysis`);
-  if (!res.ok) throw new Error(await res.text());
-  return res.json();
-}
+): Promise<IprEnamelEstimate[]> =>
+  api.get<IprEnamelEstimate[]>(`/api/cases/${caseId}/plans/${planId}/ipr/enamel-analysis`);
 
-export async function getIprClinicalWarnings(
+export const getIprClinicalWarnings = (
   caseId: string,
   planId: string,
-): Promise<IprClinicalWarning[]> {
-  const res = await fetch(`${BASE}/cases/${caseId}/plans/${planId}/ipr/clinical-warnings`);
-  if (!res.ok) throw new Error(await res.text());
-  return res.json();
-}
+): Promise<IprClinicalWarning[]> =>
+  api.get<IprClinicalWarning[]>(`/api/cases/${caseId}/plans/${planId}/ipr/clinical-warnings`);

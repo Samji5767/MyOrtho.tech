@@ -25,6 +25,7 @@ import { fetchCase, type CaseDetail } from "@/lib/api/cases";
 import OrthoWorkflowRail from "@/components/OrthoWorkflowRail";
 import OrthoAnalysisTabs from "@/components/OrthoAnalysisTabs";
 import { CasePlanningProvider } from "@/components/CasePlanningContext";
+import { RuntimeErrorBoundary } from "@/components/RuntimeErrorBoundary";
 
 // ─── Heavy 3D components — SSR off, load only when tab is active ──────────────
 
@@ -406,14 +407,16 @@ function StudioPageContent() {
         ))}
       </div>
 
-      {/* Active panel */}
-      <div className="animate-page-enter">
-        {activeTab === "import"  && <ImportTab  caseData={caseData} />}
-        {activeTab === "viewer"  && <ViewerTab  caseData={caseData} />}
-        {activeTab === "cad"     && <CadTab     caseData={caseData} />}
-        {activeTab === "plan"    && <PlanTab    caseData={caseData} planId={planId} />}
-        {activeTab === "preview" && <PreviewTab caseData={caseData} />}
-      </div>
+      {/* Active panel — wrapped in error boundary so one tab crash doesn't kill the workspace */}
+      <RuntimeErrorBoundary>
+        <div className="animate-page-enter">
+          {activeTab === "import"  && <ImportTab  caseData={caseData} />}
+          {activeTab === "viewer"  && <ViewerTab  caseData={caseData} />}
+          {activeTab === "cad"     && <CadTab     caseData={caseData} />}
+          {activeTab === "plan"    && <PlanTab    caseData={caseData} planId={planId} />}
+          {activeTab === "preview" && <PreviewTab caseData={caseData} />}
+        </div>
+      </RuntimeErrorBoundary>
     </section>
     </CasePlanningProvider>
   );

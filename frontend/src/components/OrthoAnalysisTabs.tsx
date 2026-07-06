@@ -58,6 +58,21 @@ const PatientReportPanelDynamic = dynamic(
   { ssr: false, loading: () => <div className="h-40 animate-skeleton rounded-xl" /> },
 );
 
+const CbctFusionPanelDynamic = dynamic(
+  () => import("@/components/CbctFusionPanel"),
+  { ssr: false, loading: () => <div className="h-64 animate-skeleton rounded-xl" /> },
+);
+
+const ClinicalCopilotDynamic = dynamic(
+  () => import("@/components/ClinicalCopilot"),
+  { ssr: false, loading: () => <div className="h-64 animate-skeleton rounded-xl" /> },
+);
+
+const PreExportQAPanelDynamic = dynamic(
+  () => import("@/components/PreExportQAPanel"),
+  { ssr: false, loading: () => <div className="h-64 animate-skeleton rounded-xl" /> },
+);
+
 // ─── Shared utilities ─────────────────────────────────────────────────────────
 
 function EstimatedBadge() {
@@ -99,19 +114,25 @@ type AnalysisTab =
   | "dashboard"
   | "simulation"
   | "manufacturing"
-  | "patient";
+  | "patient"
+  | "cbct"
+  | "copilot"
+  | "qa";
 
 const ANALYSIS_TABS: { key: AnalysisTab; label: string }[] = [
   { key: "overview",       label: "Overview"      },
   { key: "dashboard",      label: "Dashboard"     },
   { key: "simulation",     label: "Simulation"    },
+  { key: "copilot",        label: "AI Copilot"    },
   { key: "measurements",   label: "Measurements"  },
   { key: "occlusion",      label: "Occlusion"     },
   { key: "movements",      label: "Movements"     },
   { key: "attachments",    label: "Attachments"   },
   { key: "ipr",            label: "IPR"           },
   { key: "staging",        label: "Staging"       },
+  { key: "cbct",           label: "CBCT"          },
   { key: "manufacturing",  label: "Manufacturing" },
+  { key: "qa",             label: "QA"            },
   { key: "patient",        label: "Patient"       },
   { key: "review",         label: "Review"        },
   { key: "export",         label: "Export"        },
@@ -1101,6 +1122,33 @@ function PatientTab({ caseId, planId }: { caseId: string | null; planId: string 
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// TAB: CBCT (Phase 4A)
+// ─────────────────────────────────────────────────────────────────────────────
+
+function CbctTab({ caseId }: { caseId: string | null }) {
+  if (!caseId) return <RequiresCasePlan feature="CBCT fusion and root analysis" />;
+  return <CbctFusionPanelDynamic caseId={caseId} />;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// TAB: COPILOT (Phase 4C)
+// ─────────────────────────────────────────────────────────────────────────────
+
+function CopilotTab({ caseId, planId }: { caseId: string | null; planId: string | null }) {
+  if (!caseId) return <RequiresCasePlan feature="the AI clinical copilot" />;
+  return <ClinicalCopilotDynamic caseId={caseId} planId={planId ?? undefined} />;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// TAB: QA (Phase 4G)
+// ─────────────────────────────────────────────────────────────────────────────
+
+function QATab({ caseId }: { caseId: string | null }) {
+  if (!caseId) return <RequiresCasePlan feature="pre-export QA validation" />;
+  return <PreExportQAPanelDynamic caseId={caseId} />;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // MAIN COMPONENT
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -1139,13 +1187,16 @@ export default function OrthoAnalysisTabs({ caseId, patientName, planId = null }
         {activeTab === "overview"       && <OverviewTab      caseId={caseId} patientName={patientName} />}
         {activeTab === "dashboard"      && <DashboardTab     caseId={caseId} planId={planId} />}
         {activeTab === "simulation"     && <SimulationTab    caseId={caseId} planId={planId} />}
+        {activeTab === "copilot"        && <CopilotTab       caseId={caseId} planId={planId} />}
         {activeTab === "measurements"   && <MeasurementsTab />}
         {activeTab === "occlusion"      && <OcclusionTab    />}
         {activeTab === "movements"      && <MovementsTab    />}
         {activeTab === "attachments"    && <AttachmentsTab  />}
         {activeTab === "ipr"            && <IPRTab          />}
         {activeTab === "staging"        && <StagingTab      caseId={caseId} patientName={patientName} />}
+        {activeTab === "cbct"           && <CbctTab         caseId={caseId} />}
         {activeTab === "manufacturing"  && <ManufacturingTab caseId={caseId} planId={planId} />}
+        {activeTab === "qa"             && <QATab           caseId={caseId} />}
         {activeTab === "patient"        && <PatientTab      caseId={caseId} planId={planId} />}
         {activeTab === "review"         && <ReviewTab       caseId={caseId} />}
         {activeTab === "export"         && <ExportTab       caseId={caseId} patientName={patientName} />}

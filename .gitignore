@@ -36,3 +36,6 @@ frontend/ios/App/CapApp-SPM/.build/
 # Logs
 *.log
 coverage/
+
+# Redis
+dump.rdb

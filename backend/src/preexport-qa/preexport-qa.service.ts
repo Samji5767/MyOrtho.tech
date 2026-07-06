@@ -48,17 +48,45 @@ function checkMeshIntegrity(segmentRows: Record<string, unknown>[]): QACheck {
   return { key: 'mesh_integrity', label: 'Mesh Integrity', status: 'warning', detail: `Root anatomy flags on FDI: ${fdis}. Manual correction recommended before export.` };
 }
 
-function checkWallThickness(): QACheck {
-  // Real wall-thickness verification requires per-stage mesh geometry from the
-  // AI segmentation pipeline. Until real meshes are available this cannot pass.
+function checkWallThickness(qualityReport: Record<string, unknown> | null): QACheck {
+  if (!qualityReport) {
+    return {
+      key: 'wall_thickness',
+      label: 'Wall Thickness',
+      status: 'warning',
+      detail:
+        'Wall thickness check requires real staged tooth mesh files. ' +
+        'Run aligner generation before export — manual clinical review required until then.',
+    };
+  }
+  const minThickness = typeof qualityReport['min_thickness_mm'] === 'number'
+    ? qualityReport['min_thickness_mm'] as number
+    : null;
+  if (minThickness == null) {
+    return {
+      key: 'wall_thickness',
+      label: 'Wall Thickness',
+      status: 'warning',
+      detail: 'Aligner quality report present but minimum wall thickness not measured. Manual review required.',
+    };
+  }
+  const MIN_MM = 0.6;
+  if (minThickness < MIN_MM) {
+    return {
+      key: 'wall_thickness',
+      label: 'Wall Thickness',
+      status: 'fail',
+      detail: `Minimum wall thickness ${minThickness.toFixed(2)} mm is below the printable minimum of ${MIN_MM} mm. Geometry must be thickened before export.`,
+    };
+  }
+  const avgStr = typeof qualityReport['avg_thickness_mm'] === 'number'
+    ? `, average ${(qualityReport['avg_thickness_mm'] as number).toFixed(2)} mm`
+    : '';
   return {
     key: 'wall_thickness',
     label: 'Wall Thickness',
-    status: 'warning',
-    detail:
-      'Wall thickness check requires real staged tooth mesh files. ' +
-      'Cannot verify without geometry from the AI segmentation pipeline — ' +
-      'manual clinical review required before printing.',
+    status: 'pass',
+    detail: `Wall thickness verified: minimum ${minThickness.toFixed(2)} mm${avgStr}. Meets printability requirements.`,
   };
 }
 
@@ -108,8 +136,44 @@ function checkCollisionDetection(
   };
 }
 
-function checkPrintableGeometry(): QACheck {
-  return { key: 'printable_geometry', label: 'Printable Geometry', status: 'pass', detail: 'Geometry is manifold, watertight, and within printable volume (200×125×150 mm).' };
+function checkPrintableGeometry(scanValidation: Record<string, unknown> | null): QACheck {
+  if (!scanValidation) {
+    return {
+      key: 'printable_geometry',
+      label: 'Printable Geometry',
+      status: 'warning',
+      detail: 'No scan validation data found for this case. Run scan validation before export.',
+    };
+  }
+  const nonManifold = scanValidation['has_non_manifold_edges'] === true;
+  const selfIntersect = scanValidation['has_self_intersections'] === true;
+  const isWatertight = scanValidation['is_watertight'];
+  if (nonManifold || selfIntersect) {
+    const issues = [
+      nonManifold ? 'non-manifold edges' : null,
+      selfIntersect ? 'self-intersections' : null,
+    ].filter(Boolean).join(', ');
+    return {
+      key: 'printable_geometry',
+      label: 'Printable Geometry',
+      status: 'fail',
+      detail: `Mesh geometry issues detected: ${issues}. Repair before printing.`,
+    };
+  }
+  if (isWatertight === false) {
+    return {
+      key: 'printable_geometry',
+      label: 'Printable Geometry',
+      status: 'warning',
+      detail: 'Mesh is not watertight — open surfaces detected. Manual inspection recommended before printing.',
+    };
+  }
+  return {
+    key: 'printable_geometry',
+    label: 'Printable Geometry',
+    status: 'pass',
+    detail: 'Geometry is manifold, watertight, and within printable volume (200×125×150 mm).',
+  };
 }
 
 function checkStageConsistency(stageRows: Record<string, unknown>[]): QACheck {
@@ -190,17 +254,39 @@ export class PreexportQaService {
       }
     }
 
+    // Query scan validation (for printable geometry check)
+    const { rows: svRows } = await this.pool.query(
+      `SELECT sv.is_watertight, sv.has_non_manifold_edges, sv.has_self_intersections
+       FROM scan_validations sv
+       INNER JOIN stl_uploads su ON su.id = sv.stl_upload_id
+       WHERE su.case_id = $1
+       ORDER BY sv.created_at DESC LIMIT 1`,
+      [caseId],
+    );
+    const scanValidation: Record<string, unknown> | null = svRows[0] ?? null;
+
+    // Query aligner generation plan quality report (for wall thickness check)
+    let wallQualityReport: Record<string, unknown> | null = null;
+    if (dto.treatmentPlanId) {
+      const { rows: agpRows } = await this.pool.query(
+        `SELECT quality_report FROM aligner_generation_plans
+         WHERE plan_id = $1 ORDER BY created_at DESC LIMIT 1`,
+        [dto.treatmentPlanId],
+      );
+      wallQualityReport = (agpRows[0]?.quality_report as Record<string, unknown>) ?? null;
+    }
+
     // Run all 10 checks
     const checks: QACheck[] = [
       checkMissingTeeth(segRows),
       checkInvalidNumbering(segRows),
       checkMeshIntegrity(segRows),
-      checkWallThickness(),
+      checkWallThickness(wallQualityReport),
       checkAttachmentValidity(stageRows),
       checkTrimContinuity(stageRows),
       checkOcclusionQuality(stageRows),
       checkCollisionDetection(stageRows, collisionPairs),
-      checkPrintableGeometry(),
+      checkPrintableGeometry(scanValidation),
       checkStageConsistency(stageRows),
     ];
 

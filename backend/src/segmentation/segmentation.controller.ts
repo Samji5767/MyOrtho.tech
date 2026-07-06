@@ -1,5 +1,5 @@
 import {
-  Body, Controller, Get, Param, Patch, Post, Query, Req, UnauthorizedException, UseGuards,
+  Body, Controller, Delete, Get, HttpCode, Param, Patch, Post, Query, Req, UnauthorizedException, UseGuards,
 } from '@nestjs/common';
 import type { Request } from 'express';
 import { AuthGuard } from '../auth/auth.guard';
@@ -44,6 +44,18 @@ export class SegmentationController {
   getJob(@Req() req: Request, @Param('caseId') caseId: string, @Param('jobId') jobId: string) {
     const { orgId } = getUser(req);
     return this.svc.getJob(caseId, orgId, jobId);
+  }
+
+  @Delete('api/cases/:caseId/segmentation/jobs/:jobId')
+  @HttpCode(200)
+  cancelJob(
+    @Req() req: Request,
+    @Param('caseId') caseId: string,
+    @Param('jobId') jobId: string,
+    @Body() body: { reason?: string },
+  ) {
+    const { orgId } = getUser(req);
+    return this.svc.cancelJob(caseId, orgId, jobId, body?.reason);
   }
 
   @Post('api/cases/:caseId/segmentation/jobs/:jobId/corrections')

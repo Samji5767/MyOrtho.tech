@@ -132,34 +132,97 @@ export class StagesService {
     }
 
     const velocity = dto.baseVelocityMmPerWeek ?? 0.25;
-    const teeth = dto.teethToMove ?? ['11','12','13','21','22','23','31','32','33','41','42','43'];
+
+    // Load movement prescriptions for this plan (6-DOF per tooth)
+    const { rows: prescriptions } = await this.pool.query(
+      `SELECT tooth_number,
+              translation_mesial_mm, translation_distal_mm,
+              translation_buccal_mm, translation_lingual_mm,
+              intrusion_mm, extrusion_mm,
+              rotation_deg, torque_deg,
+              tip_mesial_deg, tip_distal_deg,
+              mesialization_mm, distalization_mm,
+              expansion_mm, constriction_mm
+       FROM movement_prescriptions WHERE plan_id = $1`,
+      [planId],
+    );
+
+    // Map FDI → net total movement (tx/ty/tz/rx/ry/rz)
+    // Opposing axes are resolved to a single signed net value so that linear
+    // interpolation across stages yields the correct cumulative position.
+    const prescriptionMap: Record<string, ToothMovement> = {};
+    for (const p of prescriptions) {
+      const key = String(p.tooth_number as number);
+      prescriptionMap[key] = {
+        tx: (p.translation_mesial_mm ?? 0) - (p.translation_distal_mm ?? 0)
+          + (p.mesialization_mm ?? 0) - (p.distalization_mm ?? 0),
+        ty: (p.extrusion_mm ?? 0) - (p.intrusion_mm ?? 0),
+        tz: (p.translation_buccal_mm ?? 0) - (p.translation_lingual_mm ?? 0)
+          + (p.expansion_mm ?? 0) - (p.constriction_mm ?? 0),
+        rx: p.torque_deg ?? 0,
+        ry: p.rotation_deg ?? 0,
+        rz: (p.tip_mesial_deg ?? 0) - (p.tip_distal_deg ?? 0),
+      };
+    }
+
+    // Determine which teeth to move: explicit list > prescribed teeth > default anteriors
+    const teeth: string[] = dto.teethToMove?.length
+      ? dto.teethToMove
+      : Object.keys(prescriptionMap).length
+      ? Object.keys(prescriptionMap)
+      : ['11','12','13','21','22','23','31','32','33','41','42','43'];
+
+    // Load attachment placements from treatment_attachments (placed at stage 1)
+    const { rows: attachmentRows } = await this.pool.query(
+      `SELECT fdi_number, attachment_type
+       FROM treatment_attachments WHERE treatment_plan_id = $1`,
+      [planId],
+    );
+
+    // Map treatment_attachments types to the AttachmentEvent union
+    const typeMap: Record<string, AttachmentEvent['type']> = {
+      vertical_rectangular: 'rectangular',
+      horizontal_rectangular: 'rectangular',
+      optimized: 'optimized',
+      rotation: 'rectangular',
+      extrusion: 'rectangular',
+      root_control: 'optimized',
+      retention: 'beveled',
+      beveled: 'beveled',
+    };
+    const stageOneAttachments: AttachmentEvent[] = attachmentRows.map(r => ({
+      tooth: String(r.fdi_number as number),
+      type: typeMap[r.attachment_type as string] ?? 'optimized',
+    }));
 
     const stages: AlignerStage[] = [];
     for (let n = 1; n <= dto.count; n++) {
-      const progress = n / dto.count;
+      const fraction = n / dto.count;
       const movementData: Record<string, ToothMovement> = {};
+
       for (const tooth of teeth) {
-        movementData[tooth] = {
-          tx: parseFloat((progress * 0.5 * Math.sin(parseInt(tooth) * 0.3)).toFixed(3)),
-          ty: parseFloat((progress * 0.2).toFixed(3)),
-          tz: 0,
-          rx: 0, ry: 0, rz: 0,
-        };
+        const total = prescriptionMap[tooth];
+        if (total) {
+          // Linear interpolation: cumulative position at stage n
+          movementData[tooth] = {
+            tx: parseFloat(((total.tx ?? 0) * fraction).toFixed(3)),
+            ty: parseFloat(((total.ty ?? 0) * fraction).toFixed(3)),
+            tz: parseFloat(((total.tz ?? 0) * fraction).toFixed(3)),
+            rx: parseFloat(((total.rx ?? 0) * fraction).toFixed(3)),
+            ry: parseFloat(((total.ry ?? 0) * fraction).toFixed(3)),
+            rz: parseFloat(((total.rz ?? 0) * fraction).toFixed(3)),
+          };
+        } else {
+          // Passive tooth — no prescribed movement
+          movementData[tooth] = { tx: 0, ty: 0, tz: 0, rx: 0, ry: 0, rz: 0 };
+        }
       }
-      const iprData: IprEvent[] = n === Math.floor(dto.count / 3) ? [
-        { toothA: '12', toothB: '11', amountMm: 0.2 },
-        { toothA: '21', toothB: '22', amountMm: 0.2 },
-      ] : [];
-      const attachmentData: AttachmentEvent[] = n === 1 ? teeth.slice(0, 4).map(t => ({
-        tooth: t,
-        type: 'optimized' as const,
-      })) : [];
 
       const stage = await this.create(planId, caseId, orgId, {
         stageNumber: n,
         movementData,
-        attachmentData,
-        iprData,
+        attachmentData: n === 1 ? stageOneAttachments : [],
+        iprData: [],
         velocityMmPerWeek: velocity,
       });
       stages.push(stage);

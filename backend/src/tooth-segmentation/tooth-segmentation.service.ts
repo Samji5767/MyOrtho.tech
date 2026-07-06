@@ -74,14 +74,6 @@ const TOOTH_DIMENSIONS: Record<number, { width: number; height: number; widthStd
   38: { width: 9.0,  height: 6.5,  widthStd: 1.0 },
 };
 
-/** Normal random via Box-Muller transform */
-function randNorm(mean: number, std: number): number {
-  const u1 = Math.random();
-  const u2 = Math.random();
-  const z = Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * u2);
-  return Math.round((mean + z * std) * 100) / 100;
-}
-
 /** Generate realistic 3D centroid positions for teeth in an arch.
  *  Positions are in mm in a patient-centred coordinate system:
  *  X = mesio-distal (positive = patient's left), Y = vertical (positive = superior), Z = labio-lingual (positive = labial)
@@ -111,7 +103,7 @@ function generateToothPositions(fdis: number[]): SegmentedTooth[] {
   const xPositions: number[] = [];
   for (const fdi of orderedFdis) {
     const dim = TOOTH_DIMENSIONS[fdi];
-    const w = dim ? randNorm(dim.width, dim.widthStd) : randNorm(7, 0.5);
+    const w = dim ? dim.width : 7;
     xPositions.push(cumulativeX + w / 2);
     cumulativeX += w;
   }
@@ -127,8 +119,8 @@ function generateToothPositions(fdis: number[]): SegmentedTooth[] {
   for (let i = 0; i < orderedFdis.length; i++) {
     const fdi = orderedFdis[i];
     const dim = TOOTH_DIMENSIONS[fdi];
-    const estimatedWidth = dim ? parseFloat(randNorm(dim.width, dim.widthStd).toFixed(2)) : parseFloat(randNorm(7, 0.5).toFixed(2));
-    const estimatedHeight = dim ? parseFloat(randNorm(dim.height, 0.5).toFixed(2)) : parseFloat(randNorm(8, 0.5).toFixed(2));
+    const estimatedWidth = dim ? dim.width : 7;
+    const estimatedHeight = dim ? dim.height : 8;
 
     const cx = centredXPositions[i];
 
@@ -136,11 +128,11 @@ function generateToothPositions(fdis: number[]): SegmentedTooth[] {
     // At midline (x=0) z is most anterior (0), at posterior (x=±halfWidth) z = archDepth
     const halfWidth = midX;
     const czBase = halfWidth > 0 ? archDepth * Math.pow(cx / halfWidth, 2) : 0;
-    const cz = parseFloat((czBase + randNorm(0, 0.5)).toFixed(3));
+    const cz = parseFloat(czBase.toFixed(3));
 
     // Y: negative for maxillary (teeth point downward), positive for mandibular (upward)
     const ySign = isMaxillary ? -1 : 1;
-    const cy = parseFloat((ySign * estimatedHeight * 0.45 + randNorm(0, 0.3)).toFixed(3));
+    const cy = parseFloat((ySign * estimatedHeight * 0.45).toFixed(3));
 
     const halfW = estimatedWidth / 2;
     const halfH = estimatedHeight / 2;
@@ -153,7 +145,7 @@ function generateToothPositions(fdis: number[]): SegmentedTooth[] {
       : [14, 24, 34, 44, 15, 25, 35, 45].includes(fdi) ? 0.92
       : 0.88; // wisdom teeth
 
-    const confidence = parseFloat((baseConfidence + randNorm(0, 0.015)).toFixed(3));
+    const confidence = baseConfidence;
 
     // Estimate face count based on tooth size
     const facesPerMm2 = 120;

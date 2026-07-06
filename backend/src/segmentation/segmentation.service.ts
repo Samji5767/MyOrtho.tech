@@ -1,4 +1,4 @@
-import { Injectable, Inject, NotFoundException, Logger } from '@nestjs/common';
+import { Injectable, Inject, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
 import type { Pool } from 'pg';
 import { PG_POOL } from '../database/database.module';
 
@@ -306,6 +306,32 @@ export class SegmentationService {
     await this.classifyExtendedTypes(jobId, caseId).catch((err: Error) =>
       this.logger.warn(`Extended classification warning: ${err.message}`),
     );
+  }
+
+  // ── Cancel a segmentation job ────────────────────────────────────────────────
+
+  async cancelJob(caseId: string, orgId: string, jobId: string, reason?: string) {
+    await this.verifyCase(caseId, orgId);
+    const { rows } = await this.pool.query(
+      `SELECT status FROM segmentation_jobs WHERE id = $1 AND case_id = $2`,
+      [jobId, caseId],
+    );
+    if (!rows.length) throw new NotFoundException('Job not found');
+    const currentStatus = (rows[0] as { status: string }).status;
+    if (currentStatus !== 'queued' && currentStatus !== 'processing') {
+      throw new BadRequestException(
+        `Cannot cancel a job with status '${currentStatus}'. Only queued or processing jobs can be cancelled.`,
+      );
+    }
+    const { rows: updated } = await this.pool.query(
+      `UPDATE segmentation_jobs
+         SET status = 'cancelled', cancelled_reason = $3, completed_at = NOW()
+         WHERE id = $1 AND case_id = $2
+         RETURNING *`,
+      [jobId, caseId, reason ?? null],
+    );
+    this.logger.log(`Segmentation job cancelled: id=${jobId} reason=${reason ?? 'none'}`);
+    return this.formatJob(updated[0]);
   }
 
   // ── Apply clinical correction ────────────────────────────────────────────────

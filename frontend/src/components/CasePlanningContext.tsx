@@ -57,6 +57,14 @@ export interface PlanningMeasurement {
 
 export type WorkflowStepStatus = "not_started" | "in_progress" | "complete" | "needs_review";
 
+export interface CameraBookmark {
+  id: string;
+  label: string;
+  position: [number, number, number];
+  target: [number, number, number];
+  createdAt: number;
+}
+
 export interface CasePlanningState {
   caseId: string | null;
   // Per-tooth movements (keyed by FDI)
@@ -87,6 +95,8 @@ export interface CasePlanningState {
   alignerArch: "upper" | "lower" | "both";
   // Clinician review
   reviewNotes: string;
+  // Camera bookmarks (persisted per case)
+  cameraBookmarks: CameraBookmark[];
 }
 
 // ─── Actions ──────────────────────────────────────────────────────────────────
@@ -116,6 +126,8 @@ type Action =
   | { type: "SET_ALIGNER_THICKNESS"; thickness: number }
   | { type: "SET_ALIGNER_ARCH"; arch: "upper" | "lower" | "both" }
   | { type: "SET_REVIEW_NOTES"; notes: string }
+  | { type: "ADD_CAMERA_BOOKMARK"; bookmark: CameraBookmark }
+  | { type: "REMOVE_CAMERA_BOOKMARK"; id: string }
   | { type: "LOAD_PERSISTED"; partial: Partial<CasePlanningState> };
 
 // ─── Default state ────────────────────────────────────────────────────────────
@@ -151,6 +163,7 @@ export const INITIAL_STATE: CasePlanningState = {
   alignerThickness: 0.5,
   alignerArch: "both",
   reviewNotes: "",
+  cameraBookmarks: [],
 };
 
 // ─── Reducer ──────────────────────────────────────────────────────────────────
@@ -249,6 +262,12 @@ export function reducer(state: CasePlanningState, action: Action): CasePlanningS
     case "SET_REVIEW_NOTES":
       return { ...state, reviewNotes: action.notes };
 
+    case "ADD_CAMERA_BOOKMARK":
+      return { ...state, cameraBookmarks: [...state.cameraBookmarks, action.bookmark] };
+
+    case "REMOVE_CAMERA_BOOKMARK":
+      return { ...state, cameraBookmarks: state.cameraBookmarks.filter((b) => b.id !== action.id) };
+
     case "LOAD_PERSISTED":
       return { ...state, ...action.partial };
 
@@ -319,6 +338,7 @@ export function CasePlanningProvider({
         alignerThickness:        state.alignerThickness,
         alignerArch:             state.alignerArch,
         reviewNotes:             state.reviewNotes,
+        cameraBookmarks:         state.cameraBookmarks,
       };
       safeStorage.setJSON(key, toSave);
     }, DEBOUNCE_MS);

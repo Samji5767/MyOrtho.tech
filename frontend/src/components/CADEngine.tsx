@@ -10,14 +10,17 @@ import * as THREE from "three";
 import { STLLoader } from "three/examples/jsm/loaders/STLLoader.js";
 import { listScans, type ScanRecord } from "@/lib/api/scans";
 import {
-  AlertTriangle, BarChart3, Camera, CheckCircle2, ChevronDown, ChevronRight, ChevronUp,
+  Activity, AlertTriangle, BarChart3, Bookmark, BookmarkPlus, Camera, CheckCircle2,
+  ChevronDown, ChevronRight, ChevronUp,
   ChevronsLeft, ChevronsRight, Download, Eye, EyeOff, Ghost, Layers, ListOrdered,
-  Lock, LockOpen, Move3d, Play, RotateCcw, Ruler, Scissors, Settings2,
+  Lock, LockOpen, Magnet, Move3d, Play, RotateCcw, Ruler, Scissors, Settings2,
   Sliders, Square, SunMedium, Target, Zap,
 } from "lucide-react";
 import { Button, Card, DataRow, StatusBadge } from "@/components/DesignSystem";
 import { validateMovements } from "@/lib/biomechanics/vectorMath";
-import { useCasePlanning } from "@/components/CasePlanningContext";
+import { useCasePlanning, type CameraBookmark } from "@/components/CasePlanningContext";
+import { DifficultyBadge } from "@/components/DifficultyBadge";
+import { getEnhancedCollisions, getForceHeatmap } from "@/lib/api/tooth-movement";
 import {
   MM_TO_SCENE,
   buildToothPositions,
@@ -419,6 +422,7 @@ function CADScene({
   snapshotEnabled,
   onSnapshotDone,
   archGeometries,
+  snapEnabled,
 }: {
   teeth: ToothObject[];
   selectedFdis: Set<number>;
@@ -456,6 +460,7 @@ function CADScene({
   snapshotEnabled: boolean;
   onSnapshotDone: () => void;
   archGeometries: { upper: THREE.BufferGeometry | null; lower: THREE.BufferGeometry | null };
+  snapEnabled: boolean;
 }) {
   const meshRegistry = useRef<Map<number, THREE.Mesh>>(new Map());
   const [activeMesh, setActiveMesh] = useState<THREE.Mesh | null>(null);
@@ -746,6 +751,8 @@ function CADScene({
         <TransformControls
           object={activeMesh}
           mode={gizmoMode}
+          translationSnap={snapEnabled ? 0.1 : undefined}
+          rotationSnap={snapEnabled ? Math.PI / 180 : undefined}
           onMouseDown={() => setIsDragging(true)}
           onMouseUp={() => {
             setIsDragging(false);
@@ -797,7 +804,7 @@ function cloneOverrides(m: OverridesMap): OverridesMap {
 
 const MAX_HISTORY = 50;
 
-export default function CADEngine() {
+export default function CADEngine({ planId }: { planId?: string } = {}) {
   const [teeth] = useState<ToothObject[]>(() => buildTeethObjects());
   const { state, dispatch } = useCasePlanning();
 
@@ -875,6 +882,11 @@ export default function CADEngine() {
   const [isAnimating, setIsAnimating] = useState(false);
   const [animStageIndex, setAnimStageIndex] = useState(0);
   const animTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  // Phase 2: backend-driven overlays + snapping
+  const [backendCollisionFdis, setBackendCollisionFdis] = useState<Set<number>>(new Set());
+  const [backendHeatmapColors, setBackendHeatmapColors] = useState<Map<number, string>>(new Map());
+  const [backendHeatmapEnabled, setBackendHeatmapEnabled] = useState(false);
+  const [snapEnabled, setSnapEnabled] = useState(false);
 
   // Arch scan meshes — loaded from the backend when a caseId is available.
   // These are real patient STL scans (full arch geometry), not per-tooth meshes.
@@ -903,7 +915,9 @@ export default function CADEngine() {
   }, [colorMapEnabled, planningOffsets]);
 
   // Feature A: per-tooth color map (all teeth; unmoved teeth = green severity 0)
+  // When backend heatmap is enabled it takes precedence over local movement severity.
   const colorMapColors = useMemo<Map<number, string>>(() => {
+    if (backendHeatmapEnabled && backendHeatmapColors.size > 0) return backendHeatmapColors;
     if (!colorMapEnabled) return new Map();
     const m = new Map<number, string>();
     teeth.forEach(tooth => {
@@ -911,7 +925,7 @@ export default function CADEngine() {
       m.set(tooth.fdi, data ? data.color : severityToColor(0));
     });
     return m;
-  }, [colorMapEnabled, teeth, colorMapData]);
+  }, [colorMapEnabled, teeth, colorMapData, backendHeatmapEnabled, backendHeatmapColors]);
 
   // Load arch scan meshes when a caseId is available.
   // Each scan STL is fetched as a binary ArrayBuffer and parsed with STLLoader.
@@ -963,6 +977,38 @@ export default function CADEngine() {
       archGeometries.lower?.dispose();
     };
   }, [archGeometries]);
+
+  // Phase 2: fetch backend collision + force heatmap when caseId + planId are available
+  useEffect(() => {
+    const caseId = state.caseId;
+    if (!caseId || !planId) return;
+    let cancelled = false;
+
+    getEnhancedCollisions(caseId, planId)
+      .then(({ pairs }) => {
+        if (cancelled) return;
+        const fdis = new Set<number>();
+        pairs.forEach(p => { fdis.add(p.fdiA); fdis.add(p.fdiB); });
+        setBackendCollisionFdis(fdis);
+      })
+      .catch(() => { /* backend may not have data yet */ });
+
+    getForceHeatmap(caseId, planId)
+      .then(({ teeth: t }) => {
+        if (cancelled) return;
+        const colors = new Map<number, string>();
+        t.forEach(tooth => {
+          const n = tooth.normalizedForce;
+          const r = Math.round(Math.min(255, n < 0.5 ? n * 2 * 255 : 255));
+          const g = Math.round(Math.min(255, n < 0.5 ? 255 : (1 - n) * 2 * 255));
+          colors.set(tooth.fdi, `#${r.toString(16).padStart(2, "0")}${g.toString(16).padStart(2, "0")}00`);
+        });
+        setBackendHeatmapColors(colors);
+      })
+      .catch(() => { /* backend may not have data yet */ });
+
+    return () => { cancelled = true; };
+  }, [state.caseId, planId]);
 
   // Undo/redo history stack
   const historyRef = useRef<OverridesMap[]>([new Map()]);
@@ -1074,8 +1120,11 @@ export default function CADEngine() {
 
   const collisionFdis = useMemo(() => {
     if (!showCollision) return new Set<number>();
-    return detectCollisions(teeth, toothOverrides);
-  }, [teeth, toothOverrides, showCollision]);
+    const local = detectCollisions(teeth, toothOverrides);
+    // Merge backend collision FDIs (from enhanced API analysis)
+    backendCollisionFdis.forEach(fdi => local.add(fdi));
+    return local;
+  }, [teeth, toothOverrides, showCollision, backendCollisionFdis]);
 
   const handleSelectTooth = useCallback((fdi: number, shift: boolean) => {
     setSelectedFdis(prev => {
@@ -1276,6 +1325,9 @@ export default function CADEngine() {
               <StatusBadge tone={collisionFdis.size > 0 ? "danger" : "neutral"}>
                 {collisionFdis.size > 0 ? `${collisionFdis.size} collision${collisionFdis.size !== 1 ? "s" : ""}` : "Clear"}
               </StatusBadge>
+              {state.caseId && planId && (
+                <DifficultyBadge caseId={state.caseId} planId={planId} />
+              )}
             </div>
             <h3 className="mt-2 text-lg font-semibold text-foreground">Dental CAD Workspace</h3>
             <p className="mt-1 text-xs text-secondary">
@@ -1347,6 +1399,23 @@ export default function CADEngine() {
               title="Toggle movement color map"
             >
               <BarChart3 size={14} /> Color Map
+            </Button>
+            <Button
+              variant={snapEnabled ? "primary" : "secondary"}
+              size="sm"
+              onClick={() => setSnapEnabled(v => !v)}
+              title="Toggle movement snapping (0.1mm translate, 1° rotate)"
+            >
+              <Magnet size={14} /> Snap
+            </Button>
+            <Button
+              variant={backendHeatmapEnabled ? "primary" : "secondary"}
+              size="sm"
+              onClick={() => setBackendHeatmapEnabled(v => !v)}
+              disabled={backendHeatmapColors.size === 0}
+              title="Toggle PDL force heatmap (requires plan analysis)"
+            >
+              <Activity size={14} /> Force Map
             </Button>
             <Button
               variant="secondary"
@@ -1533,6 +1602,7 @@ export default function CADEngine() {
                 snapshotEnabled={snapshotEnabled}
                 onSnapshotDone={() => setSnapshotEnabled(false)}
                 archGeometries={archGeometries}
+                snapEnabled={snapEnabled}
               />
             </Suspense>
           </Canvas>
@@ -1941,6 +2011,24 @@ export default function CADEngine() {
                   : <StatusBadge tone="success">Clear</StatusBadge>
                 }
               />
+              {/* Prescription data from planning context */}
+              {(() => {
+                const mov = state.movements[selectedTooth.fdi];
+                if (!mov) return null;
+                const hasMov = mov.tx !== 0 || mov.ty !== 0 || mov.tz !== 0 || mov.tip !== 0 || mov.torque !== 0 || mov.rotation !== 0;
+                if (!hasMov) return null;
+                return (
+                  <div className="mt-2 space-y-0.5 rounded-lg border border-[color:var(--border)] bg-[color:var(--surface-1)] p-2">
+                    <p className="mb-1 text-[10px] font-bold uppercase tracking-wide text-[color:var(--muted-foreground)]">Prescription</p>
+                    {mov.tx !== 0 && <DataRow label="Mesial/Distal" value={`${mov.tx > 0 ? "+" : ""}${mov.tx.toFixed(2)} mm`} />}
+                    {mov.ty !== 0 && <DataRow label="Buccal/Lingual" value={`${mov.ty > 0 ? "+" : ""}${mov.ty.toFixed(2)} mm`} />}
+                    {mov.tz !== 0 && <DataRow label="Extrusion/Intr." value={`${mov.tz > 0 ? "+" : ""}${mov.tz.toFixed(2)} mm`} />}
+                    {mov.tip !== 0 && <DataRow label="Tip" value={`${mov.tip > 0 ? "+" : ""}${mov.tip.toFixed(1)}°`} />}
+                    {mov.torque !== 0 && <DataRow label="Torque" value={`${mov.torque > 0 ? "+" : ""}${mov.torque.toFixed(1)}°`} />}
+                    {mov.rotation !== 0 && <DataRow label="Rotation" value={`${mov.rotation > 0 ? "+" : ""}${mov.rotation.toFixed(1)}°`} />}
+                  </div>
+                );
+              })()}
               {toothOverrides.has(selectedTooth.fdi) && (
                 <div className="mt-2 rounded-lg border border-primary/20 bg-primary/5 px-2 py-1.5 text-[10px] text-primary font-semibold">
                   Movement overrides applied
@@ -2169,6 +2257,65 @@ export default function CADEngine() {
             <p className="text-[11px] leading-relaxed text-[color:var(--muted-foreground)]">
               Anterior (6:6) and overall (12:12) tooth-width discrepancy analysis. Pre-filled with population averages — expand to compute your case.
             </p>
+          )}
+        </Card>
+
+        {/* Camera Bookmarks */}
+        <Card className="p-4">
+          <div className="mb-3 flex items-center gap-2">
+            <Bookmark size={14} className="text-[color:var(--primary)]" />
+            <h3 className="flex-1 text-sm font-semibold text-foreground">Camera Bookmarks</h3>
+            <button
+              type="button"
+              title="Save current camera view as bookmark"
+              onClick={() => {
+                const preset = CAMERA_PRESETS[cameraPreset];
+                if (!preset) return;
+                const bookmark: CameraBookmark = {
+                  id: `bk_${Date.now()}`,
+                  label: preset.label,
+                  position: preset.position,
+                  target: [0, 0, 0],
+                  createdAt: Date.now(),
+                };
+                dispatch({ type: "ADD_CAMERA_BOOKMARK", bookmark });
+              }}
+              className="flex items-center gap-1 rounded-lg border border-[color:var(--border)] px-2 py-0.5 text-[10px] font-semibold text-[color:var(--primary)] hover:bg-[color:var(--primary-glow)] transition-colors"
+            >
+              <BookmarkPlus size={11} /> Save View
+            </button>
+          </div>
+          {state.cameraBookmarks.length === 0 ? (
+            <p className="text-[11px] text-[color:var(--muted-foreground)]">
+              No saved views. Use the camera preset buttons above, then save.
+            </p>
+          ) : (
+            <div className="space-y-1">
+              {state.cameraBookmarks.map(bk => (
+                <div key={bk.id} className="flex items-center gap-2 rounded-lg border border-[color:var(--border)] px-2 py-1.5">
+                  <Bookmark size={11} className="shrink-0 text-[color:var(--primary)]" />
+                  <button
+                    type="button"
+                    className="flex-1 text-left text-[10px] font-semibold text-[color:var(--foreground)] hover:text-[color:var(--primary)] transition-colors capitalize"
+                    onClick={() => {
+                      const key = (Object.entries(CAMERA_PRESETS) as [CameraPresetName, CameraConfig][])
+                        .find(([, cfg]) => cfg.label === bk.label)?.[0];
+                      if (key) setCameraPreset(key);
+                    }}
+                  >
+                    {bk.label}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => dispatch({ type: "REMOVE_CAMERA_BOOKMARK", id: bk.id })}
+                    className="text-[10px] text-[color:var(--muted-foreground)] hover:text-rose-500 transition-colors"
+                    title="Remove bookmark"
+                  >
+                    ×
+                  </button>
+                </div>
+              ))}
+            </div>
           )}
         </Card>
 

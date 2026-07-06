@@ -46,3 +46,13 @@ export function autoRecommendIpr(
     {},
   );
 }
+
+export function refineIprRecommendations(
+  caseId: string,
+  planId: string,
+): Promise<{ recommended: number; items: IprPlanItem[]; method: string }> {
+  return api.post<{ recommended: number; items: IprPlanItem[]; method: string }>(
+    `/api/cases/${caseId}/plans/${planId}/ipr/refine`,
+    {},
+  );
+}

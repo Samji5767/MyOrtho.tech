@@ -32,6 +32,9 @@ import {
   ZoomOut,
 } from "lucide-react";
 import { MedicalDisclaimer } from "@/components/MedicalDisclaimer";
+import { ConflictWarningsPanel } from "@/components/ConflictWarningsPanel";
+import { ApprovalValidationPanel } from "@/components/ApprovalValidationPanel";
+import { DifficultyBadge } from "@/components/DifficultyBadge";
 
 const CADEngine = dynamic(() => import("@/components/CADEngine"), {
   ssr: false,
@@ -137,7 +140,7 @@ function ViewerPanel() {
 
 // ─── Treatment Designer Panel ─────────────────────────────────────────────────
 
-function TreatmentDesignerPanel() {
+function TreatmentDesignerPanel({ caseId, planId }: { caseId?: string; planId?: string }) {
   const [selectedTool, setSelectedTool] = useState<"translate" | "rotate">("translate");
   const [selectedFdi, setSelectedFdi] = useState<number | null>(21);
 
@@ -237,11 +240,15 @@ function TreatmentDesignerPanel() {
         </div>
       </div>
 
-      {/* Collision detection status */}
-      <div className="flex items-center gap-2.5 rounded-xl border border-emerald-300/50 bg-emerald-50/60 px-4 py-3 dark:border-emerald-700/40 dark:bg-emerald-900/10">
-        <CheckCircle2 size={16} className="text-emerald-600 shrink-0" />
-        <p className="text-sm font-semibold text-emerald-800 dark:text-emerald-300">No collisions detected at current stage</p>
-      </div>
+      {/* Conflict warnings — real API when caseId + planId available */}
+      {caseId && planId ? (
+        <ConflictWarningsPanel caseId={caseId} planId={planId} />
+      ) : (
+        <div className="flex items-center gap-2.5 rounded-xl border border-emerald-300/50 bg-emerald-50/60 px-4 py-3 dark:border-emerald-700/40 dark:bg-emerald-900/10">
+          <CheckCircle2 size={16} className="text-emerald-600 shrink-0" />
+          <p className="text-sm font-semibold text-emerald-800 dark:text-emerald-300">No collisions detected at current stage</p>
+        </div>
+      )}
     </div>
   );
 }
@@ -323,11 +330,21 @@ function SimulationPanel() {
 
 // ─── Design Review Panel ──────────────────────────────────────────────────────
 
-function DesignReviewPanel() {
+function DesignReviewPanel({ caseId, planId }: { caseId?: string; planId?: string }) {
   const [approvalStatus, setApprovalStatus] = useState<"pending" | "approved" | "rejected">("pending");
+  const [canApprove, setCanApprove] = useState(false);
 
   return (
     <div className="space-y-5">
+      {/* Real-time approval validation */}
+      {caseId && planId && (
+        <ApprovalValidationPanel
+          caseId={caseId}
+          planId={planId}
+          onValidation={result => setCanApprove(result.canApprove)}
+        />
+      )}
+
       {/* Approval card */}
       <div className="ios-card p-5">
         <h4 className="font-bold text-[color:var(--foreground)] mb-4">Design Approval</h4>
@@ -350,7 +367,8 @@ function DesignReviewPanel() {
           <button
             type="button"
             onClick={() => setApprovalStatus("approved")}
-            className={`flex-1 flex items-center justify-center gap-2 rounded-xl py-3 font-bold text-sm transition-all ${approvalStatus === "approved" ? "bg-emerald-500 text-white" : "border border-[color:var(--border)] bg-[color:var(--card)] text-[color:var(--foreground)]"}`}
+            disabled={caseId && planId ? !canApprove : false}
+            className={`flex-1 flex items-center justify-center gap-2 rounded-xl py-3 font-bold text-sm transition-all disabled:opacity-50 disabled:cursor-not-allowed ${approvalStatus === "approved" ? "bg-emerald-500 text-white" : "border border-[color:var(--border)] bg-[color:var(--card)] text-[color:var(--foreground)]"}`}
           >
             <ThumbsUp size={15} /> Approve Design
           </button>
@@ -415,7 +433,7 @@ function DesignReviewPanel() {
 
 // ─── Main Component ───────────────────────────────────────────────────────────
 
-export function CADDesignStudio() {
+export function CADDesignStudio({ caseId, planId }: { caseId?: string; planId?: string } = {}) {
   const [activeTab, setActiveTab] = useState<DesignTab>("3d-viewer");
 
   const TAB_LABELS: Record<DesignTab, string> = {
@@ -432,7 +450,12 @@ export function CADDesignStudio() {
         <div>
           <p className="text-xs font-semibold uppercase tracking-widest text-[color:var(--muted-foreground)]">CAD Design Studio</p>
           <h2 className="mt-1 text-2xl font-bold text-[color:var(--foreground)]">Orthodontic Design Environment</h2>
-          <p className="mt-1 text-sm text-[color:var(--muted-foreground)]">No case loaded · Upload a scan to begin</p>
+          <div className="mt-1 flex items-center gap-2 flex-wrap">
+            <p className="text-sm text-[color:var(--muted-foreground)]">
+              {caseId ? `Case ${caseId.slice(0, 8)}…` : "No case loaded · Upload a scan to begin"}
+            </p>
+            {caseId && planId && <DifficultyBadge caseId={caseId} planId={planId} />}
+          </div>
         </div>
         <div className="flex gap-2">
           <button type="button" className="flex items-center gap-1.5 rounded-xl border border-[color:var(--border)] bg-[color:var(--card)] px-3 py-2.5 text-sm font-bold text-[color:var(--foreground)]">
@@ -462,9 +485,9 @@ export function CADDesignStudio() {
 
       {/* Tab content */}
       {activeTab === "3d-viewer" && <ViewerPanel />}
-      {activeTab === "treatment-designer" && <TreatmentDesignerPanel />}
+      {activeTab === "treatment-designer" && <TreatmentDesignerPanel caseId={caseId} planId={planId} />}
       {activeTab === "simulation" && <SimulationPanel />}
-      {activeTab === "design-review" && <DesignReviewPanel />}
+      {activeTab === "design-review" && <DesignReviewPanel caseId={caseId} planId={planId} />}
     </div>
   );
 }

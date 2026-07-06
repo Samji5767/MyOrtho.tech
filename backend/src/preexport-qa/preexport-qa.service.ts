@@ -84,9 +84,28 @@ function checkOcclusionQuality(stageRows: Record<string, unknown>[]): QACheck {
   return { key: 'occlusion_quality', label: 'Occlusion Quality', status: 'pass', detail: 'Final stage occlusion within acceptable parameters.' };
 }
 
-function checkCollisionDetection(stageRows: Record<string, unknown>[]): QACheck {
+function checkCollisionDetection(
+  stageRows: Record<string, unknown>[],
+  collisionPairs: Array<{ toothA?: number; toothB?: number; fdiA?: number; fdiB?: number; severity?: string }>,
+): QACheck {
   if (stageRows.length === 0) return { key: 'collision_detection', label: 'Collision Detection', status: 'pass', detail: 'No stages to analyse.' };
-  return { key: 'collision_detection', label: 'Collision Detection', status: 'pass', detail: 'No inter-tooth collisions detected across all stages.' };
+  if (collisionPairs.length === 0) return { key: 'collision_detection', label: 'Collision Detection', status: 'pass', detail: 'No inter-tooth collisions detected across all stages.' };
+
+  const pairLabels = collisionPairs
+    .map((p) => `${p.toothA ?? p.fdiA ?? '?'}–${p.toothB ?? p.fdiB ?? '?'}`)
+    .join(', ');
+  const critical = collisionPairs.filter((p) => p.severity === 'critical');
+
+  if (critical.length > 0) {
+    return {
+      key: 'collision_detection', label: 'Collision Detection', status: 'fail',
+      detail: `${critical.length} critical inter-tooth collision(s) detected (${pairLabels}). Resolve collisions before export.`,
+    };
+  }
+  return {
+    key: 'collision_detection', label: 'Collision Detection', status: 'warning',
+    detail: `${collisionPairs.length} inter-tooth contact(s) detected (${pairLabels}). Clinical review recommended before printing.`,
+  };
 }
 
 function checkPrintableGeometry(): QACheck {
@@ -156,6 +175,21 @@ export class PreexportQaService {
           [caseId],
         );
 
+    // Fetch real collision data from the most recent movement simulation for this plan
+    type CollisionPair = { toothA?: number; toothB?: number; fdiA?: number; fdiB?: number; severity?: string };
+    let collisionPairs: CollisionPair[] = [];
+    if (dto.treatmentPlanId) {
+      const { rows: simRows } = await this.pool.query(
+        `SELECT collision_pairs FROM movement_simulations
+         WHERE plan_id = $1 AND org_id = $2
+         ORDER BY created_at DESC LIMIT 1`,
+        [dto.treatmentPlanId, orgId],
+      );
+      if (simRows[0]?.['collision_pairs']) {
+        collisionPairs = simRows[0]['collision_pairs'] as CollisionPair[];
+      }
+    }
+
     // Run all 10 checks
     const checks: QACheck[] = [
       checkMissingTeeth(segRows),
@@ -165,7 +199,7 @@ export class PreexportQaService {
       checkAttachmentValidity(stageRows),
       checkTrimContinuity(stageRows),
       checkOcclusionQuality(stageRows),
-      checkCollisionDetection(stageRows),
+      checkCollisionDetection(stageRows, collisionPairs),
       checkPrintableGeometry(),
       checkStageConsistency(stageRows),
     ];

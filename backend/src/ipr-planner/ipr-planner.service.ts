@@ -196,6 +196,98 @@ export class IprPlannerService {
     return { recommended: items.length, items };
   }
 
+  async refineRecommendations(planId: string, caseId: string, orgId: string, userId: string) {
+    await this.verifyOwnership(caseId, orgId);
+
+    // Read movement prescriptions to compute per-contact mesio-distal space demand
+    const { rows: prescRows } = await this.pool.query(
+      `SELECT tooth_number, translation_mesial_mm, translation_distal_mm,
+              mesialization_mm, distalization_mm, rotation_deg
+       FROM movement_prescriptions WHERE plan_id = $1`,
+      [planId],
+    );
+
+    if (!prescRows.length) return { recommended: 0, items: [], note: 'No prescriptions found — run standard recommend first' };
+
+    const byFdi = new Map<number, Record<string, number>>(
+      prescRows.map((r) => [r['tooth_number'] as number, r as Record<string, number>]),
+    );
+
+    const { rows: stageCntRows } = await this.pool.query(
+      `SELECT COUNT(*) AS cnt FROM aligner_stages WHERE treatment_plan_id = $1`,
+      [planId],
+    );
+    const totalStages = Number(stageCntRows[0]?.['cnt'] ?? 10);
+    const beforeStage = Math.max(1, Math.round(totalStages * 0.25));
+
+    type Candidate = { a: number; b: number; amountMm: number; remA: string; remB: string; status: string };
+    const candidates: Candidate[] = [];
+
+    for (const [a, b] of ADJACENT_PAIRS) {
+      const pA = byFdi.get(a);
+      const pB = byFdi.get(b);
+      if (!pA && !pB) continue;
+
+      // Net mesial movement of tooth A (toward B) + net distal movement of tooth B (toward A)
+      const mesialMovA = (pA?.['translation_mesial_mm'] ?? 0) + (pA?.['mesialization_mm'] ?? 0);
+      const distalMovB = (pB?.['translation_distal_mm']  ?? 0) + (pB?.['distalization_mm']  ?? 0);
+      const convergence = mesialMovA + distalMovB;
+
+      // Rotation contribution: rotating tooth widens mesio-distal contact footprint
+      const rotA = Math.abs(pA?.['rotation_deg'] ?? 0);
+      const rotationFactor = rotA > 5 ? 0.1 : 0;
+
+      const totalDemand = convergence + rotationFactor;
+      if (totalDemand < 0.1) continue;
+
+      // Scale: not all convergence needs IPR (80% efficiency), cap at Sheridan max
+      const amountMm = Math.min(0.5, totalDemand * 0.8);
+      if (amountMm < 0.1) continue;
+
+      const { status, remainingA, remainingB } = iprSafetyStatus(amountMm, a, b);
+      if (status === 'unsafe') continue;
+
+      candidates.push({ a, b, amountMm, remA: remainingA.toFixed(2), remB: remainingB.toFixed(2), status });
+    }
+
+    if (!candidates.length) return { recommended: 0, items: [], method: 'prescription_based' };
+
+    const { rows } = await this.pool.query(
+      `INSERT INTO ipr_plan_items
+         (case_id, treatment_plan_id, tooth_a_fdi, tooth_b_fdi,
+          amount_mm, before_stage, remaining_enamel_a, remaining_enamel_b,
+          safety_status, is_auto_recommended, created_by)
+       SELECT $1, $2,
+         UNNEST($3::int[]), UNNEST($4::int[]),
+         UNNEST($5::numeric[]), $6,
+         UNNEST($7::numeric[]), UNNEST($8::numeric[]),
+         UNNEST($9::text[]), true, $10
+       ON CONFLICT (treatment_plan_id, tooth_a_fdi, tooth_b_fdi)
+       DO UPDATE SET amount_mm            = EXCLUDED.amount_mm,
+                     before_stage         = EXCLUDED.before_stage,
+                     remaining_enamel_a   = EXCLUDED.remaining_enamel_a,
+                     remaining_enamel_b   = EXCLUDED.remaining_enamel_b,
+                     safety_status        = EXCLUDED.safety_status,
+                     updated_at           = now()
+       RETURNING *`,
+      [
+        caseId, planId,
+        candidates.map((c) => c.a),
+        candidates.map((c) => c.b),
+        candidates.map((c) => c.amountMm),
+        beforeStage,
+        candidates.map((c) => c.remA),
+        candidates.map((c) => c.remB),
+        candidates.map((c) => c.status),
+        userId,
+      ],
+    );
+
+    const items = rows.map(this.format);
+    this.logger.log(`Prescription-based IPR refinement: ${items.length} items for plan ${planId}`);
+    return { recommended: items.length, items, method: 'prescription_based' };
+  }
+
   private async verifyOwnership(caseId: string, orgId: string) {
     const { rows } = await this.pool.query(
       `SELECT c.id FROM cases c

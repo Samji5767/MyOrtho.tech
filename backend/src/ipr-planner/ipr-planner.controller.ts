@@ -44,4 +44,9 @@ export class IprPlannerController {
   recommend(@Param('planId') planId: string, @Param('caseId') caseId: string, @Request() req: any) {
     return this.svc.autoRecommend(planId, caseId, req.user.orgId as string, req.user.id as string);
   }
+
+  @Post('refine')
+  refine(@Param('planId') planId: string, @Param('caseId') caseId: string, @Request() req: any) {
+    return this.svc.refineRecommendations(planId, caseId, req.user.orgId as string, req.user.id as string);
+  }
 }

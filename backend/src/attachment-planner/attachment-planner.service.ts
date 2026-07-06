@@ -147,6 +147,64 @@ export class AttachmentPlannerService {
     return this.format(rows[0]);
   }
 
+  async optimizeFromPrescriptions(planId: string, caseId: string, orgId: string, userId: string) {
+    await this.verifyOwnership(caseId, orgId);
+
+    // Read movement_prescriptions directly — works before staging is generated
+    const { rows: prescRows } = await this.pool.query(
+      `SELECT tooth_number, rotation_deg, torque_deg, tip_mesial_deg, tip_distal_deg,
+              extrusion_mm, intrusion_mm, translation_buccal_mm, translation_lingual_mm,
+              translation_mesial_mm, translation_distal_mm, root_movement_mm
+       FROM movement_prescriptions WHERE plan_id = $1`,
+      [planId],
+    );
+
+    if (!prescRows.length) return { recommended: 0, attachments: [], note: 'No prescriptions found' };
+
+    const totals: MovementMap = {};
+    for (const row of prescRows) {
+      const fdi = row['tooth_number'] as number;
+      const rootMm = Math.abs(row['root_movement_mm'] as number ?? 0);
+      totals[String(fdi)] = {
+        mesialMm:   row['translation_mesial_mm'] as number,
+        distalMm:   row['translation_distal_mm']  as number,
+        buccalMm:   row['translation_buccal_mm']  as number,
+        lingualMm:  row['translation_lingual_mm'] as number,
+        intrusionMm: row['intrusion_mm'] as number,
+        extrusionMm: row['extrusion_mm'] as number,
+        // Elevate torque for direct root movement so root_control rule fires
+        torqueDeg:  Math.max(
+          Math.abs(row['torque_deg'] as number ?? 0),
+          rootMm > 2.0 ? 6 : 0,
+        ),
+        tipDeg:     Math.max(
+          Math.abs(row['tip_mesial_deg'] as number ?? 0),
+          Math.abs(row['tip_distal_deg']  as number ?? 0),
+        ),
+        rotationDeg: row['rotation_deg'] as number,
+      };
+    }
+
+    const recs = recommendAttachments(totals);
+
+    const results = [];
+    for (const rec of recs) {
+      const { rows } = await this.pool.query(
+        `INSERT INTO treatment_attachments
+           (case_id, treatment_plan_id, fdi_number, attachment_type,
+            surface, is_auto_recommended, created_by)
+         VALUES ($1, $2, $3, $4, $5, true, $6)
+         ON CONFLICT (treatment_plan_id, fdi_number, attachment_type) DO NOTHING
+         RETURNING *`,
+        [caseId, planId, rec.fdi, rec.type, rec.surface, userId],
+      );
+      if (rows[0]) results.push(this.format(rows[0]));
+    }
+
+    this.logger.log(`Prescription-based attachment optimization: ${results.length} attachments for plan ${planId}`);
+    return { recommended: results.length, attachments: results, method: 'prescription_based' };
+  }
+
   async autoRecommend(planId: string, caseId: string, orgId: string, userId: string) {
     await this.verifyOwnership(caseId, orgId);
 

@@ -318,6 +318,45 @@ export class TreatmentQAService {
 
     manufacturingScore = clamp(manufacturingScore);
 
+    // issues / warnings are populated after IPR scoring below
+    const issues: unknown[] = [];
+    const warnings: unknown[] = [];
+
+    const collisionIssues: unknown[] = collisionPairs.map((cp) => ({
+      fdiA: cp.fdiA,
+      fdiB: cp.fdiB,
+      overlapMm: cp.overlapMm ?? null,
+    }));
+
+    // ─── IPR Warnings ─────────────────────────────────────────────────────────
+    // Query ipr_plan_items via digital_setups → treatment_plans linkage.
+    const { rows: iprItemRows } = await this.pool.query<Record<string, unknown>>(
+      `SELECT i.tooth_a_fdi, i.tooth_b_fdi, i.amount_mm,
+              i.remaining_enamel_a, i.remaining_enamel_b,
+              i.safety_status, i.before_stage
+       FROM ipr_plan_items i
+       JOIN treatment_plans tp ON tp.id = i.treatment_plan_id
+       JOIN digital_setups ds ON ds.case_id = tp.case_id
+       WHERE ds.id = $1 AND ds.organization_id = $2
+         AND i.safety_status IN ('warning', 'unsafe')
+       ORDER BY i.safety_status DESC, i.tooth_a_fdi`,
+      [setupId, orgId],
+    );
+    const iprWarnings: unknown[] = iprItemRows.map((r) => ({
+      toothAFdi: r['tooth_a_fdi'] as number,
+      toothBFdi: r['tooth_b_fdi'] as number,
+      amountMm: Number(r['amount_mm']),
+      remainingEnamelA: r['remaining_enamel_a'] !== null ? Number(r['remaining_enamel_a']) : null,
+      remainingEnamelB: r['remaining_enamel_b'] !== null ? Number(r['remaining_enamel_b']) : null,
+      safetyStatus: r['safety_status'] as string,
+      beforeStage: r['before_stage'] as number,
+    }));
+
+    const unsafeIpr = iprItemRows.filter((r) => r['safety_status'] === 'unsafe').length;
+    const warningIpr = iprItemRows.filter((r) => r['safety_status'] === 'warning').length;
+    clinicalSafety -= unsafeIpr * 8 + warningIpr * 3;
+    clinicalSafety = clamp(clinicalSafety);
+
     // ─── Overall Score & Export Readiness ────────────────────────────────────
     const overallScore = clamp(
       Math.round((treatmentQuality + clinicalSafety + manufacturingScore) / 3),
@@ -326,14 +365,11 @@ export class TreatmentQAService {
       treatmentQuality >= 70 && clinicalSafety >= 70 && manufacturingScore >= 70;
 
     // ─── Build issues / warnings lists ────────────────────────────────────────
-    const issues: unknown[] = [];
-    const warnings: unknown[] = [];
-
     if (!exportReady) {
       if (treatmentQuality < 70)
         issues.push({ category: 'treatment_quality', score: treatmentQuality, message: 'Treatment quality score below 70 — review excessive movements and PDL overload' });
       if (clinicalSafety < 70)
-        issues.push({ category: 'clinical_safety', score: clinicalSafety, message: 'Clinical safety score below 70 — address root collisions, PDL stress, and missing attachments' });
+        issues.push({ category: 'clinical_safety', score: clinicalSafety, message: 'Clinical safety score below 70 — address root collisions, PDL stress, missing attachments, and unsafe IPR' });
       if (manufacturingScore < 70)
         issues.push({ category: 'manufacturing', score: manufacturingScore, message: 'Manufacturing score below 70 — simplify staging or add attachment window data' });
     }
@@ -347,12 +383,11 @@ export class TreatmentQAService {
     if (collisionPairs.length > 0) {
       warnings.push({ category: 'collision', count: collisionPairs.length, message: `${collisionPairs.length} tooth collision pair(s) detected` });
     }
-
-    const collisionIssues: unknown[] = collisionPairs.map((cp) => ({
-      fdiA: cp.fdiA,
-      fdiB: cp.fdiB,
-      overlapMm: cp.overlapMm ?? null,
-    }));
+    if (unsafeIpr > 0) {
+      warnings.push({ category: 'ipr', count: unsafeIpr, message: `${unsafeIpr} IPR contact(s) violate minimum enamel safety (0.5 mm remaining)` });
+    } else if (warningIpr > 0) {
+      warnings.push({ category: 'ipr', count: warningIpr, message: `${warningIpr} IPR contact(s) leave <0.5 mm enamel — review before export` });
+    }
 
     // ─── Persist the QA report ────────────────────────────────────────────────
     const { rows } = await this.pool.query<Record<string, unknown>>(
@@ -374,7 +409,7 @@ export class TreatmentQAService {
         JSON.stringify(collisionIssues),
         JSON.stringify(pdlWarnings),
         JSON.stringify(attachmentWarnings),
-        JSON.stringify([]), // ipr_warnings: extended by future IPR checks
+        JSON.stringify(iprWarnings),
         JSON.stringify(stagingIssues),
         exportReady,
         JSON.stringify(issues),

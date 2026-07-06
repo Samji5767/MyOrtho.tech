@@ -83,6 +83,64 @@ export class ClinicalDecisionSupportService {
       newAlerts.push(alert);
     }
 
+    // Simulation-based checks: constraint violations, BRI, and biomechanics status
+    const { rows: simRows } = await this.db.query(
+      `SELECT constraint_violations, bone_remodeling_index, biomechanics_status
+       FROM movement_simulations
+       WHERE case_id = $1 AND org_id = $2
+       ORDER BY created_at DESC LIMIT 1`,
+      [caseId, orgId],
+    );
+    if (simRows[0]) {
+      const sim = simRows[0];
+
+      const violations = (sim['constraint_violations'] as Array<{ severity?: string; type?: string; tooth?: number }> | null) ?? [];
+      const criticals = violations.filter((v) => v.severity === 'critical');
+      if (criticals.length > 0) {
+        const toothList = criticals.map((v) => String(v.tooth ?? '?')).join(', ');
+        newAlerts.push(await this.createAlert(orgId, {
+          caseId, alertType: 'biomechanics', severity: 'critical',
+          title: 'Critical Movement Constraint Violations',
+          body: `${criticals.length} critical Kravitz-limit violation(s) detected on teeth: ${toothList}. Reduce per-stage movement before approval.`,
+        }));
+      }
+
+      const bri = sim['bone_remodeling_index'] !== null ? Number(sim['bone_remodeling_index']) : null;
+      if (bri !== null && bri > 1.0) {
+        newAlerts.push(await this.createAlert(orgId, {
+          caseId, alertType: 'bone_remodeling', severity: 'warning',
+          title: 'High Bone Remodelling Index',
+          body: `Bone Remodelling Index is ${bri.toFixed(2)} (safe threshold: 1.0). Total movement demand may exceed bone remodelling capacity — consider extending treatment duration.`,
+        }));
+      }
+
+      if (sim['biomechanics_status'] === 'unsafe') {
+        newAlerts.push(await this.createAlert(orgId, {
+          caseId, alertType: 'biomechanics', severity: 'critical',
+          title: 'Unsafe Biomechanics Status',
+          body: 'Movement simulation returned an unsafe biomechanics status. Review PDL stress levels and per-tooth movement prescriptions before proceeding.',
+        }));
+      }
+    }
+
+    // IPR safety check: flag any contacts where enamel safety threshold would be breached
+    const { rows: iprRows } = await this.db.query(
+      `SELECT tooth_a_fdi, tooth_b_fdi, amount_mm
+       FROM ipr_plan_items
+       WHERE case_id = $1 AND safety_status = 'unsafe'`,
+      [caseId],
+    );
+    if (iprRows.length > 0) {
+      const contactList = iprRows
+        .map((r) => `${r['tooth_a_fdi'] as number}–${r['tooth_b_fdi'] as number} (${Number(r['amount_mm']).toFixed(2)} mm)`)
+        .join(', ');
+      newAlerts.push(await this.createAlert(orgId, {
+        caseId, alertType: 'ipr_safety', severity: 'critical',
+        title: 'Unsafe IPR Amount Detected',
+        body: `${iprRows.length} IPR contact(s) would reduce enamel below the 0.5 mm safety minimum: ${contactList}. Reduce IPR amounts before export.`,
+      }));
+    }
+
     return newAlerts;
   }
 

@@ -16,20 +16,18 @@ function makePool(rows: unknown[][] = []) {
 }
 
 describe('ManufacturePrepService.createExport', () => {
-  it('immediately sets status=failed with honest error_message — no setTimeout simulation', async () => {
+  it('fails with actionable message when no aligner generation plan exists', async () => {
     const pool = makePool([
-      // verifyCaseOwnership → case found
+      // verifyCase → case found
       [{ id: CASE_ID }],
-      // stage count query
-      [{ cnt: '10' }],
+      // aligner_generation_plans lookup → no plan
+      [],
       // INSERT returning the export row
       [{
         id: 'exp-1', case_id: CASE_ID, treatment_plan_id: null, export_format: 'stl',
         export_type: 'stage_models', stage_range_from: null, stage_range_to: null,
         status: 'failed',
-        error_message:
-          'Manufacturing export pipeline not implemented. ' +
-          'Aligner shell geometry requires the AI segmentation pipeline to produce per-tooth mesh files.',
+        error_message: 'No aligner generation plan found for this case.',
         manifest: '{}', generated_by: USER_ID,
         generated_at: new Date(), completed_at: null, created_at: new Date(),
         file_path: null, file_size_bytes: null,
@@ -49,25 +47,61 @@ describe('ManufacturePrepService.createExport', () => {
       exportType: 'stage_models',
     });
 
-    // No setTimeout was set — result is synchronous and immediate
+    // Result is immediate (no async simulation)
     expect(result.status).toBe('failed');
-    expect(result.errorMessage).toMatch(/not implemented/i);
+    // Error message points user to the aligner generation step
+    expect(result.errorMessage).toMatch(/aligner generation/i);
 
-    // The INSERT must NOT write a fake file_path
+    // INSERT must have been called
     const insertCall = pool.query.mock.calls.find((c: unknown[]) =>
       typeof c[0] === 'string' && (c[0] as string).includes('INSERT INTO manufacture_exports'),
     );
     expect(insertCall).toBeDefined();
-    const [insertSql] = insertCall as [string, unknown[]];
-    // Status must be 'failed', not 'completed' or 'pending'
-    expect(insertSql).toMatch(/'failed'/);
-    // error_message column must be in INSERT
-    expect(insertSql).toContain('error_message');
-    // File path must NOT be written in any query call (no setTimeout update)
+
+    // No UPDATE that sets a file_path (no async background work)
     const allSqls = pool.query.mock.calls.map((c: unknown[]) => c[0] as string);
     const hasFilePath = allSqls.some(
       (sql: string) => sql.includes('file_path') && sql.includes('UPDATE'),
     );
     expect(hasFilePath).toBe(false);
+  });
+
+  it('completes immediately when aligner generation plan has stl_export_path', async () => {
+    const ZIP_PATH = '/uploads/cases/case-111/aligner_plan_plan-xyz.zip';
+    const pool = makePool([
+      // verifyCase
+      [{ id: CASE_ID }],
+      // aligner_generation_plans lookup → plan with STLs ready
+      [{
+        id: 'agp-1', plan_id: 'plan-xyz', total_active_stages: 14,
+        stl_export_ready: true, stl_export_path: ZIP_PATH, gen_status: 'approved',
+      }],
+      // INSERT returning
+      [{
+        id: 'exp-1', case_id: CASE_ID, treatment_plan_id: 'plan-xyz', export_format: 'stl',
+        export_type: 'stage_models', stage_range_from: null, stage_range_to: null,
+        status: 'completed', error_message: null, manifest: '{}',
+        generated_by: USER_ID, generated_at: new Date(),
+        completed_at: new Date(), created_at: new Date(),
+        file_path: ZIP_PATH, file_size_bytes: null,
+      }],
+    ]);
+
+    const module = await Test.createTestingModule({
+      providers: [
+        ManufacturePrepService,
+        { provide: PG_POOL, useValue: pool },
+      ],
+    }).compile();
+
+    const svc = module.get(ManufacturePrepService);
+    const result = await svc.createExport(CASE_ID, ORG_ID, USER_ID, {
+      exportFormat: 'stl',
+      exportType: 'stage_models',
+      treatmentPlanId: 'plan-xyz',
+    });
+
+    expect(result.status).toBe('completed');
+    expect(result.filePath).toBe(ZIP_PATH);
   });
 });

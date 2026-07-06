@@ -1,6 +1,13 @@
-import { Injectable, Inject, NotFoundException } from '@nestjs/common';
+import { Injectable, Inject, NotFoundException, ServiceUnavailableException } from '@nestjs/common';
 import type { Pool } from 'pg';
 import { PG_POOL } from '../database/database.module';
+
+const AI_ENGINE_URL = process.env.AI_ENGINE_URL ?? 'http://ai-engine:8000';
+const INTERNAL_API_SECRET = process.env.INTERNAL_API_SECRET ?? '';
+const AI_ENGINE_HEADERS = (): Record<string, string> => ({
+  'Content-Type': 'application/json',
+  ...(INTERNAL_API_SECRET ? { 'X-Internal-Token': INTERNAL_API_SECRET } : {}),
+});
 
 export type ExportFormat = 'stl' | 'obj' | 'ply' | '3mf' | 'zip';
 export type ExportType = 'stage_models' | 'aligner_models' | 'attachment_models' | 'ibt' | 'surgical_guide' | 'full_case' | 'qa_report';
@@ -106,32 +113,108 @@ export class ManufacturePrepService {
   async createExport(caseId: string, orgId: string, userId: string, dto: CreateExportDto) {
     await this.verifyCase(caseId, orgId);
 
-    // Count available stages
-    const { rows: stageRows } = dto.treatmentPlanId
-      ? await this.pool.query(
-          `SELECT COUNT(*) AS cnt FROM aligner_stages WHERE treatment_plan_id = $1`,
-          [dto.treatmentPlanId],
-        )
-      : await this.pool.query(
-          `SELECT COUNT(*) AS cnt FROM aligner_stages as2
-             INNER JOIN treatment_plans tp ON tp.id = as2.treatment_plan_id
-             WHERE tp.case_id = $1`,
-          [caseId],
-        );
-    const stageCount = parseInt(stageRows[0]?.cnt ?? '0', 10);
+    // Locate the aligner generation plan for this treatment plan / case
+    const planQuery = dto.treatmentPlanId
+      ? `SELECT agp.id, agp.plan_id, agp.total_active_stages,
+                agp.stl_export_ready, agp.stl_export_path, agp.status AS gen_status
+           FROM aligner_generation_plans agp
+           WHERE agp.plan_id = $1 AND agp.organization_id = $2
+           ORDER BY agp.created_at DESC LIMIT 1`
+      : `SELECT agp.id, agp.plan_id, agp.total_active_stages,
+                agp.stl_export_ready, agp.stl_export_path, agp.status AS gen_status
+           FROM aligner_generation_plans agp
+           INNER JOIN treatment_plans tp ON tp.id = agp.plan_id
+           WHERE tp.case_id = $1 AND agp.organization_id = $2
+           ORDER BY agp.created_at DESC LIMIT 1`;
+    const planParam = dto.treatmentPlanId ?? caseId;
+    const { rows: planRows } = await this.pool.query(planQuery, [planParam, orgId]);
+
+    const genPlan = planRows[0] as {
+      plan_id: string;
+      total_active_stages: number;
+      stl_export_ready: boolean;
+      stl_export_path: string | null;
+      gen_status: string;
+    } | undefined;
+
+    const stageCount = genPlan?.total_active_stages ?? 0;
     const manifest = buildManifest(dto, stageCount);
 
-    const NOT_IMPLEMENTED_MSG =
-      'Manufacturing export pipeline not implemented. ' +
-      'Aligner shell geometry requires the AI segmentation pipeline to produce per-tooth mesh files. ' +
-      'The pipeline is not operational (MODEL_CHECKPOINT not loaded). ' +
-      'The manifest records which files would be produced once the pipeline is available.';
+    // Determine whether we can fulfill the export now
+    const needsStageStls =
+      dto.exportType === 'stage_models' ||
+      dto.exportType === 'aligner_models' ||
+      dto.exportType === 'full_case';
+
+    let status: 'completed' | 'processing' | 'failed' = 'failed';
+    let filePath: string | null = null;
+    let errorMsg: string | null = null;
+
+    if (!needsStageStls) {
+      // qa_report, attachment_models, ibt, surgical_guide: manifest-only for now
+      status = 'completed';
+    } else if (genPlan?.stl_export_ready && genPlan.stl_export_path) {
+      // Stage STL zip already produced by the aligner generation step
+      if (dto.exportType === 'stage_models') {
+        filePath = genPlan.stl_export_path;
+        status = 'completed';
+      } else if (dto.exportType === 'aligner_models') {
+        // Generate aligner shells from the stage STLs
+        const stageDir = genPlan.stl_export_path.replace(/\.zip$/, '').replace(
+          /aligner_plan_.*$/,
+          `stages_${genPlan.plan_id}`,
+        );
+        try {
+          const res = await fetch(`${AI_ENGINE_URL}/ai/generate-aligner-shells`, {
+            method: 'POST',
+            headers: AI_ENGINE_HEADERS(),
+            body: JSON.stringify({ plan_id: genPlan.plan_id, stage_stls_dir: stageDir }),
+            signal: AbortSignal.timeout(300_000),
+          });
+          if (res.ok) {
+            const body = (await res.json()) as { zip_path: string };
+            filePath = body.zip_path;
+            status = 'completed';
+          } else {
+            const errBody = await res.text().catch(() => '');
+            errorMsg = `AI engine returned ${res.status}: ${errBody}`;
+            status = 'failed';
+          }
+        } catch (err) {
+          errorMsg = `Aligner shell generation failed: ${String(err)}`;
+          status = 'failed';
+        }
+      } else {
+        // full_case: use stage STL zip as primary deliverable
+        filePath = genPlan.stl_export_path;
+        status = 'completed';
+      }
+    } else if (genPlan) {
+      if (genPlan.gen_status === 'draft') {
+        errorMsg =
+          'The aligner generation plan has not been approved. ' +
+          'Approve the plan before requesting a manufacturing export.';
+      } else {
+        errorMsg =
+          'Stage STL files have not been generated yet. ' +
+          'Call POST .../aligner-generation/generate-stl to produce the per-stage meshes, ' +
+          'then retry the manufacturing export.';
+      }
+      status = 'failed';
+    } else {
+      errorMsg =
+        'No aligner generation plan found for this case. ' +
+        'Complete the aligner generation step (POST .../aligner-generation/generate) before exporting.';
+      status = 'failed';
+    }
 
     const { rows } = await this.pool.query(
       `INSERT INTO manufacture_exports
          (case_id, treatment_plan_id, organization_id, export_format, export_type,
-          stage_range_from, stage_range_to, status, error_message, manifest, generated_by, generated_at)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,'failed',$8,$9,$10,NOW())
+          stage_range_from, stage_range_to, status, error_message, file_path,
+          manifest, generated_by, generated_at, completed_at)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,NOW(),
+           CASE WHEN $8 = 'completed' THEN NOW() ELSE NULL END)
          RETURNING *`,
       [
         caseId,
@@ -141,13 +224,14 @@ export class ManufacturePrepService {
         dto.exportType,
         dto.stageRangeFrom ?? null,
         dto.stageRangeTo ?? null,
-        NOT_IMPLEMENTED_MSG,
+        status,
+        errorMsg,
+        filePath,
         JSON.stringify(manifest),
         userId,
       ],
     );
-    const exportJob = rows[0];
-    return this.format(exportJob);
+    return this.format(rows[0]);
   }
 
   async getExport(caseId: string, orgId: string, exportId: string) {

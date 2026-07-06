@@ -24,6 +24,7 @@ from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, Request, R
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
+from src.aligner_generator import AlignerGenerationEngine
 from src.auth import get_trace_id, require_auth, require_upload_size
 from src.landmark_detector import DentalLandmarkDetector
 from src.mesh_processing import MeshProcessor
@@ -83,6 +84,7 @@ segmentation_engine = OrthoSegmentationEngine()
 mesh_processor = MeshProcessor()
 landmark_detector = DentalLandmarkDetector()
 root_predictor = RootPredictorEngine()
+aligner_generator = AlignerGenerationEngine()
 
 # Thread pool for blocking inference calls (keeps the async event loop free)
 _executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="seg-worker")
@@ -229,6 +231,13 @@ class GenerateStageStlsRequest(BaseModel):
     segmented_mesh_dir: str          # directory containing tooth_fdi_{N}.stl files
     prescriptions: list[ToothPrescription]
     total_active_stages: int
+
+
+class GenerateAlignerShellsRequest(BaseModel):
+    plan_id: str
+    stage_stls_dir: str              # directory containing stage_NNN.stl files
+    thickness_mm: float = 0.75
+    trim_line_height_mm: float = 1.2
 
 
 # ── Background segmentation task (async, with timeout) ───────────────────────
@@ -562,6 +571,77 @@ def _build_stage_stls(seg_dir: str, req: "GenerateStageStlsRequest") -> dict:
         "plan_id": req.plan_id,
         "stages_generated": req.total_active_stages,
         "output_dir": output_dir,
+        "zip_path": zip_path,
+    }
+
+
+@app.post(
+    "/ai/generate-aligner-shells",
+    dependencies=[Depends(require_auth)],
+)
+async def generate_aligner_shells(req: GenerateAlignerShellsRequest):
+    """
+    For every stage_NNN.stl file in stage_stls_dir, produce a corresponding
+    aligner_NNN_aligner.stl by offsetting the mesh vertices along their normals
+    by thickness_mm and applying a linear gingival trim.
+
+    Runs synchronously in the thread-pool executor (blocking trimesh I/O).
+    """
+    safe_dir = _assert_safe_path(req.stage_stls_dir)
+    if not os.path.isdir(safe_dir):
+        raise HTTPException(status_code=400, detail="stage_stls_dir does not exist")
+
+    try:
+        loop = asyncio.get_event_loop()
+        result = await loop.run_in_executor(
+            _executor,
+            lambda: _build_aligner_shells(safe_dir, req),
+        )
+        return result
+    except Exception as exc:
+        logger.error("generate_aligner_shells error: %s", exc)
+        raise HTTPException(status_code=500, detail="Internal processing error") from exc
+
+
+def _build_aligner_shells(stage_dir: str, req: "GenerateAlignerShellsRequest") -> dict:
+    """Synchronous worker: iterate stage STLs, generate per-stage aligner shells."""
+    import zipfile
+
+    stage_files = sorted(
+        f for f in os.listdir(stage_dir)
+        if f.startswith("stage_") and f.endswith(".stl")
+    )
+    if not stage_files:
+        raise ValueError("No stage_NNN.stl files found in stage_stls_dir")
+
+    aligner_paths = []
+    errors = []
+    for fname in stage_files:
+        stage_path = os.path.join(stage_dir, fname)
+        result = aligner_generator.generate_aligner_shell(
+            stage_path,
+            thickness_mm=req.thickness_mm,
+            trim_line_height_mm=req.trim_line_height_mm,
+        )
+        if result.get("success"):
+            aligner_paths.append(result["output_path"])
+        else:
+            errors.append({"file": fname, "error": result.get("detail", result.get("error"))})
+
+    if not aligner_paths:
+        raise ValueError(f"All {len(stage_files)} stage files failed: {errors[0]['error']}")
+
+    # Zip aligner shells
+    zip_path = os.path.join(stage_dir, f"aligner_shells_{req.plan_id}.zip")
+    with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
+        for p in aligner_paths:
+            zf.write(p, os.path.basename(p))
+
+    return {
+        "success": True,
+        "plan_id": req.plan_id,
+        "shells_generated": len(aligner_paths),
+        "errors": errors,
         "zip_path": zip_path,
     }
 

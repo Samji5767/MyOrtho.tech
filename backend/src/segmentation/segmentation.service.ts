@@ -202,7 +202,7 @@ export class SegmentationService {
   }
 
   private async callExternalAIService(jobId: string, aiUrl: string, arch: string) {
-    const res = await fetch(`${aiUrl}/segment`, {
+    const res = await fetch(`${aiUrl}/ai/segment`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ jobId, arch }),

@@ -167,7 +167,7 @@ describe('CasesService.create', () => {
     // pool.query sequence: findOne JOIN, linked resources
     const pool = makeTransactionPool(
       [[], [{ id: PAT_ID2 }], [{ id: CASE_ID }], []],
-      [[makeRow(ORG_A)], [{}]],
+      [[], [], [makeRow(ORG_A)], [{}]],
     );
     const svc = makeTransactionService(pool);
 
@@ -189,7 +189,7 @@ describe('CasesService.create', () => {
     const COMPLAINT = 'Test complaint';
     const pool = makeTransactionPool(
       [[], [{ id: PAT_ID2 }], [{ id: CASE_ID }], []],
-      [[makeRow(ORG_A)], [{}]],
+      [[], [], [makeRow(ORG_A)], [{}]],
     );
     const svc = makeTransactionService(pool);
 
@@ -216,7 +216,7 @@ describe('CasesService.createWithNewPatient', () => {
     // pool.query sequence: findOne JOIN, linked resources
     const pool = makeTransactionPool(
       [[], [{ id: NEW_PAT_ID }], [{ id: CASE_ID }], []],
-      [[makeRow(ORG_A)], [{}]],
+      [[], [], [makeRow(ORG_A)], [{}]],
     );
     const svc = makeTransactionService(pool);
 
@@ -237,7 +237,7 @@ describe('CasesService.createWithNewPatient', () => {
     const NEW_PAT_ID = 'pat-44444444';
     const pool = makeTransactionPool(
       [[], [{ id: NEW_PAT_ID }], [{ id: CASE_ID }], []],
-      [[makeRow(ORG_A)], [{}]],
+      [[], [], [makeRow(ORG_A)], [{}]],
     );
     const svc = makeTransactionService(pool);
 

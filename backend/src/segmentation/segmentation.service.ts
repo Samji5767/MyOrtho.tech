@@ -108,7 +108,7 @@ export class SegmentationService {
     const { rows } = await this.pool.query(
       `SELECT j.*, u.email AS submitted_by_email
          FROM segmentation_jobs j
-         LEFT JOIN profiles u ON u.id = j.submitted_by
+         LEFT JOIN auth_users u ON u.id = j.submitted_by
          WHERE j.case_id = $1
          ORDER BY j.created_at DESC`,
       [caseId],
@@ -123,7 +123,7 @@ export class SegmentationService {
     const { rows } = await this.pool.query(
       `SELECT j.*, u.email AS submitted_by_email
          FROM segmentation_jobs j
-         LEFT JOIN profiles u ON u.id = j.submitted_by
+         LEFT JOIN auth_users u ON u.id = j.submitted_by
          WHERE j.id = $1 AND j.case_id = $2`,
       [jobId, caseId],
     );
@@ -137,7 +137,7 @@ export class SegmentationService {
     const { rows: corrections } = await this.pool.query(
       `SELECT c.*, u.email AS applied_by_email
          FROM segmentation_corrections c
-         LEFT JOIN profiles u ON u.id = c.applied_by
+         LEFT JOIN auth_users u ON u.id = c.applied_by
          WHERE c.job_id = $1
          ORDER BY c.created_at DESC`,
       [jobId],

@@ -145,7 +145,7 @@ export class AiProposalService {
     const { rows } = await this.pool.query(
       `SELECT p.*, u.email AS reviewed_by_email
          FROM ai_treatment_proposals p
-         LEFT JOIN profiles u ON u.id = p.reviewed_by
+         LEFT JOIN auth_users u ON u.id = p.reviewed_by
          WHERE p.case_id = $1
          ORDER BY p.created_at DESC`,
       [caseId],
@@ -158,7 +158,7 @@ export class AiProposalService {
     const { rows } = await this.pool.query(
       `SELECT p.*, u.email AS reviewed_by_email
          FROM ai_treatment_proposals p
-         LEFT JOIN profiles u ON u.id = p.reviewed_by
+         LEFT JOIN auth_users u ON u.id = p.reviewed_by
          WHERE p.id = $1 AND p.case_id = $2`,
       [proposalId, caseId],
     );

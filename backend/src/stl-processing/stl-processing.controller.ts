@@ -6,12 +6,23 @@ import {
   Param,
   Query,
   UseGuards,
+  UseInterceptors,
+  UploadedFile,
   Req,
   UnauthorizedException,
 } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
+import * as path from 'path';
+import * as fs from 'fs';
 import type { Request } from 'express';
 import { AuthGuard } from '../auth/auth.guard';
-import { StlProcessingService, CreateUploadDto, ValidateScanDto } from './stl-processing.service';
+import { StlProcessingService, ValidateScanDto } from './stl-processing.service';
+
+const ARCH_TYPE_MAP: Record<string, string> = {
+  upper: 'maxillary',
+  lower: 'mandibular',
+  bite: 'bite_registration',
+};
 
 interface AuthUser { id: string; orgId: string | null }
 function getUser(req: Request): { id: string; orgId: string } {
@@ -26,12 +37,36 @@ export class StlProcessingController {
   constructor(private readonly svc: StlProcessingService) {}
 
   @Post('uploads')
-  createUpload(
+  @UseInterceptors(FileInterceptor('file'))
+  async createUpload(
     @Req() req: Request,
-    @Body() body: CreateUploadDto,
+    @UploadedFile() file: Express.Multer.File | undefined,
+    @Body() body: { fileName?: string; archType?: string; caseId?: string; patientId?: string },
   ) {
     const { id, orgId } = getUser(req);
-    return this.svc.createUpload(orgId, id, body);
+
+    const fileName = body.fileName ?? file?.originalname ?? 'upload.stl';
+    const rawArchType = body.archType ?? 'unknown';
+    const archType = ARCH_TYPE_MAP[rawArchType] ?? rawArchType;
+
+    let storagePath = '';
+    if (file) {
+      const uploadsDir = process.env.UPLOADS_DIR ?? '/app/uploads';
+      const destDir = path.join(uploadsDir, 'stl', orgId);
+      fs.mkdirSync(destDir, { recursive: true });
+      const destPath = path.join(destDir, `${Date.now()}_${fileName}`);
+      fs.renameSync(file.path, destPath);
+      storagePath = destPath;
+    }
+
+    return this.svc.createUpload(orgId, id, {
+      caseId: body.caseId,
+      patientId: body.patientId,
+      fileName,
+      fileSizeBytes: file?.size,
+      storagePath,
+      archType,
+    });
   }
 
   @Get('uploads')

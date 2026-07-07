@@ -90,7 +90,7 @@ export interface CreateUploadDto {
   patientId?: string;
   fileName: string;
   fileSizeBytes?: number;
-  storagePath: string;
+  storagePath?: string;
   archType?: string;
 }
 
@@ -122,7 +122,7 @@ export class StlProcessingService {
         dto.patientId ?? null,
         dto.fileName,
         dto.fileSizeBytes ?? null,
-        dto.storagePath,
+        dto.storagePath ?? '',
         dto.archType ?? 'unknown',
         createdBy,
       ],

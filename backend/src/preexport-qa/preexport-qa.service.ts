@@ -204,8 +204,8 @@ export class PreexportQaService {
     const { rows } = await this.pool.query(
       `SELECT r.*, g.email AS generated_by_email, a.email AS approved_by_email
          FROM preexport_qa_reports r
-         LEFT JOIN profiles g ON g.id = r.generated_by
-         LEFT JOIN profiles a ON a.id = r.approved_by
+         LEFT JOIN auth_users g ON g.id = r.generated_by
+         LEFT JOIN auth_users a ON a.id = r.approved_by
          WHERE r.case_id = $1
          ORDER BY r.created_at DESC`,
       [caseId],

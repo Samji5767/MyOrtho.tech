@@ -20,6 +20,7 @@ from typing import Any, Dict, Optional
 
 import numpy as np
 import torch
+import trimesh
 from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel

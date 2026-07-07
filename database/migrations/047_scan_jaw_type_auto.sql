@@ -17,6 +17,14 @@ BEGIN
   END IF;
 END $$;
 
-ALTER TABLE scans
-  ADD CONSTRAINT scans_jaw_type_check
-  CHECK (jaw_type IN ('maxillary', 'mandibular', 'both', 'auto'));
+DO $$ BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conrelid = 'scans'::regclass
+      AND contype = 'c'
+      AND conname = 'scans_jaw_type_check'
+  ) THEN
+    ALTER TABLE scans ADD CONSTRAINT scans_jaw_type_check
+      CHECK (jaw_type IN ('maxillary', 'mandibular', 'both', 'auto'));
+  END IF;
+END $$;

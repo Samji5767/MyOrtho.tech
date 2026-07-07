@@ -43,6 +43,12 @@ export class ClinicalReportsController {
     return this.svc.generateInsurancePreauth(caseId, orgId, id, body);
   }
 
+  @Get(':reportId')
+  getReport(@Req() req: Request, @Param('reportId') reportId: string) {
+    const { orgId } = getUser(req);
+    return this.svc.getReport(reportId, orgId);
+  }
+
   @Patch(':reportId/approve')
   approve(@Req() req: Request, @Param('reportId') reportId: string) {
     const { id, orgId } = getUser(req);

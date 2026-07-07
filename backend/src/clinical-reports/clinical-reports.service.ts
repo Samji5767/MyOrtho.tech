@@ -163,6 +163,15 @@ export class ClinicalReportsService {
     return this.mapReport(rows[0]);
   }
 
+  async getReport(reportId: string, orgId: string): Promise<GeneratedReport> {
+    const { rows } = await this.db.query(
+      `SELECT * FROM generated_reports WHERE id=$1 AND organization_id=$2`,
+      [reportId, orgId],
+    );
+    if (!rows[0]) throw new NotFoundException('Report not found');
+    return this.mapReport(rows[0]);
+  }
+
   async approveReport(reportId: string, orgId: string, approverId: string): Promise<GeneratedReport> {
     const { rows } = await this.db.query(
       `UPDATE generated_reports SET approved_by=$2, approved_at=now()

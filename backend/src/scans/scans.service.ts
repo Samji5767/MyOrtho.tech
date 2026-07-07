@@ -103,6 +103,29 @@ export class ScansService {
     }));
   }
 
+  async findById(caseId: string, scanId: string, orgId: string) {
+    await this.verifyCaseOwnership(caseId, orgId);
+    const { rows } = await this.pool.query(
+      `SELECT id, case_id, jaw_type, original_filename, file_path, file_format,
+              file_size_bytes, mesh_validation_metrics, created_at
+       FROM scans WHERE id = $1 AND case_id = $2`,
+      [scanId, caseId],
+    );
+    if (!rows[0]) throw new NotFoundException('Scan not found');
+    const r = rows[0];
+    return {
+      id: r.id as string,
+      caseId: r.case_id as string,
+      jawType: r.jaw_type as string,
+      originalFilename: (r.original_filename ?? null) as string | null,
+      filePath: r.file_path as string,
+      fileFormat: r.file_format as string,
+      fileSizeBytes: r.file_size_bytes as number,
+      validationMetrics: r.mesh_validation_metrics as object,
+      createdAt: r.created_at as Date,
+    };
+  }
+
   async create(
     caseId: string,
     orgId: string,

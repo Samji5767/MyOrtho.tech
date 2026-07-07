@@ -86,6 +86,18 @@ export class ScansController {
     return this.scansService.triggerSegmentation(caseId, scanId, user.orgId!, user.email);
   }
 
+  /** Fetch metadata for a single scan. */
+  @Get(':scanId')
+  @RequirePermission('cases:read')
+  getScan(
+    @Req() req: Request,
+    @Param('caseId') caseId: string,
+    @Param('scanId') scanId: string,
+  ) {
+    const user = getUser(req);
+    return this.scansService.findById(caseId, scanId, user.orgId!);
+  }
+
   /** Stream the raw scan file (STL/OBJ/PLY) — authenticated, org-scoped. */
   @Get(':scanId/file')
   async getScanFile(

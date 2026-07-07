@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Post, Req, UnauthorizedException, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, ParseUUIDPipe, Post, Req, UnauthorizedException, UseGuards } from '@nestjs/common';
 import type { Request } from 'express';
 import { AuthGuard } from '../auth/auth.guard';
 import { ManufacturePrepService, type CreateExportDto } from './manufacture-prep.service';
@@ -31,7 +31,7 @@ export class ManufacturePrepController {
   getOne(
     @Req() req: Request,
     @Param('caseId') caseId: string,
-    @Param('exportId') exportId: string,
+    @Param('exportId', new ParseUUIDPipe()) exportId: string,
   ) {
     return this.svc.getExport(caseId, getUser(req).orgId, exportId);
   }

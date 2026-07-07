@@ -21,7 +21,7 @@ export class FeatureFlagsController {
   @Post()
   create(
     @Req() req: Request,
-    @Body() body: { flagName: string; description?: string; rolloutPercent?: number },
+    @Body() body: { flagKey: string; description?: string; rolloutPercentage?: number },
   ) {
     const { orgId, role } = getUser(req);
     if (role !== 'admin' && role !== 'super_admin') {
@@ -34,7 +34,7 @@ export class FeatureFlagsController {
   update(
     @Req() req: Request,
     @Param('id') id: string,
-    @Body() body: { enabled?: boolean; rolloutPercent?: number },
+    @Body() body: { enabled?: boolean; rolloutPercentage?: number },
   ) {
     const { orgId, role } = getUser(req);
     if (role !== 'admin' && role !== 'super_admin') {
@@ -43,10 +43,10 @@ export class FeatureFlagsController {
     return this.svc.updateFlagById(id, orgId, body);
   }
 
-  @Get(':flagName')
-  async getFlag(@Req() req: Request, @Param('flagName') flagName: string) {
-    const enabled = await this.svc.getFlag(getUser(req).orgId, flagName);
-    return { flagName, enabled };
+  @Get(':flagKey')
+  async getFlag(@Req() req: Request, @Param('flagKey') flagKey: string) {
+    const enabled = await this.svc.getFlag(getUser(req).orgId, flagKey);
+    return { flagKey, enabled };
   }
 
   @Post('evaluate')

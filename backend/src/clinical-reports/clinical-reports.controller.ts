@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Patch, Body, Param, UseGuards, Req, UnauthorizedException } from '@nestjs/common';
+import { Controller, Get, Post, Patch, Body, Param, ParseUUIDPipe, UseGuards, Req, UnauthorizedException } from '@nestjs/common';
 import type { Request } from 'express';
 import { AuthGuard } from '../auth/auth.guard';
 import { ClinicalReportsService } from './clinical-reports.service';
@@ -44,13 +44,13 @@ export class ClinicalReportsController {
   }
 
   @Get(':reportId')
-  getReport(@Req() req: Request, @Param('reportId') reportId: string) {
+  getReport(@Req() req: Request, @Param('reportId', new ParseUUIDPipe()) reportId: string) {
     const { orgId } = getUser(req);
     return this.svc.getReport(reportId, orgId);
   }
 
   @Patch(':reportId/approve')
-  approve(@Req() req: Request, @Param('reportId') reportId: string) {
+  approve(@Req() req: Request, @Param('reportId', new ParseUUIDPipe()) reportId: string) {
     const { id, orgId } = getUser(req);
     return this.svc.approveReport(reportId, orgId, id);
   }

@@ -4,11 +4,11 @@ import { PG_POOL } from '../database/database.module';
 
 export interface FeatureFlag {
   id: string;
-  flagName: string;
+  flagKey: string;
   description: string | null;
   enabled: boolean;
-  rolloutPercent: number;
-  organizationId: string | null;
+  rolloutPercentage: number;
+  allowedOrgIds: string[];
   createdAt: string;
 }
 
@@ -17,75 +17,84 @@ export class FeatureFlagsService {
   constructor(@Inject(PG_POOL) private readonly db: Pool) {}
 
   async listFlags(orgId: string): Promise<FeatureFlag[]> {
-    // DISTINCT ON (flag_name) picks org-specific override over global default when both exist
+    // Return flags that are global (empty allowed_org_ids) OR include this org
     const { rows } = await this.db.query(
-      `SELECT DISTINCT ON (flag_name) * FROM feature_flags
-       WHERE organization_id=$1 OR organization_id IS NULL
-       ORDER BY flag_name, organization_id NULLS LAST`,
+      `SELECT * FROM feature_flags
+       WHERE array_length(allowed_org_ids, 1) IS NULL
+          OR $1::uuid = ANY(allowed_org_ids)
+       ORDER BY flag_key`,
       [orgId],
     );
     return rows.map(r => this.map(r));
   }
 
-  async getFlag(orgId: string, flagName: string): Promise<boolean> {
+  async getFlag(orgId: string, flagKey: string): Promise<boolean> {
     const { rows } = await this.db.query(
-      `SELECT is_enabled, rollout_percent FROM feature_flags
-       WHERE flag_name=$1 AND (organization_id=$2 OR organization_id IS NULL)
-       ORDER BY organization_id NULLS LAST LIMIT 1`,
-      [flagName, orgId],
+      `SELECT enabled, rollout_percentage FROM feature_flags
+       WHERE flag_key=$1
+         AND (array_length(allowed_org_ids, 1) IS NULL OR $2::uuid = ANY(allowed_org_ids))
+       LIMIT 1`,
+      [flagKey, orgId],
     );
     if (!rows[0]) return false;
-    if (!rows[0]['is_enabled']) return false;
-    const rollout = rows[0]['rollout_percent'] as number;
+    if (!rows[0]['enabled']) return false;
+    const rollout = rows[0]['rollout_percentage'] as number;
     return rollout >= 100 || (Math.random() * 100) < rollout;
   }
 
   async createFlag(orgId: string, dto: {
-    flagName: string; description?: string; rolloutPercent?: number;
+    flagKey: string; description?: string; rolloutPercentage?: number; forOrg?: boolean;
   }): Promise<FeatureFlag> {
+    const allowedOrgs = dto.forOrg ? `ARRAY[$1::uuid]` : `'{}'::uuid[]`;
+    const params = dto.forOrg
+      ? [orgId, dto.flagKey, dto.description ?? null, dto.rolloutPercentage ?? 100]
+      : [dto.flagKey, dto.description ?? null, dto.rolloutPercentage ?? 100];
     const { rows } = await this.db.query(
-      `INSERT INTO feature_flags (organization_id, flag_name, description, is_enabled, rollout_percent)
-       VALUES ($1,$2,$3,false,$4) RETURNING *`,
-      [orgId, dto.flagName, dto.description ?? null, dto.rolloutPercent ?? 100],
+      dto.forOrg
+        ? `INSERT INTO feature_flags (flag_key, description, enabled, rollout_percentage, allowed_org_ids)
+           VALUES ($2,$3,false,$4,ARRAY[$1::uuid]) RETURNING *`
+        : `INSERT INTO feature_flags (flag_key, description, enabled, rollout_percentage, allowed_org_ids)
+           VALUES ($1,$2,false,$3,'{}') RETURNING *`,
+      params,
     );
     return this.map(rows[0]);
   }
 
-  async updateFlagById(id: string, orgId: string, dto: {
-    enabled?: boolean; rolloutPercent?: number;
+  async updateFlagById(id: string, _orgId: string, dto: {
+    enabled?: boolean; rolloutPercentage?: number;
   }): Promise<FeatureFlag> {
     const sets: string[] = [];
-    const vals: unknown[] = [id, orgId];
-    if (dto.enabled !== undefined) { sets.push(`is_enabled=$${vals.length + 1}`); vals.push(dto.enabled); }
-    if (dto.rolloutPercent !== undefined) { sets.push(`rollout_percent=$${vals.length + 1}`); vals.push(dto.rolloutPercent); }
+    const vals: unknown[] = [id];
+    if (dto.enabled !== undefined) { sets.push(`enabled=$${vals.length + 1}`); vals.push(dto.enabled); }
+    if (dto.rolloutPercentage !== undefined) { sets.push(`rollout_percentage=$${vals.length + 1}`); vals.push(dto.rolloutPercentage); }
     if (!sets.length) throw new BadRequestException('No fields to update');
     sets.push('updated_at=now()');
     const { rows } = await this.db.query(
-      `UPDATE feature_flags SET ${sets.join(', ')} WHERE id=$1 AND organization_id=$2 RETURNING *`,
+      `UPDATE feature_flags SET ${sets.join(', ')} WHERE id=$1 RETURNING *`,
       vals,
     );
     if (!rows[0]) throw new NotFoundException('Feature flag not found');
     return this.map(rows[0]);
   }
 
-  async setFlag(orgId: string, flagName: string, dto: {
-    isEnabled: boolean; rolloutPercent?: number; conditions?: Record<string, unknown>;
+  async setFlag(orgId: string, flagKey: string, dto: {
+    isEnabled: boolean; rolloutPercentage?: number;
   }): Promise<FeatureFlag> {
     const { rows } = await this.db.query(
-      `INSERT INTO feature_flags (organization_id, flag_name, is_enabled, rollout_percent, conditions)
-       VALUES ($1,$2,$3,$4,$5)
-       ON CONFLICT (organization_id, flag_name) DO UPDATE SET
-         is_enabled=$3, rollout_percent=$4, conditions=$5, updated_at=now()
+      `INSERT INTO feature_flags (flag_key, enabled, rollout_percentage, allowed_org_ids)
+       VALUES ($1,$2,$3,ARRAY[$4::uuid])
+       ON CONFLICT (flag_key) DO UPDATE SET
+         enabled=$2, rollout_percentage=$3, updated_at=now()
        RETURNING *`,
-      [orgId, flagName, dto.isEnabled, dto.rolloutPercent ?? 100, JSON.stringify(dto.conditions ?? {})],
+      [flagKey, dto.isEnabled, dto.rolloutPercentage ?? 100, orgId],
     );
     return this.map(rows[0]);
   }
 
-  async evaluateFlags(orgId: string, flagNames: string[]): Promise<Record<string, boolean>> {
+  async evaluateFlags(orgId: string, flagKeys: string[]): Promise<Record<string, boolean>> {
     const result: Record<string, boolean> = {};
-    for (const name of flagNames) {
-      result[name] = await this.getFlag(orgId, name);
+    for (const key of flagKeys) {
+      result[key] = await this.getFlag(orgId, key);
     }
     return result;
   }
@@ -93,11 +102,11 @@ export class FeatureFlagsService {
   private map(r: Record<string, unknown>): FeatureFlag {
     return {
       id: r['id'] as string,
-      flagName: r['flag_name'] as string,
+      flagKey: r['flag_key'] as string,
       description: r['description'] as string | null,
-      enabled: r['is_enabled'] as boolean,
-      rolloutPercent: r['rollout_percent'] as number,
-      organizationId: r['organization_id'] as string | null,
+      enabled: r['enabled'] as boolean,
+      rolloutPercentage: r['rollout_percentage'] as number,
+      allowedOrgIds: (r['allowed_org_ids'] as string[]) ?? [],
       createdAt: String(r['created_at']),
     };
   }

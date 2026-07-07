@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Patch, Post, Req, UnauthorizedException, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, ParseUUIDPipe, Patch, Post, Req, UnauthorizedException, UseGuards } from '@nestjs/common';
 import type { Request } from 'express';
 import { AuthGuard } from '../auth/auth.guard';
 import { AiProposalService, type GenerateProposalDto, type ReviewProposalDto } from './ai-proposal.service';
@@ -26,7 +26,7 @@ export class AiProposalController {
   }
 
   @Get('api/cases/:caseId/proposals/:proposalId')
-  get(@Req() req: Request, @Param('caseId') caseId: string, @Param('proposalId') proposalId: string) {
+  get(@Req() req: Request, @Param('caseId') caseId: string, @Param('proposalId', new ParseUUIDPipe()) proposalId: string) {
     return this.svc.get(caseId, getUser(req).orgId, proposalId);
   }
 
@@ -34,7 +34,7 @@ export class AiProposalController {
   review(
     @Req() req: Request,
     @Param('caseId') caseId: string,
-    @Param('proposalId') proposalId: string,
+    @Param('proposalId', new ParseUUIDPipe()) proposalId: string,
     @Body() dto: ReviewProposalDto,
   ) {
     const { id, orgId } = getUser(req);

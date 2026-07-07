@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Patch, Param, Body, Req, Res, Query, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Patch, Param, ParseUUIDPipe, Body, Req, Res, Query, UseGuards } from '@nestjs/common';
 import type { Response } from 'express';
 import { AuthGuard } from '../auth/auth.guard';
 import { CopilotService, SendMessageDto } from './copilot.service';
@@ -26,7 +26,7 @@ export class CopilotController {
   sendMessage(
     @Req() req: any,
     @Param('caseId') _caseId: string,
-    @Param('conversationId') conversationId: string,
+    @Param('conversationId', new ParseUUIDPipe()) conversationId: string,
     @Body() dto: SendMessageDto,
   ) {
     return this.svc.sendMessage(conversationId, req.user.orgId, dto);
@@ -36,7 +36,7 @@ export class CopilotController {
   getMessages(
     @Req() req: any,
     @Param('caseId') _caseId: string,
-    @Param('conversationId') conversationId: string,
+    @Param('conversationId', new ParseUUIDPipe()) conversationId: string,
   ) {
     return this.svc.getMessages(conversationId, req.user.orgId);
   }
@@ -55,7 +55,7 @@ export class CopilotController {
     @Req() req: any,
     @Res() res: Response,
     @Param('caseId') _caseId: string,
-    @Param('conversationId') conversationId: string,
+    @Param('conversationId', new ParseUUIDPipe()) conversationId: string,
     @Body() dto: SendMessageDto,
   ): Promise<void> {
     res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');

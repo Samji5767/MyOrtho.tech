@@ -200,20 +200,20 @@ export class AdminService {
   async getRevenueDashboard() {
     const [sub, payg, mrr, topOrgs] = await Promise.all([
       this.pool.query(
-        `SELECT sp.slug, sp.name, sp.price_cents, COUNT(os.id)::int AS subscriber_count
+        `SELECT sp.slug, sp.name, sp.price_usd_cents, COUNT(os.id)::int AS subscriber_count
          FROM subscription_plans sp
          LEFT JOIN organization_subscriptions os ON os.plan_id = sp.id AND os.status = 'active'
-         GROUP BY sp.id, sp.slug, sp.name, sp.price_cents
-         ORDER BY sp.price_cents DESC`,
+         GROUP BY sp.id, sp.slug, sp.name, sp.price_usd_cents
+         ORDER BY sp.price_usd_cents DESC`,
       ),
       this.pool.query(
         `SELECT COUNT(*)::int AS total_exports,
-                COALESCE(SUM(amount_cents),0)::bigint AS total_revenue_cents
-         FROM usage_events
-         WHERE metric_type = 'case_export' AND recorded_at >= now() - interval '30 days'`,
+                COALESCE(COUNT(*),0)::bigint AS total_revenue_cents
+         FROM billing_usage_meters
+         WHERE metric_type = 'case_export' AND metered_at >= now() - interval '30 days'`,
       ),
       this.pool.query(
-        `SELECT COALESCE(SUM(sp.price_cents),0)::bigint AS mrr_cents
+        `SELECT COALESCE(SUM(sp.price_usd_cents),0)::bigint AS mrr_cents
          FROM organization_subscriptions os
          JOIN subscription_plans sp ON sp.id = os.plan_id
          WHERE os.status = 'active'`,
@@ -237,9 +237,9 @@ export class AdminService {
       plans: sub.rows.map(r => ({
         slug: r.slug,
         name: r.name,
-        priceCents: r.price_cents,
+        priceCents: r.price_usd_cents,
         subscriberCount: r.subscriber_count,
-        mrrCents: r.price_cents * r.subscriber_count,
+        mrrCents: r.price_usd_cents * r.subscriber_count,
       })),
       topOrgs: topOrgs.rows,
     };

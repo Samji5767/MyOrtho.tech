@@ -124,6 +124,7 @@ services:
       - "${AI_ENGINE_PORT:-8000}:8000"
     environment:
       - AI_DEVICE=${AI_DEVICE:-cpu}
+      - UPLOADS_DIR=/app/uploads
     volumes:
       - shared_storage:/app/storage
       - uploads_data:/app/uploads:ro

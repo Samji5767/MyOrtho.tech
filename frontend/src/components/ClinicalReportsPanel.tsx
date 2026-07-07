@@ -14,7 +14,7 @@ interface ClinicalReport {
 
 const API = (path: string) => `/api/${path}`;
 async function apiFetch<T>(path: string, opts?: RequestInit): Promise<T> {
-  const res = await fetch(API(path), { headers: { 'Content-Type': 'application/json' }, ...opts });
+  const res = await fetch(API(path), { credentials: 'include', headers: { 'Content-Type': 'application/json' }, ...opts });
   if (!res.ok) throw new Error(await res.text());
   return res.json() as Promise<T>;
 }

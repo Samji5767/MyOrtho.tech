@@ -9,7 +9,7 @@ interface GrowthPrediction {
   recommendations: string | null; createdAt: string;
 }
 
-interface Props { patientId: string; token: string }
+interface Props { patientId: string; token?: string }
 
 const GROWTH_LABELS: Record<string, string> = {
   pre_peak: 'Pre-Peak Growth',
@@ -25,7 +25,7 @@ const GROWTH_COLORS: Record<string, string> = {
   complete: 'bg-gray-100 text-gray-700',
 };
 
-export default function GrowthPredictionPanel({ patientId, token }: Props) {
+export default function GrowthPredictionPanel({ patientId }: Props) {
   const [predictions, setPredictions] = useState<GrowthPrediction[]>([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
@@ -39,10 +39,10 @@ export default function GrowthPredictionPanel({ patientId, token }: Props) {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const r = await fetch(`/api/patients/${patientId}/growth-predictions`, { headers: { Authorization: `Bearer ${token}` } });
+      const r = await fetch(`/api/patients/${patientId}/growth-predictions`, { credentials: 'include' });
       if (r.ok) setPredictions(await r.json());
     } finally { setLoading(false); }
-  }, [patientId, token]);
+  }, [patientId]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -51,7 +51,8 @@ export default function GrowthPredictionPanel({ patientId, token }: Props) {
     try {
       await fetch(`/api/patients/${patientId}/growth-predictions`, {
         method: 'POST',
-        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           predictionDate: form.predictionDate,
           skeletalAgeYears: form.skeletalAgeYears ? parseFloat(form.skeletalAgeYears) : null,

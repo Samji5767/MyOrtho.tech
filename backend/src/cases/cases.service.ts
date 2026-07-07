@@ -116,7 +116,7 @@ export class CasesService {
         `SELECT
            (SELECT id FROM stl_uploads        WHERE case_id = $1 ORDER BY created_at DESC LIMIT 1) AS latest_scan_id,
            (SELECT id FROM digital_setups     WHERE case_id = $1 ORDER BY created_at DESC LIMIT 1) AS setup_id,
-           (SELECT id FROM treatment_plans    WHERE patient_id = (SELECT patient_id FROM cases WHERE id = $1) ORDER BY created_at DESC LIMIT 1) AS plan_id,
+           (SELECT id FROM treatment_plans    WHERE case_id = $1 ORDER BY created_at DESC LIMIT 1) AS plan_id,
            (SELECT id FROM clinical_analyses  WHERE case_id = $1 ORDER BY created_at DESC LIMIT 1) AS analysis_id,
            (SELECT id FROM treatment_goals    WHERE case_id = $1 ORDER BY created_at DESC LIMIT 1) AS goals_id`,
         [id],

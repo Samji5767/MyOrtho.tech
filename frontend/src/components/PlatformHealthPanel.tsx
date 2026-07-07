@@ -16,19 +16,19 @@ interface PlatformHealthReport {
   maturityScore: number;
 }
 
-interface Props { token: string }
+interface Props { token?: string }
 
-export default function PlatformHealthPanel({ token }: Props) {
+export default function PlatformHealthPanel(_props: Props) {
   const [report, setReport] = useState<PlatformHealthReport | null>(null);
   const [loading, setLoading] = useState(true);
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const r = await fetch('/api/platform-health', { headers: { Authorization: `Bearer ${token}` } });
+      const r = await fetch('/api/platform-health', { credentials: 'include' });
       if (r.ok) setReport(await r.json());
     } finally { setLoading(false); }
-  }, [token]);
+  }, []);
 
   useEffect(() => { load(); }, [load]);
 

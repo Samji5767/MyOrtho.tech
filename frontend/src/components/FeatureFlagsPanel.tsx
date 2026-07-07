@@ -8,9 +8,9 @@ interface FeatureFlag {
   createdAt: string;
 }
 
-interface Props { token: string }
+interface Props { token?: string }
 
-export default function FeatureFlagsPanel({ token }: Props) {
+export default function FeatureFlagsPanel(_props: Props) {
   const [flags, setFlags] = useState<FeatureFlag[]>([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
@@ -20,10 +20,10 @@ export default function FeatureFlagsPanel({ token }: Props) {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const r = await fetch('/api/feature-flags', { headers: { Authorization: `Bearer ${token}` } });
+      const r = await fetch('/api/feature-flags', { credentials: 'include' });
       if (r.ok) setFlags(await r.json());
     } finally { setLoading(false); }
-  }, [token]);
+  }, []);
 
   useEffect(() => { load(); }, [load]);
 
@@ -33,7 +33,8 @@ export default function FeatureFlagsPanel({ token }: Props) {
     try {
       await fetch('/api/feature-flags', {
         method: 'POST',
-        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(form),
       });
       setForm({ flagName: '', description: '', rolloutPercent: 100 });
@@ -45,7 +46,8 @@ export default function FeatureFlagsPanel({ token }: Props) {
   const toggle = async (flag: FeatureFlag) => {
     await fetch(`/api/feature-flags/${flag.id}`, {
       method: 'PATCH',
-      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ enabled: !flag.enabled }),
     });
     await load();
@@ -54,7 +56,8 @@ export default function FeatureFlagsPanel({ token }: Props) {
   const updateRollout = async (flag: FeatureFlag, rolloutPercent: number) => {
     await fetch(`/api/feature-flags/${flag.id}`, {
       method: 'PATCH',
-      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ rolloutPercent }),
     });
     await load();

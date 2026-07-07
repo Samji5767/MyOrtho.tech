@@ -69,10 +69,15 @@ export class BillingService {
     const sub = rows[0] ?? null;
 
     // Also check org's direct stripe_subscription_id column if present
-    const { rows: orgRows } = await this.pool.query(
-      `SELECT stripe_customer_id, billing_interval FROM organizations WHERE id = $1`,
-      [orgId],
-    ).catch(() => ({ rows: [] }));
+    const orgRows = await (async () => {
+      try {
+        const { rows } = await this.pool.query(
+          `SELECT stripe_customer_id, billing_interval FROM organizations WHERE id = $1`,
+          [orgId],
+        );
+        return rows;
+      } catch { return []; }
+    })();
 
     return {
       active: sub?.status === 'active' || sub?.status === 'trialing',
@@ -236,19 +241,26 @@ export class BillingService {
     const customerId = typeof invoice.customer === 'string' ? invoice.customer : invoice.customer?.id;
     if (!customerId) return;
 
-    const { rows } = await this.pool.query(
-      `SELECT id FROM organizations WHERE stripe_customer_id = $1 LIMIT 1`,
-      [customerId],
-    ).catch(() => ({ rows: [] }));
+    const rows = await (async () => {
+      try {
+        const result = await this.pool.query(
+          `SELECT id FROM organizations WHERE stripe_customer_id = $1 LIMIT 1`,
+          [customerId],
+        );
+        return result.rows;
+      } catch { return []; }
+    })();
 
     const orgId = rows[0]?.id;
     if (!orgId) return;
 
-    await this.pool.query(
-      `UPDATE organization_subscriptions SET status = 'past_due', updated_at = now()
-       WHERE organization_id = $1`,
-      [orgId],
-    ).catch(() => {});
+    try {
+      await this.pool.query(
+        `UPDATE organization_subscriptions SET status = 'past_due', updated_at = now()
+         WHERE organization_id = $1`,
+        [orgId],
+      );
+    } catch { /* best-effort */ }
 
     this.logger.warn(`Payment failed for org ${orgId}`);
   }
@@ -264,46 +276,61 @@ export class BillingService {
   ) {
     const planSlug = data.interval === 'annual' ? 'annual' : 'monthly';
 
-    const { rows: planRows } = await this.pool.query(
-      `SELECT id FROM subscription_plans WHERE slug = $1 LIMIT 1`,
-      [planSlug],
-    ).catch(() => ({ rows: [] }));
+    const planRows = await (async () => {
+      try {
+        const { rows } = await this.pool.query(
+          `SELECT id FROM subscription_plans WHERE slug = $1 LIMIT 1`,
+          [planSlug],
+        );
+        return rows;
+      } catch { return []; }
+    })();
     const planId = planRows[0]?.id ?? null;
 
-    await this.pool.query(
-      `INSERT INTO organization_subscriptions
-         (organization_id, plan_id, status, stripe_subscription_id, current_period_start, current_period_end)
-       VALUES ($1, $2, $3, $4, now(), $5)
-       ON CONFLICT (organization_id)
-       DO UPDATE SET
-         plan_id = EXCLUDED.plan_id,
-         status = EXCLUDED.status,
-         stripe_subscription_id = EXCLUDED.stripe_subscription_id,
-         current_period_end = COALESCE(EXCLUDED.current_period_end, organization_subscriptions.current_period_end),
-         updated_at = now()`,
-      [orgId, planId, data.status, data.stripeSubscriptionId, data.currentPeriodEnd ?? null],
-    ).catch(err => this.logger.warn('upsertSubscription failed:', String(err)));
+    try {
+      await this.pool.query(
+        `INSERT INTO organization_subscriptions
+           (organization_id, plan_id, status, stripe_subscription_id, current_period_start, current_period_end)
+         VALUES ($1, $2, $3, $4, now(), $5)
+         ON CONFLICT (organization_id)
+         DO UPDATE SET
+           plan_id = EXCLUDED.plan_id,
+           status = EXCLUDED.status,
+           stripe_subscription_id = EXCLUDED.stripe_subscription_id,
+           current_period_end = COALESCE(EXCLUDED.current_period_end, organization_subscriptions.current_period_end),
+           updated_at = now()`,
+        [orgId, planId, data.status, data.stripeSubscriptionId, data.currentPeriodEnd ?? null],
+      );
+    } catch (err) {
+      this.logger.warn('upsertSubscription failed:', String(err));
+    }
 
     // Keep org table in sync
-    await this.pool.query(
-      `UPDATE organizations SET billing_interval = $1, updated_at = now() WHERE id = $2`,
-      [data.interval, orgId],
-    ).catch(() => {});
+    try {
+      await this.pool.query(
+        `UPDATE organizations SET billing_interval = $1, updated_at = now() WHERE id = $2`,
+        [data.interval, orgId],
+      );
+    } catch { /* best-effort */ }
   }
 
   private async getStripeCustomerId(orgId: string): Promise<string | null> {
-    const { rows } = await this.pool.query(
-      `SELECT stripe_customer_id FROM organizations WHERE id = $1`,
-      [orgId],
-    ).catch(() => ({ rows: [] }));
-    return rows[0]?.stripe_customer_id ?? null;
+    try {
+      const { rows } = await this.pool.query(
+        `SELECT stripe_customer_id FROM organizations WHERE id = $1`,
+        [orgId],
+      );
+      return rows[0]?.stripe_customer_id ?? null;
+    } catch { return null; }
   }
 
   private async saveStripeCustomerId(orgId: string, customerId: string) {
-    await this.pool.query(
-      `UPDATE organizations SET stripe_customer_id = $1, updated_at = now() WHERE id = $2`,
-      [customerId, orgId],
-    ).catch(() => {});
+    try {
+      await this.pool.query(
+        `UPDATE organizations SET stripe_customer_id = $1, updated_at = now() WHERE id = $2`,
+        [customerId, orgId],
+      );
+    } catch { /* best-effort */ }
   }
 
   async startTrial(orgId: string) {

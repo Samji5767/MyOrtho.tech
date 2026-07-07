@@ -318,9 +318,11 @@ export class ScansService {
       }
 
       sql += ` WHERE ai_job_id = $2`;
-      await this.pool.query(sql, updates).catch((e) =>
-        this.logger.warn(`Failed to update segmentation job: ${String(e)}`),
-      );
+      try {
+        await this.pool.query(sql, updates);
+      } catch (e) {
+        this.logger.warn(`Failed to update segmentation job: ${String(e)}`);
+      }
 
       // Write final result to segmentation_results table
       if (aiStatusStr === 'completed') {

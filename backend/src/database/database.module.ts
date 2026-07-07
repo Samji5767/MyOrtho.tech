@@ -23,7 +23,7 @@ export const PG_POOL = 'PG_POOL';
         });
         pool.on('connect', (client) => {
           // Apply session-level query timeout on every new connection
-          client.query('SET statement_timeout = 30000').catch(() => {});
+          void client.query('SET statement_timeout = 30000').catch(() => {});
         });
         return pool;
       },

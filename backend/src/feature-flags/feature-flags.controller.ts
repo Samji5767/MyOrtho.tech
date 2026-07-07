@@ -44,8 +44,9 @@ export class FeatureFlagsController {
   }
 
   @Get(':flagName')
-  getFlag(@Req() req: Request, @Param('flagName') flagName: string) {
-    return this.svc.getFlag(getUser(req).orgId, flagName).then(enabled => ({ flagName, enabled }));
+  async getFlag(@Req() req: Request, @Param('flagName') flagName: string) {
+    const enabled = await this.svc.getFlag(getUser(req).orgId, flagName);
+    return { flagName, enabled };
   }
 
   @Post('evaluate')

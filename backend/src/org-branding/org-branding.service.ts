@@ -21,20 +21,30 @@ export class OrgBrandingService {
   constructor(@Inject(PG_POOL) private readonly pool: Pool) {}
 
   async getBranding(orgId: string): Promise<OrgBranding | null> {
-    const { rows } = await this.pool.query<OrgBranding>(
-      `SELECT ob.*, o.name AS clinic_name_fallback
-       FROM org_branding ob
-       RIGHT JOIN organizations o ON o.id = ob.organization_id
-       WHERE o.id = $1`,
-      [orgId],
-    ).catch(() => ({ rows: [] }));
+    const rows = await (async () => {
+      try {
+        const { rows } = await this.pool.query<OrgBranding>(
+          `SELECT ob.*, o.name AS clinic_name_fallback
+           FROM org_branding ob
+           RIGHT JOIN organizations o ON o.id = ob.organization_id
+           WHERE o.id = $1`,
+          [orgId],
+        );
+        return rows;
+      } catch { return [] as OrgBranding[]; }
+    })();
 
     if (!rows[0]) {
       // Return defaults from org name if branding row doesn't exist
-      const { rows: orgRows } = await this.pool.query(
-        `SELECT id, name FROM organizations WHERE id = $1`,
-        [orgId],
-      ).catch(() => ({ rows: [] }));
+      const orgRows = await (async () => {
+        try {
+          const { rows } = await this.pool.query(
+            `SELECT id, name FROM organizations WHERE id = $1`,
+            [orgId],
+          );
+          return rows;
+        } catch { return []; }
+      })();
 
       if (!orgRows[0]) return null;
 
@@ -78,20 +88,24 @@ export class OrgBrandingService {
 
     // If clinic_name is changing, also update organizations.name
     if (data.clinic_name) {
-      await this.pool.query(
-        `UPDATE organizations SET name = $1, updated_at = now() WHERE id = $2`,
-        [data.clinic_name, orgId],
-      ).catch(() => {});
+      try {
+        await this.pool.query(
+          `UPDATE organizations SET name = $1, updated_at = now() WHERE id = $2`,
+          [data.clinic_name, orgId],
+        );
+      } catch { /* best-effort */ }
     }
 
     return (await this.getBranding(orgId))!;
   }
 
   async getBrandingByDomain(domain: string): Promise<OrgBranding | null> {
-    const { rows } = await this.pool.query<OrgBranding>(
-      `SELECT * FROM org_branding WHERE custom_domain = $1 LIMIT 1`,
-      [domain],
-    ).catch(() => ({ rows: [] }));
-    return rows[0] ?? null;
+    try {
+      const { rows } = await this.pool.query<OrgBranding>(
+        `SELECT * FROM org_branding WHERE custom_domain = $1 LIMIT 1`,
+        [domain],
+      );
+      return rows[0] ?? null;
+    } catch { return null; }
   }
 }

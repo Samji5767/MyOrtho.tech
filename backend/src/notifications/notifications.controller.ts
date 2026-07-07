@@ -18,9 +18,10 @@ export class NotificationsController {
   }
 
   @Get('unread-count')
-  unreadCount(@Req() req: Request) {
+  async unreadCount(@Req() req: Request) {
     const { id, orgId } = this.user(req);
-    return this.svc.unreadCount(id, orgId).then((count) => ({ count }));
+    const count = await this.svc.unreadCount(id, orgId);
+    return { count };
   }
 
   @Post('mark-read')

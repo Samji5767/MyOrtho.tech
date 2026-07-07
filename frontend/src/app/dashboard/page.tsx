@@ -215,7 +215,7 @@ function CaseRow({ c }: { c: CaseListItem }) {
 
   return (
     <Link
-      href={`/cases/${c.id}`}
+      href={`/cases?id=${c.id}`}
       className="ios-card flex items-center gap-3 px-4 py-3 transition-transform active:scale-[0.99]"
     >
       <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[color:var(--primary-glow)] text-sm font-bold text-[color:var(--primary)]">
@@ -367,7 +367,7 @@ export default function OverviewPage() {
                 : attentionCases.map((ac) => (
                     <Link
                       key={ac.id}
-                      href={`/cases/${ac.id}`}
+                      href={`/cases?id=${ac.id}`}
                       className="ios-card flex items-center gap-3 px-4 py-3 transition-transform active:scale-[0.99]"
                     >
                       <div className="relative shrink-0">

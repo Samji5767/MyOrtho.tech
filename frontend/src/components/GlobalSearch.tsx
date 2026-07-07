@@ -186,7 +186,7 @@ export default function GlobalSearch() {
             {filteredCases.map((c) => (
               <Link
                 key={c.id}
-                href={`/cases/${c.id}`}
+                href={`/cases?id=${c.id}`}
                 className="flex items-center gap-3 px-4 py-3 hover:bg-slate-100 dark:hover:bg-slate-900 transition-colors"
               >
                 <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs font-bold text-primary">

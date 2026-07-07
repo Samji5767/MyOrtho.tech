@@ -382,7 +382,7 @@ function ExportPanelWrapper({ caseId }: { caseId: string }) {
               Go to Treatment Plan
             </Button>
           </Link>
-          <Link href={`/cases/${caseId}`}>
+          <Link href={`/cases?id=${caseId}`}>
             <Button variant="secondary" size="sm">
               View Case
             </Button>
@@ -520,7 +520,7 @@ function ExportPageContent() {
         <>
           <div className="flex items-center justify-between gap-3">
             <SectionHeader eyebrow="Export Center" title="Export Package" />
-            <Link href={`/cases/${caseId}`}>
+            <Link href={`/cases?id=${caseId}`}>
               <Button variant="ghost" size="sm">
                 View Case
               </Button>

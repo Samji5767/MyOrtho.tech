@@ -1,7 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import CaseDetailClient from "@/components/CaseDetailClient";
 import Link from "next/link";
 import { fetchCases, transitionCase, type CaseListItem } from "@/lib/api/cases";
 import {
@@ -218,7 +219,7 @@ function CaseRow({
       </div>
 
       {/* Main content → navigates */}
-      <Link href={`/cases/${c.id}`} className="min-w-0 flex-1">
+      <Link href={`/cases?id=${c.id}`} className="min-w-0 flex-1">
         <div className="flex items-baseline gap-2">
           <span className="font-semibold text-[color:var(--foreground)]">{c.patient}</span>
           <span className="font-mono text-[10px] text-[color:var(--muted-foreground)]">{c.id}</span>
@@ -305,7 +306,7 @@ function LiveCaseRow({ c }: { c: CaseListItem }) {
       <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[color:var(--primary)] text-xs font-bold text-[color:var(--primary-foreground)]">
         {initials}
       </span>
-      <Link href={`/cases/${c.id}`} className="min-w-0 flex-1">
+      <Link href={`/cases?id=${c.id}`} className="min-w-0 flex-1">
         <div className="flex items-baseline gap-2">
           <span className="font-semibold text-[color:var(--foreground)]">{patientName}</span>
           <span className="font-mono text-[10px] text-[color:var(--muted-foreground)] truncate">
@@ -351,8 +352,11 @@ function LiveCaseRow({ c }: { c: CaseListItem }) {
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
-export default function CasesPage() {
+function CasesPageInner() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const caseId = searchParams.get("id");
+
   const [previewMode, setPreviewMode] = useState(true);
   const [filter, setFilter] = useState<FilterKey>("all");
   const [sortKey, setSortKey] = useState<SortKey>("newest");
@@ -513,6 +517,11 @@ export default function CasesPage() {
   const slaCount   = DEMO_CASES.filter((c) => c.slaRisk).length;
   const reviewCount = DEMO_CASES.filter((c) => c.status === "clinical_review" || c.status === "scan_review").length;
   const activeSortLabel = SORT_SPECS.find((s) => s.key === sortKey)?.label ?? "Sort";
+
+  // When ?id=<uuid> is present render the case detail inline — static export
+  // only pre-renders the 7 hardcoded demo IDs in /cases/[id]/page.tsx so real
+  // UUID-based cases must use this query-param pattern to avoid not-found.
+  if (caseId) return <CaseDetailClient id={caseId} />;
 
   return (
     <section className="animate-page-enter mx-auto flex w-full max-w-4xl flex-col gap-4 px-4 pb-[calc(var(--tab-bar-height)+var(--sa-bottom)+1.5rem)] pt-4 sm:px-5">
@@ -928,5 +937,17 @@ export default function CasesPage() {
         </div>
       )}
     </section>
+  );
+}
+
+export default function CasesPage() {
+  return (
+    <Suspense fallback={
+      <div className="flex items-center justify-center h-64 text-sm text-[color:var(--muted-foreground)]">
+        Loading…
+      </div>
+    }>
+      <CasesPageInner />
+    </Suspense>
   );
 }

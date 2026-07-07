@@ -107,7 +107,7 @@ function CaseBanner({ caseData }: { caseData: CaseDetail }) {
           {caseData.chiefComplaint ?? "No chief complaint"} · {caseData.status}
         </p>
       </div>
-      <Link href={`/cases/${caseData.id}`}>
+      <Link href={`/cases?id=${caseData.id}`}>
         <StatusBadge tone="primary">View Case</StatusBadge>
       </Link>
     </div>
@@ -239,7 +239,7 @@ function CadTab({ caseData }: { caseData: CaseDetail | null }) {
       {/* Back to case + snapshot row */}
       <div className="flex flex-wrap items-center gap-2">
         <Link
-          href={`/cases/${caseData.id}`}
+          href={`/cases?id=${caseData.id}`}
           className="inline-flex h-8 items-center gap-1.5 rounded-xl border border-[color:var(--border)] px-3 text-xs font-semibold text-[color:var(--foreground)] transition-colors hover:border-[color:var(--primary)] hover:text-[color:var(--primary)]"
         >
           ← Back to Case

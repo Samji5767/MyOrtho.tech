@@ -358,7 +358,7 @@ export default function NewCaseWizard() {
 
       // 4 — Navigate to new case
       toast({ title: "Case created", description: "Opening your new case workspace.", type: "success" });
-      router.push(`/cases/${caseRecord.id}`);
+      router.push(`/cases?id=${caseRecord.id}`);
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Submission failed — check your backend connection.";
       setSubmitError(msg);

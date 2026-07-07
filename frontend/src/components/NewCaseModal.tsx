@@ -122,7 +122,7 @@ export default function NewCaseModal({ onClose, onCreated }: NewCaseModalProps) 
 
   function navigateToCase() {
     onCreated(caseId);
-    router.push(`/cases/${caseId}`);
+    router.push(`/cases?id=${caseId}`);
   }
 
   const STEP_LABELS: Record<Step, string> = {

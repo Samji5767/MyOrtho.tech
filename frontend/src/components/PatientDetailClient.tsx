@@ -267,7 +267,7 @@ export default function PatientDetailClient({ id }: { id: string }) {
               <Clock size={11} />
               Updated {relativeTime(stats.activeCase.updatedAt)}
             </span>
-            <Link href={`/cases/${stats.activeCase.id}`}>
+            <Link href={`/cases?id=${stats.activeCase.id}`}>
               <Button variant="ghost" size="sm">View Case</Button>
             </Link>
           </div>
@@ -336,7 +336,7 @@ export default function PatientDetailClient({ id }: { id: string }) {
               {patientCases.map((c, idx) => {
                 const progress = statusToProgress(c.status);
                 return (
-                  <Link key={c.id} href={`/cases/${c.id}`} className="block">
+                  <Link key={c.id} href={`/cases?id=${c.id}`} className="block">
                     <div className="relative flex items-start gap-3">
                       {/* Timeline dot */}
                       <span

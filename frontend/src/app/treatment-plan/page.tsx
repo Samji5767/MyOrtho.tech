@@ -177,7 +177,7 @@ function TreatmentPlanPageContent() {
           </div>
           <div className="flex items-center gap-2">
             <Link
-              href={`/cases/${selectedCase.id}`}
+              href={`/cases?id=${selectedCase.id}`}
               className="text-xs font-medium text-[color:var(--primary)] hover:underline"
             >
               View case →

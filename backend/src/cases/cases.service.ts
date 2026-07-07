@@ -198,17 +198,29 @@ export class CasesService {
       client.release();
     }
 
-    // Audit log is best-effort — case is already committed
-    await this.auditService.log({
-      organizationId: orgId,
-      actorId: createdBy,
-      actorEmail: opts.actorEmail,
-      resourceType: 'case',
-      resourceId: newId,
-      action: 'case.created',
-      details: dto,
-      ipAddress: opts.ipAddress,
-    });
+    // Best-effort post-creation setup: treatment plan + initial workflow event.
+    // Failures here must not roll back the committed case.
+    await Promise.allSettled([
+      this.pool.query(
+        `INSERT INTO treatment_plans (case_id, created_by) VALUES ($1, NULL) ON CONFLICT DO NOTHING`,
+        [newId],
+      ),
+      this.pool.query(
+        `INSERT INTO workflow_events (case_id, from_status, to_status, actor_id, actor_role, notes)
+         VALUES ($1, NULL, 'draft', $2, 'system', 'Case created')`,
+        [newId, createdBy],
+      ),
+      this.auditService.log({
+        organizationId: orgId,
+        actorId: createdBy,
+        actorEmail: opts.actorEmail,
+        resourceType: 'case',
+        resourceId: newId,
+        action: 'case.created',
+        details: dto,
+        ipAddress: opts.ipAddress,
+      }),
+    ]);
 
     return this.findOne(newId, orgId);
   }
@@ -275,7 +287,17 @@ export class CasesService {
       client.release();
     }
 
-    await Promise.all([
+    // Best-effort post-creation setup: treatment plan + initial workflow event + audit.
+    await Promise.allSettled([
+      this.pool.query(
+        `INSERT INTO treatment_plans (case_id, created_by) VALUES ($1, NULL) ON CONFLICT DO NOTHING`,
+        [caseId!],
+      ),
+      this.pool.query(
+        `INSERT INTO workflow_events (case_id, from_status, to_status, actor_id, actor_role, notes)
+         VALUES ($1, NULL, 'draft', $2, 'system', 'Case created')`,
+        [caseId!, actorId],
+      ),
       this.auditService.log({
         organizationId: orgId, actorId, actorEmail: opts.actorEmail,
         resourceType: 'patient', resourceId: patientId!,

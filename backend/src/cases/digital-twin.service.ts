@@ -23,7 +23,6 @@ export interface DigitalTwin {
   } | null;
   treatmentPlan: {
     id: string;
-    status: string;
     approved: boolean;
     approvedAt: string | null;
     createdAt: string;
@@ -100,12 +99,11 @@ export class DigitalTwinService {
       // Latest treatment plan
       this.pool.query<{
         id: string;
-        status: string;
-        approved: boolean;
+        doctor_approval: boolean;
         approved_at: string | null;
         created_at: string;
       }>(
-        `SELECT id, status, approved, approved_at, created_at
+        `SELECT id, doctor_approval, approved_at, created_at
          FROM treatment_plans WHERE case_id = $1 ORDER BY created_at DESC LIMIT 1`,
         [caseId],
       ),
@@ -122,7 +120,7 @@ export class DigitalTwinService {
                 agp.aligner_change_weeks, agp.estimated_total_weeks, agp.staging_strategy
          FROM aligner_generation_plans agp
          JOIN treatment_plans tp ON tp.id = agp.plan_id
-         WHERE tp.case_id = $1 ORDER BY agp.created_at DESC LIMIT 1`,
+         WHERE tp.case_id = $1 ORDER BY agp.generated_at DESC LIMIT 1`,
         [caseId],
       ),
       // Quality score for latest plan
@@ -207,8 +205,7 @@ export class DigitalTwinService {
       treatmentPlan: plan
         ? {
             id: plan.id,
-            status: plan.status,
-            approved: plan.approved,
+            approved: plan.doctor_approval,
             approvedAt: plan.approved_at ? String(plan.approved_at) : null,
             createdAt: String(plan.created_at),
           }

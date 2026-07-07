@@ -1,6 +1,7 @@
 import { Controller, Get, Post, Param, Req, UseGuards } from '@nestjs/common';
 import { AuthGuard } from '../auth/auth.guard';
 import { IprIntelligenceService } from './ipr-intelligence.service';
+import type { AuthenticatedRequest } from '../common/auth-request.type';
 
 @Controller()
 @UseGuards(AuthGuard)
@@ -9,7 +10,7 @@ export class IprIntelligenceController {
 
   @Post('api/cases/:caseId/plans/:planId/ipr/optimize')
   optimize(
-    @Req() req: any,
+    @Req() req: AuthenticatedRequest,
     @Param('caseId') caseId: string,
     @Param('planId') planId: string,
   ) {
@@ -18,7 +19,7 @@ export class IprIntelligenceController {
 
   @Get('api/cases/:caseId/plans/:planId/ipr/enamel-analysis')
   enamelAnalysis(
-    @Req() req: any,
+    @Req() req: AuthenticatedRequest,
     @Param('caseId') caseId: string,
     @Param('planId') planId: string,
   ) {
@@ -27,7 +28,7 @@ export class IprIntelligenceController {
 
   @Get('api/cases/:caseId/plans/:planId/ipr/clinical-warnings')
   clinicalWarnings(
-    @Req() req: any,
+    @Req() req: AuthenticatedRequest,
     @Param('caseId') caseId: string,
     @Param('planId') planId: string,
   ) {

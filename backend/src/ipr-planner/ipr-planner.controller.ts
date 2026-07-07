@@ -1,6 +1,7 @@
 import { Controller, Get, Post, Delete, Param, Body, Query, UseGuards, Request } from '@nestjs/common';
 import { AuthGuard } from '../auth/auth.guard';
 import { IprPlannerService, type CreateIprItemDto } from './ipr-planner.service';
+import type { AuthenticatedRequest } from '../common/auth-request.type';
 
 @Controller('api/cases/:caseId/plans/:planId/ipr')
 @UseGuards(AuthGuard)
@@ -11,7 +12,7 @@ export class IprPlannerController {
   list(
     @Param('planId') planId: string,
     @Param('caseId') caseId: string,
-    @Request() req: any,
+    @Request() req: AuthenticatedRequest,
     @Query('limit') limit?: string,
     @Query('offset') offset?: string,
   ) {
@@ -25,7 +26,7 @@ export class IprPlannerController {
     @Param('planId') planId: string,
     @Param('caseId') caseId: string,
     @Body() dto: CreateIprItemDto,
-    @Request() req: any,
+    @Request() req: AuthenticatedRequest,
   ) {
     return this.svc.addItem(planId, caseId, req.user.orgId as string, dto, req.user.id as string);
   }
@@ -35,18 +36,18 @@ export class IprPlannerController {
     @Param('itemId') itemId: string,
     @Param('planId') planId: string,
     @Param('caseId') caseId: string,
-    @Request() req: any,
+    @Request() req: AuthenticatedRequest,
   ) {
     return this.svc.deleteItem(itemId, planId, caseId, req.user.orgId as string);
   }
 
   @Post('recommend')
-  recommend(@Param('planId') planId: string, @Param('caseId') caseId: string, @Request() req: any) {
+  recommend(@Param('planId') planId: string, @Param('caseId') caseId: string, @Request() req: AuthenticatedRequest) {
     return this.svc.autoRecommend(planId, caseId, req.user.orgId as string, req.user.id as string);
   }
 
   @Post('refine')
-  refine(@Param('planId') planId: string, @Param('caseId') caseId: string, @Request() req: any) {
+  refine(@Param('planId') planId: string, @Param('caseId') caseId: string, @Request() req: AuthenticatedRequest) {
     return this.svc.refineRecommendations(planId, caseId, req.user.orgId as string, req.user.id as string);
   }
 }

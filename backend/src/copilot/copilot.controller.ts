@@ -2,6 +2,7 @@ import { Controller, Get, Post, Patch, Param, ParseUUIDPipe, Body, Req, Res, Que
 import type { Response } from 'express';
 import { AuthGuard } from '../auth/auth.guard';
 import { CopilotService, SendMessageDto } from './copilot.service';
+import type { AuthenticatedRequest } from '../common/auth-request.type';
 
 @Controller()
 @UseGuards(AuthGuard)
@@ -10,7 +11,7 @@ export class CopilotController {
 
   @Post('api/cases/:caseId/copilot/conversations')
   startConversation(
-    @Req() req: any,
+    @Req() req: AuthenticatedRequest,
     @Param('caseId') caseId: string,
     @Body('planId') planId?: string,
   ) {
@@ -18,13 +19,13 @@ export class CopilotController {
   }
 
   @Get('api/cases/:caseId/copilot/conversations')
-  listConversations(@Req() req: any, @Param('caseId') caseId: string) {
+  listConversations(@Req() req: AuthenticatedRequest, @Param('caseId') caseId: string) {
     return this.svc.listConversations(caseId, req.user.orgId);
   }
 
   @Post('api/cases/:caseId/copilot/conversations/:conversationId/messages')
   sendMessage(
-    @Req() req: any,
+    @Req() req: AuthenticatedRequest,
     @Param('caseId') _caseId: string,
     @Param('conversationId', new ParseUUIDPipe()) conversationId: string,
     @Body() dto: SendMessageDto,
@@ -34,7 +35,7 @@ export class CopilotController {
 
   @Get('api/cases/:caseId/copilot/conversations/:conversationId/messages')
   getMessages(
-    @Req() req: any,
+    @Req() req: AuthenticatedRequest,
     @Param('caseId') _caseId: string,
     @Param('conversationId', new ParseUUIDPipe()) conversationId: string,
   ) {
@@ -43,7 +44,7 @@ export class CopilotController {
 
   @Get('api/cases/:caseId/copilot/suggestions')
   listSuggestions(
-    @Req() req: any,
+    @Req() req: AuthenticatedRequest,
     @Param('caseId') caseId: string,
     @Query('planId') planId?: string,
   ) {
@@ -52,7 +53,7 @@ export class CopilotController {
 
   @Post('api/cases/:caseId/copilot/conversations/:conversationId/stream')
   async streamMessage(
-    @Req() req: any,
+    @Req() req: AuthenticatedRequest,
     @Res() res: Response,
     @Param('caseId') _caseId: string,
     @Param('conversationId', new ParseUUIDPipe()) conversationId: string,
@@ -77,7 +78,7 @@ export class CopilotController {
 
   @Patch('api/cases/:caseId/copilot/suggestions/:suggestionId/resolve')
   resolveSuggestion(
-    @Req() req: any,
+    @Req() req: AuthenticatedRequest,
     @Param('caseId') _caseId: string,
     @Param('suggestionId') suggestionId: string,
     @Body('status') status: 'acknowledged' | 'dismissed' | 'applied',

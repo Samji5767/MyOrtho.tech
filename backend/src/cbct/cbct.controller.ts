@@ -3,6 +3,7 @@ import {
 } from '@nestjs/common';
 import { AuthGuard } from '../auth/auth.guard';
 import { CbctService } from './cbct.service';
+import type { AuthenticatedRequest } from '../common/auth-request.type';
 
 @Controller('api/cases/:caseId/cbct')
 @UseGuards(AuthGuard)
@@ -12,7 +13,7 @@ export class CbctController {
   @Post('scans')
   registerScan(
     @Param('caseId') caseId: string,
-    @Req() req: any,
+    @Req() req: AuthenticatedRequest,
     @Body() body: {
       filePath: string;
       fileFormat: 'dicom' | 'dcm_zip' | 'nifti' | 'raw';
@@ -29,14 +30,14 @@ export class CbctController {
   }
 
   @Get('scans')
-  listScans(@Param('caseId') caseId: string, @Req() req: any) {
+  listScans(@Param('caseId') caseId: string, @Req() req: AuthenticatedRequest) {
     return this.svc.listCbctScans(caseId, req.user.orgId);
   }
 
   @Post('fusions')
   createFusion(
     @Param('caseId') caseId: string,
-    @Req() req: any,
+    @Req() req: AuthenticatedRequest,
     @Body() body: {
       cbctScanId: string;
       stlScanId: string;
@@ -50,7 +51,7 @@ export class CbctController {
   }
 
   @Get('fusions')
-  listFusions(@Param('caseId') caseId: string, @Req() req: any) {
+  listFusions(@Param('caseId') caseId: string, @Req() req: AuthenticatedRequest) {
     return this.svc.listFusions(caseId, req.user.orgId);
   }
 
@@ -58,7 +59,7 @@ export class CbctController {
   reviewFusion(
     @Param('caseId') caseId: string,
     @Param('fusionId') fusionId: string,
-    @Req() req: any,
+    @Req() req: AuthenticatedRequest,
   ) {
     return this.svc.reviewFusion(caseId, req.user.orgId, req.user.id, fusionId);
   }
@@ -67,7 +68,7 @@ export class CbctController {
   listSegments(
     @Param('caseId') caseId: string,
     @Param('fusionId') fusionId: string,
-    @Req() req: any,
+    @Req() req: AuthenticatedRequest,
   ) {
     return this.svc.listBoneSegments(caseId, req.user.orgId, fusionId);
   }
@@ -77,7 +78,7 @@ export class CbctController {
     @Param('caseId') caseId: string,
     @Param('fusionId') fusionId: string,
     @Param('segmentId') segmentId: string,
-    @Req() req: any,
+    @Req() req: AuthenticatedRequest,
     @Body() body: { densityHu: number },
   ) {
     return this.svc.updateSegmentDensity(

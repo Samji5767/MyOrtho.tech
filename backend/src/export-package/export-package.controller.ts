@@ -1,6 +1,7 @@
 import { Controller, Get, Post, Param, Body, Req, UseGuards } from '@nestjs/common';
 import { AuthGuard } from '../auth/auth.guard';
 import { ExportPackageService, ExportType } from './export-package.service';
+import type { AuthenticatedRequest } from '../common/auth-request.type';
 
 @Controller()
 @UseGuards(AuthGuard)
@@ -9,7 +10,7 @@ export class ExportPackageController {
 
   @Post('api/cases/:caseId/plans/:planId/export-packages')
   create(
-    @Req() req: any,
+    @Req() req: AuthenticatedRequest,
     @Param('caseId') caseId: string,
     @Param('planId') planId: string,
     @Body('exportType') exportType: ExportType,
@@ -19,7 +20,7 @@ export class ExportPackageController {
 
   @Get('api/cases/:caseId/plans/:planId/export-packages')
   list(
-    @Req() req: any,
+    @Req() req: AuthenticatedRequest,
     @Param('caseId') caseId: string,
     @Param('planId') planId: string,
   ) {
@@ -28,7 +29,7 @@ export class ExportPackageController {
 
   @Post('api/cases/:caseId/plans/:planId/export-packages/:packageId/validate')
   validate(
-    @Req() req: any,
+    @Req() req: AuthenticatedRequest,
     @Param('caseId') caseId: string,
     @Param('planId') planId: string,
     @Param('packageId') packageId: string,
@@ -38,7 +39,7 @@ export class ExportPackageController {
 
   @Post('api/cases/:caseId/plans/:planId/export-packages/:packageId/approve')
   approve(
-    @Req() req: any,
+    @Req() req: AuthenticatedRequest,
     @Param('caseId') caseId: string,
     @Param('planId') planId: string,
     @Param('packageId') packageId: string,
@@ -48,7 +49,7 @@ export class ExportPackageController {
 
   @Post('api/cases/:caseId/plans/:planId/export-packages/:packageId/mark-exported')
   markExported(
-    @Req() req: any,
+    @Req() req: AuthenticatedRequest,
     @Param('caseId') caseId: string,
     @Param('planId') planId: string,
     @Param('packageId') packageId: string,

@@ -1,6 +1,7 @@
 import { Controller, Get, Post, Param, Req, UseGuards } from '@nestjs/common';
 import { AuthGuard } from '../auth/auth.guard';
 import { RetentionService } from './retention.service';
+import type { AuthenticatedRequest } from '../common/auth-request.type';
 
 @Controller()
 @UseGuards(AuthGuard)
@@ -9,7 +10,7 @@ export class RetentionController {
 
   @Post('api/cases/:caseId/plans/:planId/retention/generate')
   generate(
-    @Req() req: any,
+    @Req() req: AuthenticatedRequest,
     @Param('caseId') caseId: string,
     @Param('planId') planId: string,
   ) {
@@ -18,7 +19,7 @@ export class RetentionController {
 
   @Get('api/cases/:caseId/plans/:planId/retention')
   getProtocol(
-    @Req() req: any,
+    @Req() req: AuthenticatedRequest,
     @Param('caseId') caseId: string,
     @Param('planId') planId: string,
   ) {
@@ -27,7 +28,7 @@ export class RetentionController {
 
   @Get('api/cases/:caseId/plans/:planId/retention/wear-schedule')
   getWearSchedule(
-    @Req() req: any,
+    @Req() req: AuthenticatedRequest,
     @Param('caseId') caseId: string,
     @Param('planId') planId: string,
   ) {
@@ -36,7 +37,7 @@ export class RetentionController {
 
   @Post('api/cases/:caseId/plans/:planId/retention/approve')
   approve(
-    @Req() req: any,
+    @Req() req: AuthenticatedRequest,
     @Param('caseId') caseId: string,
     @Param('planId') planId: string,
   ) {

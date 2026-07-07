@@ -1,10 +1,11 @@
 import { Injectable, OnModuleInit, Logger, UnauthorizedException, Optional, Inject } from '@nestjs/common';
-import { Pool } from 'pg';
+import type { Pool } from 'pg';
 import Redis from 'ioredis';
 import * as bcrypt from 'bcrypt';
 import * as jwt from 'jsonwebtoken';
 import * as crypto from 'crypto';
 import { REDIS_CLIENT } from '../redis/redis.module';
+import { PG_POOL } from '../database/database.module';
 
 const BCRYPT_ROUNDS = 12;
 const COOKIE_MAX_AGE_MS = 24 * 60 * 60 * 1000; // 24 h
@@ -35,7 +36,6 @@ export interface SessionPayload {
 @Injectable()
 export class AuthService implements OnModuleInit {
   private readonly logger = new Logger(AuthService.name);
-  private readonly pool: Pool;
   private readonly jwtSecret: string;
 
   // In-memory rate limiter fallback (used when Redis is unavailable)
@@ -43,8 +43,10 @@ export class AuthService implements OnModuleInit {
   // In-memory token blacklist fallback (used when Redis is unavailable)
   private readonly tokenBlacklistFallback = new Set<string>();
 
-  constructor(@Optional() @Inject(REDIS_CLIENT) private readonly redis: Redis | null) {
-    this.pool = new Pool({ connectionString: process.env.DATABASE_URL });
+  constructor(
+    @Inject(PG_POOL) private readonly pool: Pool,
+    @Optional() @Inject(REDIS_CLIENT) private readonly redis: Redis | null,
+  ) {
     const secret = process.env.JWT_SECRET;
     if (!secret || secret.length < 32) {
       if (process.env.NODE_ENV === 'production') {

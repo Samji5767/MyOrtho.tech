@@ -11,6 +11,7 @@ import {
 import type { Request as ExpressRequest } from 'express';
 import { AuthGuard } from '../auth/auth.guard';
 import { BiomechanicsService } from './biomechanics.service';
+import type { AuthenticatedRequest } from '../common/auth-request.type';
 
 interface AuthUser {
   id: string;
@@ -66,7 +67,7 @@ export class BiomechanicsLegacyController {
   getAssessment(
     @Param('planId') planId: string,
     @Param('caseId') caseId: string,
-    @Request() req: any,
+    @Request() req: AuthenticatedRequest,
   ) {
     return this.svc.getAssessment(planId, caseId, req.user.orgId as string);
   }
@@ -75,7 +76,7 @@ export class BiomechanicsLegacyController {
   assessPlan(
     @Param('planId') planId: string,
     @Param('caseId') caseId: string,
-    @Request() req: any,
+    @Request() req: AuthenticatedRequest,
   ) {
     return this.svc.assessPlan(planId, caseId, req.user.orgId as string);
   }

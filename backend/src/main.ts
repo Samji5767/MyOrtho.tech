@@ -45,6 +45,16 @@ function assertRequiredEnv(): void {
       'Generate one with: openssl rand -base64 24',
     );
   }
+  const frontendUrl = process.env.FRONTEND_URL ?? '';
+  if (!frontendUrl) {
+    if (process.env.NODE_ENV === 'production') {
+      throw new Error(
+        'FRONTEND_URL must be set in production. ' +
+        'Example: FRONTEND_URL=https://app.myortho.tech',
+      );
+    }
+    logger.warn('FRONTEND_URL not set — CORS will only allow localhost origins.');
+  }
 }
 
 async function bootstrap() {

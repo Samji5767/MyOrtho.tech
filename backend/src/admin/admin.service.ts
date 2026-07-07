@@ -208,7 +208,7 @@ export class AdminService {
       ),
       this.pool.query(
         `SELECT COUNT(*)::int AS total_exports,
-                COALESCE(COUNT(*),0)::bigint AS total_revenue_cents
+                COALESCE(SUM(unit_price_cents),0)::bigint AS total_revenue_cents
          FROM billing_usage_meters
          WHERE metric_type = 'case_export' AND metered_at >= now() - interval '30 days'`,
       ),

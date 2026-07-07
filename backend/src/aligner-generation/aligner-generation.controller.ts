@@ -5,6 +5,7 @@ import {
 import type { Response } from 'express';
 import { AuthGuard } from '../auth/auth.guard';
 import { AlignerGenerationService, type GenerateDto } from './aligner-generation.service';
+import type { AuthenticatedRequest } from '../common/auth-request.type';
 
 
 @Controller()
@@ -14,7 +15,7 @@ export class AlignerGenerationController {
 
   @Get('api/cases/:caseId/plans/:planId/aligner-generation/quality-report')
   getQualityReport(
-    @Req() req: any,
+    @Req() req: AuthenticatedRequest,
     @Param('caseId') _caseId: string,
     @Param('planId') planId: string,
   ) {
@@ -23,7 +24,7 @@ export class AlignerGenerationController {
 
   @Post('api/cases/:caseId/plans/:planId/aligner-generation/generate')
   generate(
-    @Req() req: any,
+    @Req() req: AuthenticatedRequest,
     @Param('caseId') caseId: string,
     @Param('planId') planId: string,
     @Body() dto: GenerateDto,
@@ -33,7 +34,7 @@ export class AlignerGenerationController {
 
   @Get('api/cases/:caseId/plans/:planId/aligner-generation/plan')
   getPlan(
-    @Req() req: any,
+    @Req() req: AuthenticatedRequest,
     @Param('caseId') caseId: string,
     @Param('planId') planId: string,
   ) {
@@ -42,7 +43,7 @@ export class AlignerGenerationController {
 
   @Get('api/cases/:caseId/plans/:planId/aligner-generation/stages/:stageNum')
   getStageAllocations(
-    @Req() req: any,
+    @Req() req: AuthenticatedRequest,
     @Param('caseId') caseId: string,
     @Param('planId') planId: string,
     @Param('stageNum') stageNum: string,
@@ -52,7 +53,7 @@ export class AlignerGenerationController {
 
   @Get('api/cases/:caseId/plans/:planId/aligner-generation/stl-export')
   async getStlExport(
-    @Req() req: any,
+    @Req() req: AuthenticatedRequest,
     @Param('caseId') _caseId: string,
     @Param('planId') planId: string,
     @Res({ passthrough: true }) res: Response,
@@ -66,7 +67,7 @@ export class AlignerGenerationController {
 
   @Post('api/cases/:caseId/plans/:planId/aligner-generation/approve')
   approve(
-    @Req() req: any,
+    @Req() req: AuthenticatedRequest,
     @Param('caseId') caseId: string,
     @Param('planId') planId: string,
     @Body() body: { notes?: string },
@@ -76,7 +77,7 @@ export class AlignerGenerationController {
 
   @Post('api/cases/:caseId/plans/:planId/aligner-generation/stl-ready')
   markStlReady(
-    @Req() req: any,
+    @Req() req: AuthenticatedRequest,
     @Param('caseId') caseId: string,
     @Param('planId') planId: string,
     @Body() body: { exportPath: string },
@@ -86,7 +87,7 @@ export class AlignerGenerationController {
 
   @Post('api/cases/:caseId/plans/:planId/aligner-generation/generate-stl')
   generateStl(
-    @Req() req: any,
+    @Req() req: AuthenticatedRequest,
     @Param('caseId') caseId: string,
     @Param('planId') planId: string,
   ) {

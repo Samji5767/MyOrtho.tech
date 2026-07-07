@@ -3,6 +3,7 @@ import {
 } from '@nestjs/common';
 import { AuthGuard } from '../auth/auth.guard';
 import { PhotosService, UploadPhotoDto } from './photos.service';
+import type { AuthenticatedRequest } from '../common/auth-request.type';
 
 @Controller('api/cases/:caseId/photos')
 @UseGuards(AuthGuard)
@@ -10,7 +11,7 @@ export class PhotosController {
   constructor(private readonly photos: PhotosService) {}
 
   @Get()
-  list(@Param('caseId') caseId: string, @Request() req: any) {
+  list(@Param('caseId') caseId: string, @Request() req: AuthenticatedRequest) {
     return this.photos.list(caseId, req.user.orgId);
   }
 
@@ -18,7 +19,7 @@ export class PhotosController {
   create(
     @Param('caseId') caseId: string,
     @Body() dto: UploadPhotoDto,
-    @Request() req: any,
+    @Request() req: AuthenticatedRequest,
   ) {
     return this.photos.create(caseId, req.user.orgId, {
       ...dto,
@@ -30,7 +31,7 @@ export class PhotosController {
   delete(
     @Param('caseId') caseId: string,
     @Param('photoId') photoId: string,
-    @Request() req: any,
+    @Request() req: AuthenticatedRequest,
   ) {
     return this.photos.delete(caseId, req.user.orgId, photoId);
   }

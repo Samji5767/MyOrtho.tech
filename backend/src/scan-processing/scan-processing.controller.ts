@@ -3,6 +3,7 @@ import {
 } from '@nestjs/common';
 import { AuthGuard } from '../auth/auth.guard';
 import { ScanProcessingService } from './scan-processing.service';
+import type { AuthenticatedRequest } from '../common/auth-request.type';
 
 @Controller('api/cases/:caseId/scans/:scanId/processing')
 @UseGuards(AuthGuard)
@@ -13,7 +14,7 @@ export class ScanProcessingController {
   orient(
     @Param('caseId') caseId: string,
     @Param('scanId') scanId: string,
-    @Req() req: any,
+    @Req() req: AuthenticatedRequest,
   ) {
     return this.svc.runAutoOrient(caseId, req.user.orgId, req.user.id, scanId);
   }
@@ -22,7 +23,7 @@ export class ScanProcessingController {
   cleanup(
     @Param('caseId') caseId: string,
     @Param('scanId') scanId: string,
-    @Req() req: any,
+    @Req() req: AuthenticatedRequest,
   ) {
     return this.svc.runAutoCleanup(caseId, req.user.orgId, req.user.id, scanId);
   }
@@ -31,7 +32,7 @@ export class ScanProcessingController {
   assignToothIds(
     @Param('caseId') caseId: string,
     @Param('scanId') scanId: string,
-    @Req() req: any,
+    @Req() req: AuthenticatedRequest,
     @Body() body: { segmentationJobId?: string },
   ) {
     return this.svc.assignToothIds(
@@ -43,7 +44,7 @@ export class ScanProcessingController {
   getToothIds(
     @Param('caseId') caseId: string,
     @Param('scanId') scanId: string,
-    @Req() req: any,
+    @Req() req: AuthenticatedRequest,
   ) {
     return this.svc.getToothIds(caseId, req.user.orgId, scanId);
   }
@@ -53,7 +54,7 @@ export class ScanProcessingController {
     @Param('caseId') caseId: string,
     @Param('scanId') scanId: string,
     @Param('fdiNumber') fdiNumber: string,
-    @Req() req: any,
+    @Req() req: AuthenticatedRequest,
     @Body() body: { newFdi?: number },
   ) {
     return this.svc.confirmToothId(
@@ -66,7 +67,7 @@ export class ScanProcessingController {
   listJobs(
     @Param('caseId') caseId: string,
     @Param('scanId') scanId: string,
-    @Req() req: any,
+    @Req() req: AuthenticatedRequest,
   ) {
     return this.svc.listJobs(caseId, req.user.orgId, scanId);
   }

@@ -1,5 +1,7 @@
-import { Global, Module } from '@nestjs/common';
+import { Global, Module, Logger } from '@nestjs/common';
 import { Pool } from 'pg';
+
+const logger = new Logger('DatabaseModule');
 
 export const PG_POOL = 'PG_POOL';
 
@@ -19,7 +21,7 @@ export const PG_POOL = 'PG_POOL';
           statement_timeout:      30_000,
         });
         pool.on('error', (err: Error) => {
-          console.error('[PG Pool] Unexpected client error:', err.message);
+          logger.error(`Unexpected client error: ${err.message}`);
         });
         pool.on('connect', (client) => {
           // Apply session-level query timeout on every new connection

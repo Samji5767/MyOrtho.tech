@@ -6,6 +6,7 @@ import {
   ToothMovementService,
   type MovementPrescriptionDto,
 } from './tooth-movement.service';
+import type { AuthenticatedRequest } from '../common/auth-request.type';
 
 // Re-export types so consumers can import from the controller module path
 export type {
@@ -26,7 +27,7 @@ export class ToothMovementController {
 
   @Post('api/cases/:caseId/plans/:planId/movements/prescriptions')
   upsertPrescription(
-    @Req() req: any,
+    @Req() req: AuthenticatedRequest,
     @Param('caseId') caseId: string,
     @Param('planId') planId: string,
     @Body() dto: MovementPrescriptionDto,
@@ -36,7 +37,7 @@ export class ToothMovementController {
 
   @Get('api/cases/:caseId/plans/:planId/movements/prescriptions')
   listPrescriptions(
-    @Req() req: any,
+    @Req() req: AuthenticatedRequest,
     @Param('caseId') caseId: string,
     @Param('planId') planId: string,
   ) {
@@ -45,7 +46,7 @@ export class ToothMovementController {
 
   @Delete('api/cases/:caseId/plans/:planId/movements/prescriptions/:fdi')
   deletePrescription(
-    @Req() req: any,
+    @Req() req: AuthenticatedRequest,
     @Param('caseId') caseId: string,
     @Param('planId') planId: string,
     @Param('fdi') fdi: string,
@@ -55,7 +56,7 @@ export class ToothMovementController {
 
   @Post('api/cases/:caseId/plans/:planId/movements/approve')
   approvePrescriptions(
-    @Req() req: any,
+    @Req() req: AuthenticatedRequest,
     @Param('caseId') caseId: string,
     @Param('planId') planId: string,
   ) {
@@ -64,7 +65,7 @@ export class ToothMovementController {
 
   @Post('api/cases/:caseId/plans/:planId/movements/simulate')
   simulate(
-    @Req() req: any,
+    @Req() req: AuthenticatedRequest,
     @Param('caseId') caseId: string,
     @Param('planId') planId: string,
   ) {
@@ -73,7 +74,7 @@ export class ToothMovementController {
 
   @Get('api/cases/:caseId/plans/:planId/movements/simulation')
   getSimulation(
-    @Req() req: any,
+    @Req() req: AuthenticatedRequest,
     @Param('caseId') caseId: string,
     @Param('planId') planId: string,
   ) {
@@ -82,7 +83,7 @@ export class ToothMovementController {
 
   @Get('api/cases/:caseId/plans/:planId/movements/pdl/:stageNum')
   getPdlResults(
-    @Req() req: any,
+    @Req() req: AuthenticatedRequest,
     @Param('caseId') caseId: string,
     @Param('planId') planId: string,
     @Param('stageNum') stageNum: string,
@@ -92,7 +93,7 @@ export class ToothMovementController {
 
   @Get('api/cases/:caseId/plans/:planId/movements/constraints')
   getConstraints(
-    @Req() req: any,
+    @Req() req: AuthenticatedRequest,
     @Param('caseId') caseId: string,
     @Param('planId') planId: string,
   ) {
@@ -103,7 +104,7 @@ export class ToothMovementController {
 
   @Get('api/cases/:caseId/plans/:planId/movements/collisions')
   getEnhancedCollisions(
-    @Req() req: any,
+    @Req() req: AuthenticatedRequest,
     @Param('caseId') caseId: string,
     @Param('planId') planId: string,
   ) {
@@ -112,7 +113,7 @@ export class ToothMovementController {
 
   @Get('api/cases/:caseId/plans/:planId/movements/root-safety')
   getRootSafety(
-    @Req() req: any,
+    @Req() req: AuthenticatedRequest,
     @Param('caseId') caseId: string,
     @Param('planId') planId: string,
   ) {
@@ -121,7 +122,7 @@ export class ToothMovementController {
 
   @Get('api/cases/:caseId/plans/:planId/movements/difficulty')
   getDifficulty(
-    @Req() req: any,
+    @Req() req: AuthenticatedRequest,
     @Param('caseId') caseId: string,
     @Param('planId') planId: string,
   ) {
@@ -130,7 +131,7 @@ export class ToothMovementController {
 
   @Get('api/cases/:caseId/plans/:planId/movements/force-heatmap')
   getForceHeatmap(
-    @Req() req: any,
+    @Req() req: AuthenticatedRequest,
     @Param('caseId') caseId: string,
     @Param('planId') planId: string,
   ) {
@@ -139,7 +140,7 @@ export class ToothMovementController {
 
   @Get('api/cases/:caseId/plans/:planId/movements/conflicts')
   getConflicts(
-    @Req() req: any,
+    @Req() req: AuthenticatedRequest,
     @Param('caseId') caseId: string,
     @Param('planId') planId: string,
   ) {
@@ -148,7 +149,7 @@ export class ToothMovementController {
 
   @Get('api/cases/:caseId/plans/:planId/movements/overcorrection-suggestions')
   getOvercorrectionSuggestions(
-    @Req() req: any,
+    @Req() req: AuthenticatedRequest,
     @Param('caseId') caseId: string,
     @Param('planId') planId: string,
   ) {
@@ -157,7 +158,7 @@ export class ToothMovementController {
 
   @Get('api/cases/:caseId/plans/:planId/movements/refinement-recommendations')
   getRefinementRecommendations(
-    @Req() req: any,
+    @Req() req: AuthenticatedRequest,
     @Param('caseId') caseId: string,
     @Param('planId') planId: string,
   ) {
@@ -166,7 +167,7 @@ export class ToothMovementController {
 
   @Get('api/cases/:caseId/plans/:planId/movements/validate-approval')
   validateApproval(
-    @Req() req: any,
+    @Req() req: AuthenticatedRequest,
     @Param('caseId') caseId: string,
     @Param('planId') planId: string,
   ) {

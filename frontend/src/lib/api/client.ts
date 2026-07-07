@@ -70,7 +70,7 @@ export const api = {
 };
 
 /** Multipart file upload — does NOT set Content-Type (browser sets boundary automatically). */
-export async function uploadFile<T>(path: string, form: FormData, timeoutMs = 120_000): Promise<T> {
+export async function uploadFile<T>(path: string, form: FormData, timeoutMs = 600_000): Promise<T> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
 

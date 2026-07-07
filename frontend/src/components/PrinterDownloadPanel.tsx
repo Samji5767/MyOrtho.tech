@@ -362,48 +362,42 @@ export default function PrinterDownloadPanel({
   const loadFiles = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await fetch(`/api/stl-uploads?caseId=${caseId}`, {
+      const res = await fetch(`/api/cases/${caseId}/scans`, {
         credentials: "include",
       });
       if (!res.ok) throw new Error("api-unavailable");
-      const data = await res.json();
-      const apiFiles: PrinterFile[] = (data.uploads ?? data.items ?? []).map(
-        (u: {
-          id: string;
-          file_name?: string;
-          fileName?: string;
-          arch?: string;
-          file_url?: string;
-          fileUrl?: string;
-          file_size_bytes?: number;
-          fileSizeBytes?: number;
-          status?: string;
-          created_at?: string;
-          createdAt?: string;
-        }) => {
-          const rawName: string = u.file_name ?? u.fileName ?? "file";
-          const ext = rawName.split(".").pop()?.toLowerCase() as FileFormat | undefined;
-          const format: FileFormat =
-            ext && ["stl", "3mf", "obj", "ply", "zip"].includes(ext)
-              ? (ext as FileFormat)
-              : "stl";
-          return {
-            id: u.id,
-            name: rawName,
-            arch: (u.arch as PrinterFile["arch"]) ?? "both",
-            format,
-            sizeBytes: u.file_size_bytes ?? u.fileSizeBytes,
-            url: u.file_url ?? u.fileUrl ?? "#",
-            generatedAt: (u.created_at ?? u.createdAt ?? "").slice(0, 10),
-            status:
-              u.status === "ready"
-                ? "ready"
-                : u.status === "failed"
-                ? "failed"
-                : "generating",
-          } satisfies PrinterFile;
-        },
-      );
+      const data: unknown = await res.json();
+      const items = (Array.isArray(data) ? data : []) as {
+        id: string;
+        jawType?: string;
+        originalFilename?: string;
+        fileFormat?: string;
+        fileSizeBytes?: number;
+        createdAt?: string;
+      }[];
+      const jawArchMap: Record<string, PrinterFile["arch"]> = {
+        maxillary: "upper",
+        mandibular: "lower",
+        both: "both",
+        auto: "full",
+      };
+      const apiFiles: PrinterFile[] = items.map((u) => {
+        const rawName: string = u.originalFilename ?? "file";
+        const rawFmt = (u.fileFormat ?? rawName.split(".").pop() ?? "stl").toLowerCase();
+        const format: FileFormat = (["stl", "3mf", "obj", "ply", "zip"] as string[]).includes(rawFmt)
+          ? (rawFmt as FileFormat)
+          : "stl";
+        return {
+          id: u.id,
+          name: rawName,
+          arch: jawArchMap[u.jawType ?? ""] ?? "both",
+          format,
+          sizeBytes: u.fileSizeBytes,
+          url: `/api/cases/${caseId}/scans/${u.id}/file`,
+          generatedAt: (u.createdAt ?? "").toString().slice(0, 10),
+          status: "ready",
+        } satisfies PrinterFile;
+      });
 
       if (apiFiles.length === 0) {
         setFiles([]);

@@ -61,6 +61,42 @@ export class ClinicalReportsService {
     const patientName = c ? `${c['first_name'] ?? ''} ${c['last_name'] ?? ''}`.trim() : 'Unknown Patient';
     const dob = c?.date_of_birth ? new Date(String(c['date_of_birth'])).toLocaleDateString() : 'N/A';
 
+    // Gather IPR, attachment, and simulation data when a plan is present
+    let iprContacts = 0, iprTotalMm = 0, attachmentCount = 0;
+    let simData: Record<string, unknown> | null = null;
+
+    if (plan?.['id']) {
+      const planId = plan['id'];
+      const [iprRes, attachRes, simRes] = await Promise.all([
+        this.db.query(
+          `SELECT COUNT(*) as contacts, COALESCE(SUM(amount_mm),0) as total_mm
+           FROM ipr_plan_items WHERE treatment_plan_id = $1`,
+          [planId],
+        ),
+        this.db.query(
+          `SELECT COUNT(*) as total FROM treatment_attachments WHERE treatment_plan_id = $1`,
+          [planId],
+        ),
+        this.db.query(
+          `SELECT total_frames, overjet_final_mm, overbite_final_mm, arch_coordination_score
+           FROM treatment_simulations WHERE plan_id = $1`,
+          [planId],
+        ),
+      ]);
+      iprContacts     = parseInt(String(iprRes.rows[0]?.['contacts']  ?? '0'), 10);
+      iprTotalMm      = parseFloat(String(iprRes.rows[0]?.['total_mm'] ?? '0'));
+      attachmentCount = parseInt(String(attachRes.rows[0]?.['total']   ?? '0'), 10);
+      if (simRes.rows[0]) {
+        const sr = simRes.rows[0];
+        simData = {
+          totalFrames:       parseInt(String(sr['total_frames']             ?? '0'), 10),
+          overjetFinalMm:    sr['overjet_final_mm']       != null ? parseFloat(String(sr['overjet_final_mm']))       : null,
+          overbiteFinalmm:   sr['overbite_final_mm']      != null ? parseFloat(String(sr['overbite_final_mm']))      : null,
+          archCoordScore:    sr['arch_coordination_score'] != null ? parseFloat(String(sr['arch_coordination_score'])) : null,
+        };
+      }
+    }
+
     const contentJson: Record<string, unknown> = {
       caseId,
       caseRef: c?.['case_number'] ?? caseId.slice(0, 8).toUpperCase(),
@@ -73,6 +109,10 @@ export class ClinicalReportsService {
       qualityGrade: qs?.['grade'] ?? 'N/A',
       qualityScore: qs ? Math.round(Number(qs['overall_score']) * 100) : null,
       hasCriticalIssues: qs?.['has_critical_issues'] ?? false,
+      iprContactCount: iprContacts,
+      iprTotalMm: Math.round(iprTotalMm * 100) / 100,
+      attachmentCount,
+      simulation: simData,
       generatedAt: new Date().toISOString(),
     };
 
@@ -115,12 +155,54 @@ export class ClinicalReportsService {
       generatedAt: new Date().toISOString(),
     };
 
-    const completionPct = contentJson['totalStages'] as number > 0
-      ? Math.round(((contentJson['approvedStages'] as number) / (contentJson['totalStages'] as number)) * 100)
-      : 0;
-    (contentJson as Record<string, unknown>)['completionPercent'] = completionPct;
+    const totalStages    = contentJson['totalStages']    as number;
+    const approvedStages = contentJson['approvedStages'] as number;
+    const totalCheckIns  = contentJson['totalCheckIns']  as number;
 
-    const md = `# Aligner Progress Report\n\n**Generated:** ${new Date().toLocaleDateString()}\n\n## Stage Progress\n- Total stages: ${contentJson['totalStages']}\n- Approved stages: ${contentJson['approvedStages']} (${completionPct}%)\n\n## Monitoring\n- Check-in visits: ${contentJson['totalCheckIns']}\n- Open alerts: ${contentJson['openAlerts']}\n`;
+    const completionPct = totalStages > 0
+      ? Math.round((approvedStages / totalStages) * 100)
+      : 0;
+
+    // Compliance: ratio of actual check-ins to expected (1 per approved stage)
+    const compliancePct = approvedStages > 0
+      ? Math.min(100, Math.round((totalCheckIns / approvedStages) * 100))
+      : 100;
+
+    // Estimated completion: assume standard 2-week wear per remaining stage
+    const remainingStages = totalStages - approvedStages;
+    let estimatedCompletionDate = 'N/A';
+    if (remainingStages > 0) {
+      const est = new Date();
+      est.setDate(est.getDate() + remainingStages * 14);
+      estimatedCompletionDate = est.toLocaleDateString();
+    } else if (totalStages > 0) {
+      estimatedCompletionDate = 'Treatment complete';
+    }
+
+    contentJson['completionPercent']       = completionPct;
+    contentJson['compliancePercent']       = compliancePct;
+    contentJson['estimatedCompletionDate'] = estimatedCompletionDate;
+    contentJson['remainingStages']         = remainingStages;
+
+    const md = [
+      '# Aligner Progress Report',
+      '',
+      `**Generated:** ${new Date().toLocaleDateString()}`,
+      '',
+      '## Stage Progress',
+      `- Total stages: ${totalStages}`,
+      `- Approved stages: ${approvedStages} (${completionPct}%)`,
+      `- Remaining stages: ${remainingStages}`,
+      '',
+      '## Compliance & Timeline',
+      `- Patient compliance: ${compliancePct}%`,
+      `- Estimated completion: ${estimatedCompletionDate}`,
+      '',
+      '## Monitoring',
+      `- Check-in visits: ${totalCheckIns}`,
+      `- Open alerts: ${contentJson['openAlerts']}`,
+      '',
+    ].join('\n');
 
     const { rows } = await this.db.query(
       `INSERT INTO generated_reports (organization_id, case_id, report_type, title, content_json, content_markdown, generated_by)
@@ -183,6 +265,15 @@ export class ClinicalReportsService {
   }
 
   private buildTreatmentSummaryMarkdown(d: Record<string, unknown>): string {
+    const iprSection = (d['iprContactCount'] as number) > 0 || (d['attachmentCount'] as number) > 0
+      ? `\n## IPR & Attachments\n- IPR contact points: ${d['iprContactCount']}\n- Total IPR reduction: ${d['iprTotalMm']} mm\n- Planned attachments: ${d['attachmentCount']}\n`
+      : '';
+
+    const sim = d['simulation'] as Record<string, unknown> | null;
+    const simSection = sim
+      ? `\n## Simulation Projections\n- Simulation frames: ${sim['totalFrames']}${sim['overjetFinalMm'] != null ? `\n- Projected overjet: ${sim['overjetFinalMm']} mm` : ''}${sim['overbiteFinalmm'] != null ? `\n- Projected overbite: ${sim['overbiteFinalmm']} mm` : ''}${sim['archCoordScore'] != null ? `\n- Arch coordination score: ${Math.round((sim['archCoordScore'] as number) * 100)}%` : ''}\n`
+      : '';
+
     return `# Treatment Summary Report
 
 **Case Reference:** ${d['caseRef']}
@@ -203,7 +294,7 @@ export class ClinicalReportsService {
 ## Quality Assessment
 **Grade:** ${d['qualityGrade']}${d['qualityScore'] != null ? ` (${d['qualityScore']}%)` : ''}
 ${d['hasCriticalIssues'] ? '⚠ Critical issues identified — clinician review required before proceeding.' : '✓ No critical issues identified.'}
-
+${iprSection}${simSection}
 ---
 
 *This report was generated by MyOrtho.tech and requires clinician review and approval before clinical use.*`;

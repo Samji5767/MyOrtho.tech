@@ -325,8 +325,13 @@ export class AttachmentIntelligenceService {
         });
       }
 
-      // Estimate thickness from depth (stored in library, proxied here)
-      const depth = 0.5; // default; real system would join to library
+      // Join to the attachment library to get the actual depth for this attachment
+      const libRow = await this.db.query(
+        `SELECT depth_mm FROM attachment_library
+         WHERE id = $1 LIMIT 1`,
+        [r['attachment_library_id']],
+      );
+      const depth = libRow.rows[0]?.['depth_mm'] as number ?? r['depth_mm'] as number ?? 0.5;
       minThickness = Math.min(minThickness, depth);
     }
 

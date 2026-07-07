@@ -35,6 +35,7 @@ import { MedicalDisclaimer } from "@/components/MedicalDisclaimer";
 import { ConflictWarningsPanel } from "@/components/ConflictWarningsPanel";
 import { ApprovalValidationPanel } from "@/components/ApprovalValidationPanel";
 import { DifficultyBadge } from "@/components/DifficultyBadge";
+import { useCasePlanning } from "@/components/CasePlanningContext";
 
 const CADEngine = dynamic(() => import("@/components/CADEngine"), {
   ssr: false,
@@ -53,26 +54,13 @@ const Viewer3D = dynamic(() => import("@/components/Viewer3D"), {
   loading: () => <div className="h-[500px] rounded-xl animate-skeleton" />,
 });
 
-// ─── Mock case data ───────────────────────────────────────────────────────────
+// ─── Constants ────────────────────────────────────────────────────────────────
 
 type DesignTab = "3d-viewer" | "treatment-designer" | "simulation" | "design-review";
 
 const DESIGN_COMMENTS: Array<{ id: string; author: string; role: string; text: string; time: string; status: string }> = [];
 
 const REVISION_HISTORY: Array<{ version: string; date: string; author: string; note: string }> = [];
-
-const ATTACHMENT_PLAN = [
-  { fdi: 13, type: "Rectangular horizontal", width: "3mm", height: "2mm" },
-  { fdi: 23, type: "Rectangular horizontal", width: "3mm", height: "2mm" },
-  { fdi: 33, type: "Beveled rectangular",    width: "2.5mm", height: "1.5mm" },
-  { fdi: 43, type: "Beveled rectangular",    width: "2.5mm", height: "1.5mm" },
-];
-
-const IPR_PLAN = [
-  { mesial: 12, distal: 11, amountMm: 0.3, stage: 4 },
-  { mesial: 22, distal: 21, amountMm: 0.3, stage: 4 },
-  { mesial: 11, distal: 21, amountMm: 0.2, stage: 6 },
-];
 
 // ─── 3D Viewer Panel ──────────────────────────────────────────────────────────
 
@@ -141,6 +129,7 @@ function ViewerPanel() {
 // ─── Treatment Designer Panel ─────────────────────────────────────────────────
 
 function TreatmentDesignerPanel({ caseId, planId }: { caseId?: string; planId?: string }) {
+  const { state } = useCasePlanning();
   const [selectedTool, setSelectedTool] = useState<"translate" | "rotate">("translate");
   const [selectedFdi, setSelectedFdi] = useState<number | null>(21);
 
@@ -207,14 +196,16 @@ function TreatmentDesignerPanel({ caseId, planId }: { caseId?: string; planId?: 
       <div className="ios-card p-4">
         <h4 className="text-sm font-bold text-[color:var(--foreground)] mb-3">Attachment Placement</h4>
         <div className="space-y-1.5">
-          {ATTACHMENT_PLAN.map(att => (
-            <div key={att.fdi} className="flex items-center gap-2.5 rounded-lg border border-[color:var(--border)] bg-[color:var(--card)] px-3 py-2">
+          {state.attachments.length === 0 ? (
+            <p className="text-xs text-[color:var(--muted-foreground)] py-1">No attachments planned yet.</p>
+          ) : state.attachments.map(att => (
+            <div key={att.id} className="flex items-center gap-2.5 rounded-lg border border-[color:var(--border)] bg-[color:var(--card)] px-3 py-2">
               <span className="h-2 w-2 rounded-full bg-violet-500" />
               <div className="flex-1">
                 <span className="text-xs font-bold text-[color:var(--primary)]">FDI {att.fdi}</span>
                 <span className="ml-1.5 text-xs text-[color:var(--foreground)]">{att.type}</span>
               </div>
-              <span className="text-xs text-[color:var(--muted-foreground)]">{att.width} × {att.height}</span>
+              <span className="text-xs text-[color:var(--muted-foreground)]">{att.surface} · Stage {att.stage}</span>
             </div>
           ))}
         </div>
@@ -227,13 +218,15 @@ function TreatmentDesignerPanel({ caseId, planId }: { caseId?: string; planId?: 
       <div className="ios-card p-4">
         <h4 className="text-sm font-bold text-[color:var(--foreground)] mb-3">IPR Planning</h4>
         <div className="space-y-1.5">
-          {IPR_PLAN.map((ipr, i) => (
-            <div key={i} className="flex items-center gap-2.5 rounded-lg border border-[color:var(--border)] bg-[color:var(--card)] px-3 py-2">
+          {state.iprEntries.length === 0 ? (
+            <p className="text-xs text-[color:var(--muted-foreground)] py-1">No IPR entries planned yet.</p>
+          ) : state.iprEntries.map(ipr => (
+            <div key={ipr.id} className="flex items-center gap-2.5 rounded-lg border border-[color:var(--border)] bg-[color:var(--card)] px-3 py-2">
               <span className="h-2 w-2 rounded-full bg-amber-500" />
               <span className="text-xs text-[color:var(--foreground)]">
-                Between <strong>{ipr.mesial}</strong>–<strong>{ipr.distal}</strong>
+                Between <strong>{ipr.toothA}</strong>–<strong>{ipr.toothB}</strong>
               </span>
-              <span className="ml-auto text-xs font-bold text-amber-600">{ipr.amountMm} mm</span>
+              <span className="ml-auto text-xs font-bold text-amber-600">{ipr.amount} mm</span>
               <span className="text-xs text-[color:var(--muted-foreground)]">Stage {ipr.stage}</span>
             </div>
           ))}

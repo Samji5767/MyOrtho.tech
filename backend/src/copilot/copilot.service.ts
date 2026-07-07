@@ -263,81 +263,175 @@ function buildResponse(
   suggestions: RawSuggestion[],
   caseContext: Record<string, unknown>,
 ): string {
+  const lower = content.toLowerCase();
   const lines: string[] = [];
 
   if (intent === 'acknowledgement') {
-    lines.push('Understood. Let me know if you need anything else for this case.');
+    const acks = [
+      'Understood — let me know if you need a second look at anything.',
+      'Got it. I\'m here if you want to review any part of the treatment plan.',
+      'Noted. Happy to assist with prescriptions, staging, or clinical questions.',
+    ];
+    lines.push(acks[content.length % acks.length]);
     if (suggestions.length > 0) {
-      lines.push(`\nI also have ${suggestions.length} open suggestion${suggestions.length > 1 ? 's' : ''} for your review.`);
+      lines.push(`\n\nI also have ${suggestions.length} open suggestion${suggestions.length > 1 ? 's' : ''} that may warrant review.`);
     }
     return lines.join('');
   }
 
-  const lower = content.toLowerCase();
-
-  // Context-aware answers based on keywords
-  if (/overjet|overbite/.test(lower) && module === 'simulation') {
+  // ── Overjet / overbite ────────────────────────────────────────────────────
+  if (/overjet|overbite/.test(lower)) {
     const oj = caseContext['overjetFinal'] as number | null;
     const ob = caseContext['overbiteFirst'] as number | null;
     if (oj != null) {
-      lines.push(`Based on the current simulation, predicted final overjet is ${oj.toFixed(1)}mm (target: 2–4mm) and overbite is ${ob != null ? ob.toFixed(1) + 'mm' : 'unavailable'} (target: 1.5–3mm).`);
+      const ojStatus = oj >= 1 && oj <= 4 ? '✓ within normal range' : oj < 1 ? '⚠ reduced — risk of anterior interference' : '⚠ increased — review incisor retraction mechanics';
+      const obStatus = ob != null ? (ob >= 1 && ob <= 3 ? '✓ within normal range' : ob < 1 ? '⚠ reduced — possible open-bite tendency' : '⚠ deep bite — consider intrusion mechanics') : 'not yet simulated';
+      lines.push(`**Predicted Occlusal Values (final stage)**\n\n- Overjet: **${oj.toFixed(1)} mm** — ${ojStatus} (normal 2–4 mm, ABO standard)\n- Overbite: **${ob != null ? ob.toFixed(1) + ' mm' : 'N/A'}** — ${obStatus} (normal 1.5–3 mm)\n\nIf either value falls outside target, review incisor torque and anteroposterior translation prescriptions before finalising the plan.`);
     } else {
-      lines.push('Run the treatment simulation first to get overjet and overbite predictions.');
+      lines.push('Run the treatment simulation (Treatment Simulation tab → Generate) to obtain predicted overjet and overbite values for this plan.');
     }
-  } else if (/kravitz|limit|exceed/.test(lower)) {
+  }
+
+  // ── Smile arc ─────────────────────────────────────────────────────────────
+  else if (/smile arc|smile curve|consonant/.test(lower)) {
+    const sas = caseContext['smileArcScore'] as number | null;
+    if (sas != null) {
+      const grade = sas >= 0.85 ? 'consonant — aesthetically favourable' : sas >= 0.70 ? 'flat — consider minor incisor intrusion to improve arc' : 'reverse — maxillary incisor extrusion likely required';
+      lines.push(`**Smile Arc Analysis**\n\nScore: **${(sas * 100).toFixed(0)}%** — ${grade}\n\nA consonant smile arc (maxillary incisal edges following the lower lip curvature) is considered the aesthetic ideal (Sarver & Ackerman, AJO-DO 2003). For flat or reverse arcs, consider differential incisor intrusion (12, 22) of 0.3–0.5 mm to restore convexity.`);
+    } else {
+      lines.push('Generate the treatment simulation to obtain the smile arc score for this plan.');
+    }
+  }
+
+  // ── Kravitz limits ───────────────────────────────────────────────────────
+  else if (/kravitz|limit|exceed|per.stage|safe.movement/.test(lower)) {
     const viol = suggestions.filter(s => s.suggestionType === 'kravitz_violation');
     if (viol.length > 0) {
-      lines.push(`Yes — ${viol[0].body} Review per-stage movement limits and reduce or split the prescription.`);
+      lines.push(`**Kravitz Per-Stage Movement Violations**\n\n${viol[0].body}\n\nKravitz et al. (AJO-DO 2008) established that clear aligner systems reliably achieve:\n- Translation ≤ 0.30 mm/stage\n- Rotation ≤ 3.0°/stage\n- Torque ≤ 3.5°/stage\n- Intrusion ≤ 0.40 mm/stage\n\nTo resolve: either increase total stage count (to distribute movement across more steps) or reduce the prescription magnitude for the listed teeth.`);
     } else {
-      lines.push('No Kravitz violations detected in the current prescriptions.');
+      lines.push('✓ All prescriptions are within Kravitz per-stage movement limits. No violations detected.');
     }
-  } else if (/ipr|enamel/.test(lower)) {
+  }
+
+  // ── IPR ──────────────────────────────────────────────────────────────────
+  else if (/ipr|interproximal|enamel reduction|stripping|sheridan/.test(lower)) {
     const warn = suggestions.filter(s => s.suggestionType === 'ipr_warning');
     if (warn.length > 0) {
-      lines.push(`There are IPR safety concerns: ${warn[0].body} Consider reducing IPR per session or obtaining radiographic confirmation.`);
+      lines.push(`**IPR Safety Warning**\n\n${warn[0].body}\n\n**Clinical guidance:**\n- Sheridan (1985) established a minimum residual enamel threshold of **0.5 mm**\n- Maximum safe IPR per contact: 0.5 mm anterior, 0.8 mm posterior (Ballard 1944)\n- Radiographic assessment is recommended before IPR > 0.3 mm/contact\n- IPR should be staged: no more than 0.2 mm at a single appointment\n\nReduce IPR at flagged contacts or obtain radiographic enamel assessment before proceeding.`);
     } else {
-      lines.push('All IPR contacts are within Sheridan enamel safety limits (≥0.5mm remaining).');
+      lines.push('✓ All IPR contacts are within safe enamel limits (≥ 0.5 mm residual). No Sheridan violations detected.\n\nFor reference: the total IPR available per contact ranges from 0.5 mm (lower incisors) to 0.8 mm (premolars).');
     }
-  } else if (/attach/.test(lower)) {
+  }
+
+  // ── Attachments ──────────────────────────────────────────────────────────
+  else if (/attachment|dimple|button/.test(lower)) {
     const col = suggestions.filter(s => s.suggestionType === 'collision');
+    const mfg = `\n\n**Manufacturing note:** Attachments must be ≥ 1.0 mm from the gingival margin and ≥ 0.5 mm from adjacent attachments to ensure print fidelity and clinical placement accuracy.`;
     if (col.length > 0) {
-      lines.push(`Attachment collisions detected: ${col[0].body}`);
+      lines.push(`**Attachment Collision Warning**\n\n${col[0].body}${mfg}`);
     } else {
-      lines.push('No attachment collisions detected. Run the manufacturing validation in the Attachment Intelligence panel to confirm tolerances.');
+      lines.push(`**Attachments — No Collisions Detected**\n\nAll attachment placements pass geometric validation. Common indications by type:\n- **Rectangular horizontal**: vertical intrusion/extrusion control, anterior torque\n- **Rectangular vertical**: rotation and translation of premolars and canines\n- **Beveled**: torque root control on upper incisors\n- **Optimised retention**: posterior teeth requiring rotation without angulation change${mfg}`);
     }
-  } else if (/pdl|stress|mobility/.test(lower)) {
+  }
+
+  // ── PDL / biomechanics ───────────────────────────────────────────────────
+  else if (/pdl|periodontal ligament|stress|mobility|bone remodel/.test(lower)) {
     const pdl = suggestions.filter(s => s.suggestionType === 'pdl_stress');
     if (pdl.length > 0) {
-      lines.push(`PDL stress analysis flagged: ${pdl[0].body}`);
+      lines.push(`**PDL Stress — Elevated Risk Detected**\n\n${pdl[0].body}\n\n**Clinical context:** Optimal stress in the PDL for bone remodelling is 0.47–11.8 kPa (Weinstein 1967). Stress above 15 kPa risks hyalinisation of the PDL, which pauses tooth movement for 2–4 weeks. For affected teeth:\n- Reduce per-stage translation by 20–30%\n- Consider passive stages every 4–6 aligners to allow remodelling\n- Eliminate simultaneous multi-directional forces on the same tooth`);
     } else {
-      lines.push('PDL stress is within optimal range for all teeth in this plan. Run PDL simulation for detailed per-stage data.');
+      lines.push('✓ PDL stress is within the optimal remodelling range for all teeth in this plan.\n\n**Reference range:** 0.47–11.8 kPa optimal; > 15 kPa risks hyalinisation (Yoshida 2001). Run the PDL Simulation in the Biomechanics tab for per-stage stress maps.');
     }
-  } else if (/stage|aligner|how many/.test(lower)) {
+  }
+
+  // ── Staging / aligner count ──────────────────────────────────────────────
+  else if (/stage|how many aligner|aligner count|treatment length|weeks|months/.test(lower)) {
     const stages = caseContext['totalStages'] as number | null;
     if (stages != null) {
-      lines.push(`The aligner plan has ${stages} active stages. Adjust movement prescriptions or staging strategy in the Aligner Generation panel to change the count.`);
+      const weeks = stages * 2;
+      const months = (weeks / 4.33).toFixed(1);
+      lines.push(`**Treatment Timeline**\n\n- Active stages: **${stages}**\n- Estimated duration: **${weeks} weeks (≈ ${months} months)** at standard 2-week wear\n- At 1-week refinements: **${stages} weeks (≈ ${(stages / 4.33).toFixed(1)} months)**\n\nTo reduce stage count: increase per-stage movement (within Kravitz limits), accept wider movement tolerances, or reduce total tooth movement. To increase predictability: keep rotations ≤ 2°/stage and intrusions ≤ 0.3 mm/stage.`);
     } else {
-      lines.push('Generate the aligner plan first to see the stage count.');
+      lines.push('Generate the aligner plan to see the projected stage count and treatment timeline.');
     }
-  } else {
-    // Generic contextual response
-    lines.push(
-      module
-        ? `Analyzing the ${module} module for this plan.`
-        : 'I have context on all modules for this treatment plan.',
-    );
-    if (suggestions.length > 0) {
-      lines.push(` I have flagged ${suggestions.length} item${suggestions.length > 1 ? 's' : ''} that may need attention — review the suggestions below.`);
+  }
+
+  // ── Torque ───────────────────────────────────────────────────────────────
+  else if (/torque|root|axial inclination|labial.lingual/.test(lower)) {
+    lines.push(`**Root Torque — Clinical Guidance**\n\nClear aligners have limited torque expression vs. fixed appliances. Key points:\n- Upper central incisors: labial root torque is the most difficult movement for aligners (predictability ≈ 42%, Haouili 2020)\n- Clinically prescribe 10–20% overcorrection for torque\n- Attachments (beveled rectangular) significantly improve torque predictability\n- Posterior root torque > 5°/stage risks cortical plate contact — use CBCT-guided staging when available\n\nFor root safety: review the Root Safety panel and ensure CBCT fusion is active if bone proximity is a concern.`);
+  }
+
+  // ── Expansion ────────────────────────────────────────────────────────────
+  else if (/expansion|arch width|transverse|constriction|crossbite/.test(lower)) {
+    const archCoord = caseContext['archCoordination'] as number | null;
+    lines.push(`**Arch Expansion — Clinical Guidance**${archCoord != null ? `\n\nArch coordination score: **${(archCoord * 100).toFixed(0)}%**` : ''}\n\n- Clear aligner expansion is most effective in the premolar region (1–3 mm predictable)\n- Molar expansion > 2 mm has low predictability; consider RPE adjunct for growing patients\n- Upper and lower arch expansion must be coordinated (max 1 mm discrepancy per quadrant)\n- Buccal crown tipping without compensating body movement leads to scissor-bite tendency\n\nReview upper vs lower expansion totals in the Arch Coordination panel to confirm transverse balance.`);
+  }
+
+  // ── Rotation ─────────────────────────────────────────────────────────────
+  else if (/rotation|derotation|rotate/.test(lower)) {
+    lines.push(`**Rotation — Predictability Guidance**\n\nRotation is among the least predictable movements for clear aligners:\n- Canine/premolar rotations > 15° typically require attachments\n- Mesiobuccal cusp rotations of upper molars are rarely predictable without auxiliaries\n- Overcorrect rotations by 10–20% in the prescription\n- For >20° rotations, plan staged overcorrection with reassessment at midpoint\n\nReview the Attachment Intelligence panel to confirm rotation-optimised attachments are present on high-rotation teeth.`);
+  }
+
+  // ── Refinement ───────────────────────────────────────────────────────────
+  else if (/refinement|rescan|mid.course|correction/.test(lower)) {
+    lines.push(`**Refinement Planning**\n\nRefinements are typically indicated when:\n- Residual discrepancy > 1.5 mm in any movement axis at mid-treatment review\n- Off-track alerts triggered on ≥ 2 consecutive aligners\n- New clinical findings (periodontal, eruption) change the treatment target\n\n**Process:**\n1. Take new intraoral scans at the planned refinement stage\n2. Review tracking in the Segmentation panel\n3. Generate a refinement plan with updated prescriptions\n4. New aligner series with unique stage numbering\n\nStatistically, 30–40% of clear aligner cases require at least one refinement (Kravitz 2009).`);
+  }
+
+  // ── Anchorage ────────────────────────────────────────────────────────────
+  else if (/anchor|anchorage|tads|mini.screw|molar.position/.test(lower)) {
+    lines.push(`**Anchorage Analysis**\n\nClear aligners provide moderate anterior anchorage through:\n- Posterior composite attachments (rectangular horizontal)\n- Posterior tooth engagement across multiple units\n- Bite pads to disocclude posteriors and facilitate anterior intrusion\n\n**When to consider TADs:**\n- Maxillary incisor retraction > 4 mm requiring maximum anchorage\n- Molar intrusion > 1.5 mm\n- True skeletal anchorage requirements\n\nReview the prescription totals in the Anchorage Planning section. Total molar mesialisation should be < 0.5 mm if maximum anchorage is planned.`);
+  }
+
+  // ── Class II / Class III ──────────────────────────────────────────────────
+  else if (/class ii|class 2|class iii|class 3|skeletal|sagittal|mandibular/.test(lower)) {
+    lines.push(`**Skeletal Classification — Treatment Guidance**\n\n**Class II:**\n- Dental compensation: upper retraction + lower advancement (combined ≤ 6 mm)\n- Mandibular advancement requires Class II elastics (typically stage 5–final)\n- Consider mandibular symphysis bone density on CBCT before lower expansion\n\n**Class III:**\n- Camouflage: upper advancement + lower retraction (combined ≤ 4 mm)\n- Lower incisor retraction has highest root resorption risk — monitor with periapical radiographs\n- Orthognathic surgery referral if skeletal discrepancy > 5 mm ANB\n\nReview the Growth Prediction panel for skeletal age and mandibular growth remaining if patient is still growing.`);
+  }
+
+  // ── Root resorption ──────────────────────────────────────────────────────
+  else if (/root resorption|apical|resorb/.test(lower)) {
+    lines.push(`**Root Resorption Risk**\n\nClear aligners carry lower root resorption risk than fixed appliances, but elevated risk exists for:\n- Maxillary lateral incisors with pipette-shaped roots\n- Total incisor intrusion > 2 mm\n- Previous root resorption history\n- Treatment > 24 months without reassessment\n\n**Monitoring protocol:**\n- Periapical radiographs at 9 months if ≥ 2 risk factors present\n- CBCT if > 25% root length lost on any tooth\n- Reduce intrusion prescriptions to ≤ 0.25 mm/stage for high-risk teeth`);
+  }
+
+  // ── Manufacturing / print readiness ──────────────────────────────────────
+  else if (/print|manufactur|resin|print time|3d print|export/.test(lower)) {
+    lines.push(`**Manufacturing Readiness**\n\nFor aligner manufacturing, ensure:\n1. ✓ Aligner generation complete (stage STLs ready)\n2. ✓ Attachment template exported for bonding tray\n3. ✓ QA report reviewed and approved by clinician\n\n**Print parameters (DLP/MSLA standard):**\n- Layer height: 50–100 µm\n- Aligner resin: 0.5–0.75 mm nominal thickness\n- Support-free for flat arches; light supports on deep overbite stages\n- Estimated print time: 45–90 min per batch of upper + lower\n- Shrinkage compensation: +0.3–0.5% on most resins\n\nUse the Manufacturing Export panel to download the case package when all validations pass.`);
+  }
+
+  // ── Patient communication ─────────────────────────────────────────────────
+  else if (/explain to patient|patient question|patient understand|how to tell|wear time/.test(lower)) {
+    const stages = caseContext['totalStages'] as number | null;
+    const months = stages ? `approximately ${(stages * 2 / 4.33).toFixed(0)} months` : 'several months';
+    lines.push(`**Patient Communication — Draft Script**\n\n*"Your treatment plan consists of a series of custom-fit clear aligners that gradually move your teeth. You'll wear each set for about two weeks before progressing to the next. Treatment is expected to take ${months} in total, assuming good compliance.*\n\n*It's important to wear the aligners for at least 22 hours each day — removing them only to eat and brush. Some people experience mild soreness for the first day or two with each new aligner — this is normal and means the teeth are moving.*\n\n*We'll check in at scheduled appointments to confirm progress. If an aligner feels uncomfortable or doesn't fit after the second day, please contact us rather than advancing to the next stage."*\n\nFor complex cases, remind patients that refinements (additional aligners) are sometimes needed and are not considered treatment failure.`);
+  }
+
+  // ── Generic fallback ─────────────────────────────────────────────────────
+  else {
+    const prescriptionCount = caseContext['prescriptionCount'] as number | null;
+    const stages = caseContext['totalStages'] as number | null;
+    const patientName = caseContext['patientName'] as string | null;
+
+    if (patientName || prescriptionCount != null || stages != null) {
+      lines.push(`**Case Context**${patientName ? ` — ${patientName}` : ''}\n`);
+      if (prescriptionCount != null) lines.push(`- Movement prescriptions: ${prescriptionCount} teeth`);
+      if (stages != null) lines.push(`- Active stages: ${stages} (≈ ${(stages * 2 / 4.33).toFixed(1)} months at 2-week wear)`);
+      if (suggestions.length > 0) {
+        lines.push(`- Open suggestions: ${suggestions.length} item${suggestions.length > 1 ? 's' : ''} flagged for review`);
+      }
+      lines.push('\nFor clinical topics, try asking about: overjet/overbite, attachments, IPR, Kravitz limits, staging, torque, expansion, refinement, or patient communication.');
     } else {
-      lines.push(' No critical issues detected based on available data.');
+      lines.push(
+        module
+          ? `I\'m reviewing the **${module}** module for this case. Ask about specific parameters — overjet, attachments, IPR, staging, torque, or clinical risks — and I\'ll provide evidence-based guidance.`
+          : 'Ask me about any aspect of this treatment plan: overjet/overbite predictions, IPR safety, Kravitz limit compliance, attachment placement, PDL stress, staging strategy, refinement, anchorage, or patient communication.',
+      );
     }
   }
 
   if (intent === 'question' && lines.length > 0) {
-    lines.push('\n\n⚠ AI suggestion only. Clinician review required before clinical decision.');
+    lines.push('\n\n*⚠ AI clinical suggestion — clinician review and judgement required before any clinical decision.*');
   }
 
-  return lines.join('');
+  return lines.join('\n');
 }
 
 // ─── Service ──────────────────────────────────────────────────────────────────

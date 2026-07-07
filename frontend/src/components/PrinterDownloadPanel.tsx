@@ -91,103 +91,6 @@ function formatBytes(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-// ─── Demo data (shown when no live API files exist) ───────────────────────────
-
-function buildDemoFiles(caseId: string): PrinterFile[] {
-  return [
-    {
-      id: `${caseId}-upper-stl`,
-      name: "Upper_Arch_Final.stl",
-      arch: "upper",
-      format: "stl",
-      sizeBytes: 4_200_000,
-      url: "#",
-      generatedAt: "2026-06-30",
-      status: "ready",
-    },
-    {
-      id: `${caseId}-lower-stl`,
-      name: "Lower_Arch_Final.stl",
-      arch: "lower",
-      format: "stl",
-      sizeBytes: 3_800_000,
-      url: "#",
-      generatedAt: "2026-06-30",
-      status: "ready",
-    },
-    {
-      id: `${caseId}-upper-3mf`,
-      name: "Upper_Arch_Final.3mf",
-      arch: "upper",
-      format: "3mf",
-      sizeBytes: 5_100_000,
-      url: "#",
-      generatedAt: "2026-06-30",
-      status: "ready",
-    },
-    {
-      id: `${caseId}-lower-3mf`,
-      name: "Lower_Arch_Final.3mf",
-      arch: "lower",
-      format: "3mf",
-      sizeBytes: 4_600_000,
-      url: "#",
-      generatedAt: "2026-06-30",
-      status: "ready",
-    },
-    {
-      id: `${caseId}-upper-obj`,
-      name: "Upper_Arch_Final.obj",
-      arch: "upper",
-      format: "obj",
-      sizeBytes: 6_300_000,
-      url: "#",
-      generatedAt: "2026-06-30",
-      status: "ready",
-    },
-    {
-      id: `${caseId}-lower-obj`,
-      name: "Lower_Arch_Final.obj",
-      arch: "lower",
-      format: "obj",
-      sizeBytes: 5_700_000,
-      url: "#",
-      generatedAt: "2026-06-30",
-      status: "ready",
-    },
-    {
-      id: `${caseId}-upper-ply`,
-      name: "Upper_Arch_Scan.ply",
-      arch: "upper",
-      format: "ply",
-      sizeBytes: 7_800_000,
-      url: "#",
-      generatedAt: "2026-06-29",
-      status: "ready",
-    },
-    {
-      id: `${caseId}-lower-ply`,
-      name: "Lower_Arch_Scan.ply",
-      arch: "lower",
-      format: "ply",
-      sizeBytes: 7_200_000,
-      url: "#",
-      generatedAt: "2026-06-29",
-      status: "ready",
-    },
-    {
-      id: `${caseId}-full-zip`,
-      name: "Full_Package.zip",
-      arch: "full",
-      format: "zip",
-      sizeBytes: 28_000_000,
-      url: "#",
-      generatedAt: "2026-06-30",
-      status: "ready",
-    },
-  ];
-}
-
 // ─── Sub-components ──────────────────────────────────────────────────────────
 
 function FormatBadge({ format }: { format: FileFormat }) {
@@ -231,8 +134,6 @@ function DownloadButton({
   state: DownloadState[string];
   onDownload: (file: PrinterFile) => void;
 }) {
-  const isDemo = file.url === "#";
-
   if (file.status === "generating") {
     return (
       <span className="flex items-center gap-1.5 text-xs text-[color:var(--muted-foreground)]">
@@ -261,13 +162,11 @@ function DownloadButton({
     <button
       onClick={() => onDownload(file)}
       disabled={state === "downloading"}
-      title={isDemo ? "Demo file — connect to live API to download" : `Download ${file.name}`}
+      title={`Download ${file.name}`}
       className={[
         "flex items-center gap-1.5 rounded px-3 py-1.5 text-xs font-medium transition-colors",
         state === "downloading"
           ? "cursor-not-allowed opacity-60 bg-[color:var(--muted)] text-[color:var(--muted-foreground)]"
-          : isDemo
-          ? "border border-dashed border-[color:var(--border)] text-[color:var(--muted-foreground)] hover:border-[color:var(--ring)] hover:text-[color:var(--foreground)]"
           : "bg-[color:var(--primary)] text-white hover:bg-[color:var(--primary)]/90",
       ].join(" ")}
     >
@@ -276,7 +175,7 @@ function DownloadButton({
       ) : (
         <Download size={12} />
       )}
-      {state === "downloading" ? "Downloading…" : isDemo ? "Demo" : "Download"}
+      {state === "downloading" ? "Downloading…" : "Download"}
     </button>
   );
 }
@@ -507,14 +406,14 @@ export default function PrinterDownloadPanel({
       );
 
       if (apiFiles.length === 0) {
-        setFiles(buildDemoFiles(caseId));
+        setFiles([]);
         setIsDemo(true);
       } else {
         setFiles(apiFiles);
         setIsDemo(false);
       }
     } catch {
-      setFiles(buildDemoFiles(caseId));
+      setFiles([]);
       setIsDemo(true);
     } finally {
       setLoading(false);
@@ -589,15 +488,17 @@ export default function PrinterDownloadPanel({
         </button>
       </div>
 
-      {/* Demo notice */}
+      {/* Empty state — no export files available */}
       {isDemo && !loading && (
-        <div className="flex items-center gap-2 rounded-lg border border-amber-500/30 bg-amber-500/5 px-4 py-3 text-xs text-amber-700 dark:text-amber-400">
-          <Package2 size={14} className="shrink-0" />
-          <span>
-            Showing demo files — no uploaded scans found for this case. Upload
-            STL, 3MF, OBJ, or PLY files via the <strong>Scans</strong> tab to
-            enable live downloads.
-          </span>
+        <div className="flex items-start gap-3 rounded-lg border border-dashed border-[color:var(--border)] px-4 py-6 text-sm text-[color:var(--muted-foreground)]">
+          <Package2 size={18} className="mt-0.5 shrink-0" />
+          <div>
+            <p className="font-semibold text-[color:var(--foreground)]">No export files available</p>
+            <p className="mt-0.5 text-xs">
+              Generate an export package first, or upload STL, 3MF, OBJ, or PLY scan files via the{" "}
+              <strong>Scans</strong> tab to enable downloads.
+            </p>
+          </div>
         </div>
       )}
 

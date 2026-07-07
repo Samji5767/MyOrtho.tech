@@ -465,7 +465,7 @@ export default function CaseDetailClient({ id }: { id: string }) {
       });
   }, [id]);
 
-  const profile = CASE_PROFILES[id] ?? {
+  const demoProfile = CASE_PROFILES[id] ?? {
     patient: id, initials: id.slice(-2).toUpperCase(), accentClass: "bg-slate-500",
     doctor: "—", malocclusionClass: "—", crowding: "—", chiefComplaint: "—",
     urgency: "routine" as const, progress: 50,
@@ -473,6 +473,25 @@ export default function CaseDetailClient({ id }: { id: string }) {
     goals: [], measurements: [],
     history: [{ id: "h1", timestamp: "—", actor: "—", actorRole: "—", action: "Case opened", toStatus: "draft" as CaseStatus }],
   };
+
+  // When live API data is available, build the profile from it. Fields not exposed
+  // by the API (goals, measurements, crowding) default to empty/unknown rather than
+  // showing hardcoded demo data for the specific case IDs above.
+  const profile: CaseProfile = liveData && dataSource === 'api' ? {
+    patient: `${liveData.patient.firstName} ${liveData.patient.lastName}`,
+    initials: `${liveData.patient.firstName.slice(0, 1)}${liveData.patient.lastName.slice(0, 1)}`.toUpperCase(),
+    accentClass: demoProfile.accentClass,
+    doctor: liveData.assignedTo?.name ?? "—",
+    malocclusionClass: liveData.malocclusionClass ?? "—",
+    crowding: "—",
+    chiefComplaint: liveData.chiefComplaint ?? "—",
+    urgency: "routine" as const,
+    progress: 50,
+    workflowStatus: liveData.status as CaseStatus,
+    goals: [],
+    measurements: [],
+    history: [],
+  } : demoProfile;
 
   const setupId = liveData?.linkedResources?.setupId      ?? undefined;
   const scanId  = liveData?.linkedResources?.latestScanId ?? profile.scanId ?? undefined;

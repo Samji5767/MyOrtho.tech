@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import {
@@ -59,40 +59,6 @@ const SHORTCUTS: Shortcut[] = [
   { label: "Settings",           sub: "Preferences & admin",          icon: Settings,     href: "/settings" },
 ];
 
-// ─── Dashboard demo data ──────────────────────────────────────────────────────
-
-interface AttentionCase {
-  id: string;
-  patient: string;
-  initials: string;
-  accent: string;
-  status: string;
-  urgency: "critical" | "urgent";
-  age: string;
-}
-
-const ATTENTION_CASES: AttentionCase[] = [
-  {
-    id: "C-2883", patient: "Oliver T.", initials: "OT",
-    accent: "bg-rose-500", status: "Clinical Review",
-    urgency: "critical", age: "4 h",
-  },
-  {
-    id: "C-2859", patient: "Marcus D.", initials: "MD",
-    accent: "bg-blue-500", status: "Scan Review",
-    urgency: "urgent", age: "3 d",
-  },
-  {
-    id: "C-2847", patient: "Sarah M.", initials: "SM",
-    accent: "bg-amber-500", status: "Awaiting Approval",
-    urgency: "urgent", age: "2 d",
-  },
-];
-
-// Monthly case volume (last 12 months, most recent last)
-const MONTHLY_TREND = [8, 11, 9, 14, 17, 15, 19, 22, 18, 21, 24, 20];
-const MONTH_LABELS = ["Jul", "Aug", "Sep", "Oct", "Nov", "Dec", "Jan", "Feb", "Mar", "Apr", "May", "Jun"];
-
 // ─── Case status helpers ──────────────────────────────────────────────────────
 
 function caseStatusBadge(status: string): { label: string; cls: string } {
@@ -149,6 +115,53 @@ function Sparkline({ values }: { values: number[] }) {
       <circle cx={lastX} cy={lastY} r="2.5" fill="var(--primary)" />
     </svg>
   );
+}
+
+// ─── Dashboard stat computation ───────────────────────────────────────────────
+
+const ACTIVE_STATUSES = new Set([
+  "scan_review", "segmentation", "planning", "clinical_review",
+  "approved", "active_treatment", "monitoring",
+]);
+const REVIEW_STATUSES = new Set(["clinical_review", "scan_review"]);
+const COMPLETED_STATUSES = new Set(["completed"]);
+
+function computeMonthlyTrend(allCases: CaseListItem[]): { values: number[]; labels: string[] } {
+  const now = new Date();
+  const buckets: number[] = Array(12).fill(0);
+  const labels: string[] = [];
+
+  for (let i = 11; i >= 0; i--) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    labels.push(d.toLocaleString("en-US", { month: "short" }));
+  }
+
+  allCases.forEach((c) => {
+    const created = new Date(c.createdAt);
+    const diffMonths = (now.getFullYear() - created.getFullYear()) * 12 + now.getMonth() - created.getMonth();
+    if (diffMonths >= 0 && diffMonths < 12) {
+      buckets[11 - diffMonths]++;
+    }
+  });
+
+  return { values: buckets, labels };
+}
+
+// Cases in clinical_review are "critical"; scan_review / planning are "urgent".
+function toAttentionCase(c: CaseListItem): {
+  id: string; patient: string; initials: string; accent: string;
+  status: string; urgency: "critical" | "urgent"; age: string;
+} {
+  const patientName = `${c.patient.firstName} ${c.patient.lastName}`;
+  const initials = [(c.patient.firstName?.[0] ?? ''), (c.patient.lastName?.[0] ?? '')].join("").toUpperCase();
+  const urgency: "critical" | "urgent" = c.status === "clinical_review" ? "critical" : "urgent";
+  const accent = urgency === "critical" ? "bg-rose-500" : c.status === "scan_review" ? "bg-sky-500" : "bg-amber-500";
+  const { label: statusLabel } = caseStatusBadge(c.status);
+  const updatedMs = Date.now() - new Date(c.updatedAt).getTime();
+  const hours = Math.floor(updatedMs / 3_600_000);
+  const days = Math.floor(updatedMs / 86_400_000);
+  const age = days >= 1 ? `${days}d` : `${hours}h`;
+  return { id: c.id, patient: patientName, initials, accent, status: statusLabel, urgency, age };
 }
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
@@ -230,19 +243,55 @@ function CaseRow({ c }: { c: CaseListItem }) {
 
 export default function OverviewPage() {
   const [modalOpen, setModalOpen] = useState(false);
-  const [cases, setCases] = useState<CaseListItem[]>([]);
+  const [allCases, setAllCases] = useState<CaseListItem[]>([]);
   const [casesLoading, setCasesLoading] = useState(true);
 
   const loadCases = useCallback(() => {
     fetchCases()
-      .then(({ cases: cs }) => { setCases(cs.slice(0, 6)); setCasesLoading(false); })
+      .then(({ cases: cs }) => { setAllCases(cs); setCasesLoading(false); })
       .catch(() => setCasesLoading(false));
   }, []);
 
   useEffect(() => { loadCases(); }, [loadCases]);
 
-  const trendChange = MONTHLY_TREND[MONTHLY_TREND.length - 1] - MONTHLY_TREND[MONTHLY_TREND.length - 2];
-  const trendPct = Math.round((trendChange / (MONTHLY_TREND[MONTHLY_TREND.length - 2] || 1)) * 100);
+  // ── Derived stats from real case data ───────────────────────────────────────
+  const activeCases = useMemo(() => allCases.filter((c) => ACTIVE_STATUSES.has(c.status)), [allCases]);
+  const reviewCases = useMemo(() => allCases.filter((c) => REVIEW_STATUSES.has(c.status)), [allCases]);
+  const completedThisMonth = useMemo(() => {
+    const now = new Date();
+    return allCases.filter((c) => {
+      if (!COMPLETED_STATUSES.has(c.status)) return false;
+      const u = new Date(c.updatedAt);
+      return u.getFullYear() === now.getFullYear() && u.getMonth() === now.getMonth();
+    }).length;
+  }, [allCases]);
+
+  // Cases older than 2 days in review status = SLA at risk
+  const slaAtRisk = useMemo(() => reviewCases.filter((c) => {
+    const ageDays = (Date.now() - new Date(c.updatedAt).getTime()) / 86_400_000;
+    return ageDays >= 2;
+  }).length, [reviewCases]);
+
+  const attentionCases = useMemo(() =>
+    reviewCases.slice(0, 3).map(toAttentionCase),
+  [reviewCases]);
+
+  const { values: monthlyValues, labels: monthLabels } = useMemo(
+    () => computeMonthlyTrend(allCases),
+    [allCases],
+  );
+
+  const recentCases = useMemo(() => allCases.slice(0, 6), [allCases]);
+
+  const trendChange = monthlyValues[monthlyValues.length - 1] - monthlyValues[monthlyValues.length - 2];
+  const trendPct = Math.round((trendChange / (monthlyValues[monthlyValues.length - 2] || 1)) * 100);
+
+  const kpis = [
+    { label: "Active Cases",   value: String(activeCases.length),    sub: `${reviewCases.length} pending review`, cls: "text-[color:var(--primary)]",  bg: "bg-[color:var(--primary-glow)]" },
+    { label: "Needs Review",   value: String(reviewCases.length),    sub: "Clinical or scan review",             cls: "text-amber-600 dark:text-amber-400", bg: "bg-amber-500/10" },
+    { label: "SLA at Risk",    value: String(slaAtRisk),             sub: slaAtRisk > 0 ? "Action required" : "All on time", cls: slaAtRisk > 0 ? "text-rose-600 dark:text-rose-400" : "text-emerald-600 dark:text-emerald-400", bg: slaAtRisk > 0 ? "bg-rose-500/10" : "bg-emerald-500/10" },
+    { label: "Completed",      value: String(completedThisMonth),    sub: "This month",                          cls: "text-emerald-600 dark:text-emerald-400", bg: "bg-emerald-500/10" },
+  ];
 
   return (
     <>
@@ -280,73 +329,78 @@ export default function OverviewPage() {
 
         {/* ── Dashboard KPI row ── */}
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-          {[
-            { label: "Active Cases",   value: "6",  sub: "+2 this week",    cls: "text-[color:var(--primary)]",  bg: "bg-[color:var(--primary-glow)]" },
-            { label: "Needs Review",   value: "3",  sub: "SLA in 24 h",     cls: "text-amber-600 dark:text-amber-400", bg: "bg-amber-500/10" },
-            { label: "SLA at Risk",    value: "2",  sub: "Action required", cls: "text-rose-600 dark:text-rose-400",   bg: "bg-rose-500/10"  },
-            { label: "Completed",      value: "12", sub: "This month",      cls: "text-emerald-600 dark:text-emerald-400", bg: "bg-emerald-500/10" },
-          ].map((stat) => (
-            <Card key={stat.label} className="flex flex-col gap-1.5 p-4">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.15em] text-[color:var(--muted-foreground)]">
-                {stat.label}
-              </p>
-              <p className={`text-3xl font-bold tabular-nums tracking-tight ${stat.cls}`}>
-                {stat.value}
-              </p>
-              <p className="text-[11px] text-[color:var(--muted-foreground)]">{stat.sub}</p>
-            </Card>
-          ))}
+          {casesLoading
+            ? [1, 2, 3, 4].map((i) => (
+                <div key={i} className="ios-card h-[88px] animate-pulse" />
+              ))
+            : kpis.map((stat) => (
+                <Card key={stat.label} className="flex flex-col gap-1.5 p-4">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.15em] text-[color:var(--muted-foreground)]">
+                    {stat.label}
+                  </p>
+                  <p className={`text-3xl font-bold tabular-nums tracking-tight ${stat.cls}`}>
+                    {stat.value}
+                  </p>
+                  <p className="text-[11px] text-[color:var(--muted-foreground)]">{stat.sub}</p>
+                </Card>
+              ))
+          }
         </div>
 
         {/* ── Needs Attention ── */}
-        <div>
-          <div className="mb-3 flex items-center justify-between">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-[color:var(--muted-foreground)]">
-              Needs Your Attention
-            </p>
-            <Link
-              href="/cases?filter=review"
-              className="text-xs font-semibold text-[color:var(--primary)] hover:underline underline-offset-2"
-            >
-              View all →
-            </Link>
-          </div>
-          <div className="space-y-2">
-            {ATTENTION_CASES.map((ac) => (
+        {(casesLoading || attentionCases.length > 0) && (
+          <div>
+            <div className="mb-3 flex items-center justify-between">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-[color:var(--muted-foreground)]">
+                Needs Your Attention
+              </p>
               <Link
-                key={ac.id}
-                href={`/cases/${ac.id}`}
-                className="ios-card flex items-center gap-3 px-4 py-3 transition-transform active:scale-[0.99]"
+                href="/cases?filter=review"
+                className="text-xs font-semibold text-[color:var(--primary)] hover:underline underline-offset-2"
               >
-                <div className="relative shrink-0">
-                  <span className={`flex h-9 w-9 items-center justify-center rounded-full text-xs font-bold text-white ${ac.accent}`}>
-                    {ac.initials}
-                  </span>
-                  {ac.urgency === "critical" && (
-                    <span className="absolute -right-0.5 -top-0.5 h-2.5 w-2.5 animate-pulse rounded-full border-2 border-[color:var(--background)] bg-rose-500" />
-                  )}
-                </div>
-                <div className="min-w-0 flex-1">
-                  <p className="text-sm font-semibold text-[color:var(--foreground)]">{ac.patient}</p>
-                  <p className="mt-0.5 text-xs text-[color:var(--muted-foreground)]">{ac.status}</p>
-                </div>
-                <div className="flex shrink-0 items-center gap-2">
-                  {ac.urgency === "critical" ? (
-                    <span className="flex items-center gap-1 rounded-full bg-rose-500/10 px-2 py-0.5 text-[10px] font-semibold text-rose-600 dark:text-rose-400">
-                      <AlertTriangle size={9} /> Critical
-                    </span>
-                  ) : (
-                    <span className="rounded-full bg-amber-500/10 px-2 py-0.5 text-[10px] font-semibold text-amber-600 dark:text-amber-400">
-                      Urgent
-                    </span>
-                  )}
-                  <span className="text-[11px] text-[color:var(--muted-foreground)]">{ac.age}</span>
-                  <ChevronRight size={13} className="text-[color:var(--muted-foreground)]" />
-                </div>
+                View all →
               </Link>
-            ))}
+            </div>
+            <div className="space-y-2">
+              {casesLoading
+                ? [1, 2, 3].map((i) => <div key={i} className="ios-card h-[64px] animate-pulse" />)
+                : attentionCases.map((ac) => (
+                    <Link
+                      key={ac.id}
+                      href={`/cases/${ac.id}`}
+                      className="ios-card flex items-center gap-3 px-4 py-3 transition-transform active:scale-[0.99]"
+                    >
+                      <div className="relative shrink-0">
+                        <span className={`flex h-9 w-9 items-center justify-center rounded-full text-xs font-bold text-white ${ac.accent}`}>
+                          {ac.initials}
+                        </span>
+                        {ac.urgency === "critical" && (
+                          <span className="absolute -right-0.5 -top-0.5 h-2.5 w-2.5 animate-pulse rounded-full border-2 border-[color:var(--background)] bg-rose-500" />
+                        )}
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm font-semibold text-[color:var(--foreground)]">{ac.patient}</p>
+                        <p className="mt-0.5 text-xs text-[color:var(--muted-foreground)]">{ac.status}</p>
+                      </div>
+                      <div className="flex shrink-0 items-center gap-2">
+                        {ac.urgency === "critical" ? (
+                          <span className="flex items-center gap-1 rounded-full bg-rose-500/10 px-2 py-0.5 text-[10px] font-semibold text-rose-600 dark:text-rose-400">
+                            <AlertTriangle size={9} /> Critical
+                          </span>
+                        ) : (
+                          <span className="rounded-full bg-amber-500/10 px-2 py-0.5 text-[10px] font-semibold text-amber-600 dark:text-amber-400">
+                            Urgent
+                          </span>
+                        )}
+                        <span className="text-[11px] text-[color:var(--muted-foreground)]">{ac.age}</span>
+                        <ChevronRight size={13} className="text-[color:var(--muted-foreground)]" />
+                      </div>
+                    </Link>
+                  ))
+              }
+            </div>
           </div>
-        </div>
+        )}
 
         {/* ── Clinical Workflow Pipeline ── */}
         <div>
@@ -392,7 +446,7 @@ export default function OverviewPage() {
                 <div key={i} className="ios-card h-[70px] animate-pulse" />
               ))}
             </div>
-          ) : cases.length === 0 ? (
+          ) : recentCases.length === 0 ? (
             <Card className="flex flex-col items-center gap-3 py-10 text-center">
               <span className="grid h-12 w-12 place-items-center rounded-3xl bg-[color:var(--primary-glow)] text-[color:var(--primary)]">
                 <FolderKanban size={22} />
@@ -414,7 +468,7 @@ export default function OverviewPage() {
             </Card>
           ) : (
             <div className="space-y-2">
-              {cases.map((c) => (
+              {recentCases.map((c) => (
                 <CaseRow key={c.id} c={c} />
               ))}
             </div>
@@ -432,30 +486,35 @@ export default function OverviewPage() {
                 <p className="text-sm font-semibold text-[color:var(--foreground)]">Monthly Case Volume</p>
                 <div className="mt-1 flex items-baseline gap-2">
                   <span className="text-3xl font-bold tabular-nums tracking-tight text-[color:var(--foreground)]">
-                    {MONTHLY_TREND[MONTHLY_TREND.length - 1]}
+                    {monthlyValues[monthlyValues.length - 1]}
                   </span>
-                  <span className={[
-                    "flex items-center gap-0.5 text-xs font-semibold",
-                    trendChange >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400",
-                  ].join(" ")}>
-                    <TrendingUp size={12} />
-                    {trendChange >= 0 ? "+" : ""}{trendPct}% vs last month
-                  </span>
+                  {!casesLoading && (
+                    <span className={[
+                      "flex items-center gap-0.5 text-xs font-semibold",
+                      trendChange >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400",
+                    ].join(" ")}>
+                      <TrendingUp size={12} />
+                      {trendChange >= 0 ? "+" : ""}{trendPct}% vs last month
+                    </span>
+                  )}
                 </div>
                 <p className="mt-1 text-xs text-[color:var(--muted-foreground)]">
-                  Cases completed in {MONTH_LABELS[MONTH_LABELS.length - 1]}
+                  Cases opened in {monthLabels[monthLabels.length - 1]}
                 </p>
               </div>
               <Zap size={20} className="mt-0.5 shrink-0 text-[color:var(--primary)] opacity-60" />
             </div>
 
             <div className="mt-4">
-              <Sparkline values={MONTHLY_TREND} />
+              {casesLoading
+                ? <div className="h-11 animate-pulse rounded-lg bg-[color:var(--border)]" />
+                : <Sparkline values={monthlyValues} />
+              }
             </div>
 
             <div className="mt-2 flex items-center justify-between">
               <div className="flex gap-3 overflow-x-auto no-scrollbar">
-                {MONTH_LABELS.slice(-6).map((m, i) => (
+                {monthLabels.slice(-6).map((m, i) => (
                   <span key={m} className={[
                     "shrink-0 text-[10px] tabular-nums",
                     i === 5 ? "font-semibold text-[color:var(--primary)]" : "text-[color:var(--muted-foreground)]",

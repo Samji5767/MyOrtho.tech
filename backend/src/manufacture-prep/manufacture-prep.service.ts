@@ -75,13 +75,33 @@ function buildManifest(dto: CreateExportDto, stageCount: number) {
       break;
   }
 
+  // Per-file size estimates (bytes) based on export type and format
+  const BASE_SIZE: Record<ExportFormat, number> = {
+    stl:  2_800_000,
+    obj:  3_500_000,
+    ply:  2_200_000,
+    '3mf': 1_800_000,
+    zip:  1_200_000,
+  };
+  const TYPE_MULTIPLIER: Record<ExportType, number> = {
+    stage_models:      1.0,   // arch models ~2.8 MB each
+    aligner_models:    0.6,   // shells are thinner meshes
+    attachment_models: 0.3,   // small geometry
+    ibt:               0.4,
+    surgical_guide:    0.8,
+    full_case:         0.5,   // compressed in zip
+    qa_report:         0.1,   // PDF + JSON
+  };
+  const perFileMb = (BASE_SIZE[format] ?? 2_500_000) * (TYPE_MULTIPLIER[dto.exportType] ?? 1.0);
+
   return {
     fileCount: files.length,
     files,
     format,
     exportType: dto.exportType,
     generatedAt: new Date().toISOString(),
-    estimatedSizeBytes: files.length * 2_500_000, // ~2.5 MB per mesh file estimate
+    estimatedSizeBytes: Math.round(files.length * perFileMb),
+    estimatedSizeMb: Math.round(files.length * perFileMb / 1_048_576 * 10) / 10,
   };
 }
 
@@ -138,7 +158,7 @@ export class ManufacturePrepService {
     } | undefined;
 
     const stageCount = genPlan?.total_active_stages ?? 0;
-    const manifest = buildManifest(dto, stageCount);
+    const manifest: Record<string, unknown> = buildManifest(dto, stageCount) as Record<string, unknown>;
 
     // Determine whether we can fulfill the export now
     const needsStageStls =
@@ -151,8 +171,45 @@ export class ManufacturePrepService {
     let errorMsg: string | null = null;
 
     if (!needsStageStls) {
-      // qa_report, attachment_models, ibt, surgical_guide: manifest-only for now
       status = 'completed';
+      // For QA reports, enhance the manifest with live case data
+      if (dto.exportType === 'qa_report' && genPlan) {
+        const qaRows = await this.pool.query(
+          `SELECT tqs.overall_score, tqs.grade, tqs.has_critical_issues, tqs.critical_issue_count,
+                  tqs.total_teeth_moved, tqs.max_movement_mm
+           FROM treatment_quality_scores tqs
+           WHERE tqs.plan_id = $1 ORDER BY tqs.created_at DESC LIMIT 1`,
+          [genPlan.plan_id],
+        );
+        const iprRows = await this.pool.query(
+          `SELECT COUNT(*) AS total, SUM(CASE WHEN is_safe=false THEN 1 ELSE 0 END) AS unsafe
+           FROM ipr_enamel_estimates WHERE plan_id=$1`,
+          [genPlan.plan_id],
+        );
+        const attRows = await this.pool.query(
+          `SELECT COUNT(*) AS total,
+                  SUM(CASE WHEN severity='critical' THEN 1 ELSE 0 END) AS critical_collisions
+           FROM attachment_collisions WHERE plan_id=$1`,
+          [genPlan.plan_id],
+        );
+        const qs = qaRows.rows[0];
+        const ipr = iprRows.rows[0];
+        const att = attRows.rows[0];
+        manifest['qaData'] = {
+          qualityGrade:        qs?.grade ?? 'N/A',
+          qualityScore:        qs ? Math.round(Number(qs.overall_score) * 100) : null,
+          hasCriticalIssues:   qs?.has_critical_issues ?? false,
+          criticalIssueCount:  qs?.critical_issue_count ?? 0,
+          totalTeethMoved:     qs?.total_teeth_moved ?? stageCount,
+          maxMovementMm:       qs?.max_movement_mm ? Number(qs.max_movement_mm).toFixed(2) : null,
+          iprContacts:         Number(ipr?.total ?? 0),
+          unsafeIprContacts:   Number(ipr?.unsafe ?? 0),
+          attachmentCollisions: Number(att?.total ?? 0),
+          criticalCollisions:   Number(att?.critical_collisions ?? 0),
+          stages:              stageCount,
+          generatedAt:         new Date().toISOString(),
+        };
+      }
     } else if (genPlan?.stl_export_ready && genPlan.stl_export_path) {
       // Stage STL zip already produced by the aligner generation step
       if (dto.exportType === 'stage_models') {

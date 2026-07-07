@@ -63,71 +63,7 @@ const EVENT_META: Record<
 
 const ALL_EVENT_TYPES = Object.keys(EVENT_META) as AuditEventType[];
 
-const SEED_ENTRIES: AuditEntry[] = [
-  {
-    id: "aud-007",
-    timestamp: "2026-06-23T11:42:00Z",
-    actor: "Dr. Lee",
-    actorRole: "Clinical Director",
-    eventType: "approved",
-    description: "Treatment plan approved. Ready for active treatment.",
-    metadata: { caseStatus: "approved", reviewDurationMin: 18 },
-  },
-  {
-    id: "aud-006",
-    timestamp: "2026-06-23T11:24:00Z",
-    actor: "Dr. Lee",
-    actorRole: "Clinical Director",
-    eventType: "status_changed",
-    description: "Case moved to Clinical Review.",
-    metadata: { from: "scan_review", to: "clinical_review" },
-  },
-  {
-    id: "aud-005",
-    timestamp: "2026-06-23T10:55:00Z",
-    actor: "T. Williams",
-    actorRole: "Treatment Coordinator",
-    eventType: "status_changed",
-    description: "Case submitted for clinical review.",
-    metadata: { from: "draft", to: "scan_review" },
-  },
-  {
-    id: "aud-004",
-    timestamp: "2026-06-23T10:41:00Z",
-    actor: "T. Williams",
-    actorRole: "Treatment Coordinator",
-    eventType: "measurement_created",
-    description: "Distance measurement A→B recorded.",
-    metadata: { measureType: "distance", value: "8.34 mm", points: 2 },
-  },
-  {
-    id: "aud-003",
-    timestamp: "2026-06-23T10:38:00Z",
-    actor: "T. Williams",
-    actorRole: "Treatment Coordinator",
-    eventType: "treatment_modified",
-    description: "Tooth 21 translation updated: +1.2 mm mesial.",
-    metadata: { toothId: "21", axis: "mesial", delta: 1.2 },
-  },
-  {
-    id: "aud-002",
-    timestamp: "2026-06-23T10:22:00Z",
-    actor: "T. Williams",
-    actorRole: "Treatment Coordinator",
-    eventType: "file_uploaded",
-    description: "Upper arch STL scan uploaded (2.4 MB).",
-    metadata: { fileName: "upper-arch-scan.stl", sizeBytes: 2516582, format: "STL" },
-  },
-  {
-    id: "aud-001",
-    timestamp: "2026-06-23T09:55:00Z",
-    actor: "T. Williams",
-    actorRole: "Treatment Coordinator",
-    eventType: "case_created",
-    description: "Case DEMO-001 created. Patient: Sample Patient.",
-    metadata: { caseId: "DEMO-001", malocclusionClass: "Class I", crowding: "moderate" },
-  },
-];
+const SEED_ENTRIES: AuditEntry[] = [];
 
 function formatTs(iso: string) {
   try {
@@ -226,10 +162,10 @@ export default function AuditTrail({ caseId = "DEMO-001", entries, isLive = fals
             FDA/MDR-style event log · {allEntries.length} event{allEntries.length !== 1 ? "s" : ""}
           </p>
         </div>
-        {!isLive && (
-          <span className="flex items-center gap-1 rounded-full border border-amber-500/30 bg-amber-500/10 px-2 py-1 text-[10px] font-semibold text-amber-400">
-            <ShieldAlert size={10} />
-            Representative data · not live
+        {isLive && (
+          <span className="flex items-center gap-1 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2 py-1 text-[10px] font-semibold text-emerald-400">
+            <Activity size={10} />
+            Live
           </span>
         )}
       </div>
@@ -282,6 +218,10 @@ export default function AuditTrail({ caseId = "DEMO-001", entries, isLive = fals
               </div>
             ))}
           </div>
+        ) : allEntries.length === 0 ? (
+          <p className="rounded-lg border border-dashed border-border px-4 py-6 text-center text-sm text-secondary">
+            No audit events recorded yet.
+          </p>
         ) : visible.length === 0 ? (
           <p className="rounded-lg border border-dashed border-border px-4 py-6 text-center text-sm text-secondary">
             No events match this filter.

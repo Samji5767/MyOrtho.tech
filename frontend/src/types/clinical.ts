@@ -92,6 +92,7 @@ export function priorityTone(p: ClinicalPriority): 'danger' | 'warning' | 'neutr
 
 // ─── Production data — no mock entries ────────────────────────────────────────
 
+// Runtime-populated from API — empty array is the correct initial state
 export const MOCK_THREADS: PatientThread[] = [];
 
 export const MOCK_CASE_EVENTS: Record<string, TimelineEvent[]> = {};
@@ -100,9 +101,15 @@ export function getThreadEvents(_threadId: string): TimelineEvent[] {
   return [];
 }
 
-export const TODAY_STATS = {
-  activeCases: 0,
-  awaitingApproval: 0,
-  readyForExport: 0,
-  slaAtRisk: 0,
+// Runtime-computed from API on load — null means data has not yet been fetched
+export const TODAY_STATS: {
+  activeCases: number | null;
+  awaitingApproval: number | null;
+  readyForExport: number | null;
+  slaAtRisk: number | null;
+} = {
+  activeCases: null,
+  awaitingApproval: null,
+  readyForExport: null,
+  slaAtRisk: null,
 };

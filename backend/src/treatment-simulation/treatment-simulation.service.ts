@@ -127,8 +127,32 @@ export class TreatmentSimulationService {
     // Occlusion score — based on overjet/overbite alignment
     const occlusionScore = Math.max(0, 1.0 - (Math.abs(overjetFinal - OVERJET_NORMAL) / 5.0 + Math.abs(overbiteFinall - OVERBITE_NORMAL) / 5.0));
 
-    // Smile arc score — based on upper incisor vertical positions
-    const smileArcScore = 0.85; // deterministic placeholder; real system uses 3D arc fitting
+    // Smile arc score — computed from upper incisor vertical movement balance.
+    // Consonant arc = incisors 11,21 and 12,22 track as a smooth arc (no single tooth over-intruded).
+    // Score degrades when lateral–central intrusion difference > 0.5 mm (flattening) or
+    // when extrusion of laterals exceeds centrals (reverse arc).
+    const centralIntrusion = prescriptions
+      .filter(p => [11, 21].includes(p['tooth_number'] as number))
+      .reduce((s, p) => s + (p['intrusion_mm'] as number ?? 0), 0) / 2;
+    const lateralIntrusion = prescriptions
+      .filter(p => [12, 22].includes(p['tooth_number'] as number))
+      .reduce((s, p) => s + (p['intrusion_mm'] as number ?? 0), 0) / 2;
+    const centralExtrusion = prescriptions
+      .filter(p => [11, 21].includes(p['tooth_number'] as number))
+      .reduce((s, p) => s + (p['extrusion_mm'] as number ?? 0), 0) / 2;
+    const lateralExtrusion = prescriptions
+      .filter(p => [12, 22].includes(p['tooth_number'] as number))
+      .reduce((s, p) => s + (p['extrusion_mm'] as number ?? 0), 0) / 2;
+    // Net vertical change (positive = intrusion, negative = extrusion)
+    const centralNet = centralIntrusion - centralExtrusion;
+    const lateralNet = lateralIntrusion - lateralExtrusion;
+    // Arc is consonant when centrals are slightly more intruded than laterals (0–0.8 mm difference)
+    const arcDelta = centralNet - lateralNet;
+    const smileArcScore = arcDelta >= 0 && arcDelta <= 0.8
+      ? 0.95 - arcDelta * 0.06  // consonant range: 0.89–0.95
+      : arcDelta > 0.8
+      ? Math.max(0.60, 0.89 - (arcDelta - 0.8) * 0.15)  // over-intruded centrals → flattening
+      : Math.max(0.55, 0.89 + arcDelta * 0.20);          // extruded laterals → reverse arc
 
     // Delete old simulation frames
     const oldSim = await this.db.query(`SELECT id FROM treatment_simulations WHERE plan_id=$1`, [planId]);
@@ -180,7 +204,12 @@ export class TreatmentSimulationService {
     ]);
 
     for (let s = 1; s <= totalStages; s++) {
-      const t = (s - 1) / Math.max(totalStages - 1, 1);
+      const tLinear = (s - 1) / Math.max(totalStages - 1, 1);
+      // Sigmoid easing: slow start, peak velocity at midpoint, decelerate at finish.
+      // Models biological bone remodelling latency and clinical staging best practices.
+      const t = tLinear < 0.5
+        ? 2 * tLinear * tLinear
+        : 1 - Math.pow(-2 * tLinear + 2, 2) / 2;
       const toothPositions: Record<number, ToothPosition> = {};
 
       for (const [fdi, final] of finalPositions) {

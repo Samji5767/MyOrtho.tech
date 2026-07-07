@@ -198,27 +198,7 @@ export default function ClinicalWorkflow({
   currentActorRole = "Clinical Director",
 }: ClinicalWorkflowProps) {
   const [status, setStatus] = useState<CaseStatus>(initialStatus);
-  const [history, setHistory] = useState<WorkflowEvent[]>(
-    initialHistory ?? [
-      {
-        id: "evt-seed-2",
-        timestamp: "2026-06-23 09:14",
-        actor: "T. Coordinator",
-        actorRole: "Treatment Coordinator",
-        action: "Case submitted for clinical review",
-        fromStatus: "draft",
-        toStatus: "scan_review",
-      },
-      {
-        id: "evt-seed-1",
-        timestamp: "2026-06-23 08:55",
-        actor: "T. Coordinator",
-        actorRole: "Treatment Coordinator",
-        action: "Case created",
-        toStatus: "draft",
-      },
-    ]
-  );
+  const [history, setHistory] = useState<WorkflowEvent[]>(initialHistory ?? []);
   const [noteInput, setNoteInput] = useState("");
   const [pendingAction, setPendingAction] = useState<AllowedAction | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -244,9 +224,7 @@ export default function ClinicalWorkflow({
     };
 
     try {
-      if (caseId !== "DEMO-001") {
-        await api.patch(`/api/cases/${caseId}/status`, { status: action.toStatus, notes });
-      }
+      await api.patch(`/api/cases/${caseId}/status`, { status: action.toStatus, notes });
     } catch (err) {
       console.error("[ClinicalWorkflow] status transition failed:", err);
       setSubmitting(false);

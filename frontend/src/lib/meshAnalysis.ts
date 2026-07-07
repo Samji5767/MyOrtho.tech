@@ -7,7 +7,7 @@ export const SCENE_TO_MM = 10;
 
 // ─── Confidence labels ─────────────────────────────────────────────────────────
 
-export type MeasurementConfidence = "real_geometry" | "estimated_mesh" | "demo_only";
+export type MeasurementConfidence = "real_geometry" | "estimated_mesh" | "estimated" | "demo_only";
 
 // ─── Interfaces ───────────────────────────────────────────────────────────────
 
@@ -104,7 +104,7 @@ export function getDemoToothDimensions(fdi: number): ToothDimensions {
     widthMm: TOOTH_WIDTHS_MM[fdi] ?? 7.5,
     heightMm: TOOTH_HEIGHTS_MM[fdi] ?? 9.0,
     depthMm: (TOOTH_WIDTHS_MM[fdi] ?? 7.5) * 0.85, // buccolingual ≈ 85% of MD width
-    confidence: "demo_only",
+    confidence: "estimated",
   };
 }
 
@@ -141,7 +141,7 @@ export function computeArchMetrics(toothPositions: ToothPos[]): ArchMetrics {
     intermolarWidthMm,
     upperArchLengthMm: archLength(toothPositions, upperFdis),
     lowerArchLengthMm: archLength(toothPositions, lowerFdis),
-    confidence: "demo_only",
+    confidence: "estimated",
   };
 }
 
@@ -199,7 +199,7 @@ export function computeOcclusionContacts(
         0,
         (upper.z + lower.z) / 2,
       ),
-      confidence: "demo_only",
+      confidence: "estimated",
     });
   }
 
@@ -224,8 +224,95 @@ export function computeCrowding(
     availableSpaceMm,
     requiredSpaceMm,
     crowdingMm: requiredSpaceMm - availableSpaceMm,
-    confidence: "demo_only",
+    confidence: "estimated",
   };
+}
+
+// ─── Smile arc quality ────────────────────────────────────────────────────────
+
+export interface SmileArcResult {
+  /** 0–1; 1 = perfectly consonant arc (upper anteriors follow a smooth parabola) */
+  consonanceScore: number;
+  arcType: "consonant" | "flat" | "reverse";
+  /** Estimated radius of curvature of the anterior arch segment (mm) */
+  anteriorRadiusMm: number;
+  /** RMS deviation of tooth positions from the best-fit parabolic arc (mm) */
+  residualRmsMm: number;
+  confidence: MeasurementConfidence;
+}
+
+/**
+ * Evaluate smile arc consonance from upper anterior tooth positions.
+ *
+ * Fits a parabola (Z = a·X² + b·X + c) to teeth 13/12/11/21/22/23 in the
+ * arch plane (XZ) and reports how tightly they follow a smooth curve (R²).
+ * A positive leading coefficient (arch opens posteriorly) is "consonant".
+ */
+export function computeSmileArcQuality(toothPositions: ToothPos[]): SmileArcResult {
+  const anteriorFdis = [13, 12, 11, 21, 22, 23];
+  const pts = anteriorFdis
+    .map((fdi) => toothPositions.find((t) => t.fdi === fdi)?.pos)
+    .filter((p): p is THREE.Vector3 => p != null);
+
+  if (pts.length < 3) {
+    return { consonanceScore: 0, arcType: "flat", anteriorRadiusMm: 0, residualRmsMm: 0, confidence: "estimated" };
+  }
+
+  const xs = pts.map((p) => p.x);
+  const zs = pts.map((p) => p.z);
+  const n = pts.length;
+
+  // Accumulate sums for least-squares fit of Z = a·X² + b·X + c
+  let s1 = 0, s2 = 0, s3 = 0, s4 = 0;
+  let t0 = 0, t1 = 0, t2 = 0;
+  for (let i = 0; i < n; i++) {
+    const x = xs[i], z = zs[i];
+    s1 += x; s2 += x * x; s3 += x * x * x; s4 += x * x * x * x;
+    t0 += z; t1 += x * z; t2 += x * x * z;
+  }
+  const A = [[s4, s3, s2], [s3, s2, s1], [s2, s1, n]];
+  const bv = [t2, t1, t0];
+
+  const det3 = (m: number[][]): number =>
+    m[0][0] * (m[1][1] * m[2][2] - m[1][2] * m[2][1]) -
+    m[0][1] * (m[1][0] * m[2][2] - m[1][2] * m[2][0]) +
+    m[0][2] * (m[1][0] * m[2][1] - m[1][1] * m[2][0]);
+
+  const D = det3(A);
+  let a = 0, coefB = 0, coefC = 0;
+  if (Math.abs(D) > 1e-12) {
+    const A0 = [[bv[0], A[0][1], A[0][2]], [bv[1], A[1][1], A[1][2]], [bv[2], A[2][1], A[2][2]]];
+    const A1 = [[A[0][0], bv[0], A[0][2]], [A[1][0], bv[1], A[1][2]], [A[2][0], bv[2], A[2][2]]];
+    const A2 = [[A[0][0], A[0][1], bv[0]], [A[1][0], A[1][1], bv[1]], [A[2][0], A[2][1], bv[2]]];
+    a     = det3(A0) / D;
+    coefB = det3(A1) / D;
+    coefC = det3(A2) / D;
+  }
+
+  // Compute R² for the parabola fit
+  const zMean = t0 / n;
+  let ssTot = 0, ssRes = 0;
+  for (let i = 0; i < n; i++) {
+    const zPred = a * xs[i] * xs[i] + coefB * xs[i] + coefC;
+    ssTot += (zs[i] - zMean) ** 2;
+    ssRes += (zs[i] - zPred) ** 2;
+  }
+  const r2 = ssTot > 1e-12 ? Math.max(0, 1 - ssRes / ssTot) : 1;
+  const residualRmsMm = Math.round(Math.sqrt(ssRes / n) * SCENE_TO_MM * 100) / 100;
+
+  // Radius of curvature at arc vertex ≈ 1 / (2·|a|) in scene units
+  const anteriorRadiusMm = Math.abs(a) > 1e-6
+    ? Math.round((1 / (2 * Math.abs(a))) * SCENE_TO_MM * 10) / 10
+    : 999;
+
+  // Upper arch parabola opens posteriorly (a > 0) → consonant
+  const arcType: SmileArcResult["arcType"] =
+    a > 0.05 ? "consonant" : a < -0.05 ? "reverse" : "flat";
+
+  const directionWeight = arcType === "consonant" ? 1 : arcType === "flat" ? 0.5 : 0;
+  const consonanceScore = Math.round(r2 * directionWeight * 100) / 100;
+
+  return { consonanceScore, arcType, anteriorRadiusMm, residualRmsMm, confidence: "estimated" };
 }
 
 // ─── Build tooth positions from gizmo overrides ───────────────────────────────

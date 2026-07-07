@@ -14,6 +14,8 @@ import {
 } from '@nestjs/common';
 import type { Request } from 'express';
 import { CasesService, type CreateCaseDto, type CreateCaseWithPatientDto, type UpdateCaseDto } from './cases.service';
+import { AiScoresService } from './ai-scores.service';
+import { DigitalTwinService } from './digital-twin.service';
 import { AuthGuard } from '../auth/auth.guard';
 import { PermissionsGuard } from '../auth/permissions.guard';
 import { RequirePermission } from '../auth/require-permission.decorator';
@@ -40,7 +42,11 @@ function getIp(req: Request): string {
 @Controller('api/cases')
 @UseGuards(AuthGuard, PermissionsGuard)
 export class CasesController {
-  constructor(private readonly casesService: CasesService) {}
+  constructor(
+    private readonly casesService: CasesService,
+    private readonly aiScoresService: AiScoresService,
+    private readonly digitalTwinService: DigitalTwinService,
+  ) {}
 
   @Get()
   @RequirePermission('cases:read')
@@ -139,5 +145,21 @@ export class CasesController {
       body.notes,
       { actorEmail: user.email, ipAddress: getIp(req) },
     );
+  }
+
+  @Get(':id/ai-scores')
+  @RequirePermission('cases:read')
+  async getAiScores(@Req() req: Request, @Param('id') id: string) {
+    const user = getUser(req);
+    if (!user.orgId) throw new UnauthorizedException('No organization assigned');
+    return this.aiScoresService.getScores(id, user.orgId);
+  }
+
+  @Get(':id/digital-twin')
+  @RequirePermission('cases:read')
+  async getDigitalTwin(@Req() req: Request, @Param('id') id: string) {
+    const user = getUser(req);
+    if (!user.orgId) throw new UnauthorizedException('No organization assigned');
+    return this.digitalTwinService.getDigitalTwin(id, user.orgId);
   }
 }

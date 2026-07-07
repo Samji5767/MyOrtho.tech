@@ -1,10 +1,12 @@
 import { NestFactory } from '@nestjs/core';
-import { ValidationPipe } from '@nestjs/common';
+import { ValidationPipe, Logger } from '@nestjs/common';
 import * as cookieParser from 'cookie-parser';
 import helmet from 'helmet';
 import { AppModule } from './app.module';
 import { AllExceptionsFilter } from './common/all-exceptions.filter';
 import { LoggingInterceptor } from './common/logging.interceptor';
+
+const logger = new Logger('Bootstrap');
 
 // ─── Startup validation ───────────────────────────────────────────────────────
 
@@ -24,15 +26,15 @@ function assertRequiredEnv(): void {
         'Generate one with: openssl rand -hex 32',
       );
     }
-    console.warn(
-      '[WARN] ENCRYPTION_KEY is not set or too short. ' +
+    logger.warn(
+      'ENCRYPTION_KEY is not set or too short. ' +
       'PHI encryption will be degraded. Set before production launch.',
     );
   }
   const dbUrl = process.env.DATABASE_URL ?? '';
   if (dbUrl.includes('CHANGE_ME_BEFORE_PRODUCTION')) {
-    console.warn(
-      '[WARN] DATABASE_URL contains the default development password. ' +
+    logger.warn(
+      'DATABASE_URL contains the default development password. ' +
       'Set a strong POSTGRES_PASSWORD in your .env file before deploying to production.',
     );
   }
@@ -110,10 +112,10 @@ async function bootstrap() {
 
   const port = process.env.PORT || 4000;
   await app.listen(port);
-  console.log(`Backend running on: http://localhost:${port}`);
+  logger.log(`Backend running on: http://localhost:${port}`);
 }
 
 bootstrap().catch(err => {
-  console.error('Failed to bootstrap backend:', err);
+  logger.error('Failed to bootstrap backend:', err instanceof Error ? err.stack : String(err));
   process.exit(1);
 });

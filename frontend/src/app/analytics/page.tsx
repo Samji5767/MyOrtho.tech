@@ -12,6 +12,7 @@ import {
   TrendingUp,
   Users,
 } from "lucide-react";
+import type { CSSProperties } from "react";
 import { Card, SkeletonBlock } from "@/components/DesignSystem";
 import { fetchCases, type CaseListItem } from "@/lib/api/cases";
 
@@ -106,6 +107,29 @@ function buildMetrics(cases: CaseListItem[]): Metric[] {
   ];
 }
 
+// ─── Monthly trend helpers ─────────────────────────────────────────────────────
+
+interface MonthBucket {
+  label: string;
+  count: number;
+}
+
+function buildMonthlyTrend(cases: CaseListItem[], months = 6): MonthBucket[] {
+  const now = new Date();
+  return Array.from({ length: months }, (_, i) => {
+    const d = new Date(now.getFullYear(), now.getMonth() - (months - 1 - i), 1);
+    const year = d.getFullYear();
+    const month = d.getMonth();
+    return {
+      label: d.toLocaleString("default", { month: "short" }),
+      count: cases.filter((c) => {
+        const cd = new Date(c.createdAt);
+        return cd.getFullYear() === year && cd.getMonth() === month;
+      }).length,
+    };
+  });
+}
+
 // ─── Status config ─────────────────────────────────────────────────────────────
 
 const STATUS_LABELS: Record<string, string> = {
@@ -189,6 +213,8 @@ export default function AnalyticsPage() {
   }, [loading, cases.length]);
 
   const metrics = buildMetrics(cases);
+  const monthlyTrend = buildMonthlyTrend(cases, 6);
+  const maxMonthlyCount = Math.max(...monthlyTrend.map((b) => b.count), 1);
 
   const statusCounts = cases.reduce<Record<string, number>>((acc, c) => {
     acc[c.status] = (acc[c.status] ?? 0) + 1;
@@ -299,6 +325,45 @@ export default function AnalyticsPage() {
                   <span className="w-7 shrink-0 text-right text-[11px] font-semibold tabular-nums text-[color:var(--foreground)]">
                     {count}
                   </span>
+                </div>
+              );
+            })}
+          </div>
+        </Card>
+      )}
+
+      {/* ── Monthly new cases trend ── */}
+      {!loading && cases.length > 0 && (
+        <Card className="mt-4 p-4 animate-stagger-5">
+          <div className="mb-4 flex items-center gap-2">
+            <TrendingUp className="h-4 w-4 text-[color:var(--muted-foreground)]" />
+            <h2 className="text-sm font-semibold text-[color:var(--foreground)]">New Cases — Last 6 Months</h2>
+          </div>
+          <div className="flex items-end gap-2 h-24">
+            {monthlyTrend.map((bucket, i) => {
+              const pct = Math.round((bucket.count / maxMonthlyCount) * 100);
+              const isLast = i === monthlyTrend.length - 1;
+              return (
+                <div key={bucket.label} className="flex flex-1 flex-col items-center gap-1">
+                  <span className="text-[10px] font-semibold tabular-nums text-[color:var(--foreground)]">
+                    {bucket.count > 0 ? bucket.count : ""}
+                  </span>
+                  <div className="relative w-full flex-1 flex items-end">
+                    <div
+                      className={`w-full rounded-t-sm transition-all duration-700 ease-out ${
+                        isLast
+                          ? "bg-[color:var(--primary)]"
+                          : "bg-[color:var(--primary)]/40"
+                      }`}
+                      style={
+                        {
+                          height: barsVisible ? `${Math.max(4, pct)}%` : "0%",
+                          transitionDelay: barsVisible ? `${i * 60}ms` : "0ms",
+                        } as CSSProperties
+                      }
+                    />
+                  </div>
+                  <span className="text-[10px] text-[color:var(--muted-foreground)]">{bucket.label}</span>
                 </div>
               );
             })}

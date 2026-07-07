@@ -1,6 +1,8 @@
 import { UnauthorizedException } from '@nestjs/common';
 import { CasesController } from './cases.controller';
 import type { CasesService } from './cases.service';
+import type { AiScoresService } from './ai-scores.service';
+import type { DigitalTwinService } from './digital-twin.service';
 import type { Request } from 'express';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -29,12 +31,20 @@ function makeSvc(overrides: Partial<Record<keyof CasesService, jest.Mock>> = {})
   } as unknown as CasesService;
 }
 
+function makeAiSvc(): AiScoresService {
+  return { getScores: jest.fn(async () => ({})) } as unknown as AiScoresService;
+}
+
+function makeDigitalTwinSvc(): DigitalTwinService {
+  return { getDigitalTwin: jest.fn(async () => ({})) } as unknown as DigitalTwinService;
+}
+
 // ─── getCases ─────────────────────────────────────────────────────────────────
 
 describe('CasesController.getCases', () => {
   it('delegates to casesService.findAllByOrg with user orgId', async () => {
     const svc = makeSvc();
-    const ctrl = new CasesController(svc);
+    const ctrl = new CasesController(svc, makeAiSvc(), makeDigitalTwinSvc());
 
     await ctrl.getCases(makeReq());
     expect(svc.findAllByOrg).toHaveBeenCalledWith('org-1', 100, 0);
@@ -42,7 +52,7 @@ describe('CasesController.getCases', () => {
 
   it('returns [] when user has no orgId', async () => {
     const svc = makeSvc();
-    const ctrl = new CasesController(svc);
+    const ctrl = new CasesController(svc, makeAiSvc(), makeDigitalTwinSvc());
 
     const result = await ctrl.getCases(makeReq({ user: { id: 'u1', email: 'x@x.com', role: 'admin', name: 'X', orgId: null } }));
     expect(result).toEqual([]);
@@ -50,7 +60,7 @@ describe('CasesController.getCases', () => {
   });
 
   it('throws UnauthorizedException when no user on request', async () => {
-    const ctrl = new CasesController(makeSvc());
+    const ctrl = new CasesController(makeSvc(), makeAiSvc(), makeDigitalTwinSvc());
     await expect(ctrl.getCases({ headers: {}, ip: '127.0.0.1' } as unknown as Request))
       .rejects.toThrow(UnauthorizedException);
   });
@@ -63,7 +73,7 @@ describe('CasesController.createCase', () => {
 
   it('delegates to casesService.create with correct args', async () => {
     const svc = makeSvc();
-    const ctrl = new CasesController(svc);
+    const ctrl = new CasesController(svc, makeAiSvc(), makeDigitalTwinSvc());
 
     await ctrl.createCase(makeReq(), dto);
     expect(svc.create).toHaveBeenCalledWith(
@@ -73,7 +83,7 @@ describe('CasesController.createCase', () => {
   });
 
   it('throws UnauthorizedException when user has no orgId', async () => {
-    const ctrl = new CasesController(makeSvc());
+    const ctrl = new CasesController(makeSvc(), makeAiSvc(), makeDigitalTwinSvc());
     await expect(
       ctrl.createCase(makeReq({ user: { id: 'u1', email: 'x', role: 'r', name: 'n', orgId: null } }), dto),
     ).rejects.toThrow(UnauthorizedException);
@@ -81,7 +91,7 @@ describe('CasesController.createCase', () => {
 
   it('passes x-forwarded-for IP to the audit context', async () => {
     const svc = makeSvc();
-    const ctrl = new CasesController(svc);
+    const ctrl = new CasesController(svc, makeAiSvc(), makeDigitalTwinSvc());
 
     await ctrl.createCase(
       makeReq({ headers: { 'x-forwarded-for': '10.0.0.5, 10.0.0.1' } }),
@@ -97,14 +107,14 @@ describe('CasesController.createCase', () => {
 describe('CasesController.getCaseById', () => {
   it('calls findOne with the case id and orgId', async () => {
     const svc = makeSvc();
-    const ctrl = new CasesController(svc);
+    const ctrl = new CasesController(svc, makeAiSvc(), makeDigitalTwinSvc());
 
     await ctrl.getCaseById(makeReq(), 'case-123');
     expect(svc.findOne).toHaveBeenCalledWith('case-123', 'org-1');
   });
 
   it('throws when user has no org', async () => {
-    const ctrl = new CasesController(makeSvc());
+    const ctrl = new CasesController(makeSvc(), makeAiSvc(), makeDigitalTwinSvc());
     await expect(
       ctrl.getCaseById(makeReq({ user: { id: 'u', email: 'e', role: 'r', name: 'n', orgId: null } }), 'c1'),
     ).rejects.toThrow(UnauthorizedException);
@@ -118,7 +128,7 @@ describe('CasesController.updateCase', () => {
 
   it('calls casesService.update with correct args', async () => {
     const svc = makeSvc();
-    const ctrl = new CasesController(svc);
+    const ctrl = new CasesController(svc, makeAiSvc(), makeDigitalTwinSvc());
 
     await ctrl.updateCase(makeReq(), 'case-1', dto);
     expect(svc.update).toHaveBeenCalledWith(
@@ -133,7 +143,7 @@ describe('CasesController.updateCase', () => {
 describe('CasesController.transitionCase', () => {
   it('calls casesService.transition with correct status', async () => {
     const svc = makeSvc();
-    const ctrl = new CasesController(svc);
+    const ctrl = new CasesController(svc, makeAiSvc(), makeDigitalTwinSvc());
 
     await ctrl.transitionCase(makeReq(), 'case-1', { toStatus: 'in_review' as any });
     expect(svc.transition).toHaveBeenCalledWith(
@@ -144,7 +154,7 @@ describe('CasesController.transitionCase', () => {
 
   it('passes notes when provided', async () => {
     const svc = makeSvc();
-    const ctrl = new CasesController(svc);
+    const ctrl = new CasesController(svc, makeAiSvc(), makeDigitalTwinSvc());
 
     await ctrl.transitionCase(makeReq(), 'case-1', { toStatus: 'approved' as any, notes: 'LGTM' });
     const [,,,, , notes] = (svc.transition as jest.Mock).mock.calls[0];
@@ -157,7 +167,7 @@ describe('CasesController.transitionCase', () => {
 describe('CasesController.approveCase', () => {
   it('calls casesService.transition with status "approved"', async () => {
     const svc = makeSvc();
-    const ctrl = new CasesController(svc);
+    const ctrl = new CasesController(svc, makeAiSvc(), makeDigitalTwinSvc());
 
     await ctrl.approveCase(makeReq(), 'case-1', { notes: 'approved by dr' });
     const [,,,, status] = (svc.transition as jest.Mock).mock.calls[0];

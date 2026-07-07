@@ -102,17 +102,14 @@ export class CasesService {
     const row = rows[0];
     if (!row) throw new NotFoundException(`Case ${id} not found`);
 
-    const history = await this.workflowService.getHistory(id);
     const allowedTransitions = this.workflowService.allowedTransitions(
       row.status as CaseStatus,
     );
 
-    // Fetch linked resource IDs in a single query to avoid N+1.
-    // Wrapped in try/catch so a missing table from an incomplete migration does not
-    // prevent the case from loading at all.
-    let linked: Record<string, unknown> = {};
-    try {
-      const { rows: linkedRows } = await this.pool.query(
+    // Run history fetch and linked resource lookup concurrently to avoid sequential round-trips.
+    const [history, linked] = await Promise.all([
+      this.workflowService.getHistory(id),
+      this.pool.query(
         `SELECT
            (SELECT id FROM scans              WHERE case_id = $1 ORDER BY created_at DESC LIMIT 1) AS latest_scan_id,
            (SELECT id FROM digital_setups     WHERE case_id = $1 ORDER BY created_at DESC LIMIT 1) AS setup_id,
@@ -120,11 +117,11 @@ export class CasesService {
            (SELECT id FROM clinical_analyses  WHERE case_id = $1 ORDER BY created_at DESC LIMIT 1) AS analysis_id,
            (SELECT id FROM treatment_goals    WHERE case_id = $1 ORDER BY created_at DESC LIMIT 1) AS goals_id`,
         [id],
-      );
-      linked = linkedRows[0] ?? {};
-    } catch (e) {
-      this.logger.warn(`Could not fetch linked resources for case ${id}: ${String(e)}`);
-    }
+      ).then(r => r.rows[0] ?? {}).catch((e: unknown) => {
+        this.logger.warn(`Could not fetch linked resources for case ${id}: ${String(e)}`);
+        return {} as Record<string, unknown>;
+      }),
+    ]);
 
     return {
       ...this.formatCase(row),

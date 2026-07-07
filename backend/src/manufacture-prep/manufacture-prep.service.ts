@@ -122,7 +122,7 @@ export class ManufacturePrepService {
     const { rows } = await this.pool.query(
       `SELECT e.*, u.email AS generated_by_email
          FROM manufacture_exports e
-         LEFT JOIN profiles u ON u.id = e.generated_by
+         LEFT JOIN auth_users u ON u.id = e.generated_by
          WHERE e.case_id = $1
          ORDER BY e.created_at DESC`,
       [caseId],
@@ -296,7 +296,7 @@ export class ManufacturePrepService {
     const { rows } = await this.pool.query(
       `SELECT e.*, u.email AS generated_by_email
          FROM manufacture_exports e
-         LEFT JOIN profiles u ON u.id = e.generated_by
+         LEFT JOIN auth_users u ON u.id = e.generated_by
          WHERE e.id = $1 AND e.case_id = $2`,
       [exportId, caseId],
     );

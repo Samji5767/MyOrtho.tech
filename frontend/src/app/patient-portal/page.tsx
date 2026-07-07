@@ -15,7 +15,7 @@ import {
   Sun,
   Timer,
 } from "lucide-react";
-import { getWearSchedule, type WearPhase } from "@/lib/api/retention";
+import { getWearSchedule, getRetentionProtocol, type WearPhase } from "@/lib/api/retention";
 
 // ─── Wear timer ───────────────────────────────────────────────────────────────
 
@@ -142,6 +142,7 @@ function PatientPortalContent() {
   const planId = searchParams?.get("planId") ?? null;
 
   const [wearSchedule, setWearSchedule] = useState<WearPhase[]>([]);
+  const [treatmentStartDate, setTreatmentStartDate] = useState<Date | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -150,8 +151,14 @@ function PatientPortalContent() {
     setLoading(true);
     setError(null);
     try {
-      const schedule = await getWearSchedule(caseId, planId);
+      const [schedule, protocol] = await Promise.all([
+        getWearSchedule(caseId, planId),
+        getRetentionProtocol(caseId, planId).catch(() => null),
+      ]);
       setWearSchedule(schedule);
+      if (protocol?.createdAt) {
+        setTreatmentStartDate(new Date(protocol.createdAt));
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to load schedule");
     } finally {
@@ -161,8 +168,17 @@ function PatientPortalContent() {
 
   useEffect(() => { void load(); }, [load]);
 
-  // Estimate current phase based on today being roughly start-of-treatment
-  const currentPhaseIdx = 0;
+  // Compute the current phase index from elapsed months since treatment started.
+  // Falls back to 0 when treatment start date is unknown.
+  const currentPhaseIdx = (() => {
+    if (!treatmentStartDate || !wearSchedule.length) return 0;
+    const msPerMonth = 1000 * 60 * 60 * 24 * 30.44;
+    const elapsedMonths = Math.floor((Date.now() - treatmentStartDate.getTime()) / msPerMonth);
+    const idx = wearSchedule.findIndex(
+      (p) => elapsedMonths >= p.startMonth - 1 && elapsedMonths <= p.endMonth,
+    );
+    return idx >= 0 ? idx : wearSchedule.length - 1;
+  })();
 
   const activeWearHours = wearSchedule[currentPhaseIdx]?.wearHoursPerDay ?? 22;
 

@@ -402,6 +402,78 @@ export default function OverviewPage() {
           </div>
         )}
 
+        {/* ── AI Planning Intelligence ── */}
+        {!casesLoading && allCases.length > 0 && (() => {
+          const planningCases = allCases.filter((c) =>
+            ["planning", "clinical_review", "approved"].includes(c.status)
+          );
+          const segCases = allCases.filter((c) =>
+            ["scan_review", "segmentation"].includes(c.status)
+          );
+          const readyToExport = allCases.filter((c) => c.status === "approved").length;
+          const activeRx = allCases.filter((c) => c.status === "active_treatment").length;
+          return (
+            <div>
+              <p className="mb-3 text-[11px] font-semibold uppercase tracking-[0.2em] text-[color:var(--muted-foreground)]">
+                AI Intelligence Summary
+              </p>
+              <Card className="p-4">
+                <div className="flex items-center gap-2 mb-3">
+                  <Brain size={15} className="text-[color:var(--primary)]" />
+                  <p className="text-sm font-semibold text-[color:var(--foreground)]">Planning Queue</p>
+                  <span className="ml-auto text-xs text-[color:var(--muted-foreground)]">
+                    {planningCases.length} case{planningCases.length !== 1 ? "s" : ""}
+                  </span>
+                </div>
+                <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                  {[
+                    {
+                      label: "In Planning",
+                      value: planningCases.length,
+                      color: "text-violet-600 dark:text-violet-400",
+                      bg: "bg-violet-500/10",
+                    },
+                    {
+                      label: "Segmentation",
+                      value: segCases.length,
+                      color: "text-sky-600 dark:text-sky-400",
+                      bg: "bg-sky-500/10",
+                    },
+                    {
+                      label: "Ready to Export",
+                      value: readyToExport,
+                      color: "text-teal-600 dark:text-teal-400",
+                      bg: "bg-teal-500/10",
+                    },
+                    {
+                      label: "Active Rx",
+                      value: activeRx,
+                      color: "text-emerald-600 dark:text-emerald-400",
+                      bg: "bg-emerald-500/10",
+                    },
+                  ].map((m) => (
+                    <div key={m.label} className={`rounded-xl p-3 ${m.bg}`}>
+                      <p className={`text-xl font-bold tabular-nums ${m.color}`}>{m.value}</p>
+                      <p className="mt-0.5 text-[10px] font-medium text-[color:var(--muted-foreground)]">
+                        {m.label}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+                {planningCases.length > 0 && (
+                  <Link
+                    href="/cases?filter=planning"
+                    className="mt-3 flex items-center justify-end gap-1 text-xs font-semibold text-[color:var(--primary)] hover:underline underline-offset-2"
+                  >
+                    Open AI studio for planning cases
+                    <ChevronRight size={12} />
+                  </Link>
+                )}
+              </Card>
+            </div>
+          );
+        })()}
+
         {/* ── Clinical Workflow Pipeline ── */}
         <div>
           <p className="mb-3 text-[11px] font-semibold uppercase tracking-[0.2em] text-[color:var(--muted-foreground)]">

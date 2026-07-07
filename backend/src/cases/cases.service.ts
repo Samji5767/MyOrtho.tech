@@ -107,20 +107,27 @@ export class CasesService {
     );
 
     // Run history fetch and linked resource lookup concurrently to avoid sequential round-trips.
+    // The linked-resource fetch is wrapped in an async IIFE so that both synchronous mock
+    // returns and real Promise returns work correctly, and errors are caught either way.
     const [history, linked] = await Promise.all([
       this.workflowService.getHistory(id),
-      this.pool.query(
-        `SELECT
-           (SELECT id FROM scans              WHERE case_id = $1 ORDER BY created_at DESC LIMIT 1) AS latest_scan_id,
-           (SELECT id FROM digital_setups     WHERE case_id = $1 ORDER BY created_at DESC LIMIT 1) AS setup_id,
-           (SELECT id FROM treatment_plans    WHERE case_id = $1 ORDER BY created_at DESC LIMIT 1) AS plan_id,
-           (SELECT id FROM clinical_analyses  WHERE case_id = $1 ORDER BY created_at DESC LIMIT 1) AS analysis_id,
-           (SELECT id FROM treatment_goals    WHERE case_id = $1 ORDER BY created_at DESC LIMIT 1) AS goals_id`,
-        [id],
-      ).then(r => r.rows[0] ?? {}).catch((e: unknown) => {
-        this.logger.warn(`Could not fetch linked resources for case ${id}: ${String(e)}`);
-        return {} as Record<string, unknown>;
-      }),
+      (async (): Promise<Record<string, unknown>> => {
+        try {
+          const { rows } = await this.pool.query(
+            `SELECT
+               (SELECT id FROM scans              WHERE case_id = $1 ORDER BY created_at DESC LIMIT 1) AS latest_scan_id,
+               (SELECT id FROM digital_setups     WHERE case_id = $1 ORDER BY created_at DESC LIMIT 1) AS setup_id,
+               (SELECT id FROM treatment_plans    WHERE case_id = $1 ORDER BY created_at DESC LIMIT 1) AS plan_id,
+               (SELECT id FROM clinical_analyses  WHERE case_id = $1 ORDER BY created_at DESC LIMIT 1) AS analysis_id,
+               (SELECT id FROM treatment_goals    WHERE case_id = $1 ORDER BY created_at DESC LIMIT 1) AS goals_id`,
+            [id],
+          );
+          return rows[0] ?? {};
+        } catch (e) {
+          this.logger.warn(`Could not fetch linked resources for case ${id}: ${String(e)}`);
+          return {};
+        }
+      })(),
     ]);
 
     return {

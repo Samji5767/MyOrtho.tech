@@ -57,7 +57,7 @@ export class ScansController {
   @Post()
   @HttpCode(HttpStatus.CREATED)
   @RequirePermission('cases:write')
-  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 500 * 1024 * 1024 } }))
+  @UseInterceptors(FileInterceptor('file'))
   uploadScan(
     @Req() req: Request,
     @Param('caseId') caseId: string,

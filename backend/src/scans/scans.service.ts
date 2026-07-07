@@ -135,10 +135,10 @@ export class ScansService {
 
     const { rows } = await this.pool.query(
       `INSERT INTO scans
-         (case_id, uploaded_by, jaw_type, original_filename, file_path, file_format, file_size_bytes)
-       VALUES ($1, $2, $3, $4, $5, $6, $7)
+         (case_id, uploaded_by, jaw_type, original_filename, file_path, file_format, file_size_bytes, organization_id)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
        RETURNING id, created_at`,
-      [caseId, uploadedBy, jawType, file.originalname, destPath, ext, file.size],
+      [caseId, uploadedBy, jawType, file.originalname, destPath, ext, file.size, orgId],
     );
     const scan = rows[0];
 
@@ -156,6 +156,7 @@ export class ScansService {
       caseId,
       jawType,
       originalFilename: file.originalname,
+      filePath: destPath,
       fileFormat: ext,
       fileSizeBytes: file.size,
       createdAt: scan.created_at as Date,

@@ -94,8 +94,15 @@ export async function uploadFile<T>(path: string, form: FormData, timeoutMs = 12
   if (!res.ok) {
     let msg = `HTTP ${res.status}`;
     try {
-      const body = (await res.json()) as { message?: string };
-      if (body.message) msg = String(body.message);
+      const text = await res.text();
+      if (text) {
+        try {
+          const body = JSON.parse(text) as { message?: string };
+          if (body.message) msg = Array.isArray(body.message) ? body.message.join('; ') : String(body.message);
+        } catch {
+          msg = `HTTP ${res.status}: ${text.slice(0, 200)}`;
+        }
+      }
     } catch { /* swallow */ }
     throw new ApiError(res.status, msg);
   }

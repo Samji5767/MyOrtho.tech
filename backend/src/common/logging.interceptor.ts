@@ -22,12 +22,14 @@ export class LoggingInterceptor implements NestInterceptor {
       method: string;
       url: string;
       ip?: string;
+      correlationId?: string;
     }>();
 
     // Skip health / readiness probes
     if (req.url?.startsWith('/health')) return next.handle();
 
     const { method, url } = req;
+    const correlationId = req.correlationId ?? '-';
     const start = Date.now();
 
     return next.handle().pipe(
@@ -37,11 +39,11 @@ export class LoggingInterceptor implements NestInterceptor {
           const ms = Date.now() - start;
           const status = res.statusCode;
           if (status >= 500) {
-            this.logger.error(`${method} ${url} ${status} +${ms}ms`);
+            this.logger.error(`[${correlationId}] ${method} ${url} ${status} +${ms}ms`);
           } else if (status >= 400) {
-            this.logger.warn(`${method} ${url} ${status} +${ms}ms`);
+            this.logger.warn(`[${correlationId}] ${method} ${url} ${status} +${ms}ms`);
           } else {
-            this.logger.log(`${method} ${url} ${status} +${ms}ms`);
+            this.logger.log(`[${correlationId}] ${method} ${url} ${status} +${ms}ms`);
           }
         },
         error: (err: unknown) => {
@@ -51,9 +53,9 @@ export class LoggingInterceptor implements NestInterceptor {
               ? (err as { status: number }).status
               : 500;
           if (status < 500) {
-            this.logger.warn(`${method} ${url} ${status} +${ms}ms`);
+            this.logger.warn(`[${correlationId}] ${method} ${url} ${status} +${ms}ms`);
           } else {
-            this.logger.error(`${method} ${url} ERR +${ms}ms`);
+            this.logger.error(`[${correlationId}] ${method} ${url} ERR +${ms}ms`);
           }
         },
       }),

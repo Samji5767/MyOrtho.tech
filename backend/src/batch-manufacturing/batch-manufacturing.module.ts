@@ -1,3 +1,4 @@
+// Not registered in AppModule — planned for v1.1 multi-printer batch workflows
 import { Module } from '@nestjs/common';
 import { AuthModule } from '../auth/auth.module';
 import { BatchManufacturingService } from './batch-manufacturing.service';

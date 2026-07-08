@@ -15,6 +15,8 @@ export interface StreamEvent {
   sources?: Array<{ title: string; source: string }>;
   confidence?: ConfidenceLevel;
   explainability?: ExplainabilityData;
+  /** True when the rule-engine fallback was used instead of the LLM (no API key or LLM error). */
+  fallbackUsed?: boolean;
 }
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -626,7 +628,7 @@ function buildResponse(
     }
   }
 
-  if (intent === 'question' && lines.length > 0) {
+  if (lines.length > 0) {
     lines.push('\n\n*⚠ AI clinical suggestion — clinician review and judgement required before any clinical decision.*');
   }
 
@@ -840,6 +842,7 @@ export class CopilotService {
     };
 
     let fullResponse = '';
+    let fallbackUsed = false;
 
     if (this.llm?.isConfigured() && this.contextBuilder) {
       // ── RAG + LLM path ──────────────────────────────────────────────────
@@ -869,6 +872,7 @@ export class CopilotService {
       } catch (err) {
         this.log.error('LLM stream error', (err as Error).message);
         // Fall back to rule engine on LLM failure
+        fallbackUsed = true;
         fullResponse = buildResponse(
           dto.content, intent, module, rawSuggestions,
           conv['context_snapshot'] as Record<string, unknown>,
@@ -877,6 +881,7 @@ export class CopilotService {
       }
     } else {
       // ── Rule engine fallback ─────────────────────────────────────────────
+      fallbackUsed = true;
       fullResponse = buildResponse(
         dto.content, intent, module, rawSuggestions,
         conv['context_snapshot'] as Record<string, unknown>,
@@ -934,12 +939,13 @@ export class CopilotService {
       [conversationId],
     );
 
-    this.log.log(`Copilot stream: conv ${conversationId} — ${latencyMs}ms, agent=${agentConfig.agentType}`);
-    yield { type: 'done', messageId: msgRes.rows[0]['id'] as string };
+    this.log.log(`Copilot stream: conv ${conversationId} — ${latencyMs}ms, agent=${agentConfig.agentType}, fallback=${fallbackUsed}`);
+    yield { type: 'done', messageId: msgRes.rows[0]['id'] as string, fallbackUsed };
     yield {
       type: 'meta',
       confidence: streamConfidence,
       explainability: streamExplainability,
+      fallbackUsed,
     };
   }
 

@@ -137,7 +137,6 @@ export default function RootLayout({
             <img
               src="/app-icon.png"
               alt="MyOrtho"
-              onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }}
             />
           </div>
           <div id="__mo-launch-text">Preparing clinical workspace</div>

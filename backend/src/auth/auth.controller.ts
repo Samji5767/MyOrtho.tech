@@ -12,8 +12,39 @@ import {
 } from '@nestjs/common';
 import type { Request, Response } from 'express';
 import { Throttle } from '@nestjs/throttler';
+import { IsEmail, IsNotEmpty, IsString, MinLength } from 'class-validator';
 import { AuthService } from './auth.service';
 import { AuditService } from '../audit/audit.service';
+
+class LoginDto {
+  @IsEmail()
+  @IsNotEmpty()
+  email: string;
+
+  @IsString()
+  @IsNotEmpty()
+  @MinLength(8)
+  password: string;
+}
+
+class RegisterDto {
+  @IsEmail()
+  @IsNotEmpty()
+  email: string;
+
+  @IsString()
+  @IsNotEmpty()
+  @MinLength(8)
+  password: string;
+
+  @IsString()
+  @IsNotEmpty()
+  fullName: string;
+
+  @IsString()
+  @IsNotEmpty()
+  clinicName: string;
+}
 
 const COOKIE_NAME = 'mo_session';
 
@@ -42,7 +73,7 @@ export class AuthController {
   @Post('login')
   @HttpCode(HttpStatus.OK)
   async login(
-    @Body() body: { email?: string; password?: string },
+    @Body() body: LoginDto,
     @Req() req: Request,
     @Res({ passthrough: true }) res: Response,
   ) {
@@ -165,7 +196,7 @@ export class AuthController {
   @Post('register')
   @HttpCode(HttpStatus.CREATED)
   async register(
-    @Body() body: { email?: string; password?: string; fullName?: string; clinicName?: string },
+    @Body() body: RegisterDto,
     @Req() req: Request,
     @Res({ passthrough: true }) res: Response,
   ) {

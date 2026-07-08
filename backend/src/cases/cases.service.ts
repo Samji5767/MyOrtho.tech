@@ -7,16 +7,28 @@ import {
   Logger,
 } from '@nestjs/common';
 import type { Pool, PoolClient } from 'pg';
+import { IsNotEmpty, IsOptional, IsString, IsUUID } from 'class-validator';
 import { PG_POOL } from '../database/database.module';
 import { AuditService } from '../audit/audit.service';
 import { CryptoService } from '../common/crypto.service';
 import { WorkflowService, type CaseStatus } from '../workflow/workflow.service';
 import { NotificationsService, type NotificationType } from '../notifications/notifications.service';
 
-export interface CreateCaseDto {
+export class CreateCaseDto {
+  @IsUUID()
+  @IsNotEmpty()
   patientId: string;
+
+  @IsString()
+  @IsOptional()
   chiefComplaint?: string;
+
+  @IsString()
+  @IsOptional()
   malocclusionClass?: string;
+
+  @IsString()
+  @IsOptional()
   notes?: string;
 }
 

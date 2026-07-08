@@ -13,7 +13,7 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import type { Request } from 'express';
-import { CasesService, type CreateCaseDto, type CreateCaseWithPatientDto, type UpdateCaseDto, type PracticeAnalyticsSummary } from './cases.service';
+import { CasesService, CreateCaseDto, type CreateCaseWithPatientDto, type UpdateCaseDto, type PracticeAnalyticsSummary } from './cases.service';
 import { AiScoresService } from './ai-scores.service';
 import { DigitalTwinService } from './digital-twin.service';
 import { AuthGuard } from '../auth/auth.guard';

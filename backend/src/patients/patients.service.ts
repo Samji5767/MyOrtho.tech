@@ -7,15 +7,33 @@ import {
   Logger,
 } from '@nestjs/common';
 import type { Pool } from 'pg';
+import { IsDateString, IsNotEmpty, IsOptional, IsString, MaxLength } from 'class-validator';
 import { PG_POOL } from '../database/database.module';
 import { AuditService } from '../audit/audit.service';
 import { CryptoService } from '../common/crypto.service';
 
-export interface CreatePatientDto {
+export class CreatePatientDto {
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(100)
   firstName: string;
+
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(100)
   lastName: string;
+
+  @IsDateString()
+  @IsOptional()
   dateOfBirth?: string;
+
+  @IsString()
+  @IsOptional()
+  @MaxLength(20)
   gender?: string;
+
+  @IsString()
+  @IsOptional()
   clinicalNotes?: string;
 }
 

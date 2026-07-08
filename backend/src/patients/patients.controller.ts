@@ -13,7 +13,7 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import type { Request } from 'express';
-import { PatientsService, type CreatePatientDto, type UpdatePatientDto } from './patients.service';
+import { PatientsService, CreatePatientDto, type UpdatePatientDto } from './patients.service';
 import { AuthGuard } from '../auth/auth.guard';
 import { PermissionsGuard } from '../auth/permissions.guard';
 import { RequirePermission } from '../auth/require-permission.decorator';

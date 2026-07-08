@@ -368,7 +368,7 @@ export class AttachmentIntelligenceService {
 
       // Join to the attachment library to get the actual depth for this attachment
       const libRow = await this.db.query(
-        `SELECT depth_mm FROM attachment_library
+        `SELECT depth_mm FROM attachment_libraries
          WHERE id = $1 LIMIT 1`,
         [r['attachment_library_id']],
       );

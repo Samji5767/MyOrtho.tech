@@ -67,7 +67,7 @@ export class QcService {
               p.name AS printer_name
        FROM print_jobs pj
        LEFT JOIN printers p ON p.id = pj.printer_id
-       WHERE p.organization_id = $1 OR pj.status IN ('completed','failed')
+       WHERE p.organization_id = $1
        ORDER BY pj.created_at DESC LIMIT $2`,
       [orgId, limit],
     );

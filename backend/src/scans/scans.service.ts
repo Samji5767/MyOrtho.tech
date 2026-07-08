@@ -61,7 +61,7 @@ export class ScansService {
     const isBinaryStl =
       header.length >= 84 &&
       header.readUInt32LE(80) > 0 &&
-      header.length >= 84 + header.readUInt32LE(80) * 0; // structure check only
+      header.length >= 84 + header.readUInt32LE(80) * 50; // 50 bytes per triangle
     // OBJ: ASCII lines starting with v, vt, vn, f, #, mtllib, o, g, usemtl
     const isObj = /^(#|v |vt |vn |f |o |g |mtllib|usemtl)/m.test(
       header.toString('ascii', 0, 256),

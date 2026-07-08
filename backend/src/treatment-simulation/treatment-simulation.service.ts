@@ -110,7 +110,7 @@ export class TreatmentSimulationService {
     const overjetInitial = OVERJET_NORMAL;
     const overjetFinal   = Math.max(0, OVERJET_NORMAL - upperIncisorMovement - lowerIncisorMovement * 0.5);
     const overbiteInitial = OVERBITE_NORMAL;
-    const overbiteFinall  = Math.max(0, OVERBITE_NORMAL - prescriptions
+    const overbiteFinalmm  = Math.max(0, OVERBITE_NORMAL - prescriptions
       .filter(p => INCISORS.includes(p['tooth_number'] as number))
       .reduce((s, p) => s + (p['intrusion_mm'] as number ?? 0), 0) * 0.5);
 
@@ -125,7 +125,7 @@ export class TreatmentSimulationService {
     const archCoordScore = 1.0 - Math.min(Math.abs(upperExpansion - lowerExpansion) / 5.0, 1.0);
 
     // Occlusion score — based on overjet/overbite alignment
-    const occlusionScore = Math.max(0, 1.0 - (Math.abs(overjetFinal - OVERJET_NORMAL) / 5.0 + Math.abs(overbiteFinall - OVERBITE_NORMAL) / 5.0));
+    const occlusionScore = Math.max(0, 1.0 - (Math.abs(overjetFinal - OVERJET_NORMAL) / 5.0 + Math.abs(overbiteFinalmm - OVERBITE_NORMAL) / 5.0));
 
     // Smile arc score — computed from upper incisor vertical movement balance.
     // Consonant arc = incisors 11,21 and 12,22 track as a smooth arc (no single tooth over-intruded).
@@ -186,7 +186,7 @@ export class TreatmentSimulationService {
         parseFloat(occlusionScore.toFixed(3)),
         parseFloat(smileArcScore.toFixed(3)),
         overjetInitial, parseFloat(overjetFinal.toFixed(3)),
-        overbiteInitial, parseFloat(overbiteFinall.toFixed(3)),
+        overbiteInitial, parseFloat(overbiteFinalmm.toFixed(3)),
         Date.now() - startMs,
         userId,
       ],
@@ -225,7 +225,7 @@ export class TreatmentSimulationService {
 
       const upperWidth = ARCH_WIDTH_UPPER + (upperExpansion * t);
       const lowerWidth = ARCH_WIDTH_LOWER + (lowerExpansion * t);
-      const overbiteFrame = lerp(overbiteInitial, overbiteFinall, t);
+      const overbiteFrame = lerp(overbiteInitial, overbiteFinalmm, t);
       const overjetFrame  = lerp(overjetInitial, overjetFinal, t);
 
       // Midline deviation: from net mesialization of left vs right incisors

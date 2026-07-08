@@ -44,7 +44,7 @@ export class MessagingService {
 
     const { rows } = await this.pool.query(
       `SELECT m.id, m.body, m.created_at, m.sender_id,
-              au.name as sender_name, ($2 = ANY(m.read_by)) as is_read
+              au.full_name as sender_name, ($2 = ANY(m.read_by)) as is_read
        FROM messages m LEFT JOIN auth_users au ON au.id = m.sender_id
        WHERE m.conversation_id = $1 ORDER BY m.created_at`,
       [conversationId, userId],

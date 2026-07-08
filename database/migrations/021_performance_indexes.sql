@@ -55,15 +55,26 @@ END $$;
 
 -- ─── Monitoring & quality ─────────────────────────────────────────────────────
 
-CREATE INDEX IF NOT EXISTS idx_treatment_check_ins_case_id
-  ON treatment_check_ins (case_id, created_at DESC);
+DO $$ BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.tables
+             WHERE table_schema = 'public' AND table_name = 'treatment_check_ins') THEN
+    EXECUTE 'CREATE INDEX IF NOT EXISTS idx_treatment_check_ins_case_id ON treatment_check_ins (case_id, created_at DESC)';
+  END IF;
+END $$;
 
-CREATE INDEX IF NOT EXISTS idx_off_track_alerts_case_id
-  ON off_track_alerts (case_id, resolved_at)
-  WHERE resolved_at IS NULL;
+DO $$ BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.tables
+             WHERE table_schema = 'public' AND table_name = 'off_track_alerts') THEN
+    EXECUTE 'CREATE INDEX IF NOT EXISTS idx_off_track_alerts_case_id ON off_track_alerts (case_id, resolved_at) WHERE resolved_at IS NULL';
+  END IF;
+END $$;
 
-CREATE INDEX IF NOT EXISTS idx_treatment_quality_scores_plan_id
-  ON treatment_quality_scores (plan_id);
+DO $$ BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.tables
+             WHERE table_schema = 'public' AND table_name = 'treatment_quality_scores') THEN
+    EXECUTE 'CREATE INDEX IF NOT EXISTS idx_treatment_quality_scores_plan_id ON treatment_quality_scores (plan_id)';
+  END IF;
+END $$;
 
 -- ─── PDL / biomechanics ───────────────────────────────────────────────────────
 
@@ -100,22 +111,42 @@ END $$;
 
 -- ─── Scan processing ──────────────────────────────────────────────────────────
 
-CREATE INDEX IF NOT EXISTS idx_scan_processing_jobs_scan_id
-  ON scan_processing_jobs (scan_id, created_at DESC);
+DO $$ BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.tables
+             WHERE table_schema = 'public' AND table_name = 'scan_processing_jobs') THEN
+    EXECUTE 'CREATE INDEX IF NOT EXISTS idx_scan_processing_jobs_scan_id ON scan_processing_jobs (scan_id, created_at DESC)';
+  END IF;
+END $$;
 
-CREATE INDEX IF NOT EXISTS idx_tooth_id_results_scan_id
-  ON tooth_id_results (scan_id);
+DO $$ BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.tables
+             WHERE table_schema = 'public' AND table_name = 'tooth_id_results') THEN
+    EXECUTE 'CREATE INDEX IF NOT EXISTS idx_tooth_id_results_scan_id ON tooth_id_results (scan_id)';
+  END IF;
+END $$;
 
 -- ─── CBCT ─────────────────────────────────────────────────────────────────────
 
-CREATE INDEX IF NOT EXISTS idx_cbct_scans_case_id
-  ON cbct_scans (case_id);
+DO $$ BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.tables
+             WHERE table_schema = 'public' AND table_name = 'cbct_scans') THEN
+    EXECUTE 'CREATE INDEX IF NOT EXISTS idx_cbct_scans_case_id ON cbct_scans (case_id)';
+  END IF;
+END $$;
 
-CREATE INDEX IF NOT EXISTS idx_cbct_stl_fusions_case_id
-  ON cbct_stl_fusions (case_id);
+DO $$ BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.tables
+             WHERE table_schema = 'public' AND table_name = 'cbct_stl_fusions') THEN
+    EXECUTE 'CREATE INDEX IF NOT EXISTS idx_cbct_stl_fusions_case_id ON cbct_stl_fusions (case_id)';
+  END IF;
+END $$;
 
-CREATE INDEX IF NOT EXISTS idx_bone_segments_fusion_id
-  ON bone_segments (fusion_id);
+DO $$ BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.tables
+             WHERE table_schema = 'public' AND table_name = 'bone_segments') THEN
+    EXECUTE 'CREATE INDEX IF NOT EXISTS idx_bone_segments_fusion_id ON bone_segments (fusion_id)';
+  END IF;
+END $$;
 
 -- ─── Audit events ─────────────────────────────────────────────────────────────
 
@@ -136,8 +167,12 @@ DO $$ BEGIN
   END IF;
 END $$;
 
-CREATE INDEX IF NOT EXISTS idx_export_transactions_org_created
-  ON export_transactions (organization_id, created_at DESC);
+DO $$ BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.tables
+             WHERE table_schema = 'public' AND table_name = 'export_transactions') THEN
+    EXECUTE 'CREATE INDEX IF NOT EXISTS idx_export_transactions_org_created ON export_transactions (organization_id, created_at DESC)';
+  END IF;
+END $$;
 
 -- billing_subscriptions (from schema.sql line 678 and migration 002)
 DO $$ BEGIN

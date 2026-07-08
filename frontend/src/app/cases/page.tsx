@@ -369,6 +369,7 @@ function CasesPageInner() {
   const [apiCases, setApiCases] = useState<CaseListItem[]>([]);
   const [apiSource, setApiSource] = useState<"loading" | "api" | "demo">("loading");
   const [hiddenDemoCaseIds, setHiddenDemoCaseIds] = useState<Set<string>>(new Set());
+  const [archiveError, setArchiveError] = useState<string | null>(null);
 
   const sortRef = useRef<HTMLDivElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
@@ -454,12 +455,13 @@ function CasesPageInner() {
   const handleBulkArchive = useCallback(async () => {
     const ids = Array.from(selectedIds);
     if (!ids.length) return;
+    setArchiveError(null);
     try {
       await Promise.all(ids.map((id) => transitionCase(id, "archived")));
       setApiCases((prev) => prev.filter((c) => !selectedIds.has(c.id)));
       clearBulk();
     } catch (e) {
-      console.error("[CasesPage] bulk archive failed:", e);
+      setArchiveError(e instanceof Error ? e.message : "Failed to archive selected cases");
     }
   }, [selectedIds, clearBulk]);
 
@@ -468,11 +470,12 @@ function CasesPageInner() {
       setHiddenDemoCaseIds((prev) => { const next = new Set(prev); next.add(id); return next; });
       return;
     }
+    setArchiveError(null);
     try {
       await transitionCase(id, "archived");
       setApiCases((prev) => prev.filter((c) => c.id !== id));
     } catch (e) {
-      console.error("[CasesPage] archive failed:", e);
+      setArchiveError(e instanceof Error ? e.message : "Failed to archive case");
     }
   }, [previewMode]);
 
@@ -905,6 +908,14 @@ function CasesPageInner() {
           );
         })}
       </div>
+
+      {/* ── Archive error banner ── */}
+      {archiveError && (
+        <div className="mx-4 mb-2 flex items-center gap-2 rounded-xl border border-rose-300/50 bg-rose-50/60 px-3 py-2 text-xs text-rose-700 dark:border-rose-700/40 dark:bg-rose-900/10 dark:text-rose-400">
+          <span className="flex-1">{archiveError}</span>
+          <button type="button" onClick={() => setArchiveError(null)} className="shrink-0 font-semibold hover:underline">Dismiss</button>
+        </div>
+      )}
 
       {/* ── Bulk action bar (sticky) ── */}
       {bulkMode && selectedIds.size > 0 && (

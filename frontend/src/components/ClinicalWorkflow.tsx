@@ -194,7 +194,7 @@ export default function ClinicalWorkflow({
   caseName = "Sample Case",
   initialStatus = "clinical_review",
   initialHistory,
-  currentActor = "Dr. Demo",
+  currentActor = "—",
   currentActorRole = "Clinical Director",
 }: ClinicalWorkflowProps) {
   const [status, setStatus] = useState<CaseStatus>(initialStatus);
@@ -202,6 +202,7 @@ export default function ClinicalWorkflow({
   const [noteInput, setNoteInput] = useState("");
   const [pendingAction, setPendingAction] = useState<AllowedAction | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [transitionError, setTransitionError] = useState<string | null>(null);
 
   const actions = TRANSITIONS[status] ?? [];
 
@@ -223,10 +224,11 @@ export default function ClinicalWorkflow({
       notes,
     };
 
+    setTransitionError(null);
     try {
       await api.patch(`/api/cases/${caseId}/status`, { status: action.toStatus, notes });
     } catch (err) {
-      console.error("[ClinicalWorkflow] status transition failed:", err);
+      setTransitionError(err instanceof Error ? err.message : "Status transition failed");
       setSubmitting(false);
       return;
     }
@@ -256,11 +258,18 @@ export default function ClinicalWorkflow({
         </div>
       </Card>
 
+      {transitionError && (
+        <div className="flex items-center gap-2 rounded-xl border border-rose-300/50 bg-rose-50/60 px-3 py-2 text-xs text-rose-700 dark:border-rose-700/40 dark:bg-rose-900/10 dark:text-rose-400">
+          <XCircle size={12} className="shrink-0" />
+          {transitionError}
+        </div>
+      )}
+
       {actions.length > 0 && (
         <Card className="p-5">
           <h3 className="text-sm font-semibold text-foreground">Available Actions</h3>
           <p className="mt-1 text-xs text-secondary">
-            Acting as <span className="font-medium text-foreground">{currentActor}</span> · {currentActorRole}
+            Acting as <span className="font-medium text-foreground">{currentActor !== "—" ? currentActor : "current user"}</span> · {currentActorRole}
           </p>
 
           {pendingAction ? (

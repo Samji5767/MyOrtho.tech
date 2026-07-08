@@ -1,9 +1,9 @@
 "use client";
 
-import { useState, useEffect, Suspense } from "react";
+import { useState, useEffect, useCallback, Suspense } from "react";
 import dynamic from "next/dynamic";
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
+import { useSearchParams, useRouter } from "next/navigation";
 import {
   AlertTriangle,
   ArrowRight,
@@ -216,11 +216,17 @@ function ViewerTab({ caseData }: { caseData: CaseDetail | null }) {
 // ─── CAD tab ──────────────────────────────────────────────────────────────────
 
 function CadTab({ caseData }: { caseData: CaseDetail | null }) {
+  const [snapshotError, setSnapshotError] = useState<string | null>(null);
+
   if (!caseData) return <NoCaseBanner />;
 
   function saveSnapshot() {
+    setSnapshotError(null);
     const canvas = document.querySelector<HTMLCanvasElement>("canvas");
-    if (!canvas) return;
+    if (!canvas) {
+      setSnapshotError("No CAD canvas found — open the CAD Studio view first.");
+      return;
+    }
     try {
       const url = canvas.toDataURL("image/png");
       const a = document.createElement("a");
@@ -228,8 +234,8 @@ function CadTab({ caseData }: { caseData: CaseDetail | null }) {
       a.download = `myortho-snapshot-${patientName}.png`;
       a.href = url;
       a.click();
-    } catch (err) {
-      console.error("Snapshot export failed:", err);
+    } catch {
+      setSnapshotError("Canvas export failed — ensure hardware acceleration is enabled.");
     }
   }
 
@@ -252,6 +258,12 @@ function CadTab({ caseData }: { caseData: CaseDetail | null }) {
           <CheckCircle2 size={12} /> Save Snapshot
         </button>
       </div>
+      {snapshotError && (
+        <div className="flex items-center gap-2 rounded-xl border border-rose-300/50 bg-rose-50/60 px-3 py-2 text-xs text-rose-700 dark:border-rose-700/40 dark:bg-rose-900/10 dark:text-rose-400">
+          <AlertTriangle size={12} className="shrink-0" />
+          {snapshotError}
+        </div>
+      )}
       <CADCapabilityMatrix />
       <CADEngine />
     </div>
@@ -329,19 +341,48 @@ function PreviewTab({ caseData }: { caseData: CaseDetail | null }) {
 
 // ─── Studio page ──────────────────────────────────────────────────────────────
 
+const STUDIO_TABS_KEYS: StudioTab[] = ["import", "viewer", "cad", "plan", "preview"];
+
 function StudioPageContent() {
+  const router      = useRouter();
   const searchParams = useSearchParams();
   const caseId     = searchParams?.get("caseId")  ?? null;
   const planIdParam = searchParams?.get("planId") ?? null;
+  const tabParam   = (searchParams?.get("tab") ?? "import") as StudioTab;
 
-  const [activeTab,      setActiveTab]      = useState<StudioTab>("import");
-  const [caseData,       setCaseData]       = useState<CaseDetail | null>(null);
-  const [caseLoading,    setCaseLoading]    = useState(false);
+  const [activeTab,       setActiveTab]      = useState<StudioTab>(
+    STUDIO_TABS_KEYS.includes(tabParam) ? tabParam : "import",
+  );
+  const [caseData,        setCaseData]       = useState<CaseDetail | null>(null);
+  const [caseLoading,     setCaseLoading]    = useState(false);
+  const [caseError,       setCaseError]      = useState<string | null>(null);
   const [effectivePlanId, setEffectivePlanId] = useState<string | null>(planIdParam);
 
+  const handleTabChange = useCallback((tab: StudioTab) => {
+    setActiveTab(tab);
+    const params = new URLSearchParams(window.location.search);
+    params.set("tab", tab);
+    router.replace(`?${params.toString()}`, { scroll: false });
+  }, [router]);
+
+  // Keyboard shortcuts: 1–5 → switch studio tabs
   useEffect(() => {
-    if (!caseId) { setCaseData(null); return; }
+    const keyMap: Record<string, StudioTab> = {
+      "1": "import", "2": "viewer", "3": "cad", "4": "plan", "5": "preview",
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+      if (e.ctrlKey || e.metaKey || e.altKey) return;
+      if (keyMap[e.key]) handleTabChange(keyMap[e.key]);
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [handleTabChange]);
+
+  useEffect(() => {
+    if (!caseId) { setCaseData(null); setCaseError(null); return; }
     setCaseLoading(true);
+    setCaseError(null);
     fetchCase(caseId)
       .then(({ data }) => {
         setCaseData(data);
@@ -349,7 +390,10 @@ function StudioPageContent() {
         setEffectivePlanId(prev => prev ?? data.linkedResources?.planId ?? null);
         setCaseLoading(false);
       })
-      .catch(() => setCaseLoading(false));
+      .catch((err: unknown) => {
+        setCaseLoading(false);
+        setCaseError(err instanceof Error ? err.message : "Failed to load case");
+      });
   }, [caseId]);
 
   return (
@@ -377,6 +421,14 @@ function StudioPageContent() {
             <SkeletonBlock className="h-3 w-24" />
           </div>
         </div>
+      ) : caseError ? (
+        <div className="flex items-center gap-3 rounded-2xl border border-rose-300/50 bg-rose-50/60 px-4 py-3 dark:border-rose-700/40 dark:bg-rose-900/10">
+          <AlertTriangle size={16} className="shrink-0 text-rose-600" />
+          <p className="flex-1 text-sm text-rose-700 dark:text-rose-400">{caseError}</p>
+          <Link href="/cases" className="shrink-0 text-xs font-semibold text-rose-700 hover:underline dark:text-rose-400">
+            Select a different case →
+          </Link>
+        </div>
       ) : caseData ? (
         <CaseBanner caseData={caseData} />
       ) : (
@@ -391,12 +443,20 @@ function StudioPageContent() {
       )}
 
       {/* Workbench tab bar */}
-      <div className="no-scrollbar flex items-stretch gap-1 overflow-x-auto rounded-2xl border border-[color:var(--border)] bg-[color:var(--card)] p-1 shadow-[var(--shadow-sm)]">
-        {TABS.map(({ key, label, icon: Icon }) => (
+      <div
+        className="no-scrollbar flex items-stretch gap-1 overflow-x-auto rounded-2xl border border-[color:var(--border)] bg-[color:var(--card)] p-1 shadow-[var(--shadow-sm)]"
+        role="tablist"
+        aria-label="Studio workbench tabs"
+      >
+        {TABS.map(({ key, label, icon: Icon }, i) => (
           <button
             key={key}
             type="button"
-            onClick={() => setActiveTab(key)}
+            role="tab"
+            aria-selected={activeTab === key}
+            aria-controls={`studio-panel-${key}`}
+            onClick={() => handleTabChange(key)}
+            title={`${label} (${i + 1})`}
             className={[
               "flex flex-1 shrink-0 items-center justify-center gap-2 rounded-xl px-3 py-2.5 text-xs font-semibold transition-all duration-200 active:scale-95",
               activeTab === key
@@ -412,10 +472,13 @@ function StudioPageContent() {
           </button>
         ))}
       </div>
+      <p className="text-right text-[10px] text-[color:var(--muted-foreground)] -mt-1 pr-1">
+        Keys 1–5 switch tabs
+      </p>
 
       {/* Active panel — wrapped in error boundary so one tab crash doesn't kill the workspace */}
       <RuntimeErrorBoundary>
-        <div className="animate-page-enter">
+        <div className="animate-page-enter" id={`studio-panel-${activeTab}`} role="tabpanel">
           {activeTab === "import"  && <ImportTab  caseData={caseData} />}
           {activeTab === "viewer"  && <ViewerTab  caseData={caseData} />}
           {activeTab === "cad"     && <CadTab     caseData={caseData} />}

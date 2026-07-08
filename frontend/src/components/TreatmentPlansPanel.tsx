@@ -243,6 +243,7 @@ function PlanRow({
   const [editingNotes, setEditingNotes] = useState(false);
   const [notesDraft, setNotesDraft] = useState(plan.aiRecommendationNotes ?? "");
   const [notesSaving, setNotesSaving] = useState(false);
+  const [notesError, setNotesError] = useState<string | null>(null);
   const notesEscapedRef = useRef(false);
 
   useEffect(() => {
@@ -304,6 +305,7 @@ function PlanRow({
       return;
     }
     setNotesSaving(true);
+    setNotesError(null);
     try {
       const updated = await updatePlan(caseId, plan.id, {
         aiRecommendationNotes: trimmed || undefined,
@@ -311,7 +313,7 @@ function PlanRow({
       onUpdated(updated);
       setEditingNotes(false);
     } catch (e) {
-      console.error("[TreatmentPlansPanel] save notes failed:", e);
+      setNotesError(e instanceof Error ? e.message : "Failed to save notes");
     } finally {
       setNotesSaving(false);
     }
@@ -358,6 +360,9 @@ function PlanRow({
                 />
                 {notesSaving && (
                   <span className="text-[10px] text-[color:var(--muted-foreground)]">Saving…</span>
+                )}
+                {notesError && (
+                  <span className="text-[10px] text-rose-500">{notesError}</span>
                 )}
               </div>
             ) : (

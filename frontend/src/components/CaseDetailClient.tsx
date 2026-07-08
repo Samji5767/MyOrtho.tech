@@ -19,8 +19,10 @@ import {
   Cpu,
   Download,
   FileText,
+  FolderX,
   GitBranch,
   Grid3X3,
+  Info,
   Layers,
   Microscope,
   Move3d,
@@ -244,56 +246,92 @@ type Tab =
   // Documentation
   | "reports" | "photos";
 
-const TABS: { key: Tab; label: string; icon: React.ReactNode }[] = [
+type TabItem =
+  | { type: "tab"; key: Tab; label: string; icon: React.ReactNode }
+  | { type: "separator"; label: string };
+
+const TABS: TabItem[] = [
   // Overview
-  { key: "summary",        label: "Summary",        icon: <ClipboardList size={13} /> },
-  { key: "workflow",       label: "Workflow",        icon: <GitBranch size={13} /> },
+  { type: "tab", key: "summary",        label: "Summary",        icon: <ClipboardList size={13} /> },
+  { type: "tab", key: "workflow",       label: "Workflow",        icon: <GitBranch size={13} /> },
   // STL / Scans
-  { key: "scans",          label: "Scans",           icon: <UploadCloud size={13} /> },
-  { key: "scan-validation",label: "Upload",          icon: <Upload size={13} /> },
-  { key: "processing",     label: "Processing",      icon: <ScanLine size={13} /> },
+  { type: "separator", label: "Scans" },
+  { type: "tab", key: "scans",          label: "Scans",           icon: <UploadCloud size={13} /> },
+  { type: "tab", key: "scan-validation",label: "Upload",          icon: <Upload size={13} /> },
+  { type: "tab", key: "processing",     label: "Processing",      icon: <ScanLine size={13} /> },
   // AI Segmentation
-  { key: "segment",        label: "AI Segment",      icon: <ScanLine size={13} /> },
-  { key: "segmentation",   label: "Segmentation",    icon: <Grid3X3 size={13} /> },
-  { key: "pipeline",       label: "AI Pipeline",     icon: <Cpu size={13} /> },
+  { type: "separator", label: "AI" },
+  { type: "tab", key: "segment",        label: "AI Segment",      icon: <ScanLine size={13} /> },
+  { type: "tab", key: "segmentation",   label: "Segmentation",    icon: <Grid3X3 size={13} /> },
+  { type: "tab", key: "pipeline",       label: "AI Pipeline",     icon: <Cpu size={13} /> },
   // Treatment Planning
-  { key: "plans",          label: "Plans",           icon: <ClipboardCheck size={13} /> },
-  { key: "tx-goals",       label: "Tx Goals",        icon: <Target size={13} /> },
-  { key: "proposal",       label: "AI Proposal",     icon: <Brain size={13} /> },
+  { type: "separator", label: "Planning" },
+  { type: "tab", key: "plans",          label: "Plans",           icon: <ClipboardCheck size={13} /> },
+  { type: "tab", key: "tx-goals",       label: "Tx Goals",        icon: <Target size={13} /> },
+  { type: "tab", key: "proposal",       label: "AI Proposal",     icon: <Brain size={13} /> },
   // CAD
-  { key: "cad-studio",     label: "CAD Studio",      icon: <Move3d size={13} /> },
-  { key: "movements",      label: "Movements",       icon: <Ruler size={13} /> },
-  { key: "biomechanics",   label: "Biomechanics",    icon: <Zap size={13} /> },
+  { type: "separator", label: "CAD" },
+  { type: "tab", key: "cad-studio",     label: "CAD Studio",      icon: <Move3d size={13} /> },
+  { type: "tab", key: "movements",      label: "Movements",       icon: <Ruler size={13} /> },
+  { type: "tab", key: "biomechanics",   label: "Biomechanics",    icon: <Zap size={13} /> },
   // Attachments & IPR
-  { key: "attachments",    label: "Attachments",     icon: <Box size={13} /> },
-  { key: "ipr",            label: "IPR",             icon: <Ruler size={13} /> },
+  { type: "separator", label: "Tx Detail" },
+  { type: "tab", key: "attachments",    label: "Attachments",     icon: <Box size={13} /> },
+  { type: "tab", key: "ipr",            label: "IPR",             icon: <Ruler size={13} /> },
   // Staging & Aligners
-  { key: "stages",         label: "Stages",          icon: <Layers size={13} /> },
-  { key: "aligner-staging",label: "Staging",         icon: <Layers size={13} /> },
-  { key: "aligner-preview",label: "Aligners",        icon: <Package size={13} /> },
+  { type: "separator", label: "Staging" },
+  { type: "tab", key: "stages",         label: "Stages",          icon: <Layers size={13} /> },
+  { type: "tab", key: "aligner-staging",label: "Staging",         icon: <Layers size={13} /> },
+  { type: "tab", key: "aligner-preview",label: "Aligners",        icon: <Package size={13} /> },
   // QA & Export
-  { key: "qa-report",      label: "QA",              icon: <ClipboardCheck size={13} /> },
-  { key: "export",         label: "QA & Export",     icon: <ShieldCheck size={13} /> },
-  { key: "downloads",      label: "Downloads",        icon: <Download size={13} /> },
+  { type: "separator", label: "Export" },
+  { type: "tab", key: "qa-report",      label: "QA",              icon: <ClipboardCheck size={13} /> },
+  { type: "tab", key: "export",         label: "QA & Export",     icon: <ShieldCheck size={13} /> },
+  { type: "tab", key: "downloads",      label: "Downloads",       icon: <Download size={13} /> },
   // Analysis & Imaging
-  { key: "analysis",       label: "Analysis",        icon: <Microscope size={13} /> },
-  { key: "clinical-deep",  label: "Deep Analysis",   icon: <BarChart2 size={13} /> },
-  { key: "occlusion",      label: "Occlusion",       icon: <Target size={13} /> },
-  { key: "ceph",           label: "Ceph",            icon: <ScanLine size={13} /> },
-  { key: "cbct",           label: "CBCT",            icon: <Box size={13} /> },
-  { key: "radiology",      label: "Imaging",         icon: <Camera size={13} /> },
+  { type: "separator", label: "Analysis" },
+  { type: "tab", key: "analysis",       label: "Analysis",        icon: <Microscope size={13} /> },
+  { type: "tab", key: "clinical-deep",  label: "Deep Analysis",   icon: <BarChart2 size={13} /> },
+  { type: "tab", key: "occlusion",      label: "Occlusion",       icon: <Target size={13} /> },
+  { type: "tab", key: "ceph",           label: "Ceph",            icon: <ScanLine size={13} /> },
+  { type: "tab", key: "cbct",           label: "CBCT",            icon: <Box size={13} /> },
+  { type: "tab", key: "radiology",      label: "Imaging",         icon: <Camera size={13} /> },
   // AI & Clinical
-  { key: "ai-assistant",   label: "AI Assistant",    icon: <Bot size={13} /> },
-  { key: "alerts",         label: "CDS Alerts",      icon: <Activity size={13} /> },
+  { type: "separator", label: "Clinical" },
+  { type: "tab", key: "ai-assistant",   label: "AI Assistant",    icon: <Bot size={13} /> },
+  { type: "tab", key: "alerts",         label: "CDS Alerts",      icon: <Activity size={13} /> },
   // Documentation
-  { key: "reports",        label: "Reports",         icon: <FileText size={13} /> },
-  { key: "photos",         label: "Photos",          icon: <Camera size={13} /> },
-  { key: "audit",          label: "Audit",           icon: <Activity size={13} /> },
+  { type: "separator", label: "Docs" },
+  { type: "tab", key: "reports",        label: "Reports",         icon: <FileText size={13} /> },
+  { type: "tab", key: "photos",         label: "Photos",          icon: <Camera size={13} /> },
+  { type: "tab", key: "audit",          label: "Audit",           icon: <Activity size={13} /> },
 ];
 
 // ─── Summary tab ──────────────────────────────────────────────────────────────
 
-function SummaryTab({ profile, caseId }: { profile: CaseProfile; caseId: string }) {
+function EmptyState({ label, action }: { label: string; action?: { href: string; text: string } }) {
+  return (
+    <div className="flex items-center gap-2 rounded-lg border border-dashed border-[color:var(--border)] px-3 py-2.5 text-xs text-[color:var(--muted-foreground)]">
+      <Info size={12} className="shrink-0 opacity-60" />
+      <span className="flex-1">{label}</span>
+      {action && (
+        <Link href={action.href} className="shrink-0 font-semibold text-[color:var(--primary)] hover:underline">
+          {action.text} →
+        </Link>
+      )}
+    </div>
+  );
+}
+
+function SummaryTab({
+  profile,
+  caseId,
+  isLive,
+}: {
+  profile: CaseProfile;
+  caseId: string;
+  isLive: boolean;
+}) {
   return (
     <div className="space-y-4">
       {/* Patient profile */}
@@ -324,9 +362,9 @@ function SummaryTab({ profile, caseId }: { profile: CaseProfile; caseId: string 
           <Stethoscope size={15} className="text-[color:var(--primary)]" />
           <h3 className="text-sm font-semibold text-[color:var(--foreground)]">Clinical Findings</h3>
         </div>
-        <DataRow label="Malocclusion class" value={profile.malocclusionClass} />
-        <DataRow label="Crowding severity" value={profile.crowding} />
-        <DataRow label="Chief complaint" value={profile.chiefComplaint} />
+        <DataRow label="Malocclusion class" value={profile.malocclusionClass !== "—" ? profile.malocclusionClass : <span className="text-[color:var(--muted-foreground)] italic text-xs">Not yet classified</span>} />
+        <DataRow label="Crowding severity" value={profile.crowding !== "—" ? profile.crowding : <span className="text-[color:var(--muted-foreground)] italic text-xs">Not yet assessed</span>} />
+        <DataRow label="Chief complaint" value={profile.chiefComplaint !== "—" ? profile.chiefComplaint : <span className="text-[color:var(--muted-foreground)] italic text-xs">Not recorded</span>} />
         <DataRow
           label="Urgency"
           value={
@@ -343,14 +381,21 @@ function SummaryTab({ profile, caseId }: { profile: CaseProfile; caseId: string 
           <Target size={15} className="text-[color:var(--primary)]" />
           <h3 className="text-sm font-semibold text-[color:var(--foreground)]">Treatment Goals</h3>
         </div>
-        <ul className="space-y-2">
-          {profile.goals.map((g, i) => (
-            <li key={i} className="flex items-start gap-2 text-sm text-[color:var(--foreground)]">
-              <CheckSquare2 size={13} className="mt-0.5 shrink-0 text-emerald-500" />
-              {g}
-            </li>
-          ))}
-        </ul>
+        {profile.goals.length > 0 ? (
+          <ul className="space-y-2">
+            {profile.goals.map((g, i) => (
+              <li key={i} className="flex items-start gap-2 text-sm text-[color:var(--foreground)]">
+                <CheckSquare2 size={13} className="mt-0.5 shrink-0 text-emerald-500" />
+                {g}
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <EmptyState
+            label={isLive ? "No treatment goals defined yet. Set them in the Treatment Planning tab." : "No goals recorded."}
+            action={isLive ? { href: `/studio?caseId=${encodeURIComponent(caseId)}&tab=plan`, text: "Set Goals" } : undefined}
+          />
+        )}
       </Card>
 
       {/* Measurements summary */}
@@ -360,16 +405,27 @@ function SummaryTab({ profile, caseId }: { profile: CaseProfile; caseId: string 
             <Ruler size={15} className="text-[color:var(--primary)]" />
             <h3 className="text-sm font-semibold text-[color:var(--foreground)]">Measurements</h3>
           </div>
-          <Link href={`/studio?caseId=${encodeURIComponent(caseId)}`} className="text-xs font-semibold text-[color:var(--primary)] hover:underline underline-offset-2">
+          <Link href={`/studio?caseId=${encodeURIComponent(caseId)}&tab=viewer`} className="text-xs font-semibold text-[color:var(--primary)] hover:underline underline-offset-2">
             Measure in Viewer →
           </Link>
         </div>
-        {profile.measurements.map(m => (
-          <DataRow key={m.label} label={m.label} value={m.value} />
-        ))}
-        <p className="mt-3 text-[10px] text-[color:var(--muted-foreground)]">
-          Representative values · Verify with the 3D Viewer measurement tools before clinical decisions.
-        </p>
+        {profile.measurements.length > 0 ? (
+          <>
+            {profile.measurements.map(m => (
+              <DataRow key={m.label} label={m.label} value={m.value} />
+            ))}
+            {!isLive && (
+              <p className="mt-3 text-[10px] text-[color:var(--muted-foreground)]">
+                Representative values — verify with the 3D Viewer measurement tools before clinical decisions.
+              </p>
+            )}
+          </>
+        ) : (
+          <EmptyState
+            label="No measurements taken yet. Use the 3D Viewer to measure overjet, overbite, arch width, and more."
+            action={{ href: `/studio?caseId=${encodeURIComponent(caseId)}&tab=viewer`, text: "Open Viewer" }}
+          />
+        )}
       </Card>
 
       {/* CAD shortcut */}
@@ -515,11 +571,11 @@ export default function CaseDetailClient({ id }: { id: string }) {
   if (dataSource === 'not_found') {
     return (
       <div className="flex flex-col items-center justify-center gap-4 px-6 py-24 text-center">
-        <div className="flex h-16 w-16 items-center justify-center rounded-2xl border border-border bg-card text-3xl">
-          🔍
+        <div className="flex h-16 w-16 items-center justify-center rounded-2xl border border-[color:var(--border)] bg-[color:var(--card)] text-[color:var(--muted-foreground)]">
+          <FolderX size={28} />
         </div>
-        <h1 className="text-xl font-semibold text-foreground">Case not found</h1>
-        <p className="max-w-xs text-sm text-secondary">
+        <h1 className="text-xl font-semibold text-[color:var(--foreground)]">Case not found</h1>
+        <p className="max-w-xs text-sm text-[color:var(--muted-foreground)]">
           Case <span className="font-mono font-semibold">{id}</span> does not exist or you do not have access to it.
         </p>
         <Link
@@ -563,36 +619,43 @@ export default function CaseDetailClient({ id }: { id: string }) {
 
         {/* Horizontally scrollable tab strip */}
         <div className="mt-3 -mx-4 sm:-mx-5 overflow-x-auto px-4 sm:px-5 scrollbar-none">
-          <div className="flex gap-1 w-max">
-            {TABS.map(t => (
-              <button
-                key={t.key}
-                type="button"
-                onClick={() => setTab(t.key)}
-                className={[
-                  "flex shrink-0 items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-semibold transition-all active:scale-95",
-                  tab === t.key
-                    ? "bg-[color:var(--primary)] text-[color:var(--primary-foreground)]"
-                    : "border border-[color:var(--border)] bg-[color:var(--card)] text-[color:var(--muted-foreground)] hover:text-[color:var(--foreground)]",
-                ].join(" ")}
-              >
-                {t.icon} {t.label}
-              </button>
-            ))}
+          <div className="flex items-center gap-1 w-max">
+            {TABS.map((t, i) =>
+              t.type === "separator" ? (
+                <div key={`sep-${i}`} className="flex items-center gap-1 mx-1" aria-hidden>
+                  <div className="w-px h-4 bg-[color:var(--border)]" />
+                  <span className="text-[9px] font-bold uppercase tracking-widest text-[color:var(--muted-foreground)] opacity-50 select-none">{t.label}</span>
+                </div>
+              ) : (
+                <button
+                  key={t.key}
+                  type="button"
+                  onClick={() => setTab(t.key)}
+                  className={[
+                    "flex shrink-0 items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-semibold transition-all active:scale-95",
+                    tab === t.key
+                      ? "bg-[color:var(--primary)] text-[color:var(--primary-foreground)]"
+                      : "border border-[color:var(--border)] bg-[color:var(--card)] text-[color:var(--muted-foreground)] hover:text-[color:var(--foreground)]",
+                  ].join(" ")}
+                >
+                  {t.icon} {t.label}
+                </button>
+              )
+            )}
           </div>
         </div>
       </div>
 
       <div className="px-4 pt-4 sm:px-5">
         {/* Overview */}
-        {tab === "summary"   && <SummaryTab profile={profile} caseId={id} />}
+        {tab === "summary"   && <SummaryTab profile={profile} caseId={id} isLive={dataSource === 'api'} />}
         {tab === "workflow"  && (
           <ClinicalWorkflow
             caseId={id}
             caseName={`${patientName} — ${liveData?.malocclusionClass ?? profile.malocclusionClass}`}
             initialStatus={workflowStatus}
             initialHistory={workflowHistory}
-            currentActor={liveData?.assignedTo?.name ?? "Dr. Demo"}
+            currentActor={liveData?.assignedTo?.name ?? "—"}
             currentActorRole="Clinical Director"
           />
         )}

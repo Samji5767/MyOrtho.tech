@@ -39,14 +39,17 @@ export default function AlignerStaging({ caseId, patientName }: AlignerStagingPr
     if (isPlaying) setIsPlaying(false);
   };
 
+  const [approvalError, setApprovalError] = useState<string | null>(null);
+
   const handleToggleApproval = async () => {
     const nextApproved = !aiApproved;
     setAiApproved(nextApproved);
+    setApprovalError(null);
     try {
-      // Approve treatment plan updates the case state to approved in local storage
       await updateCaseStatus(caseId, nextApproved ? "approved" : "planning");
     } catch (err) {
-      console.error("Failed to sign plan status:", err);
+      setAiApproved(!nextApproved);
+      setApprovalError(err instanceof Error ? err.message : "Failed to update plan status");
     }
   };
 
@@ -73,8 +76,15 @@ export default function AlignerStaging({ caseId, patientName }: AlignerStagingPr
         </div>
       </div>
 
+      {approvalError && (
+        <div className="mx-5 mt-3 flex items-center gap-2 rounded-xl border border-rose-300/50 bg-rose-50/60 px-3 py-2 text-xs text-rose-700 dark:border-rose-700/40 dark:bg-rose-900/10 dark:text-rose-400">
+          <AlertCircle size={12} className="shrink-0" />
+          {approvalError}
+        </div>
+      )}
+
       <div className="p-6 space-y-6">
-        
+
         {/* Scrubbing timeline */}
         <div className="p-5 bg-slate-50 dark:bg-slate-900/40 border border-border rounded-xl space-y-4">
           <div className="flex items-center justify-between">

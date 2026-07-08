@@ -241,6 +241,174 @@ function computeBiomechanicalScore(
   return Math.max(0, Math.min(100, score));
 }
 
+// ─── PDL area constants (Melsen 2001, cm²) per tooth type ────────────────────
+// These constants are used by the enhanced BRI computation below.
+const PDL_AREA_BY_TOOTH: Record<string, number> = {
+  central_incisor:  1.54,
+  lateral_incisor:  1.04,
+  canine:           2.04,
+  first_premolar:   1.51,
+  second_premolar:  1.57,
+  first_molar:      4.42,
+  second_molar:     4.06,
+  third_molar:      3.09,
+};
+
+/** Maps an FDI tooth number to its anatomic type name (for PDL area & root length look-ups). */
+function fdiToToothType(fdi: number): string {
+  const n = fdi % 10;
+  if (n === 1) return 'central_incisor';
+  if (n === 2) return 'lateral_incisor';
+  if (n === 3) return 'canine';
+  if (n === 4) return 'first_premolar';
+  if (n === 5) return 'second_premolar';
+  if (n === 6) return 'first_molar';
+  if (n === 7) return 'second_molar';
+  return 'third_molar';
+}
+
+/** Root length estimates — Andrews norms (mm). Used as moment arm input. */
+const ROOT_LENGTH_MM: Record<string, number> = {
+  central_incisor:  13,
+  lateral_incisor:  14,
+  canine:           17,
+  first_premolar:   14,
+  second_premolar:  15,
+  first_molar:      13,
+  second_molar:     13,
+  third_molar:      13,
+};
+
+/** Moment threshold (N·mm) above which bodily root movement is occurring. */
+const MOMENT_THRESHOLD_NMM = 15;
+
+// ─── Enhanced BRI — Bone Remodeling Index (Melsen 2001) ──────────────────────
+
+export interface BriResult {
+  bri: number;
+  interpretation: string;
+  isHyalinizing: boolean;
+}
+
+/**
+ * Computes the enhanced Bone Remodeling Index (Melsen 2001).
+ *
+ * @param force                 Applied force in grams-force.
+ * @param pdlArea               PDL area in cm² (from PDL_AREA_BY_TOOTH).
+ * @param corticalProximityFactor  1.0 = no cortical bone proximity; >1 = elevated risk.
+ */
+function computeEnhancedBRI(
+  force: number,
+  pdlArea: number,
+  corticalProximityFactor = 1.0,
+): BriResult {
+  const stress = force / pdlArea;             // g/cm²
+  const bri    = stress * corticalProximityFactor;
+  const isHyalinizing = bri > 26;             // Melsen 2001: 26 g/cm² triggers hyalinization
+  const interpretation =
+    bri < 10  ? 'Optimal remodeling zone'
+    : bri < 20 ? 'Acceptable remodeling — monitor'
+    : bri < 26 ? 'Elevated stress — consider reducing force'
+    :            'Hyalinization risk — force exceeds PDL capacity';
+  return { bri: parseFloat(bri.toFixed(3)), interpretation, isHyalinizing };
+}
+
+// ─── Force balance analysis ───────────────────────────────────────────────────
+
+export interface ForceBalanceResult {
+  /** Net resultant force on arch (g). Approaches 0 for well-balanced treatment. */
+  netResultantForce: number;
+  /** Sum of all moments (N·mm). Approaches 0 for balanced treatment. */
+  momentSum: number;
+  /** Reactive load the anchor units must resist (g). */
+  reactiveForceOnAnchors: number;
+  /** demand / supply ratio — >1.0 means anchorage is insufficient. */
+  anchorageSupplyRatio: number;
+  isBalanced: boolean;
+}
+
+function computeForceBalance(
+  teeth: ToothState[],
+  forceEstimates: AlignmentForceEstimate[],
+): ForceBalanceResult {
+  const forceMap = new Map<number, number>(
+    forceEstimates.map((f) => [f.fdi, f.estimatedForceGrams]),
+  );
+
+  let netForce    = 0;
+  let momentSum   = 0;
+  let anchorDemand = 0;
+  let anchorSupply = 0;
+
+  for (const tooth of teeth) {
+    const forceG  = forceMap.get(tooth.fdi) ?? 0;
+    const netDispl =
+      (tooth.mesialMm - tooth.distalMm) + (tooth.buccalMm - tooth.lingualMm);
+
+    netForce += forceG * (netDispl === 0 ? 1 : Math.sign(netDispl));
+
+    // Moment (N·mm): convert g-force → N (×0.009807) then multiply by half root length
+    const rootLength  = ROOT_LENGTH_MM[fdiToToothType(tooth.fdi)] ?? 13;
+    momentSum += (forceG * 0.009807) * (rootLength / 2);
+
+    // Classify tooth as anchor unit if displacement is small
+    const isAnchor = Math.abs(netDispl) < 0.1 && Math.abs(tooth.torqueDeg) < 2;
+    if (isAnchor) {
+      anchorSupply += DIFFICULTY[tooth.fdi] ?? 1.0;
+    } else {
+      anchorDemand += forceG;
+    }
+  }
+
+  // Each DIFFICULTY unit ≈ 50 g anchorage capacity (calibration constant)
+  const anchorageSupplyRatio =
+    anchorSupply > 0 ? anchorDemand / (anchorSupply * 50) : 999;
+
+  return {
+    netResultantForce:      parseFloat(Math.abs(netForce).toFixed(2)),
+    momentSum:              parseFloat(Math.abs(momentSum).toFixed(3)),
+    reactiveForceOnAnchors: parseFloat(Math.abs(netForce).toFixed(2)),
+    anchorageSupplyRatio:   parseFloat(anchorageSupplyRatio.toFixed(3)),
+    isBalanced:             Math.abs(netForce) < 50 && anchorageSupplyRatio < 1.5,
+  };
+}
+
+// ─── Moment of force per tooth ────────────────────────────────────────────────
+
+export interface ToothMoment {
+  fdi: number;
+  forceGrams: number;
+  momentArmMm: number;
+  momentNMm: number;
+  /** True when moment exceeds 15 N·mm — bodily root movement is implied */
+  requiresRootMovement: boolean;
+}
+
+function estimateMoments(
+  teeth: ToothState[],
+  forceEstimates: AlignmentForceEstimate[],
+): ToothMoment[] {
+  const forceMap = new Map<number, number>(
+    forceEstimates.map((f) => [f.fdi, f.estimatedForceGrams]),
+  );
+  return teeth.map((tooth) => {
+    const forceG      = forceMap.get(tooth.fdi) ?? 0;
+    const rootLength  = ROOT_LENGTH_MM[fdiToToothType(tooth.fdi)] ?? 13;
+    const momentArmMm = rootLength / 2;                            // centre of resistance ≈ ½ root
+    const momentNMm   = parseFloat(((forceG * 0.009807) * momentArmMm).toFixed(3));
+    return {
+      fdi: tooth.fdi,
+      forceGrams: forceG,
+      momentArmMm,
+      momentNMm,
+      requiresRootMovement: momentNMm > MOMENT_THRESHOLD_NMM,
+    };
+  });
+}
+
+/** Convenience alias used by generateBiomechanicsExplanation. */
+export type BiomechanicsResult = BiomechanicalAnalysis;
+
 // ─── Row mapper ───────────────────────────────────────────────────────────────
 
 function mapAnalysisRow(r: Record<string, unknown>): BiomechanicalAnalysis {
@@ -476,6 +644,114 @@ export class BiomechanicsService {
     );
     if (!rows[0]) return null;
     return mapAnalysisRow(rows[0]);
+  }
+
+  // ── Clinical explanation generator ────────────────────────────────────────
+
+  /**
+   * Produces a clinician-friendly text explanation of a biomechanical analysis.
+   * Incorporates BRI per tooth, force balance, moment threshold flags, and
+   * overall score interpretation.
+   *
+   * @param analysis  Result from analyzeBiomechanics or getLatestAnalysis.
+   * @param teeth     Optional tooth states from the digital setup; required for
+   *                  per-tooth BRI and force-balance calculations.
+   */
+  generateBiomechanicsExplanation(
+    analysis: BiomechanicsResult,
+    teeth: ToothState[] = [],
+  ): string {
+    const lines: string[] = [];
+
+    if (analysis.alignerForceEstimates.length > 0) {
+      const forceBalance = computeForceBalance(teeth, analysis.alignerForceEstimates);
+      const moments      = estimateMoments(teeth, analysis.alignerForceEstimates);
+
+      for (const fe of analysis.alignerForceEstimates) {
+        const toothType = fdiToToothType(fe.fdi);
+        const pdlArea   = PDL_AREA_BY_TOOTH[toothType] ?? 1.54;
+        const briRes    = computeEnhancedBRI(fe.estimatedForceGrams, pdlArea);
+        const momentRes = moments.find((m) => m.fdi === fe.fdi);
+
+        if (briRes.bri > 10) {
+          lines.push(
+            `Tooth ${fe.fdi}: estimated force ${fe.estimatedForceGrams}g — ` +
+            `PDL stress index ${briRes.bri.toFixed(1)} g/cm² (${briRes.interpretation}).` +
+            (briRes.isHyalinizing
+              ? ` Approaches hyalinization threshold (26 g/cm²) — consider reducing force or extending staging by 2+ stages.`
+              : ''),
+          );
+        }
+
+        if (momentRes?.requiresRootMovement) {
+          lines.push(
+            `Tooth ${fe.fdi}: moment ${momentRes.momentNMm} N·mm ` +
+            `(arm ${momentRes.momentArmMm}mm) exceeds 15 N·mm root-movement threshold. ` +
+            `Bodily translation likely — attachment recommended for adequate root control.`,
+          );
+        }
+      }
+
+      lines.push(
+        `Force balance: net resultant ${forceBalance.netResultantForce}g ` +
+        `(${forceBalance.isBalanced ? 'balanced' : 'imbalanced — review anchor unit selection'}). ` +
+        `Anchorage demand/supply ratio: ${forceBalance.anchorageSupplyRatio.toFixed(2)}` +
+        `${forceBalance.anchorageSupplyRatio > 1.0 ? ' — anchorage reinforcement advised (TADs or additional anchor teeth)' : ''}.`,
+      );
+    }
+
+    if (analysis.pdlOverloadTeeth.length > 0) {
+      lines.push(
+        `PDL overload detected on teeth: ${analysis.pdlOverloadTeeth.join(', ')}. ` +
+        `Reduce per-stage force delivery or add intermediate active stages.`,
+      );
+    }
+
+    if (analysis.hasCollisions && analysis.collisionPairs.length > 0) {
+      const pairStr = analysis.collisionPairs
+        .map((p) => `${p.fdiA}–${p.fdiB} (${p.estimatedOverlapMm}mm overlap)`)
+        .join(', ');
+      lines.push(
+        `Interproximal collision risk: ${pairStr}. ` +
+        `IPR or staging adjustment recommended before these contacts close.`,
+      );
+    }
+
+    if (analysis.rootCollisionRisk.length > 0) {
+      lines.push(
+        `Root collision risk flagged on teeth: ${analysis.rootCollisionRisk.join(', ')}. ` +
+        `CBCT or periapical radiographs advised to confirm inter-radicular clearance.`,
+      );
+    }
+
+    lines.push(
+      `Overall biomechanical score: ${analysis.biomechanicalScore}/100. ` +
+      (analysis.biomechanicalScore >= 80
+        ? 'Treatment plan appears clinically feasible.'
+        : analysis.biomechanicalScore >= 60
+        ? 'Moderate concerns — clinician review recommended before proceeding.'
+        : 'Significant biomechanical concerns — plan revision strongly advised.'),
+    );
+
+    lines.push('[AI-assisted recommendation only — clinician review required before treatment.]');
+    return lines.join('\n');
+  }
+
+  /**
+   * Computes the Enhanced BRI for every tooth in a force estimate list.
+   * Useful for batch reporting without persisting a full analysis.
+   */
+  computeEnhancedBriForEstimates(
+    forceEstimates: AlignmentForceEstimate[],
+    corticalProximityByFdi: Record<number, number> = {},
+  ): Array<BriResult & { fdi: number; toothType: string; pdlAreaCm2: number }> {
+    return forceEstimates.map((fe) => {
+      const toothType = fdiToToothType(fe.fdi);
+      const pdlArea   = PDL_AREA_BY_TOOTH[toothType] ?? 1.54;
+      const cpFactor  = corticalProximityByFdi[fe.fdi] ?? 1.0;
+      const bri       = computeEnhancedBRI(fe.estimatedForceGrams, pdlArea, cpFactor);
+      return { fdi: fe.fdi, toothType, pdlAreaCm2: pdlArea, ...bri };
+    });
   }
 
   // ── Legacy: assess a treatment plan (uses biomechanics_assessments table) ───

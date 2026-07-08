@@ -91,6 +91,14 @@ export interface StageQualityReport {
   isManufacturingReady: boolean;
 }
 
+export interface GenerationError {
+  code: 'MESH_INVALID' | 'STAGING_INFEASIBLE' | 'AI_UNAVAILABLE' | 'TIMEOUT' | 'OOM' | 'QUALITY_FAIL';
+  message: string;        // safe for client
+  technicalDetail?: string; // internal only — never sent to client
+  canRetry: boolean;
+  suggestedAction: string;
+}
+
 // Per-stage movement limits (Kravitz)
 const PER_STAGE = {
   translation_mm:  0.25,
@@ -154,7 +162,6 @@ export class AlignerGenerationService {
   ): Promise<AlignerGenerationPlan> {
     await this.verifyPlan(planId, caseId, orgId);
 
-    const strategy   = dto.stagingStrategy      ?? 'balanced';
     const changeWeeks = dto.alignerChangeWeeks  ?? 2;
     const passive    = dto.passiveAlignerCount  ?? 2;
     const retention  = dto.retentionStageCount  ?? 3;
@@ -169,6 +176,9 @@ export class AlignerGenerationService {
     if (prescriptions.length === 0) {
       throw new NotFoundException('No movement prescriptions found — add prescriptions first');
     }
+
+    // Auto-select staging strategy from prescription data when caller did not specify one
+    const strategy = dto.stagingStrategy ?? this.selectStagingStrategy(prescriptions);
 
     // Compute required stages per tooth
     const stagesPerTooth = this.computeStagesPerTooth(prescriptions, strategy);
@@ -401,6 +411,74 @@ export class AlignerGenerationService {
           code: 'EXCESSIVE_IPR',
           message: `Stage ${entry.stageNum}: IPR amount ${entry.amountMm} mm between teeth ${entry.fdiA}–${entry.fdiB} exceeds 0.5 mm limit`,
         });
+      }
+    }
+
+    // ── Shell thickness uniformity ────────────────────────────────────────────
+    // Heuristic: adjacent stages with large translation deltas risk shell stress fracture
+    for (let idx = 1; idx < plan.stageAllocations.length; idx++) {
+      const prev = plan.stageAllocations[idx - 1];
+      const curr = plan.stageAllocations[idx];
+      if (!prev.isPassive && !curr.isPassive) {
+        const delta = Math.abs(curr.maxTranslationMm - prev.maxTranslationMm);
+        if (delta > 0.2) {
+          issues.push({
+            stageNum: curr.stageNum,
+            severity: 'warning',
+            code: 'SHELL_THICKNESS_INCONSISTENCY',
+            message: `Stage ${curr.stageNum}: translation delta ${delta.toFixed(3)} mm between adjacent stages may cause shell thickness non-uniformity`,
+          });
+        }
+      }
+    }
+
+    // ── Trim line consistency ─────────────────────────────────────────────────
+    // Flag stages where vertical movement is unusually large relative to neighbours
+    for (let idx = 1; idx < plan.stageAllocations.length - 1; idx++) {
+      const stage = plan.stageAllocations[idx];
+      if (!stage.isPassive && !stage.isRetention) {
+        // Proxy for trim-line anomaly: very high rotation combined with translation in the same stage
+        const combinedStress = stage.maxTranslationMm + stage.maxRotationDeg / 10;
+        if (combinedStress > PER_STAGE.translation_mm * 2.5) {
+          issues.push({
+            stageNum: stage.stageNum,
+            severity: 'warning',
+            code: 'TRIM_LINE_STRESS',
+            message: `Stage ${stage.stageNum}: combined translation + rotation may compromise gingival trim line path consistency`,
+          });
+        }
+      }
+    }
+
+    // ── Attachment window overlap with IPR stages ─────────────────────────────
+    const attachStart = plan.attachmentStartStage ?? 0;
+    const attachEnd   = plan.attachmentEndStage   ?? 0;
+    for (const iprEntry of plan.iprStageSchedule) {
+      if (iprEntry.stageNum >= attachStart && iprEntry.stageNum <= attachEnd) {
+        issues.push({
+          stageNum: iprEntry.stageNum,
+          severity: 'warning',
+          code: 'ATTACHMENT_IPR_OVERLAP',
+          message: `Stage ${iprEntry.stageNum}: IPR scheduled within attachment window (stages ${attachStart}–${attachEnd}). Verify attachment windows do not obstruct IPR contact points.`,
+        });
+      }
+    }
+
+    // ── Pressure point / force vector consistency ─────────────────────────────
+    // Flag stages where both translation and rotation simultaneously approach their per-stage limits,
+    // which indicates competing force vectors that may create unpredictable pressure point behaviour.
+    for (const stage of plan.stageAllocations) {
+      if (!stage.isPassive && !stage.isRetention) {
+        const translationProxy = TRANSLATION_LIMIT > 0 ? stage.maxTranslationMm / TRANSLATION_LIMIT : 0;
+        const rotationProxy    = ROTATION_LIMIT    > 0 ? stage.maxRotationDeg    / ROTATION_LIMIT    : 0;
+        if (translationProxy > 0.8 && rotationProxy > 0.8) {
+          issues.push({
+            stageNum: stage.stageNum,
+            severity: 'warning',
+            code: 'COMBINED_FORCE_CONCERN',
+            message: `Stage ${stage.stageNum}: simultaneous translation (${(translationProxy * 100).toFixed(0)}% of limit) and rotation (${(rotationProxy * 100).toFixed(0)}% of limit) — verify pressure point distribution`,
+          });
+        }
       }
     }
 
@@ -752,6 +830,25 @@ export class AlignerGenerationService {
       return { ...r, total_stages: stages };
     });
 
+    // Record generation start for ETA tracking (best-effort — tolerates missing column)
+    const generationStartedAt = new Date().toISOString();
+    try {
+      await this.db.query(
+        `UPDATE aligner_generation_plans
+           SET generation_progress = $2
+           WHERE plan_id = $1`,
+        [planId, JSON.stringify({
+          status: 'generating',
+          currentAlignerIndex: 0,
+          totalAligners: plan.totalActiveStages,
+          startedAt: generationStartedAt,
+          etaSeconds: null,
+        })],
+      );
+    } catch {
+      // generation_progress column may not exist — continue without blocking
+    }
+
     // Call AI engine to generate per-stage STL files
     let aiResult: { zip_path: string };
     try {
@@ -774,10 +871,35 @@ export class AlignerGenerationService {
       aiResult = (await res.json()) as { zip_path: string };
     } catch (err) {
       this.log.error(`STL generation failed: ${String(err)}`);
+      // Record failure progress (best-effort)
+      try {
+        await this.db.query(
+          `UPDATE aligner_generation_plans SET generation_progress = $2 WHERE plan_id = $1`,
+          [planId, JSON.stringify({ status: 'failed', startedAt: generationStartedAt, failedAt: new Date().toISOString() })],
+        );
+      } catch { /* column may not exist */ }
       throw new InternalServerErrorException(
         'STL generation failed. Ensure the AI engine is running and segmented meshes exist.',
       );
     }
+
+    // Record completion progress with ETA calculation (best-effort)
+    const completedAt = new Date().toISOString();
+    const elapsedMs = Date.now() - new Date(generationStartedAt).getTime();
+    try {
+      await this.db.query(
+        `UPDATE aligner_generation_plans SET generation_progress = $2 WHERE plan_id = $1`,
+        [planId, JSON.stringify({
+          status: 'complete',
+          currentAlignerIndex: plan.totalActiveStages,
+          totalAligners: plan.totalActiveStages,
+          startedAt: generationStartedAt,
+          completedAt,
+          elapsedMs,
+          etaSeconds: 0,
+        })],
+      );
+    } catch { /* column may not exist */ }
 
     return this.markStlReady(caseId, orgId, planId, aiResult.zip_path);
   }
@@ -809,6 +931,73 @@ export class AlignerGenerationService {
       );
     }
     return { filePath, planId: row.plan_id as string };
+  }
+
+  // ── AI engine health check ─────────────────────────────────────────────────
+
+  async checkAiEngineHealth(): Promise<{ available: boolean; latencyMs: number; fallbackUsed: boolean }> {
+    const start = Date.now();
+    try {
+      const res = await fetch(`${AI_ENGINE_URL}/health`, {
+        method: 'GET',
+        signal: AbortSignal.timeout(3_000),
+      });
+      const latencyMs = Date.now() - start;
+      if (res.ok) {
+        return { available: true, latencyMs, fallbackUsed: false };
+      }
+      this.log.warn(`AI engine health check returned HTTP ${res.status}`);
+      return { available: false, latencyMs, fallbackUsed: true };
+    } catch (err: unknown) {
+      const latencyMs = Date.now() - start;
+      this.log.warn(`AI engine health check failed: ${err instanceof Error ? err.message : String(err)}`);
+      return { available: false, latencyMs, fallbackUsed: true };
+    }
+  }
+
+  // ── Auto staging strategy selection ───────────────────────────────────────
+
+  selectStagingStrategy(prescriptions: Record<string, unknown>[]): StagingStrategy {
+    const anteriorPrescriptions  = prescriptions.filter(p => ANTERIOR_FDI.includes(p['tooth_number'] as number));
+    const posteriorPrescriptions = prescriptions.filter(p => POSTERIOR_FDI.includes(p['tooth_number'] as number));
+
+    // Anterior crowding: total buccal + lingual translation for anterior teeth
+    const anteriorCrowdingMm = anteriorPrescriptions.reduce((sum, p) =>
+      sum + ((p['translation_buccal_mm'] as number) ?? 0) + ((p['translation_lingual_mm'] as number) ?? 0), 0);
+
+    // Posterior expansion: sum of expansion_mm for posterior teeth
+    const posteriorExpansionMm = posteriorPrescriptions.reduce((sum, p) =>
+      sum + ((p['expansion_mm'] as number) ?? 0), 0);
+
+    // Arch length discrepancy: significant asymmetry between total mesialization and distalization
+    const totalMesialization = prescriptions.reduce((sum, p) => sum + ((p['mesialization_mm'] as number) ?? 0), 0);
+    const totalDistalization = prescriptions.reduce((sum, p) => sum + ((p['distalization_mm'] as number) ?? 0), 0);
+    const archLengthDiscrepancy = Math.abs(totalMesialization - totalDistalization) > 2.0;
+
+    // Complex rotation: more than 3 teeth requiring > 20° rotation
+    const complexRotationTeeth = prescriptions.filter(p => Math.abs((p['rotation_deg'] as number) ?? 0) > 20).length;
+
+    if (anteriorCrowdingMm > 4) {
+      this.log.log(`Auto staging strategy: anterior_first (anterior crowding ${anteriorCrowdingMm.toFixed(1)} mm)`);
+      return 'anterior_first';
+    }
+
+    if (posteriorExpansionMm > 3) {
+      this.log.log(`Auto staging strategy: posterior_first (posterior expansion ${posteriorExpansionMm.toFixed(1)} mm)`);
+      return 'posterior_first';
+    }
+
+    if (archLengthDiscrepancy) {
+      this.log.log(`Auto staging strategy: arch_coordinated (arch length discrepancy detected)`);
+      return 'arch_coordinated';
+    }
+
+    if (complexRotationTeeth > 3) {
+      this.log.log(`Auto staging strategy: balanced (complex rotation: ${complexRotationTeeth} teeth >20°)`);
+      return 'balanced';
+    }
+
+    return 'balanced';
   }
 
   // ── Guard ──────────────────────────────────────────────────────────────────

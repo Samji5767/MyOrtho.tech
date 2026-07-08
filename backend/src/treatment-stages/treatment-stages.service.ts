@@ -82,6 +82,19 @@ const MAX_TRANSLATION_PER_STAGE = 0.25; // mm
 const MAX_ROTATION_PER_STAGE    = 1.5;  // degrees
 const MAX_TORQUE_PER_STAGE      = 2.0;  // degrees
 
+/**
+ * Clinically optimal per-stage movement limits (Kravitz et al. 2009).
+ * Intrusion and extrusion are kept slower due to biological response differences.
+ */
+const PER_STAGE_LIMITS = {
+  translation:  0.25, // mm
+  rotation:     2.0,  // degrees
+  torque:       2.0,  // degrees
+  tip:          2.0,  // degrees
+  intrusion:    0.08, // mm  — slower biological response
+  extrusion:    0.15, // mm
+} as const;
+
 // Fields requiring staged movement (excluding locking metadata)
 const MOVEMENT_FIELDS: (keyof ToothState)[] = [
   'mesialMm', 'distalMm', 'buccalMm', 'lingualMm',
@@ -106,6 +119,56 @@ function maxPerStageFor(f: keyof ToothState): number {
   if (isTorqueField(f))   return MAX_TORQUE_PER_STAGE;
   return MAX_TRANSLATION_PER_STAGE;
 }
+
+// ─── Enhanced staging interfaces ─────────────────────────────────────────────
+
+/**
+ * Simplified per-tooth movement summary used by the sequencing and
+ * isolation helpers. Callers derive these from the ToothState deltas.
+ */
+export interface ToothMovement {
+  fdi: number;
+  /** Total rotation magnitude (degrees) */
+  rotationDeg: number;
+  /** Torque magnitude (degrees) */
+  torqueDeg: number;
+  /** Tipping magnitude (degrees) */
+  tipDeg: number;
+  /** Intrusion magnitude (mm) */
+  intrusionMm: number;
+  /** Extrusion magnitude (mm) */
+  extrusionMm: number;
+  /** Total translation magnitude (mm) — scalar sum of all translational components */
+  translationMm: number;
+}
+
+export interface StageSequence {
+  anteriorStages: number;
+  posteriorStages: number;
+  refinementStages: number;
+  totalActiveStages: number;
+  sequencedTeeth: Array<{
+    fdi: number;
+    startStage: number;
+    endStage: number;
+    priority: 'anterior' | 'posterior' | 'refinement';
+  }>;
+}
+
+export interface CoordinatedStagePlan {
+  upperStageCount: number;
+  lowerStageCount: number;
+  totalStages: number;
+  /** Which arch needs passive fill stages added to match the longer arch */
+  paddingRequired: 'upper' | 'lower' | 'none';
+  mismatchWarnings: Array<{ stageNumber: number; description: string }>;
+}
+
+// All adjacent FDI pairs (upper and lower arches) — shared by the helpers below
+const ARCH_ADJACENT_PAIRS: [number, number][] = [
+  [17,16],[16,15],[15,14],[14,13],[13,12],[12,11],[11,21],[21,22],[22,23],[23,24],[24,25],[25,26],[26,27],
+  [47,46],[46,45],[45,44],[44,43],[43,42],[42,41],[41,31],[31,32],[32,33],[33,34],[34,35],[35,36],[36,37],
+];
 
 // ─── Staging algorithm ────────────────────────────────────────────────────────
 
@@ -483,6 +546,185 @@ export class TreatmentStagesService {
     );
     if (!rows[0]) throw new NotFoundException(`Treatment stage ${stageId} not found`);
     return mapStageRow(rows[0]);
+  }
+
+  // ── Enhanced movement analysis helpers ─────────────────────────────────────
+
+  /**
+   * Identifies teeth with complex movements and checks whether adjacent teeth
+   * have simultaneous difficult movements (which raises over-correction risk).
+   *
+   * Complex-movement thresholds:
+   *   rotation  > 15°,  torque > 10°,  intrusion > 1.0mm
+   *
+   * Best called before generateStages to inform staging decisions.
+   */
+  isolateDifficultMovements(movements: ToothMovement[]): {
+    difficultTeeth: number[];
+    adjacencyConflicts: Array<{ fdiA: number; fdiB: number; reason: string }>;
+    schedulingRecommendations: Array<{ fdi: number; preferEarlyStage: boolean; reason: string }>;
+  } {
+    const COMPLEX_ROT_DEG  = 15;
+    const COMPLEX_TORQ_DEG = 10;
+    const COMPLEX_INT_MM   = 1.0;
+
+    const difficultTeeth: number[] = [];
+    const schedulingRecommendations: Array<{
+      fdi: number; preferEarlyStage: boolean; reason: string;
+    }> = [];
+
+    for (const mv of movements) {
+      const isDifficult =
+        mv.rotationDeg  > COMPLEX_ROT_DEG  ||
+        mv.torqueDeg    > COMPLEX_TORQ_DEG ||
+        mv.intrusionMm  > COMPLEX_INT_MM;
+
+      if (isDifficult) {
+        difficultTeeth.push(mv.fdi);
+        const reasons: string[] = [];
+        if (mv.rotationDeg  > COMPLEX_ROT_DEG)
+          reasons.push(`rotation ${mv.rotationDeg.toFixed(1)}° > ${COMPLEX_ROT_DEG}°`);
+        if (mv.torqueDeg    > COMPLEX_TORQ_DEG)
+          reasons.push(`torque ${mv.torqueDeg.toFixed(1)}° > ${COMPLEX_TORQ_DEG}°`);
+        if (mv.intrusionMm  > COMPLEX_INT_MM)
+          reasons.push(`intrusion ${mv.intrusionMm.toFixed(2)}mm > ${COMPLEX_INT_MM}mm`);
+
+        schedulingRecommendations.push({
+          fdi: mv.fdi,
+          preferEarlyStage: true,
+          reason: `Complex movement (${reasons.join('; ')}) — schedule in early stages when anchorage is strongest`,
+        });
+      }
+    }
+
+    // Flag adjacent difficult teeth — simultaneous movement raises over-correction risk
+    const difficultSet = new Set(difficultTeeth);
+    const adjacencyConflicts: Array<{ fdiA: number; fdiB: number; reason: string }> = [];
+    for (const [a, b] of ARCH_ADJACENT_PAIRS) {
+      if (difficultSet.has(a) && difficultSet.has(b)) {
+        adjacencyConflicts.push({
+          fdiA: a, fdiB: b,
+          reason:
+            `Adjacent teeth ${a} and ${b} both have complex movements — ` +
+            `stage them sequentially (offset by ≥1 stage) to reduce over-correction risk`,
+        });
+      }
+    }
+
+    return { difficultTeeth, adjacencyConflicts, schedulingRecommendations };
+  }
+
+  /**
+   * Produces an optimised movement sequence plan:
+   *   1. Anterior teeth move first (easier biomechanics; sets up arch form)
+   *   2. Posterior movements follow after anterior space is created
+   *   3. Final refinement stages (~10 % of total) for finishing touches
+   *   4. Upper/lower arches remain within ±1 stage of each other
+   */
+  optimizeMovementSequence(movements: ToothMovement[]): StageSequence {
+    const isAnterior = (fdi: number): boolean => (fdi % 10) >= 1 && (fdi % 10) <= 3;
+
+    const anteriorMvs  = movements.filter((m) => isAnterior(m.fdi));
+    const posteriorMvs = movements.filter((m) => !isAnterior(m.fdi));
+
+    const stagesNeeded = (mv: ToothMovement): number =>
+      Math.max(
+        mv.translationMm > 0 ? Math.ceil(mv.translationMm / PER_STAGE_LIMITS.translation) : 1,
+        mv.rotationDeg   > 0 ? Math.ceil(mv.rotationDeg   / PER_STAGE_LIMITS.rotation)    : 1,
+        mv.torqueDeg     > 0 ? Math.ceil(mv.torqueDeg     / PER_STAGE_LIMITS.torque)       : 1,
+        mv.tipDeg        > 0 ? Math.ceil(mv.tipDeg        / PER_STAGE_LIMITS.tip)          : 1,
+        mv.intrusionMm   > 0 ? Math.ceil(mv.intrusionMm   / PER_STAGE_LIMITS.intrusion)    : 1,
+        mv.extrusionMm   > 0 ? Math.ceil(mv.extrusionMm   / PER_STAGE_LIMITS.extrusion)    : 1,
+      );
+
+    let anteriorStages = 1;
+    for (const mv of anteriorMvs) {
+      const n = stagesNeeded(mv);
+      if (n > anteriorStages) anteriorStages = n;
+    }
+
+    let posteriorStages = 1;
+    for (const mv of posteriorMvs) {
+      const n = stagesNeeded(mv);
+      if (n > posteriorStages) posteriorStages = n;
+    }
+
+    // Posterior movements begin at the halfway mark of anterior staging
+    const posteriorOffset  = Math.floor(anteriorStages / 2);
+    const totalActive      = Math.max(anteriorStages, posteriorOffset + posteriorStages);
+    const refinementStages = Math.max(2, Math.floor(totalActive * 0.1));
+
+    const sequencedTeeth: StageSequence['sequencedTeeth'] = [];
+    for (const mv of anteriorMvs) {
+      sequencedTeeth.push({
+        fdi: mv.fdi,
+        startStage: 1,
+        endStage: Math.min(stagesNeeded(mv), anteriorStages),
+        priority: 'anterior',
+      });
+    }
+    for (const mv of posteriorMvs) {
+      sequencedTeeth.push({
+        fdi: mv.fdi,
+        startStage: posteriorOffset + 1,
+        endStage: posteriorOffset + Math.min(stagesNeeded(mv), posteriorStages),
+        priority: 'posterior',
+      });
+    }
+
+    return {
+      anteriorStages,
+      posteriorStages,
+      refinementStages,
+      totalActiveStages: totalActive,
+      sequencedTeeth,
+    };
+  }
+
+  /**
+   * Synchronises upper and lower arch stage counts.
+   * The shorter arch is flagged to receive passive fill stages.
+   * Stages where the interdigitation difference exceeds 1 stage are flagged
+   * as occlusal mismatch warnings.
+   *
+   * @param upperStages  All stages for the upper arch (any stageType).
+   * @param lowerStages  All stages for the lower arch (any stageType).
+   */
+  coordinateArches(
+    upperStages: TreatmentStage[],
+    lowerStages: TreatmentStage[],
+  ): CoordinatedStagePlan {
+    const upperActive = upperStages.filter((s) => s.stageType === 'active').length;
+    const lowerActive = lowerStages.filter((s) => s.stageType === 'active').length;
+    const totalStages = Math.max(upperActive, lowerActive);
+    const diff        = Math.abs(upperActive - lowerActive);
+
+    const paddingRequired: CoordinatedStagePlan['paddingRequired'] =
+      upperActive < lowerActive ? 'upper'
+      : lowerActive < upperActive ? 'lower'
+      : 'none';
+
+    const mismatchWarnings: Array<{ stageNumber: number; description: string }> = [];
+    if (diff > 1) {
+      // Flag the stage where the shorter arch finishes active movement
+      const splitStage = Math.min(upperActive, lowerActive) + 1;
+      mismatchWarnings.push({
+        stageNumber: splitStage,
+        description:
+          `Upper arch has ${upperActive} active stages; lower has ${lowerActive}. ` +
+          `From stage ${splitStage} onward, ${upperActive < lowerActive ? 'upper' : 'lower'} ` +
+          `arch is passive — potential occlusal discordance over ${diff} stages. ` +
+          `Consider adding passive fill aligners for the shorter arch.`,
+      });
+    }
+
+    return {
+      upperStageCount: upperActive,
+      lowerStageCount: lowerActive,
+      totalStages,
+      paddingRequired,
+      mismatchWarnings,
+    };
   }
 
   async deleteStages(orgId: string, setupId: string): Promise<void> {

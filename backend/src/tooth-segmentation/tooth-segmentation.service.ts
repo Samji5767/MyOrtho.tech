@@ -289,4 +289,73 @@ export class ToothSegmentationService {
     this.logger.log(`Segmentation reviewed: id=${segId} by=${reviewedBy}`);
     return rows[0];
   }
+
+  // ── Tooth numbering confidence ─────────────────────────────────────────────
+
+  computeNumberingConfidence(result: ToothSegmentation): number {
+    const teeth = result.teeth as unknown as SegmentedTooth[];
+    const detectedFdis = teeth.map(t => t.fdi);
+
+    let confidence = 85;
+
+    // Third molar presence uncertainty: -10 (single deduction regardless of count)
+    const thirdMolars = [18, 28, 38, 48];
+    const hasThirdMolars = detectedFdis.some(fdi => thirdMolars.includes(fdi));
+    if (hasThirdMolars) confidence -= 10;
+
+    // Unusual arch form: -5 (fewer than 8 teeth in a detected arch suggests truncated scan)
+    const maxillaryCount  = detectedFdis.filter(f => f >= 11 && f <= 28).length;
+    const mandibularCount = detectedFdis.filter(f => f >= 31 && f <= 48).length;
+    if (maxillaryCount > 0 && maxillaryCount < 8)  confidence -= 5;
+    if (mandibularCount > 0 && mandibularCount < 8) confidence -= 5;
+
+    // Missing teeth: -5 per tooth detected as missing within a present arch
+    const missingFdis = this.detectMissingTeeth(detectedFdis);
+    confidence -= missingFdis.length * 5;
+
+    return Math.max(0, Math.min(100, confidence));
+  }
+
+  // ── Missing tooth detection ────────────────────────────────────────────────
+  // Compare detected teeth against expected adult dentition (wisdom teeth excluded —
+  // they are commonly absent and do not count as "missing").
+
+  detectMissingTeeth(detectedFdiNumbers: number[]): number[] {
+    const expectedAdultDentition = [
+      11, 12, 13, 14, 15, 16, 17,
+      21, 22, 23, 24, 25, 26, 27,
+      31, 32, 33, 34, 35, 36, 37,
+      41, 42, 43, 44, 45, 46, 47,
+    ];
+
+    const detectedSet = new Set(detectedFdiNumbers);
+
+    // Only flag a tooth as missing if at least one tooth in that quadrant was detected
+    const hasUpperRight = detectedFdiNumbers.some(f => f >= 11 && f <= 18);
+    const hasUpperLeft  = detectedFdiNumbers.some(f => f >= 21 && f <= 28);
+    const hasLowerLeft  = detectedFdiNumbers.some(f => f >= 31 && f <= 38);
+    const hasLowerRight = detectedFdiNumbers.some(f => f >= 41 && f <= 48);
+
+    return expectedAdultDentition.filter(fdi => {
+      if (detectedSet.has(fdi)) return false;
+      if (fdi >= 11 && fdi <= 17) return hasUpperRight;
+      if (fdi >= 21 && fdi <= 27) return hasUpperLeft;
+      if (fdi >= 31 && fdi <= 37) return hasLowerLeft;
+      if (fdi >= 41 && fdi <= 47) return hasLowerRight;
+      return false;
+    });
+  }
+
+  // ── Duplicate FDI detection ────────────────────────────────────────────────
+
+  detectDuplicates(detectedFdiNumbers: number[]): number[] {
+    const tally = new Map<number, number>();
+    for (const fdi of detectedFdiNumbers) {
+      tally.set(fdi, (tally.get(fdi) ?? 0) + 1);
+    }
+    return [...tally.entries()]
+      .filter(([, count]) => count > 1)
+      .map(([fdi]) => fdi)
+      .sort((a, b) => a - b);
+  }
 }

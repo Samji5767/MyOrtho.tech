@@ -3,6 +3,7 @@ import type { Pool } from 'pg';
 import { PG_POOL } from '../database/database.module';
 
 // ─── Enamel thickness estimates (Sheridan 1985, Ballard 1944) ────────────────
+// Legacy per-type averages — kept for backward compatibility with existing code.
 // mm per mesial/distal surface; sum of both contacts = available IPR
 
 const ENAMEL_BY_TYPE: Record<string, number> = {
@@ -20,8 +21,56 @@ function toothType(fdi: number): string {
   return 'molar';
 }
 
+/** Legacy single-value lookup — used by the optimizeIpr loop (backward-compatible). */
 function enamelThickness(fdi: number): number {
   return ENAMEL_BY_TYPE[toothType(fdi)] ?? 2.0;
+}
+
+// ─── Enhanced enamel thickness (Sheridan 1985 / Ballard 1944) ────────────────
+// Per surface (mesial / distal) and per arch (upper / lower).
+// Key observations:
+//   - Mesial surfaces are consistently thicker than distal surfaces
+//   - Maxillary teeth have greater enamel thickness than mandibular homologues
+//   - Safety reserve: ≥0.5 mm must remain post-IPR (Sheridan safety limit)
+
+interface EnamelProfile {
+  mesialUpper: number;
+  distalUpper: number;
+  mesialLower: number;
+  distalLower: number;
+}
+
+const ENAMEL_PROFILE_BY_POSITION: Record<number, EnamelProfile> = {
+  1: { mesialUpper: 1.0, distalUpper: 0.9, mesialLower: 0.8, distalLower: 0.7 }, // central incisor
+  2: { mesialUpper: 0.9, distalUpper: 0.8, mesialLower: 0.7, distalLower: 0.6 }, // lateral incisor
+  3: { mesialUpper: 1.2, distalUpper: 1.1, mesialLower: 1.0, distalLower: 0.9 }, // canine
+  4: { mesialUpper: 1.5, distalUpper: 1.4, mesialLower: 1.3, distalLower: 1.2 }, // first premolar
+  5: { mesialUpper: 1.6, distalUpper: 1.5, mesialLower: 1.4, distalLower: 1.3 }, // second premolar
+  6: { mesialUpper: 1.8, distalUpper: 1.7, mesialLower: 1.6, distalLower: 1.5 }, // first molar
+  7: { mesialUpper: 1.8, distalUpper: 1.7, mesialLower: 1.6, distalLower: 1.5 }, // second molar
+  8: { mesialUpper: 1.5, distalUpper: 1.4, mesialLower: 1.3, distalLower: 1.2 }, // third molar
+};
+
+/**
+ * Enhanced enamel thickness estimate (Sheridan 1985 / Ballard 1944).
+ *
+ * @param fdi      FDI tooth number.
+ * @param surface  'mesial' or 'distal' — mesial is thicker.
+ * @param arch     'upper' or 'lower' — upper is thicker.
+ * @returns Estimated enamel thickness in mm for the specified surface.
+ */
+function estimateEnamelThickness(
+  fdi: number,
+  surface: 'mesial' | 'distal' = 'mesial',
+  arch: 'upper' | 'lower' = 'upper',
+): number {
+  const pos = fdi % 10;
+  const profile = ENAMEL_PROFILE_BY_POSITION[pos];
+  if (!profile) return enamelThickness(fdi); // fall back to legacy value
+  if (surface === 'mesial' && arch === 'upper') return profile.mesialUpper;
+  if (surface === 'distal' && arch === 'upper') return profile.distalUpper;
+  if (surface === 'mesial' && arch === 'lower') return profile.mesialLower;
+  return profile.distalLower;
 }
 
 // Sheridan safety: 0.5mm minimum remaining enamel per surface
@@ -61,6 +110,45 @@ export interface IprOptimizationResult {
     optimizedMm: number;
     reason: string;
   }>;
+}
+
+// ─── Additional interfaces ────────────────────────────────────────────────────
+
+/** A single interproximal reduction item from the treatment plan. */
+export interface IprItem {
+  fdiA: number;
+  fdiB: number;
+  amountMm: number;
+  stageNumber?: number;
+}
+
+/** Input measurements for arch-length discrepancy analysis. */
+export interface ArchMeasurement {
+  /** FDI numbers of the teeth to include in the analysis. */
+  fdiList: number[];
+  /** Measured or estimated mesiodistal crown widths (mm) keyed by FDI. */
+  toothWidthsMm: Record<number, number>;
+  /** Available arch perimeter (mm) — measured along the dental arch. */
+  archPerimeterMm: number;
+  /** Which arch is being measured. */
+  archType: 'upper' | 'lower';
+}
+
+export interface ArchLengthDiscrepancy {
+  /** Sum of all mesiodistal crown widths in the measurement set (mm). */
+  toothSizeSumMm: number;
+  /** Measured arch perimeter (mm). */
+  archPerimeterMm: number;
+  /** Positive = crowding; negative = spacing (mm). */
+  discrepancyMm: number;
+  /**
+   * Anterior Bolton discrepancy (Bolton 1958) — deviation from 77.2 % norm.
+   * Null if anterior tooth widths for both arches are not available.
+   */
+  boltonDiscrepancy: number | null;
+  /** True when arch perimeter can accommodate all tooth sizes without IPR. */
+  spaceSufficientForMovements: boolean;
+  recommendation: string;
 }
 
 // Adjacent contact pairs eligible for IPR
@@ -245,6 +333,139 @@ export class IprIntelligenceService {
     await this.verifyPlan(planId, caseId, orgId);
     const estimates = await this.getEnamelAnalysis(caseId, orgId, planId);
     return this.generateClinicalWarnings(estimates);
+  }
+
+  // ── Arch-length discrepancy analysis (Bolton 1958) ────────────────────────
+
+  /**
+   * Calculates the arch-length discrepancy and Bolton anterior ratio discrepancy.
+   *
+   * Bolton (1958) anterior norm: sumLower6 / sumUpper6 × 100 = 77.2 %
+   * A positive Bolton discrepancy means lower teeth are relatively larger.
+   */
+  calculateArchLengthDiscrepancy(measurements: ArchMeasurement): ArchLengthDiscrepancy {
+    const toothSizeSum = measurements.fdiList.reduce(
+      (sum, fdi) => sum + (measurements.toothWidthsMm[fdi] ?? 0),
+      0,
+    );
+    const discrepancyMm = toothSizeSum - measurements.archPerimeterMm;
+
+    // Bolton anterior ratio — requires width data for upper and lower anteriors
+    const upperAnteriorFdi = [11, 12, 13, 21, 22, 23];
+    const lowerAnteriorFdi = [31, 32, 33, 41, 42, 43];
+    const hasUpperAnterior = upperAnteriorFdi.every((f) => measurements.toothWidthsMm[f] != null);
+    const hasLowerAnterior = lowerAnteriorFdi.every((f) => measurements.toothWidthsMm[f] != null);
+
+    let boltonDiscrepancy: number | null = null;
+    if (hasUpperAnterior && hasLowerAnterior) {
+      const sumUpper = upperAnteriorFdi.reduce((s, f) => s + (measurements.toothWidthsMm[f] ?? 0), 0);
+      const sumLower = lowerAnteriorFdi.reduce((s, f) => s + (measurements.toothWidthsMm[f] ?? 0), 0);
+      if (sumUpper > 0) {
+        const boltonRatio = (sumLower / sumUpper) * 100;
+        boltonDiscrepancy = parseFloat((boltonRatio - 77.2).toFixed(2)); // deviation from norm
+      }
+    }
+
+    const spaceSufficient = discrepancyMm <= 0;
+
+    let recommendation: string;
+    if (discrepancyMm <= 0) {
+      recommendation =
+        `Arch has ${Math.abs(discrepancyMm).toFixed(1)}mm excess space — ` +
+        `no IPR required for space creation; spacing closure planned instead.`;
+    } else if (discrepancyMm <= 3.0) {
+      recommendation =
+        `Mild crowding ${discrepancyMm.toFixed(1)}mm — ` +
+        `IPR can resolve without extraction (total ≤ ${discrepancyMm.toFixed(1)}mm across contacts).`;
+    } else if (discrepancyMm <= 6.0) {
+      recommendation =
+        `Moderate crowding ${discrepancyMm.toFixed(1)}mm — ` +
+        `IPR (2–4mm total) combined with arch expansion and proclination may resolve.`;
+    } else {
+      recommendation =
+        `Severe crowding ${discrepancyMm.toFixed(1)}mm — ` +
+        `extraction or TAD-supported treatment likely required; IPR alone insufficient.`;
+    }
+
+    if (boltonDiscrepancy != null && Math.abs(boltonDiscrepancy) > 2.0) {
+      recommendation +=
+        ` Bolton discrepancy ${boltonDiscrepancy > 0 ? '+' : ''}${boltonDiscrepancy.toFixed(1)}% — ` +
+        (boltonDiscrepancy > 0
+          ? 'lower arch is relatively larger; upper IPR may be needed for ideal intercuspation.'
+          : 'upper arch is relatively larger; lower IPR may improve occlusal interdigitation.');
+    }
+
+    return {
+      toothSizeSumMm:             parseFloat(toothSizeSum.toFixed(2)),
+      archPerimeterMm:            measurements.archPerimeterMm,
+      discrepancyMm:              parseFloat(discrepancyMm.toFixed(2)),
+      boltonDiscrepancy,
+      spaceSufficientForMovements: spaceSufficient,
+      recommendation,
+    };
+  }
+
+  // ── IPR clinical justification ─────────────────────────────────────────────
+
+  /**
+   * Generates a structured clinical justification for a single IPR item.
+   * References enamel thickness data (Sheridan 1985 / Ballard 1944) and
+   * flags safety warnings when the planned removal approaches the safe limit.
+   *
+   * @param iprItem  The interproximal reduction item to justify.
+   */
+  generateIprClinicalJustification(iprItem: IprItem): string {
+    const { fdiA, fdiB, amountMm } = iprItem;
+    const archA = this.archForFdi(fdiA);
+    const archB = this.archForFdi(fdiB);
+
+    const enamelA = estimateEnamelThickness(fdiA, 'distal',  archA);
+    const enamelB = estimateEnamelThickness(fdiB, 'mesial',  archB);
+    const maxSafeA = enamelA - MIN_REMAINING_MM;
+    const maxSafeB = enamelB - MIN_REMAINING_MM;
+    const maxSafe  = parseFloat((maxSafeA + maxSafeB).toFixed(2));
+
+    const lines: string[] = [];
+    lines.push(
+      `IPR at contact ${fdiA}–${fdiB}: ${amountMm.toFixed(2)}mm planned reduction.`,
+    );
+    lines.push(
+      `Enamel thickness estimate (Sheridan 1985/Ballard 1944): ` +
+      `tooth ${fdiA} distal surface ≈${enamelA.toFixed(1)}mm (${archA}), ` +
+      `tooth ${fdiB} mesial surface ≈${enamelB.toFixed(1)}mm (${archB}).`,
+    );
+    lines.push(
+      `Maximum safe removal per Sheridan tables: ${maxSafe.toFixed(2)}mm ` +
+      `(preserving ≥${MIN_REMAINING_MM}mm enamel per surface).`,
+    );
+
+    if (amountMm > maxSafe) {
+      lines.push(
+        `SAFETY WARNING: planned ${amountMm.toFixed(2)}mm exceeds safe maximum ` +
+        `${maxSafe.toFixed(2)}mm by ${(amountMm - maxSafe).toFixed(2)}mm. ` +
+        `Reduce to ≤${maxSafe.toFixed(2)}mm or confirm actual enamel thickness ` +
+        `radiographically before proceeding.`,
+      );
+    } else {
+      const reserve     = parseFloat((maxSafe - amountMm).toFixed(2));
+      const percentUsed = parseFloat(((amountMm / maxSafe) * 100).toFixed(0));
+      lines.push(
+        `Safety reserve: ${reserve}mm remaining capacity ` +
+        `(${percentUsed}% of safe maximum used).`,
+      );
+    }
+
+    if (iprItem.stageNumber != null) {
+      lines.push(`Scheduled at stage ${iprItem.stageNumber}.`);
+    }
+
+    lines.push('[AI-assisted recommendation only — clinician verification required before IPR.]');
+    return lines.join('\n');
+  }
+
+  /** Returns 'upper' or 'lower' arch for a given FDI number. */
+  private archForFdi(fdi: number): 'upper' | 'lower' {
+    return Math.floor(fdi / 10) <= 2 ? 'upper' : 'lower';
   }
 
   private generateClinicalWarnings(estimates: IprEnamelEstimate[]): IprClinicalWarning[] {

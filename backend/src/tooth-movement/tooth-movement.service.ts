@@ -50,6 +50,18 @@ const LIMITS = {
   expansion_mm:    0.30,
 };
 
+// Per-course (total treatment) safe movement limits — Kravitz/Proffit evidence-based
+const SAFE_MOVEMENT_LIMITS = {
+  translation:   { safe: 2.0,  warn: 3.0,  max: 4.0  }, // mm per course
+  rotation:      { safe: 20.0, warn: 35.0, max: 50.0  }, // degrees
+  torque:        { safe: 10.0, warn: 20.0, max: 30.0  }, // degrees
+  tip:           { safe: 10.0, warn: 20.0, max: 30.0  }, // degrees
+  intrusion:     { safe: 1.0,  warn: 2.0,  max: 3.0   }, // mm
+  extrusion:     { safe: 1.5,  warn: 2.5,  max: 3.5   }, // mm
+  expansion:     { safe: 3.0,  warn: 5.0,  max: 7.0   }, // mm per arch
+  distalization: { safe: 3.0,  warn: 5.0,  max: 7.0   }, // mm
+} as const;
+
 // Crown width mesio-distal (mm) — for rotation-adjusted collision clearance
 const CROWN_WIDTH_MD: Record<number, number> = {
   11: 8.5, 12: 6.8, 13: 7.5, 14: 7.0, 15: 7.0, 16: 10.2, 17: 9.9, 18: 9.0,
@@ -238,6 +250,75 @@ export interface ApprovalValidation {
   summary: string;
 }
 
+// ─── Enhanced Movement Engine Interfaces ─────────────────────────────────────
+
+/** Alias for MovementPrescription used in new validation APIs */
+export type ToothMovement = MovementPrescription;
+
+export interface ImpossibleMovement {
+  fdi: number;
+  type: 'anatomical_limit' | 'conflicting_movements' | 'arch_length_violation' | 'extraction_space_conflict';
+  description: string;
+  severity: 'warning' | 'critical';
+  affectedAxis: string;
+  prescribedValue: number;
+  anatomicalMax: number;
+}
+
+export interface CollisionV2 {
+  fdiA: number;
+  fdiB: number;
+  overlapMm: number;
+  severity: 'none' | 'minimal' | 'moderate' | 'severe';
+  firstAppearanceStage: number;
+  recommendedCorrections: string[];
+}
+
+export interface CollisionV2Report {
+  collisions: CollisionV2[];
+  summary: string;
+  attachmentConflicts: Array<{ fdi: number; adjacentFdi: number; description: string }>;
+}
+
+export interface RootSafetyAssessment {
+  overallRisk: 'low' | 'moderate' | 'high' | 'critical';
+  perToothRisk: Record<number, {
+    fdiNumber: number;
+    apicalDisplacementEstMm: number;
+    corticalProximityEstMm: number;
+    maxSafeTorqueDeg: number;
+    maxSafeIntrusionMm: number;
+    riskLevel: 'low' | 'moderate' | 'high' | 'critical';
+    clinicalExplanation: string;
+    colorCode: 'green' | 'yellow' | 'orange' | 'red';
+  }>;
+  highRiskTeeth: number[];
+  clinicalSummary: string;
+  confidence: 'low' | 'moderate' | 'high';
+  disclaimer: string;
+}
+
+export interface RefinementEstimate {
+  probability: number; // 0.0–1.0
+  confidenceLevel: 'low' | 'moderate' | 'high';
+  primaryRiskFactors: string[];
+  expectedAdditionalAligners: number;
+  treatmentSuccessProbability: number;
+  explanation: string;
+  disclaimer: string;
+}
+
+export interface AnchorageAnalysisEnhanced {
+  class: 'maximum' | 'moderate' | 'minimum';
+  unitCount: number;
+  demandEstimate: number;
+  deficit: number;
+  anchorageProtectionStrategy: string;
+  riskOfAnchorageLoss: 'low' | 'moderate' | 'high';
+  required: number;
+  available: number;
+}
+
 // ─── Row mappers ──────────────────────────────────────────────────────────────
 
 function rowToPrescrip(r: Record<string, unknown>): MovementPrescription {
@@ -287,6 +368,60 @@ function rowToSimulation(r: Record<string, unknown>): MovementSimulation {
     simulationDurationMs:     r['simulation_duration_ms'] as number | null,
     simulatedAt:              r['simulated_at'] as string,
   };
+}
+
+// ─── Root safety helpers ──────────────────────────────────────────────────────
+
+function buildRootSafetyExplanation(
+  fdi: number,
+  riskLevel: 'low' | 'moderate' | 'high' | 'critical',
+  apicalDisp: number,
+  torque: number,
+): string {
+  const type = toothTypeOf(fdi);
+  switch (riskLevel) {
+    case 'critical':
+      return (
+        `Tooth ${fdi} (${type}) has ${apicalDisp.toFixed(1)}mm estimated apical displacement — ` +
+        `exceeds safe cortical proximity threshold. Recommend CBCT evaluation before proceeding.`
+      );
+    case 'high':
+      return (
+        `Tooth ${fdi} (${type}) has ${apicalDisp.toFixed(1)}mm estimated apical displacement ` +
+        `with ${torque.toFixed(1)}° torque — monitor root position at mid-treatment scan.`
+      );
+    case 'moderate':
+      return (
+        `Tooth ${fdi} (${type}): root movement is within caution range (${apicalDisp.toFixed(1)}mm apical). ` +
+        `Ensure attachment plan provides adequate root control.`
+      );
+    default:
+      return `Tooth ${fdi} (${type}): root displacement (${apicalDisp.toFixed(1)}mm) within safe limits.`;
+  }
+}
+
+/** Estimated remaining cortical clearance in mm (negative = cortical violation) */
+function corticalProximityEstMm(fdi: number, apicalDisp: number): number {
+  const safeApicalClearance = toothTypeOf(fdi) === 'incisor' ? 1.5 : 2.0;
+  return parseFloat((safeApicalClearance - apicalDisp).toFixed(2));
+}
+
+function maxSafeTorqueForTooth(fdi: number): number {
+  switch (toothTypeOf(fdi)) {
+    case 'incisor':  return 10;
+    case 'canine':   return 12;
+    case 'premolar': return 14;
+    case 'molar':    return 8; // multi-rooted; less torque leverage
+  }
+}
+
+function maxSafeIntrusionForTooth(fdi: number): number {
+  switch (toothTypeOf(fdi)) {
+    case 'incisor':  return 2.0;
+    case 'canine':   return 1.5;
+    case 'premolar': return 1.5;
+    case 'molar':    return 1.0; // PDL fibers resist intrusion most for multi-rooted teeth
+  }
 }
 
 // ─── Service ──────────────────────────────────────────────────────────────────
@@ -1150,6 +1285,619 @@ export class ToothMovementService {
       : `Clinical validation failed — ${blockers.length} blocker(s) must be resolved before approval`;
 
     return { canApprove, score, blockers, warnings, summary };
+  }
+
+  // ── Enhancement 1: Impossible movement detection ───────────────────────────
+
+  /**
+   * Identifies movements that exceed anatomical limits, contain conflicts on the same
+   * tooth, or create arch-length/extraction-space violations.
+   */
+  detectImpossibleMovements(movements: ToothMovement[]): ImpossibleMovement[] {
+    const impossible: ImpossibleMovement[] = [];
+
+    const classifyLimit = (
+      value: number,
+      limits: { safe: number; warn: number; max: number },
+    ): 'ok' | 'warn' | 'exceeded' => {
+      if (value > limits.max)  return 'exceeded';
+      if (value > limits.safe) return 'warn';
+      return 'ok';
+    };
+
+    for (const m of movements) {
+      // 1a. Total translation
+      const totalTranslation =
+        m.translationMesialMm + m.translationDistalMm +
+        m.translationBuccalMm + m.translationLingualMm;
+      if (classifyLimit(totalTranslation, SAFE_MOVEMENT_LIMITS.translation) === 'exceeded') {
+        impossible.push({
+          fdi: m.toothNumber,
+          type: 'anatomical_limit',
+          description: `FDI ${m.toothNumber}: total translation ${totalTranslation.toFixed(2)}mm exceeds anatomical maximum of ${SAFE_MOVEMENT_LIMITS.translation.max}mm per course`,
+          severity: 'critical',
+          affectedAxis: 'translation',
+          prescribedValue: totalTranslation,
+          anatomicalMax: SAFE_MOVEMENT_LIMITS.translation.max,
+        });
+      }
+
+      // 1b. Rotation
+      const totalRotation = Math.abs(m.rotationDeg);
+      if (classifyLimit(totalRotation, SAFE_MOVEMENT_LIMITS.rotation) === 'exceeded') {
+        impossible.push({
+          fdi: m.toothNumber,
+          type: 'anatomical_limit',
+          description: `FDI ${m.toothNumber}: rotation ${totalRotation.toFixed(1)}° exceeds anatomical maximum of ${SAFE_MOVEMENT_LIMITS.rotation.max}°`,
+          severity: 'critical',
+          affectedAxis: 'rotation',
+          prescribedValue: totalRotation,
+          anatomicalMax: SAFE_MOVEMENT_LIMITS.rotation.max,
+        });
+      }
+
+      // 1c. Torque
+      const totalTorque = Math.abs(m.torqueDeg);
+      if (classifyLimit(totalTorque, SAFE_MOVEMENT_LIMITS.torque) === 'exceeded') {
+        impossible.push({
+          fdi: m.toothNumber,
+          type: 'anatomical_limit',
+          description: `FDI ${m.toothNumber}: torque ${totalTorque.toFixed(1)}° exceeds safe maximum of ${SAFE_MOVEMENT_LIMITS.torque.max}°`,
+          severity: 'critical',
+          affectedAxis: 'torque',
+          prescribedValue: totalTorque,
+          anatomicalMax: SAFE_MOVEMENT_LIMITS.torque.max,
+        });
+      }
+
+      // 1d. Tip
+      const maxTip = Math.max(Math.abs(m.tipMesialDeg), Math.abs(m.tipDistalDeg));
+      if (classifyLimit(maxTip, SAFE_MOVEMENT_LIMITS.tip) === 'exceeded') {
+        impossible.push({
+          fdi: m.toothNumber,
+          type: 'anatomical_limit',
+          description: `FDI ${m.toothNumber}: tip ${maxTip.toFixed(1)}° exceeds anatomical maximum of ${SAFE_MOVEMENT_LIMITS.tip.max}°`,
+          severity: 'critical',
+          affectedAxis: 'tip',
+          prescribedValue: maxTip,
+          anatomicalMax: SAFE_MOVEMENT_LIMITS.tip.max,
+        });
+      }
+
+      // 1e. Intrusion
+      if (classifyLimit(m.intrusionMm, SAFE_MOVEMENT_LIMITS.intrusion) === 'exceeded') {
+        impossible.push({
+          fdi: m.toothNumber,
+          type: 'anatomical_limit',
+          description: `FDI ${m.toothNumber}: intrusion ${m.intrusionMm.toFixed(2)}mm exceeds anatomical maximum of ${SAFE_MOVEMENT_LIMITS.intrusion.max}mm`,
+          severity: 'critical',
+          affectedAxis: 'intrusion',
+          prescribedValue: m.intrusionMm,
+          anatomicalMax: SAFE_MOVEMENT_LIMITS.intrusion.max,
+        });
+      }
+
+      // 1f. Extrusion
+      if (classifyLimit(m.extrusionMm, SAFE_MOVEMENT_LIMITS.extrusion) === 'exceeded') {
+        impossible.push({
+          fdi: m.toothNumber,
+          type: 'anatomical_limit',
+          description: `FDI ${m.toothNumber}: extrusion ${m.extrusionMm.toFixed(2)}mm exceeds anatomical maximum of ${SAFE_MOVEMENT_LIMITS.extrusion.max}mm`,
+          severity: 'critical',
+          affectedAxis: 'extrusion',
+          prescribedValue: m.extrusionMm,
+          anatomicalMax: SAFE_MOVEMENT_LIMITS.extrusion.max,
+        });
+      }
+
+      // 1g. Distalization
+      if (classifyLimit(m.distalizationMm, SAFE_MOVEMENT_LIMITS.distalization) === 'exceeded') {
+        impossible.push({
+          fdi: m.toothNumber,
+          type: 'anatomical_limit',
+          description: `FDI ${m.toothNumber}: distalization ${m.distalizationMm.toFixed(2)}mm exceeds anatomical maximum of ${SAFE_MOVEMENT_LIMITS.distalization.max}mm`,
+          severity: 'critical',
+          affectedAxis: 'distalization',
+          prescribedValue: m.distalizationMm,
+          anatomicalMax: SAFE_MOVEMENT_LIMITS.distalization.max,
+        });
+      }
+
+      // 1h. Expansion
+      if (classifyLimit(m.expansionMm, SAFE_MOVEMENT_LIMITS.expansion) === 'exceeded') {
+        impossible.push({
+          fdi: m.toothNumber,
+          type: 'anatomical_limit',
+          description: `FDI ${m.toothNumber}: expansion ${m.expansionMm.toFixed(2)}mm exceeds anatomical maximum of ${SAFE_MOVEMENT_LIMITS.expansion.max}mm per arch`,
+          severity: 'critical',
+          affectedAxis: 'expansion',
+          prescribedValue: m.expansionMm,
+          anatomicalMax: SAFE_MOVEMENT_LIMITS.expansion.max,
+        });
+      }
+
+      // 2. Conflicting simultaneous movements on the same tooth
+      if (m.intrusionMm > 0.1 && m.extrusionMm > 0.1) {
+        impossible.push({
+          fdi: m.toothNumber,
+          type: 'conflicting_movements',
+          description: `FDI ${m.toothNumber}: simultaneous intrusion (${m.intrusionMm.toFixed(2)}mm) and extrusion (${m.extrusionMm.toFixed(2)}mm) — physically impossible on the same tooth`,
+          severity: 'critical',
+          affectedAxis: 'intrusion/extrusion',
+          prescribedValue: m.intrusionMm + m.extrusionMm,
+          anatomicalMax: 0,
+        });
+      }
+
+      if (m.expansionMm > 0.1 && m.constrictionMm > 0.1) {
+        impossible.push({
+          fdi: m.toothNumber,
+          type: 'conflicting_movements',
+          description: `FDI ${m.toothNumber}: simultaneous expansion (${m.expansionMm.toFixed(2)}mm) and constriction (${m.constrictionMm.toFixed(2)}mm) — bidirectional arch-form conflict`,
+          severity: 'critical',
+          affectedAxis: 'expansion/constriction',
+          prescribedValue: m.expansionMm + m.constrictionMm,
+          anatomicalMax: 0,
+        });
+      }
+
+      if (m.mesializationMm > 0.1 && m.distalizationMm > 0.1) {
+        impossible.push({
+          fdi: m.toothNumber,
+          type: 'conflicting_movements',
+          description: `FDI ${m.toothNumber}: simultaneous mesialization (${m.mesializationMm.toFixed(2)}mm) and distalization (${m.distalizationMm.toFixed(2)}mm) — opposing bodily movements will cancel`,
+          severity: 'warning',
+          affectedAxis: 'mesialization/distalization',
+          prescribedValue: m.mesializationMm + m.distalizationMm,
+          anatomicalMax: 0,
+        });
+      }
+    }
+
+    // 3. Arch-length discrepancy violations (arch-level check)
+    for (const arch of ['upper', 'lower'] as const) {
+      const archMovements = movements.filter((m) => archOf(m.toothNumber) === arch);
+      if (archMovements.length < 2) continue;
+
+      const netMDChange = archMovements.reduce(
+        (sum, m) => sum + m.translationMesialMm - m.translationDistalMm + m.mesializationMm - m.distalizationMm,
+        0,
+      );
+
+      if (Math.abs(netMDChange) > 5.0) {
+        const worst = archMovements.reduce((a, b) => {
+          const aNet = Math.abs(a.translationMesialMm - a.translationDistalMm + a.mesializationMm - a.distalizationMm);
+          const bNet = Math.abs(b.translationMesialMm - b.translationDistalMm + b.mesializationMm - b.distalizationMm);
+          return aNet >= bNet ? a : b;
+        });
+        impossible.push({
+          fdi: worst.toothNumber,
+          type: 'arch_length_violation',
+          description: `${arch.toUpperCase()} arch: net mesio-distal movement ${Math.abs(netMDChange).toFixed(1)}mm across ${archMovements.length} teeth exceeds 5mm safe arch-length accommodation — crowding relapse risk`,
+          severity: 'warning',
+          affectedAxis: 'arch_length',
+          prescribedValue: Math.abs(netMDChange),
+          anatomicalMax: 5.0,
+        });
+      }
+    }
+
+    // 4. Overcrowded extraction space conflicts
+    for (const m of movements) {
+      const n = m.toothNumber % 10;
+      if ((n === 4 || n === 5) && m.distalizationMm > SAFE_MOVEMENT_LIMITS.distalization.warn) {
+        // Check if adjacent first molar is also moving mesially — conflicting space closure
+        const molarFdi = m.toothNumber - n + 6; // e.g. 14 → 16, 24 → 26
+        const adjacentMolar = movements.find((x) => x.toothNumber === molarFdi);
+        if (adjacentMolar && adjacentMolar.mesializationMm > 0.5) {
+          impossible.push({
+            fdi: m.toothNumber,
+            type: 'extraction_space_conflict',
+            description: `FDI ${m.toothNumber}: premolar distalization (${m.distalizationMm.toFixed(1)}mm) conflicts with molar FDI ${molarFdi} mesialization (${adjacentMolar.mesializationMm.toFixed(1)}mm) — likely extraction space closure conflict requiring staged sequencing`,
+            severity: 'warning',
+            affectedAxis: 'distalization',
+            prescribedValue: m.distalizationMm + adjacentMolar.mesializationMm,
+            anatomicalMax: SAFE_MOVEMENT_LIMITS.distalization.warn,
+          });
+        }
+      }
+    }
+
+    return impossible;
+  }
+
+  /**
+   * Returns 'safe' | 'warn' | 'critical' for the worst-case movement axis on this tooth,
+   * evaluated against per-course SAFE_MOVEMENT_LIMITS thresholds.
+   */
+  classifyMovementRisk(movement: ToothMovement): 'safe' | 'warn' | 'critical' {
+    type Risk = 'safe' | 'warn' | 'critical';
+
+    const classify = (value: number, limits: { safe: number; warn: number; max: number }): Risk => {
+      if (value > limits.max)  return 'critical';
+      if (value > limits.safe) return 'warn';
+      return 'safe';
+    };
+
+    const escalate = (current: Risk, next: Risk): Risk => {
+      if (next === 'critical' || current === 'critical') return 'critical';
+      if (next === 'warn'     || current === 'warn')     return 'warn';
+      return 'safe';
+    };
+
+    const totalTranslation =
+      movement.translationMesialMm + movement.translationDistalMm +
+      movement.translationBuccalMm + movement.translationLingualMm;
+    const maxTip = Math.max(Math.abs(movement.tipMesialDeg), Math.abs(movement.tipDistalDeg));
+
+    let risk: Risk = 'safe';
+    risk = escalate(risk, classify(totalTranslation,                      SAFE_MOVEMENT_LIMITS.translation));
+    risk = escalate(risk, classify(Math.abs(movement.rotationDeg),        SAFE_MOVEMENT_LIMITS.rotation));
+    risk = escalate(risk, classify(Math.abs(movement.torqueDeg),          SAFE_MOVEMENT_LIMITS.torque));
+    risk = escalate(risk, classify(maxTip,                                SAFE_MOVEMENT_LIMITS.tip));
+    risk = escalate(risk, classify(movement.intrusionMm,                  SAFE_MOVEMENT_LIMITS.intrusion));
+    risk = escalate(risk, classify(movement.extrusionMm,                  SAFE_MOVEMENT_LIMITS.extrusion));
+    risk = escalate(risk, classify(movement.expansionMm,                  SAFE_MOVEMENT_LIMITS.expansion));
+    risk = escalate(risk, classify(movement.distalizationMm,              SAFE_MOVEMENT_LIMITS.distalization));
+    return risk;
+  }
+
+  // ── Enhancement 2: Enhanced root safety assessment ─────────────────────────
+
+  /**
+   * Returns a full RootSafetyAssessment with per-tooth risk records,
+   * colour-coded risk levels, and lookup-table-generated clinical explanations.
+   */
+  async assessRootSafety(
+    caseId: string,
+    orgId: string,
+    planId: string,
+  ): Promise<RootSafetyAssessment> {
+    const DISCLAIMER =
+      'Root proximity estimates are based on population-average root lengths and simplified geometric models. ' +
+      'They do not substitute for CBCT evaluation in high-risk cases. ' +
+      'Clinical judgment is required before proceeding with movements flagged high or critical risk.';
+
+    const prescriptions = await this.listPrescriptions(caseId, orgId, planId);
+
+    if (!prescriptions.length) {
+      return {
+        overallRisk: 'low',
+        perToothRisk: {},
+        highRiskTeeth: [],
+        clinicalSummary: 'No prescriptions found — add movement prescriptions to enable root safety analysis',
+        confidence: 'low',
+        disclaimer: DISCLAIMER,
+      };
+    }
+
+    const perToothRisk: RootSafetyAssessment['perToothRisk'] = {};
+
+    for (const p of prescriptions) {
+      const rootLen = ROOT_LENGTH[p.toothNumber] ?? 14.0;
+      const totalAngular = Math.abs(p.torqueDeg) + Math.abs(p.tipMesialDeg) + Math.abs(p.tipDistalDeg);
+      const angularApicalMm = Math.sin((totalAngular * Math.PI) / 180) * rootLen;
+      const apicalDisp = parseFloat((angularApicalMm + Math.abs(p.rootMovementMm ?? 0)).toFixed(3));
+
+      const proximity = corticalProximityEstMm(p.toothNumber, apicalDisp);
+      const maxSafeTorqueDeg   = maxSafeTorqueForTooth(p.toothNumber);
+      const maxSafeIntrusionMm = maxSafeIntrusionForTooth(p.toothNumber);
+
+      const riskLevel: 'low' | 'moderate' | 'high' | 'critical' =
+        apicalDisp >= 4.0 || proximity < -0.5 ? 'critical' :
+        apicalDisp >= 2.5 || proximity < 0.5  ? 'high' :
+        apicalDisp >= 1.5 || proximity < 1.0  ? 'moderate' :
+        'low';
+
+      const colorCode: 'green' | 'yellow' | 'orange' | 'red' =
+        riskLevel === 'critical' ? 'red' :
+        riskLevel === 'high'     ? 'orange' :
+        riskLevel === 'moderate' ? 'yellow' :
+        'green';
+
+      perToothRisk[p.toothNumber] = {
+        fdiNumber: p.toothNumber,
+        apicalDisplacementEstMm: apicalDisp,
+        corticalProximityEstMm: proximity,
+        maxSafeTorqueDeg,
+        maxSafeIntrusionMm,
+        riskLevel,
+        clinicalExplanation: buildRootSafetyExplanation(
+          p.toothNumber, riskLevel, apicalDisp, Math.abs(p.torqueDeg),
+        ),
+        colorCode,
+      };
+    }
+
+    const riskValues = Object.values(perToothRisk);
+    const highRiskTeeth = riskValues
+      .filter((r) => r.riskLevel === 'high' || r.riskLevel === 'critical')
+      .map((r) => r.fdiNumber);
+
+    const criticalCount = riskValues.filter((r) => r.riskLevel === 'critical').length;
+    const highCount     = riskValues.filter((r) => r.riskLevel === 'high').length;
+    const moderateCount = riskValues.filter((r) => r.riskLevel === 'moderate').length;
+
+    const overallRisk: RootSafetyAssessment['overallRisk'] =
+      criticalCount > 0 ? 'critical' :
+      highCount     > 0 ? 'high' :
+      moderateCount > 0 ? 'moderate' :
+      'low';
+
+    const clinicalSummary =
+      overallRisk === 'critical'
+        ? `${criticalCount} tooth/teeth at critical cortical proximity risk — CBCT evaluation strongly recommended before proceeding`
+        : overallRisk === 'high'
+        ? `${highCount} tooth/teeth at elevated root safety risk — additional root-control attachments recommended`
+        : overallRisk === 'moderate'
+        ? `${moderateCount} tooth/teeth require monitoring — confirm attachment plan provides root control`
+        : 'All root safety parameters within acceptable limits';
+
+    const confidence: RootSafetyAssessment['confidence'] =
+      riskValues.length > 10 ? 'high' :
+      riskValues.length > 4  ? 'moderate' :
+      'low';
+
+    return { overallRisk, perToothRisk, highRiskTeeth, clinicalSummary, confidence, disclaimer: DISCLAIMER };
+  }
+
+  // ── Enhancement 3: Collision detection v2 ─────────────────────────────────
+
+  /**
+   * Enhanced collision detection with severity scoring (none/minimal/moderate/severe),
+   * stage-timeline estimation, correction recommendations, and attachment-hull conflict detection.
+   */
+  async getEnhancedCollisionsV2(
+    caseId: string,
+    orgId: string,
+    planId: string,
+  ): Promise<CollisionV2Report> {
+    const prescriptions = await this.listPrescriptions(caseId, orgId, planId);
+    const stages = this.estimateStages(prescriptions);
+    const byFdi  = new Map(prescriptions.map((p) => [p.toothNumber, p]));
+
+    const ADJACENT: [number, number][] = [
+      [11,12],[12,13],[13,14],[14,15],[15,16],[16,17],[17,18],
+      [21,22],[22,23],[23,24],[24,25],[25,26],[26,27],[27,28],
+      [31,32],[32,33],[33,34],[34,35],[35,36],[36,37],[37,38],
+      [41,42],[42,43],[43,44],[44,45],[45,46],[46,47],[47,48],
+    ];
+
+    const collisions: CollisionV2[] = [];
+
+    for (const [a, b] of ADJACENT) {
+      const pA = byFdi.get(a);
+      const pB = byFdi.get(b);
+      if (!pA || !pB) continue;
+
+      const mesialConflict = pA.translationMesialMm + pB.translationDistalMm;
+      const distalConflict = pA.translationDistalMm + pB.translationMesialMm;
+      const rawConvergence = Math.max(mesialConflict, distalConflict, 0);
+      const rotContrib     = Math.abs(pA.rotationDeg) * 0.035 + Math.abs(pB.rotationDeg) * 0.035;
+      const totalOverlap   = parseFloat((rawConvergence + rotContrib).toFixed(3));
+
+      const severity: CollisionV2['severity'] =
+        totalOverlap >= 0.5  ? 'severe' :
+        totalOverlap >= 0.25 ? 'moderate' :
+        totalOverlap >= 0.1  ? 'minimal' :
+        'none';
+
+      if (severity === 'none' && rawConvergence <= 0.05) continue;
+
+      // Estimate the stage at which teeth first contact
+      const crownWidth        = CROWN_WIDTH_MD[a] ?? 7.0;
+      const clearanceThresh   = crownWidth * 0.05;
+      const overlapPerStage   = totalOverlap / Math.max(stages, 1);
+      const firstAppearanceStage = overlapPerStage > 0
+        ? Math.min(stages, Math.max(1, Math.round(clearanceThresh / overlapPerStage)))
+        : stages;
+
+      const recommendedCorrections: string[] = [];
+      if (severity === 'severe') {
+        recommendedCorrections.push(`IPR ${(totalOverlap * 0.8).toFixed(2)}mm at FDI ${a}-${b} contact point`);
+        recommendedCorrections.push(`Stage FDI ${a} and ${b} sequentially to avoid simultaneous convergence`);
+        recommendedCorrections.push(`Reorder movement sequence: complete distal movements before initiating mesial neighbours`);
+      } else if (severity === 'moderate') {
+        recommendedCorrections.push(`IPR 0.1–0.2mm at FDI ${a}-${b} contact point`);
+        recommendedCorrections.push(`Reduce movement velocity at stage ${firstAppearanceStage} — split into two sub-stages`);
+      } else {
+        recommendedCorrections.push(`Monitor FDI ${a}-${b} contact; consider staging to avoid interproximal binding`);
+        recommendedCorrections.push(`Add horizontal attachment on FDI ${a} or ${b} for improved directional control`);
+      }
+
+      collisions.push({
+        fdiA: a, fdiB: b,
+        overlapMm: totalOverlap,
+        severity,
+        firstAppearanceStage,
+        recommendedCorrections,
+      });
+    }
+
+    // Attachment-hull vs adjacent tooth collision detection
+    // Proxy: any tooth with rotation > 10° or torque > 5° is assumed to carry an attachment
+    const attachmentConflicts: CollisionV2Report['attachmentConflicts'] = [];
+    for (const [a, b] of ADJACENT) {
+      const pA = byFdi.get(a);
+      const pB = byFdi.get(b);
+      if (!pA || !pB) continue;
+
+      const aHasAttachment = Math.abs(pA.rotationDeg) > 10 || Math.abs(pA.torqueDeg) > 5;
+      const bHasAttachment = Math.abs(pB.rotationDeg) > 10 || Math.abs(pB.torqueDeg) > 5;
+
+      if (aHasAttachment && pB.translationMesialMm > 0.2) {
+        attachmentConflicts.push({
+          fdi: a, adjacentFdi: b,
+          description: `FDI ${b} mesial movement (${pB.translationMesialMm.toFixed(2)}mm) may impinge on FDI ${a} attachment hull — verify attachment placement clears adjacent tooth path`,
+        });
+      }
+      if (bHasAttachment && pA.translationDistalMm > 0.2) {
+        attachmentConflicts.push({
+          fdi: b, adjacentFdi: a,
+          description: `FDI ${a} distal movement (${pA.translationDistalMm.toFixed(2)}mm) may impinge on FDI ${b} attachment hull — verify attachment placement clears adjacent tooth path`,
+        });
+      }
+    }
+
+    const severeCount   = collisions.filter((c) => c.severity === 'severe').length;
+    const moderateCount = collisions.filter((c) => c.severity === 'moderate').length;
+    const summary = collisions.length === 0
+      ? 'No inter-tooth collision risk detected'
+      : `${collisions.length} collision risk(s): ${severeCount} severe, ${moderateCount} moderate`;
+
+    return { collisions, summary, attachmentConflicts };
+  }
+
+  // ── Enhancement 4: Refinement probability ─────────────────────────────────
+
+  /**
+   * Estimates the probability that this tooth will require a refinement course,
+   * based on clinically validated per-tooth risk factors (Kravitz/Proffit).
+   * For arch-level factors (total stages, arch-length discrepancy) call
+   * getAnchorageAnalysisEnhanced or getRefinementRecommendations instead.
+   */
+  estimateRefinementProbability(prescription: MovementPrescription): RefinementEstimate {
+    let probability = 0;
+    const primaryRiskFactors: string[] = [];
+
+    // RF1: Large rotation
+    const totalRotation = Math.abs(prescription.rotationDeg);
+    if (totalRotation > 25) {
+      probability += 0.15;
+      primaryRiskFactors.push(`Rotation ${totalRotation.toFixed(1)}° > 25° (+15%)`);
+    }
+
+    // RF2: Deep intrusion
+    if (prescription.intrusionMm > 2.0) {
+      probability += 0.20;
+      primaryRiskFactors.push(`Intrusion ${prescription.intrusionMm.toFixed(2)}mm > 2mm (+20%)`);
+    }
+
+    // RF3: Large total translation
+    const totalTranslation =
+      prescription.translationMesialMm + prescription.translationDistalMm +
+      prescription.translationBuccalMm + prescription.translationLingualMm;
+    if (totalTranslation > 3.0) {
+      probability += 0.10;
+      primaryRiskFactors.push(`Total translation ${totalTranslation.toFixed(2)}mm > 3mm (+10%)`);
+    }
+
+    // RF4: Upper canine torque
+    if (
+      (prescription.toothNumber === 13 || prescription.toothNumber === 23) &&
+      Math.abs(prescription.torqueDeg) > 15
+    ) {
+      probability += 0.10;
+      primaryRiskFactors.push(
+        `Upper canine FDI ${prescription.toothNumber} torque ${Math.abs(prescription.torqueDeg).toFixed(1)}° > 15° (+10%)`,
+      );
+    }
+
+    // RF5: Molar distalization (FDI n=6 or n=7)
+    const n = prescription.toothNumber % 10;
+    if ((n === 6 || n === 7) && prescription.distalizationMm > 0.5) {
+      probability += 0.20;
+      primaryRiskFactors.push(
+        `Molar FDI ${prescription.toothNumber} distalization ${prescription.distalizationMm.toFixed(2)}mm (+20%)`,
+      );
+    }
+
+    // RF6: Large expansion (arch-length risk proxy)
+    if (prescription.expansionMm > 4.0) {
+      probability += 0.15;
+      primaryRiskFactors.push(`Expansion ${prescription.expansionMm.toFixed(2)}mm > 4mm — arch-length discrepancy risk (+15%)`);
+    }
+
+    probability = parseFloat(Math.min(1.0, probability).toFixed(3));
+
+    const confidenceLevel: RefinementEstimate['confidenceLevel'] =
+      primaryRiskFactors.length >= 3 ? 'high' :
+      primaryRiskFactors.length >= 1 ? 'moderate' :
+      'low';
+
+    // Expected additional aligners: ~4 aligners per 15% risk increment
+    const expectedAdditionalAligners = Math.round((probability / 0.15) * 4);
+
+    const treatmentSuccessProbability = parseFloat(
+      Math.max(0.50, 1.0 - probability * 0.4).toFixed(2),
+    );
+
+    const explanation =
+      primaryRiskFactors.length === 0
+        ? `FDI ${prescription.toothNumber}: no significant per-tooth refinement risk factors identified`
+        : `FDI ${prescription.toothNumber}: ${(probability * 100).toFixed(0)}% refinement probability — ${primaryRiskFactors.join('; ')}`;
+
+    return {
+      probability,
+      confidenceLevel,
+      primaryRiskFactors,
+      expectedAdditionalAligners,
+      treatmentSuccessProbability,
+      explanation,
+      disclaimer:
+        'Refinement probability estimates are derived from population-level clinical data (Kravitz et al., Proffit et al.) ' +
+        'and do not account for patient-specific factors such as age, bone density, compliance, or attachment design. ' +
+        'Arch-level risk factors (total stages, arch-length discrepancy) are not evaluated in single-tooth mode — ' +
+        'see getRefinementRecommendations() for plan-level assessment. ' +
+        'Clinical refinement decisions must be based on actual treatment progress records.',
+    };
+  }
+
+  // ── Enhancement 5: Enhanced anchorage analysis ─────────────────────────────
+
+  /**
+   * Extends the existing Proffit anchorage analysis with numeric unit count,
+   * demand estimate, deficit, protection strategy, and anchorage-loss risk.
+   */
+  async getAnchorageAnalysisEnhanced(
+    caseId: string,
+    orgId: string,
+    planId: string,
+  ): Promise<AnchorageAnalysisEnhanced> {
+    const prescriptions = await this.listPrescriptions(caseId, orgId, planId);
+    const base = this.computeAnchorage(prescriptions);
+
+    // Deficit: positive = demand exceeds available anchorage
+    const deficit = parseFloat((base.required - base.available).toFixed(1));
+
+    // Total teeth unit count (moving + non-moving)
+    const unitCount = base.required + base.available;
+
+    // Demand estimate: weight moving teeth by movement complexity
+    const demandEstimate = parseFloat(
+      prescriptions
+        .reduce((sum, p) => {
+          let demand = anchorageUnits(p.toothNumber);
+          if (Math.abs(p.rotationDeg) > 10)                        demand *= 1.2;
+          if (p.distalizationMm > 1.0 || p.mesializationMm > 1.0) demand *= 1.3;
+          if (p.intrusionMm > 1.0)                                 demand *= 1.1;
+          return sum + demand;
+        }, 0)
+        .toFixed(1),
+    );
+
+    const riskOfAnchorageLoss: AnchorageAnalysisEnhanced['riskOfAnchorageLoss'] =
+      deficit > 5 ? 'high' :
+      deficit > 0 ? 'moderate' :
+      'low';
+
+    const anchorageProtectionStrategy =
+      base.class === 'maximum'
+        ? 'Temporary anchorage devices (TADs/miniscrews) strongly recommended; stage posterior movements to minimise reciprocal forces; consider skeletal anchorage for >4mm distalization'
+        : base.class === 'moderate'
+        ? 'Consider Class II/III elastics or selective staging to protect anchorage; monitor molar position at mid-treatment progress records'
+        : 'Standard aligner anchorage is adequate; monitor molar position with periodic progress records';
+
+    return {
+      class: base.class,
+      unitCount,
+      demandEstimate,
+      deficit,
+      anchorageProtectionStrategy,
+      riskOfAnchorageLoss,
+      required: base.required,
+      available: base.available,
+    };
   }
 
   // ── Biomechanics engines ──────────────────────────────────────────────────

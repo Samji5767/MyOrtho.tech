@@ -49,6 +49,18 @@ export interface ManufacturingValidation {
   minThicknessMm: number;
 }
 
+export interface AttachmentNecessityScore {
+  fdi: number;
+  /** 0–100 composite score — higher means attachment is more critically needed. */
+  score: number;
+  /** True when score ≥ 60 — attachment is clinically required for this movement. */
+  isEssential: boolean;
+  /** True when 30 ≤ score < 60 — attachment helps but may be omitted with care. */
+  canBeOptimized: boolean;
+  primaryReason: string;
+  contributingFactors: string[];
+}
+
 function rowToLibEntry(r: Record<string, unknown>): AttachmentLibraryEntry {
   return {
     id:              r['id'] as string,
@@ -74,6 +86,35 @@ const ADJACENT_PAIRS: [number, number][] = [
   [31,32],[32,33],[33,34],[34,35],[35,36],[36,37],[37,38],
   [41,42],[42,43],[43,44],[44,45],[45,46],[46,47],[47,48],
 ];
+
+/**
+ * Preferred attachment shapes per movement type.
+ * Source: Align Technology Clinical Guidelines (2020 edition).
+ *
+ *  vertical_rectangular  — tipping control (tip ≥ 5° or torque ≥ 5°)
+ *  horizontal_rectangular — rotation and bodily translation
+ *  beveled_optimized      — extrusion (beveled edge engages the aligner's incisal/occlusal shelf)
+ *  composite_button       — anchorage reinforcement
+ */
+type AttachmentShape =
+  | 'vertical_rectangular'
+  | 'horizontal_rectangular'
+  | 'beveled_optimized'
+  | 'composite_button';
+
+function selectAttachmentShape(prescription: Record<string, unknown>): AttachmentShape {
+  const rotation  = Math.abs((prescription['rotation_deg']  as number) ?? 0);
+  const torque    = Math.abs((prescription['torque_deg']    as number) ?? 0);
+  const tipDeg    = Math.abs((prescription['tip_deg']       as number) ?? 0);
+  const extrusion = (prescription['extrusion_mm'] as number) ?? 0;
+  const isAnchor  = (prescription['is_anchor_unit'] as boolean) ?? false;
+
+  if (isAnchor)    return 'composite_button';
+  if (extrusion > 0.5) return 'beveled_optimized';
+  if (tipDeg > 5 || torque > 5) return 'vertical_rectangular';
+  if (rotation > 5) return 'horizontal_rectangular';
+  return 'horizontal_rectangular'; // default for translation
+}
 
 // Select best attachment type given prescription values
 function selectBestAttachment(
@@ -356,6 +397,163 @@ export class AttachmentIntelligenceService {
       printable: issues.filter(i => i.severity === 'critical').length === 0,
       minThicknessMm: minThickness === Infinity ? 0.5 : minThickness,
     };
+  }
+
+  // ── Attachment necessity scoring ───────────────────────────────────────────
+
+  /**
+   * Scores how strongly an attachment is needed for a given tooth's movement
+   * prescription (0–100). Based on Align Technology clinical guidelines.
+   *
+   * @param tooth  Movement prescription summary for one tooth.
+   */
+  scoreAttachmentNecessity(tooth: {
+    fdi: number;
+    rotationDeg: number;
+    torqueDeg: number;
+    intrusionMm: number;
+    extrusionMm: number;
+    translationMm: number;
+    /** Number of distinct movement types active simultaneously on this tooth. */
+    concurrentMovementCount: number;
+  }): AttachmentNecessityScore {
+    let score = 0;
+    const factors: string[] = [];
+
+    // Rotation — Align guidelines: attachment warranted at ≥15°, critical at ≥35°
+    if (tooth.rotationDeg >= 35) {
+      score += 35; factors.push(`severe rotation ${tooth.rotationDeg.toFixed(1)}°`);
+    } else if (tooth.rotationDeg >= 20) {
+      score += 25; factors.push(`significant rotation ${tooth.rotationDeg.toFixed(1)}°`);
+    } else if (tooth.rotationDeg >= 10) {
+      score += 15; factors.push(`moderate rotation ${tooth.rotationDeg.toFixed(1)}°`);
+    }
+
+    // Torque — root torque requires attachment for adequate force couple
+    if (tooth.torqueDeg >= 15) {
+      score += 30; factors.push(`high torque ${tooth.torqueDeg.toFixed(1)}°`);
+    } else if (tooth.torqueDeg >= 10) {
+      score += 20; factors.push(`moderate torque ${tooth.torqueDeg.toFixed(1)}°`);
+    }
+
+    // Intrusion — biologically demanding; attachment improves grip
+    if (tooth.intrusionMm >= 1.0) {
+      score += 25; factors.push(`significant intrusion ${tooth.intrusionMm.toFixed(2)}mm`);
+    } else if (tooth.intrusionMm >= 0.5) {
+      score += 15; factors.push(`intrusion ${tooth.intrusionMm.toFixed(2)}mm`);
+    }
+
+    // Extrusion — beveled attachment required for effective extrusion force
+    if (tooth.extrusionMm >= 1.5) {
+      score += 20; factors.push(`significant extrusion ${tooth.extrusionMm.toFixed(2)}mm`);
+    } else if (tooth.extrusionMm >= 0.5) {
+      score += 10; factors.push(`extrusion ${tooth.extrusionMm.toFixed(2)}mm`);
+    }
+
+    // Translation — large bodily movement needs better force transfer
+    if (tooth.translationMm >= 3.0) {
+      score += 20; factors.push(`large translation ${tooth.translationMm.toFixed(2)}mm`);
+    } else if (tooth.translationMm >= 1.5) {
+      score += 10; factors.push(`translation ${tooth.translationMm.toFixed(2)}mm`);
+    }
+
+    // Multiple concurrent movements on the same tooth increase attachment need
+    if (tooth.concurrentMovementCount >= 3) {
+      score += 10; factors.push('3+ concurrent movement types');
+    }
+
+    const clampedScore = Math.min(100, score);
+    return {
+      fdi: tooth.fdi,
+      score: clampedScore,
+      isEssential:    clampedScore >= 60,
+      canBeOptimized: clampedScore >= 30 && clampedScore < 60,
+      primaryReason:  factors[0] ?? 'No significant movement demand detected',
+      contributingFactors: factors,
+    };
+  }
+
+  // ── Attachment-level manufacturing constraint validation ───────────────────
+
+  /**
+   * Validates an individual attachment geometry against the three clinical
+   * manufacturing constraints:
+   *   1. Minimum 1.0 mm from gingival margin
+   *   2. Maximum 2.5 mm attachment height (aligner shell thickness constraint)
+   *   3. Minimum 0.5 mm from contact point
+   *
+   * A `gingivalMarginDistanceMm` or `contactPointDistanceMm` of undefined is
+   * treated as safe (the caller should pass measured values when available).
+   */
+  private validateManufacturingConstraints(attachment: {
+    toothNumber: number;
+    heightMm: number;
+    depthMm: number;
+    widthMm: number;
+    gingivalMarginDistanceMm?: number;
+    contactPointDistanceMm?: number;
+  }): { isValid: boolean; issues: string[] } {
+    const issues: string[] = [];
+
+    // 1. Gingival margin distance
+    const gingivalDist = attachment.gingivalMarginDistanceMm ?? 1.5;
+    if (gingivalDist < 1.0) {
+      issues.push(
+        `Gingival clearance ${gingivalDist.toFixed(2)}mm < minimum 1.0mm — risk of gingival irritation`,
+      );
+    }
+
+    // 2. Maximum height (aligner shell can accommodate up to 2.5mm)
+    if (attachment.heightMm > 2.5) {
+      issues.push(
+        `Height ${attachment.heightMm.toFixed(2)}mm exceeds 2.5mm maximum — aligner shell cannot seat`,
+      );
+    }
+
+    // 3. Contact point clearance
+    const contactDist = attachment.contactPointDistanceMm ?? 1.0;
+    if (contactDist < 0.5) {
+      issues.push(
+        `Contact-point clearance ${contactDist.toFixed(2)}mm < minimum 0.5mm — attachment may lock interproximal contacts`,
+      );
+    }
+
+    // 4. Minimum printable depth
+    if (attachment.depthMm < 0.3) {
+      issues.push(
+        `Depth ${attachment.depthMm.toFixed(2)}mm < minimum printable size 0.3mm`,
+      );
+    }
+
+    // 5. Minimum printable width
+    if (attachment.widthMm < 1.0) {
+      issues.push(
+        `Width ${attachment.widthMm.toFixed(2)}mm < minimum printable size 1.0mm`,
+      );
+    }
+
+    return { isValid: issues.length === 0, issues };
+  }
+
+  /**
+   * Public wrapper around validateManufacturingConstraints — exposes the
+   * enhanced geometry checks as a first-class API endpoint helper.
+   * The shape selection hint is also returned (Align Technology guidelines).
+   */
+  validateAttachment(params: {
+    toothNumber: number;
+    heightMm: number;
+    depthMm: number;
+    widthMm: number;
+    prescription?: Record<string, unknown>;
+    gingivalMarginDistanceMm?: number;
+    contactPointDistanceMm?: number;
+  }): { isValid: boolean; issues: string[]; recommendedShape: AttachmentShape } {
+    const { isValid, issues } = this.validateManufacturingConstraints(params);
+    const recommendedShape = params.prescription
+      ? selectAttachmentShape(params.prescription)
+      : 'horizontal_rectangular';
+    return { isValid, issues, recommendedShape };
   }
 
   // ── Collision detection ────────────────────────────────────────────────────

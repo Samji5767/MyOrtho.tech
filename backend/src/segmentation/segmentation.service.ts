@@ -1,4 +1,5 @@
 import { Injectable, Inject, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
+import * as fs from 'fs';
 import type { Pool } from 'pg';
 import { PG_POOL } from '../database/database.module';
 
@@ -37,6 +38,22 @@ const FDI_CHART: { fdi: number; universal: number; label: string; arch: 'upper' 
   { fdi: 47, universal: 31, label: 'Lower Right Second Molar',   arch: 'lower' },
   { fdi: 48, universal: 32, label: 'Lower Right Third Molar',    arch: 'lower' },
 ];
+
+// ── Progress stage descriptions ──────────────────────────────────────────────
+
+const SEGMENTATION_STAGES: Record<number, string> = {
+  0:   'Queued for processing',
+  10:  'STL validation complete',
+  20:  'Mesh preprocessing',
+  35:  'Tooth detection running',
+  50:  'Individual tooth segmentation',
+  65:  'FDI tooth numbering',
+  75:  'Root prediction',
+  85:  'Arch analysis',
+  90:  'Quality validation',
+  95:  'Post-processing',
+  100: 'Segmentation complete',
+};
 
 // Third molars are commonly missing; generates stable confidence based on FDI number
 function deterministicConfidence(fdi: number, seed: number): number {
@@ -81,6 +98,44 @@ export interface CorrectionDto {
   toothNumber?: number;
   correctionType: string;
   details?: Record<string, unknown>;
+}
+
+// ── STL validation types ─────────────────────────────────────────────────────
+
+export interface StlValidationFinding {
+  type: 'corrupt' | 'empty' | 'inverted_normals' | 'non_manifold' | 'excessive_triangles' | 'open_mesh' | 'self_intersection' | 'disconnected_components';
+  severity: 'info' | 'warning' | 'error';
+  description: string;
+  affectedTriangleCount?: number;
+}
+
+export interface StlValidationResult {
+  isValid: boolean;
+  classification: 'PASS' | 'WARNING' | 'FAIL';
+  findings: StlValidationFinding[];
+  triangleCount: number;
+  estimatedFileIntegrityPercent: number;
+  humanReadableSummary: string;
+}
+
+// ── Confidence scoring types ──────────────────────────────────────────────────
+
+export interface SegmentationResult {
+  triangleCount?: number;
+  invertedNormalsDetected?: boolean;
+  mixedDentitionDetected?: boolean;
+  detectedFdiNumbers?: number[];
+  arch?: 'upper' | 'lower' | 'both';
+}
+
+export interface SegmentationConfidenceScore {
+  overall: number;
+  toothNumberingConfidence: number;
+  rootPredictionConfidence: number;
+  archDetectionConfidence: number;
+  needsManualReview: boolean;
+  reviewReasons: string[];
+  disclaimer: string;
 }
 
 @Injectable()
@@ -318,11 +373,32 @@ export class SegmentationService {
     );
     if (!rows.length) throw new NotFoundException('Job not found');
     const currentStatus = (rows[0] as { status: string }).status;
-    if (currentStatus !== 'queued' && currentStatus !== 'processing') {
+
+    const cancellableStates = ['queued', 'waiting', 'processing', 'running', 'retrying', 'paused'];
+    if (!cancellableStates.includes(currentStatus)) {
       throw new BadRequestException(
-        `Cannot cancel a job with status '${currentStatus}'. Only queued or processing jobs can be cancelled.`,
+        `Cannot cancel a job with status '${currentStatus}'. Only queued, waiting, processing, running, retrying, or paused jobs can be cancelled.`,
       );
     }
+
+    // If the job is actively running, attempt to cancel it on the AI engine first
+    if (currentStatus === 'processing' || currentStatus === 'running') {
+      const aiUrl = process.env.AI_SEGMENTATION_URL;
+      if (aiUrl) {
+        try {
+          await fetch(`${aiUrl}/ai/segment/${jobId}`, {
+            method: 'DELETE',
+            headers: { 'Content-Type': 'application/json' },
+            signal: AbortSignal.timeout(5_000),
+          });
+          this.logger.log(`Sent cancellation request to AI engine for job ${jobId}`);
+        } catch (err: unknown) {
+          // Non-fatal: continue with DB update regardless of AI engine response
+          this.logger.warn(`Failed to cancel job ${jobId} on AI engine: ${err instanceof Error ? err.message : String(err)}`);
+        }
+      }
+    }
+
     const { rows: updated } = await this.pool.query(
       `UPDATE segmentation_jobs
          SET status = 'cancelled', cancelled_reason = $3, completed_at = NOW()
@@ -667,6 +743,328 @@ export class SegmentationService {
     }
 
     return { vertices: [...vertexSet].sort((a, b) => a - b), normals: currentMask.normals ?? [] };
+  }
+
+  // ── STL Validation ────────────────────────────────────────────────────────────
+  // Best-effort structural check. Full geometric validation (manifold, self-intersection)
+  // requires specialized geometry processing outside of Node.js.
+
+  async validateStlMesh(filePath: string): Promise<StlValidationResult> {
+    const findings: StlValidationFinding[] = [];
+    let triangleCount = 0;
+    let estimatedFileIntegrityPercent = 100;
+
+    // Step 1: File accessibility and size check
+    let fileSizeBytes: number;
+    try {
+      const stat = fs.statSync(filePath);
+      fileSizeBytes = stat.size;
+    } catch {
+      return {
+        isValid: false,
+        classification: 'FAIL',
+        findings: [{ type: 'corrupt', severity: 'error', description: 'File not found or cannot be accessed' }],
+        triangleCount: 0,
+        estimatedFileIntegrityPercent: 0,
+        humanReadableSummary: 'FAIL: File not found or cannot be accessed. Full geometric validation requires specialized geometry processing.',
+      };
+    }
+
+    if (fileSizeBytes === 0) {
+      return {
+        isValid: false,
+        classification: 'FAIL',
+        findings: [{ type: 'empty', severity: 'error', description: 'File is empty (0 bytes)' }],
+        triangleCount: 0,
+        estimatedFileIntegrityPercent: 0,
+        humanReadableSummary: 'FAIL: STL file is empty. Full geometric validation requires specialized geometry processing.',
+      };
+    }
+
+    const MAX_SIZE_BYTES = 500 * 1024 * 1024;
+    if (fileSizeBytes > MAX_SIZE_BYTES) {
+      findings.push({
+        type: 'excessive_triangles',
+        severity: 'warning',
+        description: `File size ${(fileSizeBytes / (1024 * 1024)).toFixed(1)} MB exceeds recommended 500 MB limit`,
+      });
+      estimatedFileIntegrityPercent -= 10;
+    }
+
+    // Step 2: Binary STL header parse (80-byte header + 4-byte triangle count)
+    const BINARY_HEADER_SIZE = 84;
+    if (fileSizeBytes < BINARY_HEADER_SIZE) {
+      return {
+        isValid: false,
+        classification: 'FAIL',
+        findings: [{ type: 'corrupt', severity: 'error', description: `File too small (${fileSizeBytes} bytes) to contain a valid binary STL header` }],
+        triangleCount: 0,
+        estimatedFileIntegrityPercent: 0,
+        humanReadableSummary: 'FAIL: File is too small to be a valid binary STL. Full geometric validation requires specialized geometry processing.',
+      };
+    }
+
+    let fd = -1;
+    try {
+      fd = fs.openSync(filePath, 'r');
+      const headerBuf = Buffer.alloc(84);
+      fs.readSync(fd, headerBuf, 0, 84, 0);
+
+      // Triangle count is stored as little-endian uint32 at bytes 80-83
+      triangleCount = headerBuf.readUInt32LE(80);
+
+      // Binary STL: each triangle is exactly 50 bytes (12-byte normal + 36-byte vertices + 2-byte attr)
+      const expectedFileSize = 84 + triangleCount * 50;
+      const sizeDelta = Math.abs(fileSizeBytes - expectedFileSize);
+      const isBinarySizeValid = sizeDelta <= Math.max(100, expectedFileSize * 0.01);
+
+      if (!isBinarySizeValid) {
+        // May be ASCII STL — estimate triangle count heuristically
+        const ASCII_BYTES_PER_TRI = 200;
+        triangleCount = Math.round(fileSizeBytes / ASCII_BYTES_PER_TRI);
+        findings.push({
+          type: 'corrupt',
+          severity: 'warning',
+          description: 'File does not match expected binary STL byte layout — may be ASCII format. Triangle count is estimated.',
+        });
+        estimatedFileIntegrityPercent -= 15;
+      }
+
+      // Step 3: Triangle count sanity
+      if (triangleCount < 100) {
+        findings.push({
+          type: 'empty',
+          severity: 'warning',
+          description: `Very low triangle count (${triangleCount}) — mesh may be empty or nearly empty`,
+          affectedTriangleCount: triangleCount,
+        });
+        estimatedFileIntegrityPercent -= 20;
+      }
+
+      const MAX_TRIANGLES = 10_000_000;
+      if (triangleCount > MAX_TRIANGLES) {
+        findings.push({
+          type: 'excessive_triangles',
+          severity: 'warning',
+          description: `Triangle count (${triangleCount.toLocaleString()}) exceeds recommended maximum of ${MAX_TRIANGLES.toLocaleString()}`,
+          affectedTriangleCount: triangleCount,
+        });
+        estimatedFileIntegrityPercent -= 10;
+      }
+
+      // Step 4: Normal vector heuristic — sample 100 triangles from binary STL
+      // Check whether normals are consistently oriented (positive dot with centroid→vertex vector)
+      if (isBinarySizeValid && triangleCount >= 100) {
+        const SAMPLE_COUNT = 100;
+        const TRI_SIZE = 50;
+        let invertedCount = 0;
+
+        for (let i = 0; i < SAMPLE_COUNT; i++) {
+          const triIndex = Math.floor((i / SAMPLE_COUNT) * triangleCount);
+          const offset = 84 + triIndex * TRI_SIZE;
+          const triBuf = Buffer.alloc(TRI_SIZE);
+          fs.readSync(fd, triBuf, 0, TRI_SIZE, offset);
+
+          const nx = triBuf.readFloatLE(0);
+          const ny = triBuf.readFloatLE(4);
+          const nz = triBuf.readFloatLE(8);
+
+          const v0x = triBuf.readFloatLE(12); const v0y = triBuf.readFloatLE(16); const v0z = triBuf.readFloatLE(20);
+          const v1x = triBuf.readFloatLE(24); const v1y = triBuf.readFloatLE(28); const v1z = triBuf.readFloatLE(32);
+          const v2x = triBuf.readFloatLE(36); const v2y = triBuf.readFloatLE(40); const v2z = triBuf.readFloatLE(44);
+
+          // Triangle centroid
+          const cx = (v0x + v1x + v2x) / 3;
+          const cy = (v0y + v1y + v2y) / 3;
+          const cz = (v0z + v1z + v2z) / 3;
+
+          // Centroid → vertex 0 direction
+          const dx = v0x - cx; const dy = v0y - cy; const dz = v0z - cz;
+
+          // Negative dot product means normal points opposite to outward direction (inverted)
+          if (nx * dx + ny * dy + nz * dz < 0) invertedCount++;
+        }
+
+        const invertedPct = (invertedCount / SAMPLE_COUNT) * 100;
+        if (invertedPct > 30) {
+          findings.push({
+            type: 'inverted_normals',
+            severity: 'warning',
+            description: `${invertedPct.toFixed(0)}% of sampled triangles have potentially inverted normals`,
+            affectedTriangleCount: Math.round((invertedPct / 100) * triangleCount),
+          });
+          estimatedFileIntegrityPercent -= 15;
+        }
+      }
+    } finally {
+      if (fd >= 0) fs.closeSync(fd);
+    }
+
+    const hasErrors   = findings.some(f => f.severity === 'error');
+    const hasWarnings = findings.some(f => f.severity === 'warning');
+    const classification: 'PASS' | 'WARNING' | 'FAIL' = hasErrors ? 'FAIL' : hasWarnings ? 'WARNING' : 'PASS';
+    estimatedFileIntegrityPercent = Math.max(0, Math.min(100, estimatedFileIntegrityPercent));
+
+    const findingSummary = findings.map(f => `[${f.severity.toUpperCase()}] ${f.description}`).join('; ');
+    const humanReadableSummary = findings.length === 0
+      ? `PASS: STL mesh appears structurally sound (${triangleCount.toLocaleString()} triangles). Note: full geometric validation requires specialized geometry processing.`
+      : `${classification}: ${findingSummary}. Note: this is a best-effort structural check — full validation requires specialized geometry processing.`;
+
+    return {
+      isValid: !hasErrors,
+      classification,
+      findings,
+      triangleCount,
+      estimatedFileIntegrityPercent,
+      humanReadableSummary,
+    };
+  }
+
+  // ── Retry failed job with exponential backoff ────────────────────────────────
+
+  async retryFailedJob(jobId: string, maxRetries = 3) {
+    const { rows } = await this.pool.query(
+      `SELECT id, case_id, arch, model_type, status, COALESCE(retry_count, 0) AS retry_count
+         FROM segmentation_jobs WHERE id = $1`,
+      [jobId],
+    );
+    if (!rows.length) throw new NotFoundException(`Job ${jobId} not found`);
+
+    const job = rows[0] as { id: string; case_id: string; arch: string; model_type: string; status: string; retry_count: number };
+
+    if (job.status !== 'failed') {
+      throw new BadRequestException(`Job ${jobId} is not in failed state (current: '${job.status}')`);
+    }
+
+    const currentRetries = job.retry_count ?? 0;
+    if (currentRetries >= maxRetries) {
+      throw new BadRequestException(
+        `Job ${jobId} has reached the maximum retry limit of ${maxRetries}. Manual intervention required.`,
+      );
+    }
+
+    // Exponential backoff: attempt 1 → 2s, attempt 2 → 4s, attempt 3 → 8s
+    const nextAttempt = currentRetries + 1;
+    const delayMs = Math.pow(2, nextAttempt) * 1000;
+
+    // Check whether retry_count column exists; use COALESCE for safety regardless
+    const { rows: colCheck } = await this.pool.query(
+      `SELECT column_name FROM information_schema.columns
+         WHERE table_name = 'segmentation_jobs' AND column_name = 'retry_count'`,
+    );
+    const hasRetryCountCol = colCheck.length > 0;
+
+    const retryCountClause = hasRetryCountCol
+      ? 'retry_count = COALESCE(retry_count, 0) + 1,'
+      : '';
+
+    await this.pool.query(
+      `UPDATE segmentation_jobs
+         SET status = 'retrying',
+             ${retryCountClause}
+             error_message = NULL,
+             progress = 0,
+             started_at = NULL,
+             completed_at = NULL
+         WHERE id = $1`,
+      [jobId],
+    );
+
+    this.logger.log(`Retrying job ${jobId} (attempt ${nextAttempt}/${maxRetries}) after ${delayMs}ms backoff`);
+
+    // Schedule re-processing with exponential backoff
+    setTimeout(() => {
+      this.processJob(jobId, job.case_id, job.arch, job.model_type).catch((err: unknown) =>
+        this.logger.error(`Retry attempt ${nextAttempt} for job ${jobId} failed: ${err instanceof Error ? err.message : String(err)}`),
+      );
+    }, delayMs);
+
+    const { rows: updated } = await this.pool.query(
+      `SELECT j.*, u.email AS submitted_by_email
+         FROM segmentation_jobs j
+         LEFT JOIN auth_users u ON u.id = j.submitted_by
+         WHERE j.id = $1`,
+      [jobId],
+    );
+    return this.formatJob(updated[0]);
+  }
+
+  // ── Progress stage description ────────────────────────────────────────────────
+
+  getProgressDescription(progress: number): string {
+    const stageKeys = Object.keys(SEGMENTATION_STAGES).map(Number).sort((a, b) => a - b);
+    let bestKey = stageKeys[0];
+    for (const key of stageKeys) {
+      if (progress >= key) bestKey = key;
+    }
+    return SEGMENTATION_STAGES[bestKey] ?? 'Processing';
+  }
+
+  // ── Confidence scoring ────────────────────────────────────────────────────────
+
+  computeSegmentationConfidence(result: SegmentationResult): SegmentationConfidenceScore {
+    const reviewReasons: string[] = [];
+    let toothNumberingConfidence = 85;
+    let rootPredictionConfidence = 85;
+    let archDetectionConfidence  = 85;
+
+    // Third molars present: -5 per third molar detected
+    const thirdMolarFdis = [18, 28, 38, 48];
+    const detectedFdis   = result.detectedFdiNumbers ?? [];
+    const thirdMolarsPresent = detectedFdis.filter(fdi => thirdMolarFdis.includes(fdi)).length;
+    if (thirdMolarsPresent > 0) {
+      toothNumberingConfidence -= thirdMolarsPresent * 5;
+      reviewReasons.push(`${thirdMolarsPresent} third molar(s) detected — numbering uncertainty increased`);
+    }
+
+    // Mixed dentition: -15
+    if (result.mixedDentitionDetected) {
+      toothNumberingConfidence -= 15;
+      rootPredictionConfidence -= 15;
+      reviewReasons.push('Mixed dentition detected — manual review required');
+    }
+
+    // Low resolution STL (< 1000 triangles): -20
+    const tc = result.triangleCount ?? 0;
+    if (tc > 0 && tc < 1000) {
+      toothNumberingConfidence -= 20;
+      rootPredictionConfidence -= 20;
+      archDetectionConfidence  -= 20;
+      reviewReasons.push(`Low resolution mesh (${tc} triangles) — confidence reduced`);
+    }
+
+    // Inverted normals detected: -10
+    if (result.invertedNormalsDetected) {
+      toothNumberingConfidence -= 10;
+      rootPredictionConfidence -= 10;
+      reviewReasons.push('Inverted normals detected in STL — mesh quality may affect accuracy');
+    }
+
+    // Single arch vs dual arch: record which and cap arch detection
+    if (result.arch && result.arch !== 'both') {
+      archDetectionConfidence = Math.min(archDetectionConfidence, 90);
+      reviewReasons.push(`Single arch scan (${result.arch}) — dual arch correlation not available`);
+    }
+
+    // Clamp each dimension to 0-100
+    toothNumberingConfidence = Math.max(0, Math.min(100, toothNumberingConfidence));
+    rootPredictionConfidence = Math.max(0, Math.min(100, rootPredictionConfidence));
+    archDetectionConfidence  = Math.max(0, Math.min(100, archDetectionConfidence));
+
+    const overall = Math.round((toothNumberingConfidence + rootPredictionConfidence + archDetectionConfidence) / 3);
+    const needsManualReview = overall < 70 || reviewReasons.length > 0;
+
+    return {
+      overall,
+      toothNumberingConfidence: Math.round(toothNumberingConfidence),
+      rootPredictionConfidence: Math.round(rootPredictionConfidence),
+      archDetectionConfidence:  Math.round(archDetectionConfidence),
+      needsManualReview,
+      reviewReasons,
+      disclaimer:
+        'Confidence scores are computed heuristically from mesh quality and AI pipeline metadata. ' +
+        'Clinical decisions must be validated by a licensed orthodontic professional.',
+    };
   }
 
   // ── Formatters ────────────────────────────────────────────────────────────────

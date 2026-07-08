@@ -24,6 +24,7 @@ import {
   Grid3X3,
   Info,
   Layers,
+  MessageCircle,
   Microscope,
   Move3d,
   Package,
@@ -76,6 +77,7 @@ const QAReportPanel = dynamic(() => import("@/components/QAReportPanel"), { ssr:
 const AlignerPreviewPanel = dynamic(() => import("@/components/AlignerPreviewPanel"), { ssr: false });
 const PrinterDownloadPanel = dynamic(() => import("@/components/PrinterDownloadPanel"), { ssr: false });
 const AlignerStaging = dynamic(() => import("@/components/AlignerStaging"), { ssr: false });
+const PatientCommunicationPanel = dynamic(() => import("@/components/PatientCommunicationPanel"), { ssr: false });
 
 // ─── Representative data keyed to case ID ─────────────────────────────────────
 
@@ -244,7 +246,7 @@ type Tab =
   // AI & Clinical
   | "alerts"
   // Documentation
-  | "reports" | "photos";
+  | "reports" | "photos" | "patient-comms";
 
 type TabItem =
   | { type: "tab"; key: Tab; label: string; icon: React.ReactNode }
@@ -304,6 +306,7 @@ const TABS: TabItem[] = [
   { type: "separator", label: "Docs" },
   { type: "tab", key: "reports",        label: "Reports",         icon: <FileText size={13} /> },
   { type: "tab", key: "photos",         label: "Photos",          icon: <Camera size={13} /> },
+  { type: "tab", key: "patient-comms",  label: "Patient",         icon: <MessageCircle size={13} /> },
   { type: "tab", key: "audit",          label: "Audit",           icon: <Activity size={13} /> },
 ];
 
@@ -710,6 +713,7 @@ export default function CaseDetailClient({ id }: { id: string }) {
         {/* Documentation */}
         {tab === "reports"        && <ClinicalReportsPanel caseId={id} planId={planId} />}
         {tab === "photos"         && <PatientPhotosPanel caseId={id} />}
+        {tab === "patient-comms"  && <PatientCommunicationPanel caseId={id} patientName={patientName} />}
       </div>
     </section>
   );

@@ -47,14 +47,36 @@ export class AdminController {
     });
   }
 
+  @Post('invite')
+  inviteUser(
+    @Req() req: Request,
+    @Body('email') email: string,
+    @Body('role') role: string,
+  ) {
+    const user = (req as Request & { user?: AuthUser }).user;
+    if (!user) throw new ForbiddenException('Authentication required');
+    if (user.role !== 'admin' && user.role !== 'super_admin') {
+      throw new ForbiddenException('Admin role required');
+    }
+    if (!user.orgId) throw new ForbiddenException('No organization context');
+    return this.adminService.inviteUser(user.orgId, email, role ?? 'resident');
+  }
+
   @Patch('users/:id/role')
   updateRole(
     @Req() req: Request,
     @Param('id') id: string,
     @Body('role') role: string,
   ) {
-    const admin = requireSuperAdmin(req);
-    return this.adminService.updateUserRole(id, role, admin.id, admin.email);
+    const user = (req as Request & { user?: AuthUser }).user;
+    if (!user) throw new ForbiddenException('Authentication required');
+    if (user.role === 'super_admin') {
+      return this.adminService.updateUserRole(id, role, user.id, user.email);
+    }
+    if (user.role === 'admin' && user.orgId) {
+      return this.adminService.updateOrgUserRole(user.orgId, id, role);
+    }
+    throw new ForbiddenException('Insufficient permissions');
   }
 
   @Patch('users/:id/active')

@@ -153,12 +153,29 @@ export const ProgressBar = React.memo(function ProgressBar({
   );
 });
 
-export const EmptyState = React.memo(function EmptyState({ icon: Icon, title, body }: { icon: LucideIcon; title: string; body: string }) {
+export const EmptyState = React.memo(function EmptyState({
+  icon: Icon,
+  title,
+  body,
+  message,
+  action,
+}: {
+  icon: LucideIcon;
+  title: string;
+  /** Legacy prop — prefer `message`. Both are accepted. */
+  body?: string;
+  message?: string;
+  action?: React.ReactNode;
+}) {
+  const text = message ?? body ?? "";
   return (
     <div className="flex min-h-[220px] flex-col items-center justify-center rounded-lg border border-dashed border-border bg-slate-50/70 p-8 text-center dark:bg-slate-950/30">
-      <Icon className="text-primary" size={28} />
+      <Icon className="text-primary" size={28} aria-hidden />
       <h3 className="mt-4 text-sm font-semibold text-foreground">{title}</h3>
-      <p className="mt-2 max-w-sm text-sm leading-6 text-secondary">{body}</p>
+      {text && (
+        <p className="mt-2 max-w-sm text-sm leading-6 text-secondary">{text}</p>
+      )}
+      {action && <div className="mt-4">{action}</div>}
     </div>
   );
 });
@@ -467,20 +484,25 @@ export function Tooltip({
   children,
   content,
   side = "top",
+  position,
 }: {
   children: React.ReactNode;
   content: string;
+  /** Preferred prop name for position. Overrides `side` when both are set. */
+  position?: "top" | "bottom" | "left" | "right";
+  /** Legacy prop — `position` is preferred. */
   side?: "top" | "bottom" | "left" | "right";
 }) {
   const uid = useId();
   const tooltipId = `tooltip-${uid}`;
+  const resolvedSide = position ?? side;
 
   const posClass = {
     top:    "bottom-full left-1/2 -translate-x-1/2 mb-1.5",
     bottom: "top-full left-1/2 -translate-x-1/2 mt-1.5",
     left:   "right-full top-1/2 -translate-y-1/2 mr-1.5",
     right:  "left-full top-1/2 -translate-y-1/2 ml-1.5",
-  }[side];
+  }[resolvedSide];
 
   return (
     <span className="group relative inline-flex" aria-describedby={tooltipId}>
@@ -489,7 +511,9 @@ export function Tooltip({
         id={tooltipId}
         role="tooltip"
         className={clsx(
-          "pointer-events-none absolute z-50 whitespace-nowrap rounded-lg border border-border bg-card px-2.5 py-1.5 text-[11px] font-medium text-foreground shadow-md opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100",
+          "pointer-events-none absolute z-50 whitespace-nowrap rounded-lg border border-border bg-card px-2.5 py-1.5 text-[11px] font-medium text-foreground shadow-md",
+          "opacity-0 transition-opacity motion-reduce:transition-none",
+          "group-hover:opacity-100 group-focus-within:opacity-100",
           posClass,
         )}
       >
@@ -498,6 +522,121 @@ export function Tooltip({
     </span>
   );
 }
+
+// ─── ProgressRing ─────────────────────────────────────────────────────────────
+
+export const ProgressRing = React.memo(function ProgressRing({
+  value,
+  size = 32,
+  strokeWidth = 3,
+}: {
+  /** Progress value from 0 to 100. */
+  value: number;
+  /** Diameter of the SVG in pixels. Defaults to 32. */
+  size?: number;
+  /** Stroke thickness in pixels. Defaults to 3. */
+  strokeWidth?: number;
+}) {
+  const clamped = Math.max(0, Math.min(100, value));
+  const radius = size / 2 - strokeWidth / 2;
+  const circumference = 2 * Math.PI * radius;
+  const offset = circumference - (clamped / 100) * circumference;
+  const cx = size / 2;
+  const cy = size / 2;
+
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox={`0 0 ${size} ${size}`}
+      role="progressbar"
+      aria-valuenow={clamped}
+      aria-valuemin={0}
+      aria-valuemax={100}
+      aria-label={`${clamped}% complete`}
+      style={{ display: "block" }}
+    >
+      {/* Track */}
+      <circle
+        cx={cx}
+        cy={cy}
+        r={radius}
+        fill="none"
+        stroke="currentColor"
+        strokeWidth={strokeWidth}
+        className="text-[color:var(--primary)] opacity-15"
+      />
+      {/* Progress arc */}
+      <circle
+        cx={cx}
+        cy={cy}
+        r={radius}
+        fill="none"
+        stroke="currentColor"
+        strokeWidth={strokeWidth}
+        strokeDasharray={circumference}
+        strokeDashoffset={offset}
+        strokeLinecap="round"
+        className="text-[color:var(--primary)] transition-[stroke-dashoffset] duration-500 ease-out motion-reduce:transition-none"
+        style={{ transform: "rotate(-90deg)", transformOrigin: "center" }}
+      />
+    </svg>
+  );
+});
+
+// ─── StatusDot ────────────────────────────────────────────────────────────────
+
+export const StatusDot = React.memo(function StatusDot({
+  status,
+}: {
+  status: "active" | "warning" | "error" | "inactive" | "loading";
+}) {
+  if (status === "loading") {
+    return (
+      <span
+        className="inline-flex h-2.5 w-2.5 shrink-0 items-center justify-center"
+        role="status"
+        aria-label="Loading"
+      >
+        <span className="h-2.5 w-2.5 animate-spin rounded-full border-2 border-[color:var(--primary)] border-t-transparent" />
+      </span>
+    );
+  }
+
+  const colorMap: Record<string, string> = {
+    active:   "bg-emerald-500",
+    warning:  "bg-amber-500",
+    error:    "bg-rose-500",
+    inactive: "bg-slate-400 dark:bg-slate-600",
+  };
+  const labelMap: Record<string, string> = {
+    active:   "Active",
+    warning:  "Warning",
+    error:    "Error",
+    inactive: "Inactive",
+  };
+
+  const dotColor = colorMap[status] ?? "bg-slate-400";
+  const label = labelMap[status] ?? status;
+
+  return (
+    <span
+      className="relative inline-flex h-2.5 w-2.5 shrink-0"
+      role="status"
+      aria-label={label}
+    >
+      {status === "active" && (
+        <span
+          className={clsx(
+            "absolute inline-flex h-full w-full animate-ping rounded-full opacity-70 motion-reduce:animate-none",
+            dotColor,
+          )}
+        />
+      )}
+      <span className={clsx("relative inline-flex h-2.5 w-2.5 rounded-full", dotColor)} />
+    </span>
+  );
+});
 
 // ─── PageHeader ───────────────────────────────────────────────────────────────
 

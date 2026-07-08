@@ -1,4 +1,4 @@
-import { Injectable, Inject } from '@nestjs/common';
+import { Injectable, Inject, ConflictException, BadRequestException, NotFoundException } from '@nestjs/common';
 import type { Pool } from 'pg';
 import { PG_POOL } from '../database/database.module';
 import { AuditService } from '../audit/audit.service';
@@ -258,5 +258,35 @@ export class AdminService {
       cases: cases.rows[0],
       credits: credits.rows[0],
     };
+  }
+
+  // ─── Org-admin: invite & role management ────────────────────────────────────
+
+  async inviteUser(orgId: string, email: string, role: string): Promise<{ message: string }> {
+    const existing = await this.pool.query(
+      'SELECT id FROM auth_users WHERE email=$1 AND organization_id=$2',
+      [email, orgId],
+    );
+    if (existing.rowCount && existing.rowCount > 0) {
+      throw new ConflictException('User already exists in this organization');
+    }
+    await this.pool.query(
+      `INSERT INTO auth_users (email, organization_id, role, full_name, password_hash)
+       VALUES ($1, $2, $3, $1, 'INVITE_PENDING')
+       ON CONFLICT (email, organization_id) DO NOTHING`,
+      [email, orgId, role],
+    );
+    return { message: `Invitation queued for ${email}` };
+  }
+
+  async updateOrgUserRole(orgId: string, userId: string, role: string): Promise<{ id: string; role: string }> {
+    const validRoles = ['admin', 'orthodontist', 'dentist', 'lab_manager', 'lab_technician', 'resident', 'executive'];
+    if (!validRoles.includes(role)) throw new BadRequestException('Invalid role');
+    const res = await this.pool.query(
+      'UPDATE auth_users SET role=$1 WHERE id=$2 AND organization_id=$3 RETURNING id, role',
+      [role, userId, orgId],
+    );
+    if (!res.rowCount) throw new NotFoundException('User not found');
+    return { id: res.rows[0].id as string, role: res.rows[0].role as string };
   }
 }

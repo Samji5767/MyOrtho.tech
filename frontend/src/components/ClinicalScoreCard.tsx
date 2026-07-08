@@ -92,17 +92,32 @@ export function ClinicalScoreCard({
   if (compact) {
     return (
       <div className="flex items-center gap-3">
-        <div className={`grid h-8 w-8 shrink-0 place-items-center rounded-lg ${styles.bg}`}>
-          <Icon className={`h-4 w-4 ${styles.text}`} />
+        <div
+          className={`grid h-8 w-8 shrink-0 place-items-center rounded-lg ${styles.bg}`}
+          aria-hidden
+        >
+          <Icon className={`h-4 w-4 ${styles.text}`} aria-hidden />
         </div>
         <div className="min-w-0 flex-1">
           <div className="flex items-center justify-between gap-1">
-            <span className="truncate text-xs font-medium text-[color:var(--foreground)]">{label}</span>
-            <span className={`text-xs font-bold tabular-nums ${styles.text}`}>
+            <span className="truncate text-xs font-medium text-[color:var(--foreground)]">
+              {label}
+            </span>
+            <span
+              className={`text-xs font-bold tabular-nums ${styles.text}`}
+              aria-live="polite"
+            >
               {value}{unit}
             </span>
           </div>
-          <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-[color:var(--border)]/40">
+          <div
+            role="progressbar"
+            aria-valuenow={pct}
+            aria-valuemin={0}
+            aria-valuemax={100}
+            aria-label={`${label}: ${pct}%`}
+            className="mt-1 h-1.5 overflow-hidden rounded-full bg-[color:var(--border)]/40"
+          >
             <div
               className={`h-full rounded-full transition-all duration-700 ease-out ${styles.bar}`}
               style={{ width: `${pct}%` }}
@@ -114,13 +129,19 @@ export function ClinicalScoreCard({
   }
 
   return (
-    <Card className="flex flex-col gap-3 p-4">
+    <Card className="flex flex-col gap-3 p-4" aria-label={`${label}: ${value}${unit}`}>
       <div className="flex items-start justify-between gap-2">
-        <div className={`grid h-9 w-9 shrink-0 place-items-center rounded-xl ${styles.bg}`}>
-          <Icon className={`h-4 w-4 ${styles.text}`} />
+        <div
+          className={`grid h-9 w-9 shrink-0 place-items-center rounded-xl ${styles.bg}`}
+          aria-hidden
+        >
+          <Icon className={`h-4 w-4 ${styles.text}`} aria-hidden />
         </div>
         <div className="text-right">
-          <p className={`text-2xl font-bold tabular-nums leading-none ${styles.text}`}>
+          <p
+            className={`text-2xl font-bold tabular-nums leading-none ${styles.text}`}
+            aria-live="polite"
+          >
             {value}<span className="text-sm font-medium">{unit}</span>
           </p>
           {sublabel && (
@@ -138,7 +159,14 @@ export function ClinicalScoreCard({
         )}
       </div>
 
-      <div className="h-1.5 overflow-hidden rounded-full bg-[color:var(--border)]/40">
+      <div
+        role="progressbar"
+        aria-valuenow={pct}
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-label={`${label} progress: ${pct}%`}
+        className="h-1.5 overflow-hidden rounded-full bg-[color:var(--border)]/40"
+      >
         <div
           className={`h-full rounded-full transition-all duration-700 ease-out ${styles.bar}`}
           style={{ width: `${pct}%` }}

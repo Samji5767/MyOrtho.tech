@@ -6,6 +6,8 @@ import {
   streamMessage,
   type CopilotConversation,
   type StreamEvent,
+  type ConfidenceLevel,
+  type ExplainabilityData,
 } from '@/lib/api/copilot';
 
 // ─── Types ─────────────────────────────────────────────────────────────────
@@ -19,6 +21,9 @@ interface Message {
   agentType?: AgentType;
   sources?: Array<{ title: string; source: string }>;
   streaming?: boolean;
+  confidence?: ConfidenceLevel;
+  explainability?: ExplainabilityData;
+  showExplainability?: boolean;
 }
 
 // ─── Config ─────────────────────────────────────────────────────────────────
@@ -62,6 +67,71 @@ function AgentBadge({ agentType }: { agentType: AgentType }) {
   );
 }
 
+const CONFIDENCE_CONFIG: Record<ConfidenceLevel, { label: string; cls: string }> = {
+  very_high: { label: 'Very High Confidence', cls: 'bg-emerald-500/10 text-emerald-700 border-emerald-200 dark:text-emerald-400' },
+  high:      { label: 'High Confidence',      cls: 'bg-teal-500/10 text-teal-700 border-teal-200 dark:text-teal-400' },
+  medium:    { label: 'Medium Confidence',     cls: 'bg-amber-500/10 text-amber-700 border-amber-200 dark:text-amber-400' },
+  low:       { label: 'Low Confidence',        cls: 'bg-orange-500/10 text-orange-700 border-orange-200 dark:text-orange-400' },
+  unknown:   { label: 'Confidence Unknown',    cls: 'bg-slate-500/10 text-slate-600 border-slate-200 dark:text-slate-400' },
+};
+
+function ConfidenceBadge({ level }: { level: ConfidenceLevel }) {
+  const cfg = CONFIDENCE_CONFIG[level];
+  return (
+    <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-semibold ${cfg.cls}`}>
+      {level === 'very_high' || level === 'high' ? '●' : level === 'medium' ? '◑' : '○'} {cfg.label}
+    </span>
+  );
+}
+
+function ExplainabilityPanel({ data, onClose }: { data: ExplainabilityData; onClose: () => void }) {
+  return (
+    <div className="mt-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 p-3 text-[11px]">
+      <div className="flex items-center justify-between mb-2">
+        <span className="font-semibold text-slate-700 dark:text-slate-300">Why this recommendation?</span>
+        <button onClick={onClose} className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 p-0.5 rounded">
+          <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+          </svg>
+        </button>
+      </div>
+      {data.why && <p className="text-slate-600 dark:text-slate-400 mb-2">{data.why}</p>}
+      {data.evidence.length > 0 && (
+        <div className="mb-2">
+          <p className="font-semibold text-slate-700 dark:text-slate-300 mb-1">Evidence</p>
+          <ul className="space-y-0.5 list-none">
+            {data.evidence.map((e, i) => (
+              <li key={i} className="flex gap-1.5 text-slate-600 dark:text-slate-400">
+                <span className="text-emerald-500 shrink-0">›</span>{e}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+      {data.limitations.length > 0 && (
+        <div className="mb-2">
+          <p className="font-semibold text-amber-700 dark:text-amber-400 mb-1">Limitations</p>
+          <ul className="space-y-0.5">
+            {data.limitations.map((l, i) => (
+              <li key={i} className="flex gap-1.5 text-slate-600 dark:text-slate-400">
+                <span className="text-amber-500 shrink-0">⚠</span>{l}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+      {data.reviewSteps.length > 0 && (
+        <div>
+          <p className="font-semibold text-slate-700 dark:text-slate-300 mb-1">Review Steps</p>
+          <ol className="space-y-0.5 list-decimal list-inside text-slate-600 dark:text-slate-400">
+            {data.reviewSteps.map((s, i) => <li key={i}>{s}</li>)}
+          </ol>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function CitationsRow({ sources }: { sources: Array<{ title: string; source: string }> }) {
   if (sources.length === 0) return null;
   return (
@@ -79,7 +149,13 @@ function CitationsRow({ sources }: { sources: Array<{ title: string; source: str
   );
 }
 
-function MessageRow({ msg }: { msg: Message }) {
+function MessageRow({
+  msg,
+  onToggleExplainability,
+}: {
+  msg: Message;
+  onToggleExplainability: (id: string) => void;
+}) {
   const isUser = msg.role === 'user';
   return (
     <div className={`flex gap-2 ${isUser ? 'flex-row-reverse' : ''}`}>
@@ -87,13 +163,28 @@ function MessageRow({ msg }: { msg: Message }) {
         className={`max-w-[85%] rounded-2xl px-3 py-2.5 text-xs leading-relaxed ${
           isUser
             ? 'rounded-tr-none bg-blue-600 text-white'
-            : 'rounded-tl-none bg-slate-50 border border-slate-200 text-slate-900'
+            : 'rounded-tl-none bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-slate-100'
         }`}
       >
-        {!isUser && msg.agentType && (
-          <div className="mb-1">
-            <AgentBadge agentType={msg.agentType} />
+        {!isUser && msg.confidence && (
+          <div className="mb-1 flex items-center gap-1.5">
+            {msg.agentType && <AgentBadge agentType={msg.agentType} />}
+            <ConfidenceBadge level={msg.confidence} />
+            {msg.explainability && (
+              <button
+                onClick={() => onToggleExplainability(msg.id)}
+                className="ml-auto rounded-full border border-slate-200 dark:border-slate-700 px-1.5 py-0.5 text-[10px] text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800"
+              >
+                Why?
+              </button>
+            )}
           </div>
+        )}
+        {!isUser && msg.agentType && !msg.confidence && (
+          <div className="mb-1"><AgentBadge agentType={msg.agentType} /></div>
+        )}
+        {msg.showExplainability && msg.explainability && (
+          <ExplainabilityPanel data={msg.explainability} onClose={() => onToggleExplainability(msg.id)} />
         )}
         <p className="whitespace-pre-wrap">
           {msg.content}
@@ -197,6 +288,12 @@ export default function CopilotWidget({ caseId, planId }: Props) {
               ),
             );
           }
+          if (event.confidence) {
+            setMessages(prev => prev.map(m => m.id === assistantId ? { ...m, confidence: event.confidence } : m));
+          }
+          if (event.explainability) {
+            setMessages(prev => prev.map(m => m.id === assistantId ? { ...m, explainability: event.explainability } : m));
+          }
         } else if (event.type === 'delta' && event.content) {
           setMessages(prev =>
             prev.map(m =>
@@ -235,6 +332,10 @@ export default function CopilotWidget({ caseId, planId }: Props) {
     [send],
   );
 
+  const toggleExplainability = useCallback((msgId: string) => {
+    setMessages(prev => prev.map(m => m.id === msgId ? { ...m, showExplainability: !m.showExplainability } : m));
+  }, []);
+
   const quickPrompts = QUICK_PROMPTS[agentType];
 
   // ── Closed state ─────────────────────────────────────────────────────────
@@ -257,11 +358,11 @@ export default function CopilotWidget({ caseId, planId }: Props) {
 
   // ── Panel state ───────────────────────────────────────────────────────────
   return (
-    <div className="fixed bottom-6 right-6 z-50 flex w-[380px] flex-col rounded-2xl border border-slate-200 bg-white shadow-2xl shadow-slate-900/10"
+    <div className="fixed bottom-6 right-6 z-50 flex w-[380px] flex-col rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 shadow-2xl shadow-slate-900/10"
       style={{ height: '520px' }}
     >
       {/* Header */}
-      <div className="flex shrink-0 items-center gap-2.5 border-b border-slate-100 px-4 py-3">
+      <div className="flex shrink-0 items-center gap-2.5 border-b border-slate-100 dark:border-slate-800 px-4 py-3 dark:bg-slate-900">
         <svg className="h-5 w-5 shrink-0 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
           <path strokeLinecap="round" strokeLinejoin="round" d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09z" />
         </svg>
@@ -281,7 +382,7 @@ export default function CopilotWidget({ caseId, planId }: Props) {
       </div>
 
       {/* Agent selector */}
-      <div className="flex shrink-0 gap-1 overflow-x-auto border-b border-slate-100 px-3 py-2 [&::-webkit-scrollbar]:hidden">
+      <div className="flex shrink-0 gap-1 overflow-x-auto border-b border-slate-100 dark:border-slate-800 px-3 py-2 [&::-webkit-scrollbar]:hidden">
         {(Object.keys(AGENT_LABELS) as AgentType[]).map(a => (
           <button
             key={a}
@@ -313,7 +414,7 @@ export default function CopilotWidget({ caseId, planId }: Props) {
       {!starting && (
         <div className="flex-1 overflow-y-auto px-4 py-3 space-y-3">
           {messages.map(m => (
-            <MessageRow key={m.id} msg={m} />
+            <MessageRow key={m.id} msg={m} onToggleExplainability={toggleExplainability} />
           ))}
           {busy && messages[messages.length - 1]?.role !== 'assistant' && (
             <div className="text-xs text-slate-400 italic">Thinking…</div>
@@ -348,7 +449,7 @@ export default function CopilotWidget({ caseId, planId }: Props) {
             onKeyDown={handleKey}
             placeholder="Ask a question… (Enter to send)"
             rows={2}
-            className="flex-1 resize-none rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-900 placeholder-slate-400 focus:border-blue-400 focus:bg-white focus:outline-none focus:ring-1 focus:ring-blue-400"
+            className="flex-1 resize-none rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 px-3 py-2 text-xs text-slate-900 dark:text-slate-100 placeholder-slate-400 dark:placeholder-slate-500 focus:border-blue-400 focus:bg-white dark:focus:bg-slate-800 focus:outline-none focus:ring-1 focus:ring-blue-400"
           />
           <button
             onClick={() => send()}

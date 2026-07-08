@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import React, { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ShieldAlert, Users, Mail, Clock, MoreVertical, Search, UserPlus } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
@@ -58,6 +58,190 @@ function formatDate(iso: string | null): string {
   return new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
 }
 
+// ─── Constants ────────────────────────────────────────────────────────────────
+
+const ROLES = ['admin', 'orthodontist', 'dentist', 'lab_manager', 'lab_technician', 'resident', 'executive'];
+
+// ─── InviteUserModal ──────────────────────────────────────────────────────────
+
+function InviteUserModal({ onClose, onSuccess }: { onClose: () => void; onSuccess: () => void }) {
+  const [email, setEmail] = useState('');
+  const [role, setRole] = useState('orthodontist');
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    if (!email.trim()) return;
+    setSaving(true);
+    setError(null);
+    try {
+      const res = await fetch('/api/admin/invite', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: email.trim(), role }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({})) as { message?: string };
+        throw new Error(data.message ?? 'Invite failed');
+      }
+      onSuccess();
+      onClose();
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
+      <div className="w-full max-w-md rounded-2xl border border-[color:var(--border)] bg-[color:var(--card)] p-6 shadow-2xl">
+        <div className="flex items-center justify-between mb-5">
+          <h2 className="text-lg font-semibold text-[color:var(--foreground)]">Invite Team Member</h2>
+          <button
+            onClick={onClose}
+            className="rounded-lg p-1.5 text-[color:var(--muted-foreground)] hover:bg-[color:var(--border)]/40"
+          >
+            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div>
+            <label className="block text-xs font-semibold text-[color:var(--muted-foreground)] mb-1.5">
+              Email address
+            </label>
+            <input
+              type="email"
+              value={email}
+              onChange={e => setEmail(e.target.value)}
+              placeholder="colleague@clinic.com"
+              required
+              className="w-full rounded-xl border border-[color:var(--border)] bg-[color:var(--background)] px-3 py-2 text-sm text-[color:var(--foreground)] placeholder-[color:var(--muted-foreground)] focus:border-[color:var(--primary)] focus:outline-none focus:ring-1 focus:ring-[color:var(--primary)]"
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-semibold text-[color:var(--muted-foreground)] mb-1.5">
+              Role
+            </label>
+            <select
+              value={role}
+              onChange={e => setRole(e.target.value)}
+              className="w-full rounded-xl border border-[color:var(--border)] bg-[color:var(--background)] px-3 py-2 text-sm text-[color:var(--foreground)] focus:border-[color:var(--primary)] focus:outline-none"
+            >
+              {ROLES.map(r => (
+                <option key={r} value={r}>
+                  {r.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())}
+                </option>
+              ))}
+            </select>
+          </div>
+          {error && <p className="text-xs text-rose-600">{error}</p>}
+          <div className="flex gap-2 pt-1">
+            <button
+              type="button"
+              onClick={onClose}
+              className="flex-1 rounded-xl border border-[color:var(--border)] px-4 py-2.5 text-sm font-semibold text-[color:var(--muted-foreground)] hover:bg-[color:var(--border)]/40 transition-colors"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={saving}
+              className="flex-1 rounded-xl bg-[color:var(--primary)] px-4 py-2.5 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-50 transition-all"
+            >
+              {saving ? 'Sending…' : 'Send Invitation'}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+// ─── RoleChangeModal ──────────────────────────────────────────────────────────
+
+function RoleChangeModal({
+  member,
+  onClose,
+  onSuccess,
+}: {
+  member: OrgMember;
+  onClose: () => void;
+  onSuccess: () => void;
+}) {
+  const [role, setRole] = useState(member.role);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    if (role === member.role) { onClose(); return; }
+    setSaving(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/admin/users/${member.id}/role`, {
+        method: 'PATCH',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ role }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({})) as { message?: string };
+        throw new Error(data.message ?? 'Update failed');
+      }
+      onSuccess();
+      onClose();
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
+      <div className="w-full max-w-sm rounded-2xl border border-[color:var(--border)] bg-[color:var(--card)] p-6 shadow-2xl">
+        <h2 className="text-base font-semibold text-[color:var(--foreground)] mb-4">Change Role</h2>
+        <p className="text-sm text-[color:var(--muted-foreground)] mb-4">{member.name || member.email}</p>
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <select
+            value={role}
+            onChange={e => setRole(e.target.value)}
+            className="w-full rounded-xl border border-[color:var(--border)] bg-[color:var(--background)] px-3 py-2 text-sm text-[color:var(--foreground)] focus:border-[color:var(--primary)] focus:outline-none"
+          >
+            {ROLES.map(r => (
+              <option key={r} value={r}>
+                {r.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())}
+              </option>
+            ))}
+          </select>
+          {error && <p className="text-xs text-rose-600">{error}</p>}
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={onClose}
+              className="flex-1 rounded-xl border border-[color:var(--border)] px-4 py-2.5 text-sm font-semibold text-[color:var(--muted-foreground)] hover:bg-[color:var(--border)]/40"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={saving}
+              className="flex-1 rounded-xl bg-[color:var(--primary)] px-4 py-2.5 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-50"
+            >
+              {saving ? 'Saving…' : 'Update Role'}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function AdminUsersPage() {
@@ -66,8 +250,13 @@ export default function AdminUsersPage() {
   const [members, setMembers] = useState<OrgMember[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
+  const [showInvite, setShowInvite] = useState(false);
+  const [roleTarget, setRoleTarget] = useState<OrgMember | null>(null);
+  const [tick, setTick] = useState(0);
 
   const isAdmin = user?.role === "admin" || user?.role === "super_admin";
+
+  const reload = () => setTick(t => t + 1);
 
   useEffect(() => {
     if (user && !isAdmin) router.replace("/admin");
@@ -75,6 +264,7 @@ export default function AdminUsersPage() {
 
   useEffect(() => {
     if (!isAdmin) return;
+    setLoading(true);
     fetch("/api/admin/users", { credentials: "include" })
       .then(r => r.ok ? r.json() : Promise.reject(r.status))
       .then((data: RawMember[] | { members: RawMember[] }) => {
@@ -83,7 +273,8 @@ export default function AdminUsersPage() {
       })
       .catch(() => setMembers([]))
       .finally(() => setLoading(false));
-  }, [isAdmin]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isAdmin, tick]);
 
   const filtered = members.filter(m =>
     search === "" ||
@@ -106,7 +297,7 @@ export default function AdminUsersPage() {
           </p>
         </div>
         <Button
-          onClick={() => {}}
+          onClick={() => setShowInvite(true)}
           className="flex items-center gap-2 rounded-xl bg-[color:var(--primary)] px-4 py-2 text-sm font-semibold text-white hover:opacity-90"
         >
           <UserPlus size={15} />
@@ -176,6 +367,7 @@ export default function AdminUsersPage() {
                 </span>
                 <button
                   aria-label={`Options for ${member.name}`}
+                  onClick={() => setRoleTarget(member)}
                   className="rounded-lg p-1.5 text-[color:var(--muted-foreground)] hover:bg-[color:var(--border)] hover:text-[color:var(--foreground)] focus-visible:outline-[color:var(--primary)]"
                 >
                   <MoreVertical size={15} />
@@ -191,6 +383,20 @@ export default function AdminUsersPage() {
         {search && " matching search"} · Joined from{" "}
         {members.length > 0 ? formatDate(members[members.length - 1]?.createdAt) : "—"}
       </p>
+
+      {showInvite && (
+        <InviteUserModal
+          onClose={() => setShowInvite(false)}
+          onSuccess={reload}
+        />
+      )}
+      {roleTarget && (
+        <RoleChangeModal
+          member={roleTarget}
+          onClose={() => setRoleTarget(null)}
+          onSuccess={reload}
+        />
+      )}
     </div>
   );
 }

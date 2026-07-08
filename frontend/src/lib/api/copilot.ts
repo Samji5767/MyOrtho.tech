@@ -13,6 +13,15 @@ export interface CopilotSuggestion {
   createdAt: string;
 }
 
+export type ConfidenceLevel = 'very_high' | 'high' | 'medium' | 'low' | 'unknown';
+
+export interface ExplainabilityData {
+  why: string;
+  evidence: string[];
+  limitations: string[];
+  reviewSteps: string[];
+}
+
 export interface CopilotMessage {
   id: string;
   conversationId: string;
@@ -23,6 +32,8 @@ export interface CopilotMessage {
   suggestions: CopilotSuggestion[];
   latencyMs: number | null;
   createdAt: string;
+  confidenceLevel?: ConfidenceLevel;
+  explainability?: ExplainabilityData | null;
 }
 
 export interface CopilotConversation {
@@ -83,6 +94,8 @@ export interface StreamEvent {
   error?: string;
   messageId?: string;
   sources?: Array<{ title: string; source: string }>;
+  confidence?: ConfidenceLevel;
+  explainability?: ExplainabilityData;
 }
 
 const STREAM_BASE = typeof process !== 'undefined' ? (process.env.NEXT_PUBLIC_API_URL ?? '') : '';

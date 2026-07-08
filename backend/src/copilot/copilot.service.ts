@@ -13,6 +13,8 @@ export interface StreamEvent {
   error?: string;
   messageId?: string;
   sources?: Array<{ title: string; source: string }>;
+  confidence?: ConfidenceLevel;
+  explainability?: ExplainabilityData;
 }
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -27,6 +29,8 @@ export interface CopilotMessage {
   suggestions: CopilotSuggestion[];
   latencyMs: number | null;
   createdAt: string;
+  confidenceLevel: ConfidenceLevel;
+  explainability: ExplainabilityData | null;
 }
 
 export interface CopilotConversation {
@@ -51,6 +55,15 @@ export interface CopilotSuggestion {
   status: 'open' | 'acknowledged' | 'dismissed' | 'applied';
   clinicianNote: string | null;
   createdAt: string;
+}
+
+export type ConfidenceLevel = 'very_high' | 'high' | 'medium' | 'low' | 'unknown';
+
+export interface ExplainabilityData {
+  why: string;
+  evidence: string[];
+  limitations: string[];
+  reviewSteps: string[];
 }
 
 export interface SendMessageDto {
@@ -252,6 +265,192 @@ async function scanPdl(db: Pool, planId: string): Promise<RawSuggestion[]> {
     });
   }
   return suggestions;
+}
+
+// ─── Confidence & explainability ─────────────────────────────────────────────
+
+const CLINICAL_DISCLAIMER = 'AI clinical suggestion — clinician review and judgement required before any clinical decision.';
+
+function computeConfidence(
+  intent: string,
+  module: string | null,
+  suggestions: RawSuggestion[],
+  caseContext: Record<string, unknown>,
+): ConfidenceLevel {
+  const hasStages = caseContext['totalStages'] != null;
+  const hasOverjet = caseContext['overjetFinal'] != null;
+  const prescriptionCount = caseContext['prescriptionCount'];
+  const hasPrescriptions = typeof prescriptionCount === 'number' && prescriptionCount > 0;
+
+  if (hasStages && hasOverjet && suggestions.length > 0) return 'very_high';
+  if (hasStages || hasOverjet || hasPrescriptions) return 'high';
+  if (caseContext['caseId'] != null && module !== null) return 'medium';
+  if (intent === 'question' && module !== null) return 'low';
+  return 'unknown';
+}
+
+function buildExplainability(
+  content: string,
+  intent: string,
+  module: string | null,
+  suggestions: RawSuggestion[],
+): ExplainabilityData {
+  void intent; // intent is available for future branch differentiation
+  const lower = content.toLowerCase();
+
+  if (module === 'ipr' || /ipr|enamel|interproximal|sheridan/.test(lower)) {
+    const unsafeContacts = suggestions
+      .filter(s => s.suggestionType === 'ipr_warning')
+      .map(s => s.body);
+    return {
+      why: 'IPR safety is assessed against Sheridan (1985) minimum enamel residual thresholds',
+      evidence: [
+        'Sheridan minimum residual enamel: 0.5mm',
+        'Ballard maximum per-contact IPR: 0.5mm anterior / 0.8mm posterior',
+        ...unsafeContacts,
+      ],
+      limitations: [
+        'Residual enamel estimates are computed from total IPR prescribed; actual enamel may differ',
+        'Radiographic assessment required for IPR > 0.3mm per contact',
+      ],
+      reviewSteps: [
+        'Review flagged contacts in the IPR panel',
+        'Obtain periapical radiographs for contacts > 0.3mm IPR',
+        'Confirm total cumulative IPR does not exceed safe limits',
+        CLINICAL_DISCLAIMER,
+      ],
+    };
+  }
+
+  if (module === 'prescriptions' || /kravitz|limit|translation|rotation|torque/.test(lower)) {
+    const violations = suggestions
+      .filter(s => s.suggestionType === 'kravitz_violation')
+      .map(s => s.body);
+    return {
+      why: 'Prescription limits are assessed against Kravitz et al. (AJO-DO 2008) per-stage movement thresholds',
+      evidence: [
+        'Kravitz 2008: translation ≤ 0.30mm/stage, rotation ≤ 3.0°/stage, torque ≤ 3.5°/stage, intrusion ≤ 0.40mm/stage',
+        ...violations,
+      ],
+      limitations: [
+        'Per-stage limits are based on population averages; individual variation exists',
+        'Biological response depends on patient age, bone density, and PDL health',
+      ],
+      reviewSteps: [
+        'Review all Kravitz limit violations in the Prescriptions panel',
+        'Increase stage count or reduce prescription magnitude for flagged teeth',
+        'Confirm attachments are prescribed for high-movement teeth',
+        CLINICAL_DISCLAIMER,
+      ],
+    };
+  }
+
+  if (module === 'simulation' || /simulation|overjet|overbite|arch|occlusion/.test(lower)) {
+    const simItems = suggestions
+      .filter(s => s.module === 'simulation')
+      .map(s => s.body);
+    return {
+      why: 'Simulation scores are derived from finite-element arch coordination and occlusion models',
+      evidence: [
+        'Arch coordination score threshold: ≥ 0.6 acceptable',
+        'Occlusion score threshold: ≥ 0.5 acceptable',
+        ...simItems,
+      ],
+      limitations: [
+        'Simulation accuracy depends on segmentation quality and initial scan resolution',
+        'Predicted occlusion is an estimate; final result depends on patient compliance and biology',
+      ],
+      reviewSteps: [
+        'Review arch coordination and occlusion scores in the Treatment Simulation tab',
+        'Confirm overjet and overbite fall within ABO target ranges (overjet 2–4mm, overbite 1.5–3mm)',
+        'Re-run simulation after prescription adjustments',
+        CLINICAL_DISCLAIMER,
+      ],
+    };
+  }
+
+  if (module === 'attachments' || /attachment|collision|retention|manufacturing|mfg/.test(lower)) {
+    const collisions = suggestions
+      .filter(s => s.suggestionType === 'collision')
+      .map(s => s.body);
+    return {
+      why: 'Attachment placement is validated against geometric collision detection and manufacturing tolerances',
+      evidence: [
+        'Minimum attachment-to-gingival margin clearance: 1.0mm',
+        'Minimum attachment-to-attachment clearance: 0.5mm',
+        ...collisions,
+      ],
+      limitations: [
+        'Collision detection is based on digital models; printed aligner tolerances may introduce additional clearance variation',
+        'Attachment bonding accuracy depends on clinician technique',
+      ],
+      reviewSteps: [
+        'Review flagged collisions in the Attachments panel',
+        'Reposition or remove conflicting attachments',
+        'Confirm attachment types match tooth movement requirements',
+        CLINICAL_DISCLAIMER,
+      ],
+    };
+  }
+
+  if (module === 'pdl' || /pdl|periodontal|stress|mobility|bone|remodel/.test(lower)) {
+    const pdlItems = suggestions
+      .filter(s => s.suggestionType === 'pdl_stress')
+      .map(s => s.body);
+    return {
+      why: 'PDL stress is assessed against Yoshida (2001) optimal bone remodelling thresholds',
+      evidence: [
+        'Yoshida 2001 optimal PDL stress range: 0.47–11.8 kPa',
+        'Stress > 15 kPa risks PDL hyalinisation and movement arrest',
+        ...pdlItems,
+      ],
+      limitations: [
+        'PDL stress estimates are based on finite-element models using population-average bone properties',
+        'Patient-specific bone density (from CBCT) is required for precise stress prediction',
+      ],
+      reviewSteps: [
+        'Review elevated-stress teeth in the Biomechanics tab',
+        'Reduce per-stage movements by 20–30% for high-risk teeth',
+        'Consider passive stages every 4–6 aligners for affected teeth',
+        CLINICAL_DISCLAIMER,
+      ],
+    };
+  }
+
+  if (module === 'aligner' || /aligner|staging|strategy|schedule|stage count/.test(lower)) {
+    const alignerItems = suggestions
+      .filter(s => s.module === 'aligner')
+      .map(s => s.body);
+    return {
+      why: 'Aligner staging is evaluated against treatment complexity and per-stage movement safety',
+      evidence: [
+        'Stage count derived from prescribed movements at standard per-stage limits',
+        'Standard wear protocol: 2 weeks per aligner',
+        ...alignerItems,
+      ],
+      limitations: [
+        'Stage count is a minimum estimate; refinements may add additional stages',
+        'Patient compliance directly affects treatment duration',
+      ],
+      reviewSteps: [
+        'Confirm total stage count in the Aligner Plan tab',
+        'Review per-stage movement distribution for uniformity',
+        'Plan refinement assessment at the midpoint stage',
+        CLINICAL_DISCLAIMER,
+      ],
+    };
+  }
+
+  // Generic fallback
+  return {
+    why: 'Based on clinical guidelines and available case data',
+    evidence: [],
+    limitations: ['Limited case-specific data available'],
+    reviewSteps: [
+      'Review all treatment parameters before proceeding',
+      CLINICAL_DISCLAIMER,
+    ],
+  };
 }
 
 // ─── Response generator ───────────────────────────────────────────────────────
@@ -552,6 +751,9 @@ export class CopilotService {
     const contextSnapshot = conv['context_snapshot'] as Record<string, unknown>;
     const responseContent = buildResponse(dto.content, intent, module, rawSuggestions, contextSnapshot);
 
+    const confidence = computeConfidence(intent, module, rawSuggestions, contextSnapshot);
+    const explainability = buildExplainability(dto.content, intent, module, rawSuggestions);
+
     const latencyMs = Date.now() - startMs;
 
     // Save assistant message
@@ -575,7 +777,7 @@ export class CopilotService {
 
     this.log.log(`Copilot message: conv ${conversationId} — ${latencyMs}ms, ${persistedSuggestions.length} suggestions`);
 
-    return this.rowToMessage(msgRes.rows[0], persistedSuggestions);
+    return this.rowToMessage(msgRes.rows[0], persistedSuggestions, confidence, explainability);
   }
 
   // ─── Streaming RAG endpoint ──────────────────────────────────────────────
@@ -728,6 +930,11 @@ export class CopilotService {
 
     this.log.log(`Copilot stream: conv ${conversationId} — ${latencyMs}ms, agent=${agentConfig.agentType}`);
     yield { type: 'done', messageId: msgRes.rows[0]['id'] as string };
+    yield {
+      type: 'meta',
+      confidence: computeConfidence(intent, module, rawSuggestions, conv['context_snapshot'] as Record<string, unknown>),
+      explainability: buildExplainability(dto.content, intent, module, rawSuggestions),
+    };
   }
 
   async getMessages(conversationId: string, orgId: string): Promise<CopilotMessage[]> {
@@ -826,7 +1033,12 @@ export class CopilotService {
     };
   }
 
-  private rowToMessage(r: Record<string, unknown>, suggestions: CopilotSuggestion[]): CopilotMessage {
+  private rowToMessage(
+    r: Record<string, unknown>,
+    suggestions: CopilotSuggestion[],
+    confidenceLevel: ConfidenceLevel = 'unknown',
+    explainabilityData: ExplainabilityData | null = null,
+  ): CopilotMessage {
     return {
       id:               r['id'] as string,
       conversationId:   r['conversation_id'] as string,
@@ -837,6 +1049,8 @@ export class CopilotService {
       suggestions,
       latencyMs:        r['latency_ms'] as number | null,
       createdAt:        r['created_at'] as string,
+      confidenceLevel,
+      explainability:   explainabilityData,
     };
   }
 

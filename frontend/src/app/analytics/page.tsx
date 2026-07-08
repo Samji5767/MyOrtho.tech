@@ -18,6 +18,16 @@ import { fetchCases, type CaseListItem } from "@/lib/api/cases";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
+interface AnalyticsSummary {
+  total: number;
+  active: number;
+  awaitingApproval: number;
+  manufacturingQueue: number;
+  completedThisMonth: number;
+  newThisMonth: number;
+  avgTreatmentDays: number;
+}
+
 interface Metric {
   label: string;
   value: number;
@@ -36,6 +46,19 @@ const ACTIVE_STATUSES = new Set([
   "clinical_review",
   "active_treatment",
   "monitoring",
+]);
+
+const WORKFLOW_STATUSES = new Set([
+  "draft",
+  "scan_review",
+  "segmentation",
+  "planning",
+  "clinical_review",
+  "approved",
+  "active_treatment",
+  "monitoring",
+  "retention",
+  "completed",
 ]);
 
 const STAGGER_CLASSES = [
@@ -188,6 +211,8 @@ export default function AnalyticsPage() {
   const [loading, setLoading] = useState(true);
   const [source, setSource] = useState<"api" | "demo">("demo");
   const [barsVisible, setBarsVisible] = useState(false);
+  const [summary, setSummary] = useState<AnalyticsSummary | null>(null);
+  const [auditCount, setAuditCount] = useState<number | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -195,6 +220,18 @@ export default function AnalyticsPage() {
       const result = await fetchCases();
       setCases(result.cases);
       setSource(result.source);
+
+      const summaryRes = await fetch('/api/cases/analytics/summary', { credentials: 'include' });
+      if (summaryRes.ok) {
+        const data = await summaryRes.json() as AnalyticsSummary;
+        setSummary(data);
+      }
+
+      const auditRes = await fetch('/api/audit/summary?hours=24', { credentials: 'include' });
+      if (auditRes.ok) {
+        const d = await auditRes.json() as { recentCount: number };
+        setAuditCount(d.recentCount);
+      }
     } catch {
       // fetchCases handles errors internally
     } finally {
@@ -223,12 +260,23 @@ export default function AnalyticsPage() {
   const statusEntries = Object.entries(statusCounts).sort((a, b) => b[1] - a[1]);
   const maxCount = Math.max(...statusEntries.map(([, n]) => n), 1);
 
+  // Workflow distribution (exclude archived/cancelled)
+  const workflowEntries = statusEntries.filter(([status]) => WORKFLOW_STATUSES.has(status));
+
   // Completion rate
   const completionRate = cases.length > 0
     ? Math.round((cases.filter((c) => c.status === "completed").length / cases.length) * 100)
     : 0;
   const activeRate = cases.length > 0
     ? Math.round((cases.filter((c) => ACTIVE_STATUSES.has(c.status)).length / cases.length) * 100)
+    : 0;
+
+  // Practice efficiency rates
+  const approvalPipelineRate = summary
+    ? Math.round((summary.awaitingApproval / Math.max(summary.total, 1)) * 100)
+    : 0;
+  const manufacturingThroughputRate = summary
+    ? Math.round((summary.manufacturingQueue / Math.max(summary.active, 1)) * 100)
     : 0;
 
   return (
@@ -245,11 +293,23 @@ export default function AnalyticsPage() {
             <p className="text-xs text-[color:var(--muted-foreground)]">Practice performance overview</p>
           </div>
         </div>
-        {source === "demo" && !loading && (
-          <span className="rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-[10px] font-semibold text-amber-700 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-300">
-            Demo data
-          </span>
-        )}
+        <div className="flex items-center gap-2">
+          {source === "demo" && !loading && (
+            <span className="rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-[10px] font-semibold text-amber-700 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-300">
+              Demo data
+            </span>
+          )}
+          <button
+            onClick={() => void load()}
+            disabled={loading}
+            className="flex items-center gap-1.5 rounded-xl border border-[color:var(--border)] px-3 py-1.5 text-xs font-semibold text-[color:var(--muted-foreground)] hover:bg-[color:var(--border)]/40 disabled:opacity-50 transition-colors"
+          >
+            <svg className={`h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99" />
+            </svg>
+            Refresh
+          </button>
+        </div>
       </div>
 
       {/* ── Metrics grid ── */}
@@ -367,6 +427,147 @@ export default function AnalyticsPage() {
                 </div>
               );
             })}
+          </div>
+        </Card>
+      )}
+
+      {/* ── Treatment Intelligence ── */}
+      {!loading && summary !== null && (
+        <div className="mt-4 animate-stagger-5">
+          <h2 className="mb-2 text-sm font-semibold text-[color:var(--foreground)]">Treatment Intelligence</h2>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+            <Card className="flex flex-col gap-2 p-4">
+              <div className="grid h-8 w-8 place-items-center rounded-xl bg-indigo-500/10">
+                <Clock className="h-4 w-4 text-indigo-600 dark:text-indigo-400" />
+              </div>
+              <p className="text-2xl font-bold tabular-nums text-indigo-600 dark:text-indigo-400">
+                {summary.avgTreatmentDays ?? '—'} <span className="text-sm font-medium">days</span>
+              </p>
+              <div>
+                <p className="text-xs font-semibold text-[color:var(--foreground)]">Avg Treatment Duration</p>
+                <p className="text-[10px] text-[color:var(--muted-foreground)]">per case</p>
+              </div>
+            </Card>
+            <Card className="flex flex-col gap-2 p-4">
+              <div className="grid h-8 w-8 place-items-center rounded-xl bg-sky-500/10">
+                <TrendingUp className="h-4 w-4 text-sky-600 dark:text-sky-400" />
+              </div>
+              <p className="text-2xl font-bold tabular-nums text-sky-600 dark:text-sky-400">
+                {summary.newThisMonth ?? '—'}
+              </p>
+              <div>
+                <p className="text-xs font-semibold text-[color:var(--foreground)]">New Cases This Month</p>
+                <p className="text-[10px] text-[color:var(--muted-foreground)]">calendar month</p>
+              </div>
+            </Card>
+            <Card className="flex flex-col gap-2 p-4">
+              <div className="grid h-8 w-8 place-items-center rounded-xl bg-violet-500/10">
+                <Activity className="h-4 w-4 text-violet-600 dark:text-violet-400" />
+              </div>
+              <p className="text-2xl font-bold tabular-nums text-violet-600 dark:text-violet-400">
+                {summary.manufacturingQueue ?? '—'}
+              </p>
+              <div>
+                <p className="text-xs font-semibold text-[color:var(--foreground)]">Manufacturing Queue</p>
+                <p className="text-[10px] text-[color:var(--muted-foreground)]">awaiting production</p>
+              </div>
+            </Card>
+          </div>
+        </div>
+      )}
+
+      {/* ── Practice Efficiency ── */}
+      {!loading && summary !== null && (
+        <div className="mt-4 animate-stagger-5">
+          <h2 className="mb-2 text-sm font-semibold text-[color:var(--foreground)]">Practice Efficiency</h2>
+          <div className="grid grid-cols-2 gap-3">
+            {[
+              {
+                label: "Approval Pipeline",
+                value: approvalPipelineRate,
+                color: "bg-amber-500",
+                track: "bg-amber-500/15",
+              },
+              {
+                label: "Manufacturing Throughput",
+                value: manufacturingThroughputRate,
+                color: "bg-violet-500",
+                track: "bg-violet-500/15",
+              },
+            ].map((r) => (
+              <Card key={r.label} className="p-4">
+                <p className="text-xs font-semibold text-[color:var(--foreground)]">{r.label}</p>
+                <p className="mt-1 text-2xl font-bold tabular-nums text-[color:var(--foreground)]">{r.value}%</p>
+                <div className={`mt-2 h-2 overflow-hidden rounded-full ${r.track}`}>
+                  <div
+                    className={`h-full rounded-full ${r.color} transition-all duration-700 ease-out`}
+                    style={{ width: barsVisible ? `${r.value}%` : "0%" }}
+                  />
+                </div>
+              </Card>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* ── Workflow Distribution ── */}
+      {!loading && workflowEntries.length > 0 && (
+        <Card className="mt-4 p-4 animate-stagger-5">
+          <div className="mb-3 flex items-center gap-2">
+            <FolderKanban className="h-4 w-4 text-[color:var(--muted-foreground)]" />
+            <h2 className="text-sm font-semibold text-[color:var(--foreground)]">Workflow Distribution</h2>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs">
+              <tbody className="divide-y divide-[color:var(--border)]/40">
+                {workflowEntries.map(([status, count]) => (
+                  <tr key={status} className="group">
+                    <td className="py-2 pr-3">
+                      <div className="flex items-center gap-2">
+                        <span
+                          className={`inline-block h-2 w-2 shrink-0 rounded-full ${STATUS_COLOR[status] ?? "bg-slate-400"}`}
+                        />
+                        <span className="text-[color:var(--foreground)] font-medium">
+                          {STATUS_LABELS[status] ?? status}
+                        </span>
+                      </div>
+                    </td>
+                    <td className="py-2 text-right">
+                      <span className="inline-flex items-center justify-center rounded-full bg-[color:var(--border)]/50 px-2 py-0.5 text-[11px] font-semibold tabular-nums text-[color:var(--foreground)]">
+                        {count}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </Card>
+      )}
+
+      {/* ── Recent Activity (Audit) ── */}
+      {!loading && (
+        <Card className="mt-4 p-4 animate-stagger-5">
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2">
+              <div className="grid h-8 w-8 place-items-center rounded-xl bg-[color:var(--primary-glow)]">
+                <Activity className="h-4 w-4 text-[color:var(--primary)]" />
+              </div>
+              <div>
+                <p className="text-xs font-semibold text-[color:var(--foreground)]">Recent Activity</p>
+                <p className="text-[10px] text-[color:var(--muted-foreground)]">
+                  {auditCount !== null
+                    ? `${auditCount} event${auditCount === 1 ? '' : 's'} in the last 24 hours`
+                    : "Audit trail"}
+                </p>
+              </div>
+            </div>
+            <Link
+              href="/admin/audit"
+              className="shrink-0 text-[11px] font-semibold text-[color:var(--primary)] hover:opacity-80 transition-opacity"
+            >
+              View all
+            </Link>
           </div>
         </Card>
       )}

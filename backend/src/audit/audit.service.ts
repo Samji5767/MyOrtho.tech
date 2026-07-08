@@ -13,6 +13,11 @@ export interface AuditEventInput {
   ipAddress?: string;
 }
 
+export interface AuditSummary {
+  recentCount: number;
+  windowHours: number;
+}
+
 @Injectable()
 export class AuditService {
   private readonly logger = new Logger(AuditService.name);
@@ -57,5 +62,29 @@ export class AuditService {
       [orgId, limit, offset],
     );
     return rows;
+  }
+
+  async findByResource(resourceType: string, resourceId: string, orgId: string): Promise<AuditEventInput[]> {
+    const { rows } = await this.pool.query(
+      `SELECT * FROM audit_events WHERE organization_id=$1 AND resource_type=$2 AND resource_id=$3::uuid ORDER BY created_at DESC LIMIT 100`,
+      [orgId, resourceType, resourceId],
+    );
+    return rows as AuditEventInput[];
+  }
+
+  async findByActor(actorId: string, orgId: string, limit: number): Promise<unknown[]> {
+    const { rows } = await this.pool.query(
+      `SELECT * FROM audit_events WHERE organization_id=$1 AND actor_id=$2 ORDER BY created_at DESC LIMIT $3`,
+      [orgId, actorId, limit],
+    );
+    return rows;
+  }
+
+  async getRecentCount(orgId: string, hours: number): Promise<number> {
+    const { rows } = await this.pool.query(
+      `SELECT COUNT(*) as cnt FROM audit_events WHERE organization_id=$1 AND created_at > NOW() - INTERVAL '1 hour' * $2::int`,
+      [orgId, hours],
+    );
+    return parseInt((rows[0] as { cnt: string }).cnt, 10);
   }
 }

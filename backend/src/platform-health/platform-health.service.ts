@@ -1,4 +1,4 @@
-import { Injectable, Inject, Optional } from '@nestjs/common';
+import { Injectable, Inject, Optional, Logger } from '@nestjs/common';
 import type { Pool } from 'pg';
 import type { Redis } from 'ioredis';
 import { PG_POOL } from '../database/database.module';
@@ -64,6 +64,8 @@ const TRACKED_TABLES: Array<{ module: string; table: string }> = [
 
 @Injectable()
 export class PlatformHealthService {
+  private readonly logger = new Logger(PlatformHealthService.name);
+
   constructor(
     @Inject(PG_POOL) private readonly db: Pool,
     @Optional() @Inject(REDIS_CLIENT) private readonly redis: Redis | null,
@@ -77,13 +79,17 @@ export class PlatformHealthService {
     try {
       await this.db.query('SELECT 1');
       databaseConnected = true;
-    } catch {}
+    } catch (err) {
+      this.logger.debug(`Health check failed: ${err instanceof Error ? err.message : String(err)}`);
+    }
 
     if (this.redis) {
       try {
         await this.redis.ping();
         redisConnected = true;
-      } catch {}
+      } catch (err) {
+        this.logger.debug(`Health check failed: ${err instanceof Error ? err.message : String(err)}`);
+      }
     }
 
     let totalRecords = 0;

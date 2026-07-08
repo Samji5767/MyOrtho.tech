@@ -7,6 +7,46 @@ Version numbers follow [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [1.0.0-rc2] - 2026-07-08
+
+### Security
+- PHI date-of-birth field encrypted with AES-256-GCM (migration 055)
+- ENCRYPTION_KEY now required at startup — process exits if absent
+- PhotosController: RBAC added (PermissionsGuard + RequirePermission); PHI photos now gated by cases:read/cases:write permissions
+- Audit logging added for photo.created and photo.deleted events
+- Event and comment IDs replaced with collision-resistant UUID (was narrow Math.random range)
+- Feature flag rollout replaced with deterministic SHA-256 hash bucketing per organization
+- Missing operational env vars (AI_SEGMENTATION_URL, AI_ENGINE_URL, STRIPE_*, etc.) added to config validator
+
+### Fixed
+- Migration 021: 9 CREATE INDEX statements wrapped in table-existence DO blocks — fresh installs no longer abort
+- P0 clinical finding revised: clinical-analysis-deep.service.ts confirmed uses real Bolton 1958 / Moyers 1988 formulas (no fabrication)
+- Platform health service: empty catch blocks replaced with debug logging
+- SDLC: 14-part sprint completed (versioning, error codes, correlation IDs, config validation, ADRs, governance)
+
+### Added
+- CorrelationIdMiddleware: x-correlation-id header on every request
+- GlobalExceptionFilter: typed error codes (ErrorCode enum, 30+ codes across 9 domains)
+- Config startup validation: exits with code 1 if DATABASE_URL or JWT_SECRET missing
+- GET /api/version and GET /api/version/health endpoints
+- Slow query logger: warns when any DB call exceeds 500ms threshold
+- Clinical report download endpoint (treatment summary, aligner progress, insurance pre-auth)
+- Patient portal: print button, interactive compliance checklist
+- Accessibility: skip-to-content link, focus-visible ring, modal ARIA + focus traps
+- Audit Trail UI: /admin/audit page with paginated event table
+- E2E smoke tests: 9 tests covering health, auth surface, and 5 protected routes
+
+### Documentation
+- docs/CHANGELOG.md, docs/RELEASE_PROCESS.md, docs/ROLLBACK_CHECKLIST.md, docs/HOTFIX_WORKFLOW.md
+- docs/DEPRECATION_POLICY.md, docs/SECURITY_AUDIT.md, docs/PERFORMANCE_AUDIT.md
+- docs/DATABASE_GOVERNANCE.md, docs/API_GOVERNANCE.md, docs/TESTING_STRATEGY.md
+- docs/ARCHITECTURE.md, docs/CODE_QUALITY_AUDIT.md, docs/CODING_STANDARDS.md
+- docs/ADR/ADR-001 through ADR-005
+- .github/pull_request_template.md, .github/ISSUE_TEMPLATE/
+- docs/GA_BLOCKER_RESOLUTION_REPORT.md, docs/RELEASE_CANDIDATE_v1.0.md
+
+---
+
 ## [Unreleased] — 1.0.0 GA
 
 ### Added

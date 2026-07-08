@@ -21,6 +21,14 @@
 | `SMTP_PASS` | SMTP authentication password | — |
 | `SMTP_SECURE` | Use TLS (`true`/`false`) | `false` |
 | `SMTP_FROM` | Sender address for outgoing emails | `noreply@myortho.tech` |
+| `AI_SEGMENTATION_URL` | URL for AI segmentation service | disabled |
+| `AI_ENGINE_URL` | URL for AI engine/orchestrator service | disabled |
+| `INTERNAL_API_SECRET` | Shared secret for internal service-to-service calls | disabled |
+| `UPLOADS_DIR` | Directory for uploaded scan files | disabled |
+| `PG_POOL_MAX` | PostgreSQL connection pool max size | disabled |
+| `OTEL_SERVICE_NAME` | OpenTelemetry service name for observability | disabled |
+| `STRIPE_SECRET_KEY` | Stripe secret key for billing | disabled |
+| `STRIPE_WEBHOOK_SECRET` | Stripe webhook signing secret | disabled |
 
 ## Frontend
 

@@ -1,4 +1,4 @@
-export const APP_VERSION = '1.0.0-beta.1';
+export const APP_VERSION = '1.0.0-rc2';
 export const API_VERSION = 'v1';
 export const BUILD_DATE = process.env.BUILD_DATE ?? 'unknown';
 export const GIT_COMMIT = process.env.GIT_COMMIT ?? 'unknown';

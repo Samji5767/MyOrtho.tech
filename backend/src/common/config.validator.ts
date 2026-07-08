@@ -19,6 +19,15 @@ const CONFIG_CHECKS: ConfigCheck[] = [
   { key: 'SMTP_HOST', required: false, description: 'SMTP server (optional — email disabled if absent)' },
   { key: 'REDIS_URL', required: false, description: 'Redis URL (optional — caching disabled if absent)' },
   { key: 'LLM_API_KEY', required: false, secret: true, description: 'LLM API key (optional — rule-based fallback if absent)' },
+  // Optional infrastructure / integration services
+  { key: 'AI_SEGMENTATION_URL', required: false, description: 'URL for AI segmentation service' },
+  { key: 'AI_ENGINE_URL', required: false, description: 'URL for AI engine/orchestrator service' },
+  { key: 'INTERNAL_API_SECRET', required: false, secret: true, description: 'Shared secret for internal service-to-service calls' },
+  { key: 'UPLOADS_DIR', required: false, description: 'Directory for uploaded scan files' },
+  { key: 'PG_POOL_MAX', required: false, description: 'PostgreSQL connection pool max size' },
+  { key: 'OTEL_SERVICE_NAME', required: false, description: 'OpenTelemetry service name for observability' },
+  { key: 'STRIPE_SECRET_KEY', required: false, secret: true, description: 'Stripe secret key for billing' },
+  { key: 'STRIPE_WEBHOOK_SECRET', required: false, secret: true, description: 'Stripe webhook signing secret' },
 ];
 
 export function validateConfig(): void {

@@ -105,9 +105,17 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning>
       <head>
-        {/* Critical CSS — applied before external stylesheet fetch */}
+        {/*
+          Critical CSS — applied before external stylesheet fetch.
+          Safe: criticalCSS is a hardcoded string constant defined in this file;
+          it is not derived from user input, props, or external data.
+        */}
         <style dangerouslySetInnerHTML={{ __html: criticalCSS }} />
-        {/* Theme + launch-shell bootstrap — runs synchronously before paint */}
+        {/*
+          Theme + launch-shell bootstrap — runs synchronously before paint.
+          Safe: bootstrapScript is a hardcoded string constant defined in this file;
+          it is not derived from user input, props, or external data.
+        */}
         <script dangerouslySetInnerHTML={{ __html: bootstrapScript }} />
       </head>
       <body className={manrope.variable}>
@@ -123,7 +131,15 @@ export default function RootLayout({
           Rendered as static HTML so it paints immediately.
         */}
         <div id="__mo-launch" aria-hidden="true">
-          <div id="__mo-launch-logo" dangerouslySetInnerHTML={{ __html: `<img src="/app-icon.png" alt="MyOrtho" onerror="this.style.display='none'">` }} />
+          {/* Plain <img> is intentional here: this renders before React hydration in the launch shell. */}
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <div id="__mo-launch-logo">
+            <img
+              src="/app-icon.png"
+              alt="MyOrtho"
+              onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }}
+            />
+          </div>
           <div id="__mo-launch-text">Preparing clinical workspace</div>
           <div id="__mo-launch-bar">
             <div id="__mo-launch-fill" />

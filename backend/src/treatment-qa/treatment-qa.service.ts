@@ -182,20 +182,16 @@ export class TreatmentQAService {
     // Also scan stages directly for very large cumulative movements
     for (const stage of stages) {
       for (const mv of stage.tooth_movements) {
-        const isTrans = ['mesialMm','distalMm','buccalMm','lingualMm','intrusionMm','extrusionMm'].includes(mv.fdi.toString());
-        // Fallback: use mesialMm/distalMm as approximation for translation magnitude
         const mesial = Math.abs(mv.mesialMm ?? 0);
         const distal = Math.abs(mv.distalMm ?? 0);
         const rotation = Math.abs((mv.mesialRotDeg ?? 0) + (mv.distalRotDeg ?? 0));
-        if (!isTrans) {
-          if (mesial > 5 || distal > 5) {
-            treatmentQuality -= 5;
-            excessiveMovements.push({ stage: stage.stage_number, fdi: mv.fdi, reason: '>5mm translation in stage' });
-          }
-          if (rotation > 45) {
-            treatmentQuality -= 5;
-            excessiveMovements.push({ stage: stage.stage_number, fdi: mv.fdi, reason: '>45° rotation in stage' });
-          }
+        if (mesial > 5 || distal > 5) {
+          treatmentQuality -= 5;
+          excessiveMovements.push({ stage: stage.stage_number, fdi: mv.fdi, reason: '>5mm translation in stage' });
+        }
+        if (rotation > 45) {
+          treatmentQuality -= 5;
+          excessiveMovements.push({ stage: stage.stage_number, fdi: mv.fdi, reason: '>45° rotation in stage' });
         }
       }
     }

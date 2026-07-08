@@ -9,9 +9,11 @@ import {
   RefreshCw,
   Clock,
   DollarSign,
-  Layers,
   Package,
   Printer,
+  TrendingUp,
+  TrendingDown,
+  Minus,
 } from "lucide-react";
 import {
   getAlignerGenerationPlan,
@@ -20,6 +22,20 @@ import {
   type QualityReport,
 } from "@/lib/api/aligner-generation";
 import { listExportPackages, type ExportPackage } from "@/lib/api/export-package";
+import {
+  getManufacturingReadiness,
+  type ManufacturingReadiness,
+  type PrintabilityScoreFactor,
+} from "@/lib/api/manufacturingPrep";
+
+// ─── Constants ────────────────────────────────────────────────────────────────
+
+const PRINTER_MODELS = [
+  { brand: "Formlabs",  model: "Form 3B+",  resolution: "25 µm" },
+  { brand: "Formlabs",  model: "Form 3BL",  resolution: "25 µm" },
+  { brand: "SprintRay", model: "Pro 55 S",  resolution: "50 µm" },
+  { brand: "SprintRay", model: "Pro 95 H",  resolution: "50 µm" },
+] as const;
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -27,6 +43,12 @@ function scoreColor(n: number): string {
   if (n >= 80) return "var(--clinical-safe)";
   if (n >= 60) return "var(--clinical-warn)";
   return "var(--clinical-danger)";
+}
+
+function formatPrintTime(minutes: number): string {
+  const h = Math.floor(minutes / 60);
+  const m = minutes % 60;
+  return m > 0 ? `${h}h ${m}m` : `${h}h`;
 }
 
 function ScoreBar({ label, value }: { label: string; value: number }) {
@@ -82,6 +104,32 @@ function MetricCard({
   );
 }
 
+function FactorRow({ factor }: { factor: PrintabilityScoreFactor }) {
+  const Icon =
+    factor.impact === "positive"
+      ? TrendingUp
+      : factor.impact === "negative"
+      ? TrendingDown
+      : Minus;
+  const colorCls =
+    factor.impact === "positive"
+      ? "text-emerald-600 dark:text-emerald-400"
+      : factor.impact === "negative"
+      ? "text-rose-600 dark:text-rose-400"
+      : "text-[color:var(--muted-foreground)]";
+
+  return (
+    <div className="flex items-start gap-2 text-xs">
+      <Icon size={12} className={`shrink-0 mt-0.5 ${colorCls}`} />
+      <div>
+        <span className="font-semibold text-[color:var(--foreground)]">{factor.label}</span>
+        {" — "}
+        <span className="text-[color:var(--muted-foreground)]">{factor.detail}</span>
+      </div>
+    </div>
+  );
+}
+
 // ─── Main Component ───────────────────────────────────────────────────────────
 
 interface Props {
@@ -93,10 +141,11 @@ interface PanelData {
   plan: AlignerGenerationPlan | null;
   quality: QualityReport | null;
   packages: ExportPackage[];
+  readiness: ManufacturingReadiness | null;
 }
 
 export function ManufacturingReadinessPanel({ caseId, planId }: Props) {
-  const [data, setData] = useState<PanelData>({ plan: null, quality: null, packages: [] });
+  const [data, setData] = useState<PanelData>({ plan: null, quality: null, packages: [], readiness: null });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -104,15 +153,17 @@ export function ManufacturingReadinessPanel({ caseId, planId }: Props) {
     setLoading(true);
     setError(null);
     try {
-      const [planRes, qualityRes, packagesRes] = await Promise.allSettled([
+      const [planRes, qualityRes, packagesRes, readinessRes] = await Promise.allSettled([
         getAlignerGenerationPlan(caseId, planId),
         getQualityReport(caseId, planId),
         listExportPackages(caseId, planId),
+        getManufacturingReadiness(caseId),
       ]);
       setData({
-        plan:     planRes.status     === "fulfilled" ? planRes.value     : null,
-        quality:  qualityRes.status  === "fulfilled" ? qualityRes.value  : null,
-        packages: packagesRes.status === "fulfilled" ? packagesRes.value : [],
+        plan:      planRes.status      === "fulfilled" ? planRes.value      : null,
+        quality:   qualityRes.status   === "fulfilled" ? qualityRes.value   : null,
+        packages:  packagesRes.status  === "fulfilled" ? packagesRes.value  : [],
+        readiness: readinessRes.status === "fulfilled" ? readinessRes.value : null,
       });
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to load manufacturing data");
@@ -123,8 +174,17 @@ export function ManufacturingReadinessPanel({ caseId, planId }: Props) {
 
   useEffect(() => { void load(); }, [load]);
 
-  const { plan, quality, packages } = data;
+  const { plan, quality, packages, readiness } = data;
   const stlPackage = packages.find((p) => p.exportType === "aligner_stl");
+  const ps = readiness?.printabilityScore;
+
+  // Compatible printers: match backend list against PRINTER_MODELS constant
+  const compatibleNames: ReadonlySet<string> = readiness
+    ? new Set(readiness.compatiblePrinters)
+    : new Set(PRINTER_MODELS.map((p) => `${p.brand} ${p.model}`));
+  const compatiblePrinters = PRINTER_MODELS.filter((p) =>
+    compatibleNames.has(`${p.brand} ${p.model}`),
+  );
 
   return (
     <div className="space-y-4">
@@ -172,37 +232,83 @@ export function ManufacturingReadinessPanel({ caseId, planId }: Props) {
         </div>
       )}
 
-      {/* Quality scores */}
-      {quality && (
+      {/* Printability Score — from readiness endpoint */}
+      {ps && (
         <div className="rounded-xl border border-[color:var(--border)] bg-[color:var(--card)] p-4 space-y-3">
           <div className="flex items-center justify-between">
-            <p className="text-[11px] font-bold uppercase tracking-wide text-[color:var(--muted-foreground)]">Quality Scores</p>
-            <span className="text-xl font-black tabular-nums" style={{ color: scoreColor(quality.overallScore) }}>
-              {quality.overallScore}
+            <p className="text-[11px] font-bold uppercase tracking-wide text-[color:var(--muted-foreground)]">Printability Score</p>
+            <span className="text-xl font-black tabular-nums" style={{ color: scoreColor(ps.overall) }}>
+              {ps.overall}
               <span className="text-xs font-semibold text-[color:var(--muted-foreground)]">/100</span>
             </span>
           </div>
           <div className="space-y-2.5">
-            <ScoreBar label="Mesh Integrity" value={quality.meshIntegrity} />
-            <ScoreBar label="Printability"   value={quality.printability}  />
+            <ScoreBar label="Mesh Integrity" value={ps.meshIntegrity} />
+            <ScoreBar label="Printability"   value={ps.printability}  />
+            <ScoreBar label="Complexity"     value={ps.complexity}    />
           </div>
+          {ps.factors.length > 0 && (
+            <div className="space-y-1.5 pt-1 border-t border-[color:var(--border)]">
+              {ps.factors.map((f, i) => (
+                <FactorRow key={i} factor={f} />
+              ))}
+            </div>
+          )}
+          <p className="text-xs text-[color:var(--muted-foreground)] italic pt-0.5">{ps.recommendation}</p>
         </div>
       )}
 
-      {/* Metrics grid */}
-      {quality && (
-        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-          <MetricCard icon={Layers}        label="Min Thickness"  value={`${quality.minThicknessMm.toFixed(2)} mm`}                           />
-          <MetricCard icon={AlertTriangle} label="Overhangs"      value={String(quality.overhangCount)}                                        />
-          <MetricCard icon={Package}       label="Resin Est."     value={`${quality.estimatedResinGrams.toFixed(1)} g`}                        />
-          <MetricCard icon={Clock}         label="Print Time"     value={`${Math.round(quality.estimatedPrintTimeMinutes)} min`}               />
+      {/* Print time / resin / cost — from readiness */}
+      {ps && (
+        <div className="grid grid-cols-3 gap-2">
+          <MetricCard
+            icon={Clock}
+            label="Print Time"
+            value={formatPrintTime(ps.estimatedPrintTimeMinutes)}
+          />
+          <MetricCard icon={Package}    label="Resin Est."     value={`${ps.estimatedResinGrams.toFixed(0)} g`} />
+          <MetricCard icon={DollarSign} label="Estimated Cost" value={`$${ps.estimatedCostUsd.toFixed(2)}`}    />
         </div>
       )}
 
+      {/* Quality score + manufacturing readiness */}
       {quality && (
-        <div className="grid grid-cols-2 gap-2">
-          <MetricCard icon={DollarSign} label="Estimated Cost"  value={`$${quality.estimatedCostUsd.toFixed(2)}`} />
-          <MetricCard icon={Printer}   label="Batch Groups"     value={String(quality.batchCount)}                />
+        <div className="rounded-xl border border-[color:var(--border)] bg-[color:var(--card)] p-4 space-y-3">
+          <div className="flex items-center justify-between">
+            <p className="text-[11px] font-bold uppercase tracking-wide text-[color:var(--muted-foreground)]">Quality Score</p>
+            <div className="flex items-center gap-2">
+              <span className="text-xl font-black tabular-nums" style={{ color: scoreColor(quality.overallQualityScore) }}>
+                {quality.overallQualityScore}
+                <span className="text-xs font-semibold text-[color:var(--muted-foreground)]">/100</span>
+              </span>
+              <span className={`rounded-full border px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${
+                quality.isManufacturingReady
+                  ? "border-emerald-300/50 bg-emerald-50/60 text-emerald-700 dark:border-emerald-700/40 dark:bg-emerald-900/10 dark:text-emerald-400"
+                  : "border-rose-300/50 bg-rose-50/60 text-rose-700 dark:border-rose-700/40 dark:bg-rose-900/10 dark:text-rose-400"
+              }`}>
+                {quality.isManufacturingReady ? "Ready" : "Not Ready"}
+              </span>
+            </div>
+          </div>
+          <ScoreBar label="Overall Quality" value={quality.overallQualityScore} />
+        </div>
+      )}
+
+      {/* Manufacturing readiness checklist */}
+      {quality && quality.manufacturingReadiness.length > 0 && (
+        <div className="rounded-xl border border-[color:var(--border)] bg-[color:var(--card)] p-4 space-y-2">
+          <p className="text-[11px] font-bold uppercase tracking-wide text-[color:var(--muted-foreground)]">Readiness Checks</p>
+          {quality.manufacturingReadiness.map((check, i) => (
+            <div key={i} className="flex items-start gap-2">
+              {check.passed
+                ? <CheckCircle2 size={14} className="shrink-0 mt-0.5 text-emerald-500" />
+                : <XCircle     size={14} className="shrink-0 mt-0.5 text-rose-500" />}
+              <div className="min-w-0">
+                <p className="text-xs font-semibold text-[color:var(--foreground)]">{check.name}</p>
+                <p className="text-[11px] text-[color:var(--muted-foreground)]">{check.details}</p>
+              </div>
+            </div>
+          ))}
         </div>
       )}
 
@@ -239,6 +345,27 @@ export function ManufacturingReadinessPanel({ caseId, planId }: Props) {
         </div>
       )}
 
+      {/* Compatible Printers */}
+      <div className="rounded-xl border border-[color:var(--border)] bg-[color:var(--card)] p-4 space-y-2">
+        <p className="text-[11px] font-bold uppercase tracking-wide text-[color:var(--muted-foreground)]">Compatible Printers</p>
+        <div className="space-y-1.5">
+          {compatiblePrinters.map((p) => (
+            <div key={`${p.brand}-${p.model}`} className="flex items-center justify-between text-xs">
+              <div className="flex items-center gap-2">
+                <CheckCircle2 size={12} className="shrink-0 text-emerald-500" />
+                <span className="font-semibold text-[color:var(--foreground)]">
+                  {p.brand} {p.model}
+                </span>
+              </div>
+              <span className="font-mono text-[color:var(--muted-foreground)]">{p.resolution}</span>
+            </div>
+          ))}
+          {compatiblePrinters.length === 0 && (
+            <p className="text-xs text-[color:var(--muted-foreground)]">No compatible printers configured.</p>
+          )}
+        </div>
+      </div>
+
       {/* Issues */}
       {quality && quality.issues.length > 0 && (
         <div className="space-y-2">
@@ -269,7 +396,7 @@ export function ManufacturingReadinessPanel({ caseId, planId }: Props) {
       )}
 
       {/* Empty state */}
-      {!loading && !plan && !quality && !error && (
+      {!loading && !plan && !quality && !readiness && !error && (
         <div className="flex flex-col items-center gap-2 py-8 text-center">
           <Box size={28} className="text-[color:var(--muted-foreground)]" />
           <p className="text-sm text-[color:var(--muted-foreground)]">No manufacturing data available</p>

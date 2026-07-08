@@ -423,10 +423,10 @@ export class ExportPackageService {
 
         case 'ipr_schedule_present': {
           const r = await this.db.query(
-            `SELECT ipr_schedule FROM aligner_generation_plans WHERE plan_id=$1`, [planId],
+            `SELECT ipr_stage_schedule FROM aligner_generation_plans WHERE plan_id=$1`, [planId],
           );
           if (r.rowCount === 0) return { status: 'skipped', message: 'Aligner plan not found' };
-          const ipr = r.rows[0]['ipr_schedule'] as unknown[];
+          const ipr = r.rows[0]['ipr_stage_schedule'] as unknown[];
           if (!ipr || ipr.length === 0) return { status: 'warning', message: 'No IPR schedule in aligner plan' };
           return { status: 'passed', message: `${ipr.length} IPR entries scheduled` };
         }

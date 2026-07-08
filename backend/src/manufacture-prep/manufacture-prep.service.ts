@@ -105,6 +105,56 @@ function buildManifest(dto: CreateExportDto, stageCount: number) {
   };
 }
 
+// ─── Printability Score ───────────────────────────────────────────────────────
+
+export interface PrintabilityScoreFactor {
+  label: string;
+  impact: 'positive' | 'negative' | 'neutral';
+  detail: string;
+}
+
+export interface PrintabilityScore {
+  overall: number;
+  meshIntegrity: number;
+  printability: number;
+  complexity: number;
+  factors: PrintabilityScoreFactor[];
+  recommendation: string;
+  estimatedPrintTimeMinutes: number;
+  estimatedResinGrams: number;
+  estimatedCostUsd: number;
+}
+
+export interface ManufacturingReadiness {
+  caseId: string;
+  printabilityScore: PrintabilityScore;
+  compatiblePrinters: string[];
+  exportCount: number;
+  lastExportAt: string | null;
+  qaIssueCount: number;
+  computedAt: string;
+}
+
+interface PrintabilityParams {
+  stageCount: number;
+  avgMovementMm: number;
+  hasAttachments: boolean;
+  hasBiocompatibleMaterial: boolean;
+  meshWarnings: number;
+  shellThicknessMm: number;
+}
+
+interface StageAllocationEntry {
+  maxTranslationMm: number;
+}
+
+const COMPATIBLE_PRINTERS = [
+  'Formlabs Form 3B+',
+  'Formlabs Form 3BL',
+  'SprintRay Pro 55 S',
+  'SprintRay Pro 95 H',
+];
+
 @Injectable()
 export class ManufacturePrepService {
   constructor(@Inject(PG_POOL) private readonly pool: Pool) {}
@@ -302,6 +352,237 @@ export class ManufacturePrepService {
     );
     if (!rows.length) throw new NotFoundException('Export not found');
     return this.format(rows[0]);
+  }
+
+  // ── Printability Scoring ────────────────────────────────────────────────────
+
+  computePrintabilityScore(params: PrintabilityParams): PrintabilityScore {
+    let score = 100;
+    let meshIntegrity = 100;
+    let printability = 100;
+    let complexity = 100;
+    const factors: PrintabilityScoreFactor[] = [];
+
+    // Stage count
+    if (params.stageCount > 40) {
+      score -= 20;
+      complexity -= 20;
+      factors.push({
+        label: 'High Stage Count',
+        impact: 'negative',
+        detail: `${params.stageCount} stages exceeds recommended maximum of 40.`,
+      });
+    } else if (params.stageCount > 30) {
+      score -= 10;
+      complexity -= 10;
+      factors.push({
+        label: 'Elevated Stage Count',
+        impact: 'negative',
+        detail: `${params.stageCount} stages — moderate complexity treatment.`,
+      });
+    } else {
+      factors.push({
+        label: 'Stage Count',
+        impact: 'neutral',
+        detail: `${params.stageCount} stages — within normal range.`,
+      });
+    }
+
+    // Average movement per stage
+    if (params.avgMovementMm > 0.3) {
+      score -= 15;
+      printability -= 15;
+      factors.push({
+        label: 'Rapid Movement Rate',
+        impact: 'negative',
+        detail: `Average ${params.avgMovementMm.toFixed(3)} mm/stage exceeds 0.3 mm threshold.`,
+      });
+    } else {
+      factors.push({
+        label: 'Movement Rate',
+        impact: 'neutral',
+        detail: `Average ${params.avgMovementMm.toFixed(3)} mm/stage — within safe range.`,
+      });
+    }
+
+    // Mesh warnings
+    if (params.meshWarnings > 0) {
+      score -= 10;
+      meshIntegrity -= 20;
+      factors.push({
+        label: 'Mesh Warnings',
+        impact: 'negative',
+        detail: `${params.meshWarnings} mesh warning(s) detected — repair recommended before printing.`,
+      });
+    } else {
+      factors.push({
+        label: 'Mesh Integrity',
+        impact: 'positive',
+        detail: 'No mesh integrity issues detected.',
+      });
+    }
+
+    // Biocompatible material
+    if (params.hasBiocompatibleMaterial) {
+      score += 5;
+      factors.push({
+        label: 'Biocompatible Material',
+        impact: 'positive',
+        detail: 'Biocompatible dental resin configured for this organisation.',
+      });
+    }
+
+    // Shell thickness
+    if (params.shellThicknessMm < 0.5) {
+      score -= 20;
+      printability -= 30;
+      factors.push({
+        label: 'Dangerously Thin Shell',
+        impact: 'negative',
+        detail: `Shell thickness ${params.shellThicknessMm.toFixed(2)} mm is below the 0.5 mm minimum.`,
+      });
+    } else if (params.shellThicknessMm >= 0.8) {
+      score += 5;
+      factors.push({
+        label: 'Good Shell Thickness',
+        impact: 'positive',
+        detail: `Shell thickness ${params.shellThicknessMm.toFixed(2)} mm meets the recommended 0.8 mm+ standard.`,
+      });
+    } else {
+      factors.push({
+        label: 'Shell Thickness',
+        impact: 'neutral',
+        detail: `Shell thickness ${params.shellThicknessMm.toFixed(2)} mm meets the minimum but is below the optimal 0.8 mm.`,
+      });
+    }
+
+    const clamp = (n: number) => Math.max(0, Math.min(100, Math.round(n)));
+    const overall = clamp(score);
+
+    const estimatedPrintTimeMinutes = params.stageCount * 45;
+    const estimatedResinGrams = params.stageCount * 16;
+    const estimatedCostUsd = estimatedResinGrams * 0.15;
+
+    let recommendation: string;
+    if (overall >= 80) {
+      recommendation = 'Case is ready for manufacturing. All parameters within acceptable range.';
+    } else if (overall >= 60) {
+      recommendation =
+        'Review flagged issues before printing. Manufacturing is possible but quality may be affected.';
+    } else {
+      recommendation =
+        'Case requires attention before manufacturing. Address all critical issues.';
+    }
+
+    return {
+      overall,
+      meshIntegrity: clamp(meshIntegrity),
+      printability: clamp(printability),
+      complexity: clamp(complexity),
+      factors,
+      recommendation,
+      estimatedPrintTimeMinutes,
+      estimatedResinGrams,
+      estimatedCostUsd,
+    };
+  }
+
+  // ── Manufacturing Readiness ──────────────────────────────────────────────────
+
+  async getManufacturingReadiness(caseId: string, orgId: string): Promise<ManufacturingReadiness> {
+    await this.verifyCase(caseId, orgId);
+
+    // 1. Aligner generation plan — stage count, movement data, attachment info
+    const { rows: planRows } = await this.pool.query<{
+      total_active_stages: number;
+      attachment_start_stage: number | null;
+      attachment_end_stage: number | null;
+      stage_allocations: unknown;
+      quality_report: Record<string, unknown> | null;
+    }>(
+      `SELECT agp.total_active_stages, agp.attachment_start_stage, agp.attachment_end_stage,
+              agp.stage_allocations, agp.quality_report
+       FROM aligner_generation_plans agp
+       INNER JOIN treatment_plans tp ON tp.id = agp.plan_id
+       WHERE tp.case_id = $1 AND agp.organization_id = $2
+       ORDER BY agp.created_at DESC LIMIT 1`,
+      [caseId, orgId],
+    );
+    const planRow = planRows[0];
+
+    const stageCount = planRow?.total_active_stages ?? 0;
+
+    // Average movement from stage_allocations JSONB
+    let avgMovementMm = 0;
+    if (planRow?.stage_allocations) {
+      const allocs = planRow.stage_allocations as StageAllocationEntry[];
+      if (allocs.length > 0) {
+        const total = allocs.reduce((sum, a) => sum + (a.maxTranslationMm ?? 0), 0);
+        avgMovementMm = total / allocs.length;
+      }
+    }
+
+    const hasAttachments =
+      planRow?.attachment_start_stage != null && planRow.attachment_end_stage != null;
+
+    // Shell thickness from quality_report JSONB — neutral default (0.7) if not available
+    const shellThicknessMm =
+      typeof planRow?.quality_report?.['min_thickness_mm'] === 'number'
+        ? (planRow.quality_report['min_thickness_mm'] as number)
+        : 0.7;
+
+    // 2. QA report — mesh warning proxy from warn + fail counts
+    const { rows: qaRows } = await this.pool.query<{
+      warning_count: number;
+      fail_count: number;
+    }>(
+      `SELECT warning_count, fail_count
+       FROM preexport_qa_reports
+       WHERE case_id = $1
+       ORDER BY created_at DESC LIMIT 1`,
+      [caseId],
+    );
+    const qaRow = qaRows[0];
+    const meshWarnings = qaRow ? Number(qaRow.warning_count) + Number(qaRow.fail_count) : 0;
+
+    // 3. Material biocompatibility from printers table
+    const { rows: matRows } = await this.pool.query<{ material_type: string | null }>(
+      `SELECT material_type FROM printers
+       WHERE organization_id = $1 AND material_type ILIKE '%bio%'
+       LIMIT 1`,
+      [orgId],
+    );
+    const hasBiocompatibleMaterial = matRows.length > 0;
+
+    // 4. Export stats
+    const { rows: exportRows } = await this.pool.query<{
+      count: string;
+      last_at: string | null;
+    }>(
+      `SELECT COUNT(*) AS count, MAX(completed_at) AS last_at
+       FROM manufacture_exports WHERE case_id = $1`,
+      [caseId],
+    );
+    const exportRow = exportRows[0];
+
+    const printabilityScore = this.computePrintabilityScore({
+      stageCount,
+      avgMovementMm,
+      hasAttachments,
+      hasBiocompatibleMaterial,
+      meshWarnings,
+      shellThicknessMm,
+    });
+
+    return {
+      caseId,
+      printabilityScore,
+      compatiblePrinters: COMPATIBLE_PRINTERS,
+      exportCount: Number(exportRow?.count ?? 0),
+      lastExportAt: exportRow?.last_at ?? null,
+      qaIssueCount: meshWarnings,
+      computedAt: new Date().toISOString(),
+    };
   }
 
   private format(r: Record<string, unknown>) {

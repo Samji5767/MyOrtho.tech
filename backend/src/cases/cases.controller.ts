@@ -13,7 +13,7 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import type { Request } from 'express';
-import { CasesService, type CreateCaseDto, type CreateCaseWithPatientDto, type UpdateCaseDto } from './cases.service';
+import { CasesService, type CreateCaseDto, type CreateCaseWithPatientDto, type UpdateCaseDto, type PracticeAnalyticsSummary } from './cases.service';
 import { AiScoresService } from './ai-scores.service';
 import { DigitalTwinService } from './digital-twin.service';
 import { AuthGuard } from '../auth/auth.guard';
@@ -84,6 +84,20 @@ export class CasesController {
       actorEmail: user.email,
       ipAddress: getIp(req),
     });
+  }
+
+  @Get('analytics/summary')
+  @RequirePermission('cases:read')
+  async getAnalyticsSummary(@Req() req: Request): Promise<PracticeAnalyticsSummary> {
+    const user = getUser(req);
+    if (!user.orgId) {
+      return {
+        totalCases: 0, activeCases: 0, pendingReview: 0,
+        completedThisMonth: 0, manufacturingQueue: 0,
+        archivedCases: 0, draftCases: 0,
+      };
+    }
+    return this.casesService.getAnalyticsSummary(user.orgId);
   }
 
   @Get(':id')

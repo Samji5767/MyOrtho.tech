@@ -3,6 +3,7 @@ import type { Request } from 'express';
 import { AuthGuard } from '../auth/auth.guard';
 import { ManufacturePrepService, type CreateExportDto } from './manufacture-prep.service';
 
+
 interface AuthUser { id: string; orgId: string | null }
 
 function getUser(req: Request): { id: string; orgId: string } {
@@ -34,5 +35,10 @@ export class ManufacturePrepController {
     @Param('exportId', new ParseUUIDPipe()) exportId: string,
   ) {
     return this.svc.getExport(caseId, getUser(req).orgId, exportId);
+  }
+
+  @Get('api/cases/:caseId/manufacture/readiness')
+  getReadiness(@Req() req: Request, @Param('caseId') caseId: string) {
+    return this.svc.getManufacturingReadiness(caseId, getUser(req).orgId);
   }
 }

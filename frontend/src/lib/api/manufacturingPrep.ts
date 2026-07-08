@@ -63,3 +63,36 @@ export const createExport = (caseId: string, dto: {
 
 export const getExport = (caseId: string, exportId: string) =>
   api.get<ManufactureExport>(`/api/cases/${caseId}/manufacture/exports/${exportId}`);
+
+// ─── Manufacturing Readiness ──────────────────────────────────────────────────
+
+export interface PrintabilityScoreFactor {
+  label: string;
+  impact: 'positive' | 'negative' | 'neutral';
+  detail: string;
+}
+
+export interface PrintabilityScore {
+  overall: number;
+  meshIntegrity: number;
+  printability: number;
+  complexity: number;
+  factors: PrintabilityScoreFactor[];
+  recommendation: string;
+  estimatedPrintTimeMinutes: number;
+  estimatedResinGrams: number;
+  estimatedCostUsd: number;
+}
+
+export interface ManufacturingReadiness {
+  caseId: string;
+  printabilityScore: PrintabilityScore;
+  compatiblePrinters: string[];
+  exportCount: number;
+  lastExportAt: string | null;
+  qaIssueCount: number;
+  computedAt: string;
+}
+
+export const getManufacturingReadiness = (caseId: string) =>
+  api.get<ManufacturingReadiness>(`/api/cases/${caseId}/manufacture/readiness`);

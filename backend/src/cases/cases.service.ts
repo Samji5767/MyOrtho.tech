@@ -11,6 +11,7 @@ import { PG_POOL } from '../database/database.module';
 import { AuditService } from '../audit/audit.service';
 import { CryptoService } from '../common/crypto.service';
 import { WorkflowService, type CaseStatus } from '../workflow/workflow.service';
+import { NotificationsService, type NotificationType } from '../notifications/notifications.service';
 
 export interface CreateCaseDto {
   patientId: string;
@@ -38,6 +39,16 @@ export interface UpdateCaseDto {
   notes?: string;
 }
 
+export interface PracticeAnalyticsSummary {
+  totalCases: number;
+  activeCases: number;
+  pendingReview: number;
+  completedThisMonth: number;
+  manufacturingQueue: number;
+  archivedCases: number;
+  draftCases: number;
+}
+
 @Injectable()
 export class CasesService {
   private readonly logger = new Logger(CasesService.name);
@@ -47,6 +58,7 @@ export class CasesService {
     private readonly auditService: AuditService,
     private readonly workflowService: WorkflowService,
     private readonly cryptoService: CryptoService,
+    private readonly notificationsService: NotificationsService,
   ) {}
 
   private assertValidDob(dob: string | undefined): void {
@@ -371,7 +383,7 @@ export class CasesService {
     opts: { actorEmail?: string; ipAddress?: string } = {},
   ) {
     await this.findOne(id, orgId); // ownership check
-    return this.workflowService.transition({
+    const result = await this.workflowService.transition({
       caseId: id,
       toStatus,
       actorId,
@@ -381,6 +393,85 @@ export class CasesService {
       notes,
       ipAddress: opts.ipAddress,
     });
+
+    // Fire notifications for key transitions — best-effort, never blocks the response
+    const notifyStatuses: CaseStatus[] = ['approved', 'clinical_review', 'active_treatment'];
+    if (notifyStatuses.includes(toStatus)) {
+      void this.fireTransitionNotification(id, orgId, toStatus).catch((err) => {
+        this.logger.warn(`Notification dispatch failed for case ${id} → ${toStatus}: ${String(err)}`);
+      });
+    }
+
+    return result;
+  }
+
+  // ─── Analytics summary ────────────────────────────────────────────────────
+
+  async getAnalyticsSummary(orgId: string): Promise<PracticeAnalyticsSummary> {
+    const { rows } = await this.pool.query<{
+      total_cases: string;
+      active_cases: string;
+      pending_review: string;
+      completed_this_month: string;
+      manufacturing_queue: string;
+      archived_cases: string;
+      draft_cases: string;
+    }>(
+      `SELECT
+         COUNT(*)                                                          AS total_cases,
+         COUNT(*) FILTER (WHERE status IN (
+           'scan_review','segmentation','planning',
+           'clinical_review','approved','active_treatment','monitoring'
+         ))                                                                AS active_cases,
+         COUNT(*) FILTER (WHERE status IN ('clinical_review','scan_review'))
+                                                                          AS pending_review,
+         COUNT(*) FILTER (WHERE status = 'completed'
+           AND DATE_TRUNC('month', updated_at) = DATE_TRUNC('month', NOW()))
+                                                                          AS completed_this_month,
+         COUNT(*) FILTER (WHERE status IN ('approved','active_treatment'))
+                                                                          AS manufacturing_queue,
+         COUNT(*) FILTER (WHERE status = 'archived')                      AS archived_cases,
+         COUNT(*) FILTER (WHERE status = 'draft')                         AS draft_cases
+       FROM cases
+       WHERE organization_id = $1`,
+      [orgId],
+    );
+    const row = rows[0];
+    return {
+      totalCases:         Number(row?.total_cases          ?? 0),
+      activeCases:        Number(row?.active_cases         ?? 0),
+      pendingReview:      Number(row?.pending_review       ?? 0),
+      completedThisMonth: Number(row?.completed_this_month ?? 0),
+      manufacturingQueue: Number(row?.manufacturing_queue  ?? 0),
+      archivedCases:      Number(row?.archived_cases       ?? 0),
+      draftCases:         Number(row?.draft_cases          ?? 0),
+    };
+  }
+
+  // ─── Notification dispatch ────────────────────────────────────────────────
+
+  private async fireTransitionNotification(
+    caseId: string,
+    orgId: string,
+    toStatus: CaseStatus,
+  ): Promise<void> {
+    const { rows } = await this.pool.query<{ created_by: string | null }>(
+      'SELECT created_by FROM cases WHERE id = $1',
+      [caseId],
+    );
+    const userId = rows[0]?.created_by;
+    if (!userId) return;
+
+    const NOTIFICATION_MAP: Partial<Record<CaseStatus, { type: NotificationType; title: string; body: string }>> = {
+      approved:         { type: 'case_approved',  title: 'Case Approved',     body: 'Case is ready for manufacturing' },
+      clinical_review:  { type: 'case_submitted', title: 'Review Required',   body: 'A case needs clinical review' },
+      active_treatment: { type: 'plan_ready',     title: 'Treatment Active',  body: 'Treatment has started for a patient' },
+    };
+
+    const n = NOTIFICATION_MAP[toStatus];
+    if (!n) return;
+
+    await this.notificationsService.create({ userId, orgId, type: n.type, title: n.title, body: n.body });
   }
 
   // ─── Helpers ──────────────────────────────────────────────────────────────

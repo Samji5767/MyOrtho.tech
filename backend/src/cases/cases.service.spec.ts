@@ -66,12 +66,17 @@ function makeAudit() {
   return { log: jest.fn(async () => {}) };
 }
 
+function makeNotifications() {
+  return { create: jest.fn(async () => {}) };
+}
+
 function makeService(pool: ReturnType<typeof makePool>) {
   return new CasesService(
     pool as any,
     makeAudit() as any,
     makeWorkflow() as any,
     { encrypt: (v: unknown) => v, decrypt: (v: unknown) => v } as any,
+    makeNotifications() as any,
   );
 }
 
@@ -81,6 +86,7 @@ function makeTransactionService(pool: ReturnType<typeof makeTransactionPool>) {
     makeAudit() as any,
     makeWorkflow() as any,
     { encrypt: (v: unknown) => v, decrypt: (v: unknown) => v } as any,
+    makeNotifications() as any,
   );
 }
 

@@ -24,7 +24,20 @@ import {
 } from "lucide-react";
 import { Card } from "@/components/DesignSystem";
 import { fetchCases, type CaseListItem } from "@/lib/api/cases";
+import { api } from "@/lib/api/client";
 import NewCaseModal from "@/components/NewCaseModal";
+
+// ─── Analytics types ──────────────────────────────────────────────────────────
+
+interface PracticeAnalyticsSummary {
+  totalCases: number;
+  activeCases: number;
+  pendingReview: number;
+  completedThisMonth: number;
+  manufacturingQueue: number;
+  archivedCases: number;
+  draftCases: number;
+}
 
 // ─── Workflow pipeline ────────────────────────────────────────────────────────
 
@@ -245,11 +258,24 @@ export default function OverviewPage() {
   const [modalOpen, setModalOpen] = useState(false);
   const [allCases, setAllCases] = useState<CaseListItem[]>([]);
   const [casesLoading, setCasesLoading] = useState(true);
+  const [analytics, setAnalytics] = useState<PracticeAnalyticsSummary | null>(null);
+  const [analyticsLoading, setAnalyticsLoading] = useState(true);
 
   const loadCases = useCallback(() => {
-    fetchCases()
-      .then(({ cases: cs }) => { setAllCases(cs); setCasesLoading(false); })
-      .catch(() => setCasesLoading(false));
+    Promise.all([
+      fetchCases(),
+      api.get<PracticeAnalyticsSummary>('/api/cases/analytics/summary').catch(() => null),
+    ])
+      .then(([{ cases: cs }, analyticsData]) => {
+        setAllCases(cs);
+        setAnalytics(analyticsData);
+        setCasesLoading(false);
+        setAnalyticsLoading(false);
+      })
+      .catch(() => {
+        setCasesLoading(false);
+        setAnalyticsLoading(false);
+      });
   }, []);
 
   useEffect(() => { loadCases(); }, [loadCases]);
@@ -286,11 +312,17 @@ export default function OverviewPage() {
   const trendChange = monthlyValues[monthlyValues.length - 1] - monthlyValues[monthlyValues.length - 2];
   const trendPct = Math.round((trendChange / (monthlyValues[monthlyValues.length - 2] || 1)) * 100);
 
+  // Prefer analytics data (single DB query, more accurate) when available;
+  // fall back to derived values from the cases list.
+  const kpiActiveCases   = analytics?.activeCases        ?? activeCases.length;
+  const kpiNeedsReview   = analytics?.pendingReview       ?? reviewCases.length;
+  const kpiCompleted     = analytics?.completedThisMonth  ?? completedThisMonth;
+
   const kpis = [
-    { label: "Active Cases",   value: String(activeCases.length),    sub: `${reviewCases.length} pending review`, cls: "text-[color:var(--primary)]",  bg: "bg-[color:var(--primary-glow)]" },
-    { label: "Needs Review",   value: String(reviewCases.length),    sub: "Clinical or scan review",             cls: "text-amber-600 dark:text-amber-400", bg: "bg-amber-500/10" },
-    { label: "SLA at Risk",    value: String(slaAtRisk),             sub: slaAtRisk > 0 ? "Action required" : "All on time", cls: slaAtRisk > 0 ? "text-rose-600 dark:text-rose-400" : "text-emerald-600 dark:text-emerald-400", bg: slaAtRisk > 0 ? "bg-rose-500/10" : "bg-emerald-500/10" },
-    { label: "Completed",      value: String(completedThisMonth),    sub: "This month",                          cls: "text-emerald-600 dark:text-emerald-400", bg: "bg-emerald-500/10" },
+    { label: "Active Cases",   value: String(kpiActiveCases),  sub: `${kpiNeedsReview} pending review`, cls: "text-[color:var(--primary)]",  bg: "bg-[color:var(--primary-glow)]" },
+    { label: "Needs Review",   value: String(kpiNeedsReview),  sub: "Clinical or scan review",          cls: "text-amber-600 dark:text-amber-400", bg: "bg-amber-500/10" },
+    { label: "SLA at Risk",    value: String(slaAtRisk),       sub: slaAtRisk > 0 ? "Action required" : "All on time", cls: slaAtRisk > 0 ? "text-rose-600 dark:text-rose-400" : "text-emerald-600 dark:text-emerald-400", bg: slaAtRisk > 0 ? "bg-rose-500/10" : "bg-emerald-500/10" },
+    { label: "Completed",      value: String(kpiCompleted),    sub: "This month",                       cls: "text-emerald-600 dark:text-emerald-400", bg: "bg-emerald-500/10" },
   ];
 
   return (
@@ -401,6 +433,80 @@ export default function OverviewPage() {
             </div>
           </div>
         )}
+
+        {/* ── Manufacturing Queue ── */}
+        {!analyticsLoading && analytics && analytics.manufacturingQueue > 0 && (
+          <div>
+            <p className="mb-3 text-[11px] font-semibold uppercase tracking-[0.2em] text-[color:var(--muted-foreground)]">
+              Manufacturing Queue
+            </p>
+            <Link
+              href="/cases?filter=manufacturing"
+              className="ios-card flex items-center gap-3 px-4 py-3 transition-transform active:scale-[0.99]"
+            >
+              <span className="grid h-9 w-9 shrink-0 place-items-center rounded-2xl bg-amber-500/10 text-amber-600 dark:text-amber-400">
+                <Package size={17} />
+              </span>
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-semibold text-[color:var(--foreground)]">
+                  {analytics.manufacturingQueue} case{analytics.manufacturingQueue !== 1 ? "s" : ""} ready for manufacturing
+                </p>
+                <p className="mt-0.5 text-xs text-[color:var(--muted-foreground)]">Ready to export and print</p>
+              </div>
+              <ChevronRight size={14} className="text-[color:var(--muted-foreground)]" />
+            </Link>
+          </div>
+        )}
+
+        {/* ── Pending Approval ── */}
+        {(() => {
+          const approvalCases = casesLoading
+            ? []
+            : allCases.filter((c) => c.status === "planning" || c.status === "approved");
+          if (casesLoading || approvalCases.length === 0) return null;
+          const topApproval = approvalCases.slice(0, 3);
+          return (
+            <div>
+              <div className="mb-3 flex items-center justify-between">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-[color:var(--muted-foreground)]">
+                  Pending Approval
+                </p>
+                <Link
+                  href="/cases?filter=planning"
+                  className="text-xs font-semibold text-[color:var(--primary)] hover:underline underline-offset-2"
+                >
+                  View all →
+                </Link>
+              </div>
+              <div className="space-y-2">
+                {topApproval.map((c) => {
+                  const { label, cls } = caseStatusBadge(c.status);
+                  const patientName = `${c.patient.firstName} ${c.patient.lastName}`;
+                  const initials = [(c.patient.firstName?.[0] ?? ""), (c.patient.lastName?.[0] ?? "")].join("").toUpperCase();
+                  return (
+                    <div key={c.id} className="ios-card flex items-center gap-3 px-4 py-3">
+                      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[color:var(--primary-glow)] text-xs font-bold text-[color:var(--primary)]">
+                        {initials}
+                      </span>
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-sm font-semibold text-[color:var(--foreground)]">{patientName}</p>
+                        <span className={`mt-1 inline-block rounded-full px-2 py-0.5 text-[10px] font-semibold ${cls}`}>
+                          {label}
+                        </span>
+                      </div>
+                      <Link
+                        href={`/cases?id=${c.id}`}
+                        className="shrink-0 rounded-lg bg-[color:var(--primary)] px-3 py-1.5 text-xs font-semibold text-[color:var(--primary-foreground)] transition-transform active:scale-95"
+                      >
+                        Review
+                      </Link>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          );
+        })()}
 
         {/* ── AI Planning Intelligence ── */}
         {!casesLoading && allCases.length > 0 && (() => {
@@ -596,7 +702,7 @@ export default function OverviewPage() {
                 ))}
               </div>
               <Link
-                href="/analytics"
+                href="/cases"
                 className="shrink-0 text-xs font-semibold text-[color:var(--primary)] hover:underline underline-offset-2"
               >
                 Full analytics →

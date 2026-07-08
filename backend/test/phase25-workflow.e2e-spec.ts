@@ -201,7 +201,7 @@ describe('Phase 25 — Full Workflow Integration', () => {
         return { rows: [] };
       });
 
-      svc = new CasesService(mockPool as never, auditSvc, workflowSvc, { encrypt: (v: unknown) => v, decrypt: (v: unknown) => v } as any);
+      svc = new CasesService(mockPool as never, auditSvc, workflowSvc, { encrypt: (v: unknown) => v, decrypt: (v: unknown) => v } as any, { create: jest.fn().mockResolvedValue(undefined) } as any);
     });
 
     it('returns linkedResources with real IDs', async () => {
@@ -224,7 +224,7 @@ describe('Phase 25 — Full Workflow Integration', () => {
         getHistory: jest.fn().mockResolvedValue([]),
         allowedTransitions: jest.fn().mockReturnValue([]),
       } as unknown as WorkflowService;
-      const svc2 = new CasesService(brokenPool as never, auditSvc, workflowSvc, { encrypt: (v: unknown) => v, decrypt: (v: unknown) => v } as any);
+      const svc2 = new CasesService(brokenPool as never, auditSvc, workflowSvc, { encrypt: (v: unknown) => v, decrypt: (v: unknown) => v } as any, { create: jest.fn().mockResolvedValue(undefined) } as any);
       const caseDetail = await svc2.findOne(CASE_ID, ORG_ID);
       // Should not throw — safe fallback returns nulls
       expect(caseDetail.linkedResources!.latestScanId).toBeNull();

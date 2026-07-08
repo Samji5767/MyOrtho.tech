@@ -10,6 +10,11 @@ import {
   Package,
   Save,
 } from "lucide-react";
+import {
+  listAlignerDesigns,
+  generateAlignerDesigns,
+  updateAlignerDesign,
+} from "@/lib/api/aligner-design";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -83,15 +88,8 @@ function AlignerCard({
     setSaving(true);
     setSaveError(null);
     try {
-      const res = await fetch(`/api/aligner-design/${aligner.id}`, {
-        method: "PATCH",
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ thicknessMm: thickness, hasRelief, label }),
-      });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const updated: AlignerDesign = await res.json();
-      onUpdated(updated);
+      const updated = await updateAlignerDesign(aligner.id, { thicknessMm: thickness, hasRelief, label });
+      onUpdated(updated as unknown as AlignerDesign);
       setEditing(false);
     } catch (e) {
       setSaveError((e as Error).message);
@@ -338,13 +336,8 @@ export default function AlignerPreviewPanel({
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(
-        `/api/aligner-design?setupId=${encodeURIComponent(setupId)}`,
-        { credentials: "include" }
-      );
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const json = await res.json();
-      setAligners(Array.isArray(json) ? json : json.aligners ?? []);
+      const designs = await listAlignerDesigns(setupId);
+      setAligners((Array.isArray(designs) ? designs : []) as unknown as AlignerDesign[]);
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -356,22 +349,13 @@ export default function AlignerPreviewPanel({
     loadAligners();
   }, [loadAligners]);
 
-  const generateAligners = async () => {
+  const handleGenerateAligners = async () => {
     if (!setupId) return;
     setGenerating(true);
     setError(null);
     try {
-      const res = await fetch(
-        `/api/aligner-design/generate/${setupId}`,
-        {
-          method: "POST",
-          credentials: "include",
-          headers: { "Content-Type": "application/json" },
-        }
-      );
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const json = await res.json();
-      setAligners(Array.isArray(json) ? json : json.aligners ?? []);
+      const designs = await generateAlignerDesigns(setupId);
+      setAligners((Array.isArray(designs) ? designs : []) as unknown as AlignerDesign[]);
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -422,7 +406,7 @@ export default function AlignerPreviewPanel({
         </h2>
         <button
           type="button"
-          onClick={generateAligners}
+          onClick={handleGenerateAligners}
           disabled={generating || loading}
           className="inline-flex items-center gap-2 rounded-lg bg-[color:var(--primary)] px-4 py-2 text-xs font-semibold text-[color:var(--primary-foreground)] transition-transform active:scale-95 disabled:opacity-50"
         >

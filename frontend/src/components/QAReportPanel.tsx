@@ -12,6 +12,7 @@ import {
   Wrench,
   Star,
 } from "lucide-react";
+import { getLatestQA, runQACheck } from "@/lib/api/treatment-qa";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -231,11 +232,8 @@ export default function QAReportPanel({
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`/api/treatment-qa/${setupId}`, {
-        credentials: "include",
-      });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      setData(await res.json());
+      const report = await getLatestQA(setupId);
+      setData(report as unknown as QAResult | null);
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -252,13 +250,8 @@ export default function QAReportPanel({
     setRunning(true);
     setError(null);
     try {
-      const res = await fetch(`/api/treatment-qa/${setupId}`, {
-        method: "POST",
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
-      });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      setData(await res.json());
+      const report = await runQACheck(setupId);
+      setData(report as unknown as QAResult);
     } catch (e) {
       setError((e as Error).message);
     } finally {

@@ -201,6 +201,8 @@ function IssueRow({
           <button
             type="button"
             onClick={() => setExpanded(o => !o)}
+            aria-label={expanded ? "Collapse issue details" : "Expand issue details"}
+            aria-expanded={expanded}
             className="text-[color:var(--muted-foreground)] hover:text-[color:var(--foreground)]"
           >
             {expanded ? <ChevronDown size={13} /> : <ChevronRight size={13} />}

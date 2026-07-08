@@ -258,10 +258,12 @@ export default function OverviewPage() {
   const [modalOpen, setModalOpen] = useState(false);
   const [allCases, setAllCases] = useState<CaseListItem[]>([]);
   const [casesLoading, setCasesLoading] = useState(true);
+  const [casesError, setCasesError] = useState<string | null>(null);
   const [analytics, setAnalytics] = useState<PracticeAnalyticsSummary | null>(null);
   const [analyticsLoading, setAnalyticsLoading] = useState(true);
 
   const loadCases = useCallback(() => {
+    setCasesError(null);
     Promise.all([
       fetchCases(),
       api.get<PracticeAnalyticsSummary>('/api/cases/analytics/summary').catch(() => null),
@@ -272,7 +274,8 @@ export default function OverviewPage() {
         setCasesLoading(false);
         setAnalyticsLoading(false);
       })
-      .catch(() => {
+      .catch((err: unknown) => {
+        setCasesError(err instanceof Error ? err.message : 'Failed to load cases. Please try again.');
         setCasesLoading(false);
         setAnalyticsLoading(false);
       });
@@ -358,6 +361,13 @@ export default function OverviewPage() {
             New Case
           </button>
         </div>
+
+        {/* ── Cases load error ── */}
+        {casesError && (
+          <div role="alert" className="p-4 text-sm text-red-600 bg-red-50 rounded-md dark:bg-red-900/20 dark:text-red-400">
+            {casesError}
+          </div>
+        )}
 
         {/* ── Dashboard KPI row ── */}
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">

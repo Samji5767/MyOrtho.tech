@@ -887,3 +887,10 @@ main {
   white-space: nowrap;
   border: 0;
 }
+
+@media print {
+  nav, aside, .no-print, [role="navigation"] { display: none !important; }
+  body { background: white; color: black; }
+  .print-only { display: block !important; }
+  a[href]::after { content: " (" attr(href) ")"; }
+}

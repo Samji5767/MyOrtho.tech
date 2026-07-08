@@ -1,3 +1,7 @@
+// Supabase adapter — used by useApi.ts (AlignerStaging component) as a
+// localStorage-backed fallback layer when the native REST backend is unavailable.
+// The console.error calls below are intentional: they surface Supabase failures
+// during development without throwing, allowing graceful fallback to local storage.
 import { Patient, Case, Printer, PrintJob } from "@/types";
 import { supabase, ensureAuth } from "@/lib/supabase";
 import { safeStorage } from "@/lib/safeStorage";

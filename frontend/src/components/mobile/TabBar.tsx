@@ -46,7 +46,7 @@ export function TabBar() {
 
   return (
     <nav
-      aria-label="Primary navigation"
+      aria-label="Main navigation"
       className="lgt-bar fixed bottom-0 left-0 right-0 z-50 lg:hidden"
       style={{ paddingBottom: 'var(--sa-bottom)' }}
     >
@@ -152,7 +152,7 @@ export function SidebarNav() {
   const pathname = usePathname() ?? '/';
 
   return (
-    <aside className="lgt-sidebar" aria-label="Primary navigation">
+    <aside className="lgt-sidebar" aria-label="Main navigation">
       <div className="lgt-sidebar-glass" aria-hidden />
 
       <div

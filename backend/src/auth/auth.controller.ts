@@ -11,6 +11,7 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import type { Request, Response } from 'express';
+import { Throttle } from '@nestjs/throttler';
 import { AuthService } from './auth.service';
 import { AuditService } from '../audit/audit.service';
 
@@ -37,6 +38,7 @@ export class AuthController {
     private readonly auditService: AuditService,
   ) {}
 
+  @Throttle({ default: { limit: 5, ttl: 60000 } })
   @Post('login')
   @HttpCode(HttpStatus.OK)
   async login(
@@ -159,6 +161,7 @@ export class AuthController {
     };
   }
 
+  @Throttle({ default: { limit: 5, ttl: 60000 } })
   @Post('register')
   @HttpCode(HttpStatus.CREATED)
   async register(

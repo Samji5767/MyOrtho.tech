@@ -17,6 +17,7 @@ import {
   MapPin,
   Moon,
   PhoneCall,
+  Printer,
   RefreshCw,
   SmilePlus,
   Star,
@@ -647,6 +648,11 @@ function PatientPortalContent() {
   const [treatmentStartDate, setTreatmentStartDate] = useState<Date | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [remindersChecked, setRemindersChecked] = useState<boolean[]>(
+    () => new Array(COMPLIANCE_TIPS.length).fill(false)
+  );
+  const toggleReminder = (i: number) =>
+    setRemindersChecked(prev => prev.map((v, idx) => (idx === i ? !v : v)));
 
   const load = useCallback(async () => {
     if (!caseId || !planId) return;
@@ -722,12 +728,22 @@ function PatientPortalContent() {
           </p>
           <h1 className="text-xl font-bold text-[color:var(--foreground)]">My Treatment</h1>
         </div>
-        <Link
-          href="/"
-          className="grid h-9 w-9 place-items-center rounded-xl border border-[color:var(--border)] text-[color:var(--muted-foreground)] hover:text-[color:var(--foreground)] transition-colors"
-        >
-          <Home size={15} />
-        </Link>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => window.print()}
+            className="h-9 w-9 rounded-xl border border-[color:var(--border)] text-[color:var(--muted-foreground)] hover:text-[color:var(--foreground)] transition-colors grid place-items-center"
+            aria-label="Print treatment summary"
+          >
+            <Printer size={15} />
+          </button>
+          <Link
+            href="/"
+            className="grid h-9 w-9 place-items-center rounded-xl border border-[color:var(--border)] text-[color:var(--muted-foreground)] hover:text-[color:var(--foreground)] transition-colors"
+          >
+            <Home size={15} />
+          </Link>
+        </div>
       </div>
 
       {/* No case loaded */}
@@ -815,10 +831,23 @@ function PatientPortalContent() {
             </div>
             <div className="space-y-2">
               {COMPLIANCE_TIPS.map((tip, i) => (
-                <div key={i} className="flex items-start gap-2.5">
-                  <div className="mt-0.5 h-3.5 w-3.5 shrink-0 rounded border-2 border-[color:var(--border)]" />
-                  <p className="text-xs text-[color:var(--foreground)]">{tip}</p>
-                </div>
+                <button
+                  key={i}
+                  type="button"
+                  onClick={() => toggleReminder(i)}
+                  className="w-full flex items-start gap-2.5 text-left active:scale-[0.98] transition-transform"
+                >
+                  <div className={`mt-0.5 h-4 w-4 shrink-0 rounded-full border-2 flex items-center justify-center transition-colors ${
+                    remindersChecked[i] ? 'border-emerald-500 bg-emerald-500' : 'border-[color:var(--border)]'
+                  }`}>
+                    {remindersChecked[i] && <Check size={9} className="text-white" />}
+                  </div>
+                  <p className={`text-xs leading-snug ${
+                    remindersChecked[i]
+                      ? 'line-through text-[color:var(--muted-foreground)]'
+                      : 'text-[color:var(--foreground)]'
+                  }`}>{tip}</p>
+                </button>
               ))}
             </div>
           </div>

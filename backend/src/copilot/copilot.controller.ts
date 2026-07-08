@@ -1,4 +1,5 @@
 import { Controller, Get, Post, Patch, Param, ParseUUIDPipe, Body, Req, Res, Query, UseGuards } from '@nestjs/common';
+import { Throttle } from '@nestjs/throttler';
 import type { Response } from 'express';
 import { AuthGuard } from '../auth/auth.guard';
 import { CopilotService, SendMessageDto } from './copilot.service';
@@ -23,6 +24,7 @@ export class CopilotController {
     return this.svc.listConversations(caseId, req.user.orgId);
   }
 
+  @Throttle({ default: { limit: 20, ttl: 60000 } })
   @Post('api/cases/:caseId/copilot/conversations/:conversationId/messages')
   sendMessage(
     @Req() req: AuthenticatedRequest,
@@ -51,6 +53,7 @@ export class CopilotController {
     return this.svc.listSuggestions(caseId, req.user.orgId, planId);
   }
 
+  @Throttle({ default: { limit: 20, ttl: 60000 } })
   @Post('api/cases/:caseId/copilot/conversations/:conversationId/stream')
   async streamMessage(
     @Req() req: AuthenticatedRequest,

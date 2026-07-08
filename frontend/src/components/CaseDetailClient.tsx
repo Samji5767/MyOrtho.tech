@@ -39,6 +39,7 @@ import {
 } from "lucide-react";
 import dynamic from "next/dynamic";
 import { Card, DataRow, ProgressBar, StatusBadge } from "@/components/DesignSystem";
+import { ReportDownloadButton } from "@/components/ReportDownloadButton";
 import ClinicalWorkflow, { type CaseStatus, type WorkflowEvent } from "@/components/ClinicalWorkflow";
 
 const ScanPanel = dynamic(() => import("@/components/ScanPanel"), { ssr: false });
@@ -615,6 +616,7 @@ export default function CaseDetailClient({ id }: { id: string }) {
               {dataSource === 'demo'    && <StatusBadge tone="info">Representative data</StatusBadge>}
             </div>
           </div>
+          <ReportDownloadButton caseId={id} />
         </div>
 
         {/* Case workflow pipeline */}

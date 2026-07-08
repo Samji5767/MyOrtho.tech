@@ -111,6 +111,12 @@ export default function RootLayout({
         <script dangerouslySetInnerHTML={{ __html: bootstrapScript }} />
       </head>
       <body className={manrope.variable}>
+        <a
+          href="#main-content"
+          className="sr-only focus:not-sr-only focus:absolute focus:top-2 focus:left-2 focus:z-50 focus:px-4 focus:py-2 focus:bg-[color:var(--primary)] focus:text-[color:var(--primary-foreground)] focus:rounded-lg focus:text-sm focus:font-semibold"
+        >
+          Skip to main content
+        </a>
         {/*
           Launch shell — visible before React hydration.
           The bootstrapScript removes it on DOMContentLoaded.

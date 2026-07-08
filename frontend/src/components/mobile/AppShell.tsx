@@ -191,7 +191,7 @@ export function AppShell({ children }: { children: ReactNode }) {
     return (
       <>
         <DynamicIslandSpacer />
-        <main>{children}</main>
+        <main id="main-content">{children}</main>
       </>
     );
   }
@@ -204,7 +204,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         <SidebarNav />
         <div className="ipad-shell-content">
           <AuthGate>
-            <main>{children}</main>
+            <main id="main-content">{children}</main>
           </AuthGate>
         </div>
         <CommandPalette />
@@ -222,7 +222,7 @@ export function AppShell({ children }: { children: ReactNode }) {
       <PullToRefresh onRefresh={handleRefresh} />
       {showTopBar && <TopBar onOpenSearch={openSearch} />}
       <AuthGate>
-        <main className="app-shell-content">{children}</main>
+        <main id="main-content" className="app-shell-content">{children}</main>
       </AuthGate>
       <TabBar />
       <CommandPalette />

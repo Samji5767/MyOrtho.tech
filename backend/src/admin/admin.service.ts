@@ -2,12 +2,14 @@ import { Injectable, Inject, ConflictException, BadRequestException, NotFoundExc
 import type { Pool } from 'pg';
 import { PG_POOL } from '../database/database.module';
 import { AuditService } from '../audit/audit.service';
+import { EmailService } from '../notifications/email.service';
 
 @Injectable()
 export class AdminService {
   constructor(
     @Inject(PG_POOL) private readonly pool: Pool,
     private readonly auditService: AuditService,
+    private readonly emailService: EmailService,
   ) {}
 
   async listUsers(opts: { limit?: number; offset?: number } = {}) {
@@ -276,6 +278,12 @@ export class AdminService {
        ON CONFLICT (email, organization_id) DO NOTHING`,
       [email, orgId, role],
     );
+    await this.emailService.send({
+      to: email,
+      subject: 'You have been invited to MyOrtho.tech',
+      html: `<p>You have been invited to join <strong>MyOrtho.tech</strong> as <strong>${role}</strong>.</p><p>Please contact your administrator for login credentials.</p><p><em>MyOrtho.tech — Clinical Orthodontic Platform</em></p>`,
+      text: `You have been invited to join MyOrtho.tech as ${role}. Contact your administrator for login credentials.`,
+    });
     return { message: `Invitation queued for ${email}` };
   }
 

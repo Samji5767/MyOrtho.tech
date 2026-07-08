@@ -20,6 +20,7 @@ import type { Request, Response } from 'express';
 import { AuthGuard } from '../auth/auth.guard';
 import { PermissionsGuard } from '../auth/permissions.guard';
 import { RequirePermission } from '../auth/require-permission.decorator';
+import { Throttle } from '@nestjs/throttler';
 import { ScansService } from './scans.service';
 
 interface AuthUser {
@@ -54,6 +55,7 @@ export class ScansController {
    * Multipart field: file=<binary>, jawType=auto|maxillary|mandibular|both
    * Defaults to "auto" (geometry-based detection in the AI engine).
    */
+  @Throttle({ default: { limit: 10, ttl: 60000 } })
   @Post()
   @HttpCode(HttpStatus.CREATED)
   @RequirePermission('cases:write')

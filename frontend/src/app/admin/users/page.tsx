@@ -69,6 +69,11 @@ function InviteUserModal({ onClose, onSuccess }: { onClose: () => void; onSucces
   const [role, setRole] = useState('orthodontist');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const firstInputRef = React.useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    firstInputRef.current?.focus();
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -97,9 +102,14 @@ function InviteUserModal({ onClose, onSuccess }: { onClose: () => void; onSucces
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
-      <div className="w-full max-w-md rounded-2xl border border-[color:var(--border)] bg-[color:var(--card)] p-6 shadow-2xl">
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="invite-modal-title"
+        className="w-full max-w-md rounded-2xl border border-[color:var(--border)] bg-[color:var(--card)] p-6 shadow-2xl"
+      >
         <div className="flex items-center justify-between mb-5">
-          <h2 className="text-lg font-semibold text-[color:var(--foreground)]">Invite Team Member</h2>
+          <h2 id="invite-modal-title" className="text-lg font-semibold text-[color:var(--foreground)]">Invite Team Member</h2>
           <button
             onClick={onClose}
             className="rounded-lg p-1.5 text-[color:var(--muted-foreground)] hover:bg-[color:var(--border)]/40"
@@ -115,6 +125,7 @@ function InviteUserModal({ onClose, onSuccess }: { onClose: () => void; onSucces
               Email address
             </label>
             <input
+              ref={firstInputRef}
               type="email"
               value={email}
               onChange={e => setEmail(e.target.value)}
@@ -176,6 +187,11 @@ function RoleChangeModal({
   const [role, setRole] = useState(member.role);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const firstInputRef = React.useRef<HTMLSelectElement>(null);
+
+  useEffect(() => {
+    firstInputRef.current?.focus();
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -204,11 +220,17 @@ function RoleChangeModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
-      <div className="w-full max-w-sm rounded-2xl border border-[color:var(--border)] bg-[color:var(--card)] p-6 shadow-2xl">
-        <h2 className="text-base font-semibold text-[color:var(--foreground)] mb-4">Change Role</h2>
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="role-modal-title"
+        className="w-full max-w-sm rounded-2xl border border-[color:var(--border)] bg-[color:var(--card)] p-6 shadow-2xl"
+      >
+        <h2 id="role-modal-title" className="text-base font-semibold text-[color:var(--foreground)] mb-4">Change Role</h2>
         <p className="text-sm text-[color:var(--muted-foreground)] mb-4">{member.name || member.email}</p>
         <form onSubmit={handleSubmit} className="space-y-4">
           <select
+            ref={firstInputRef}
             value={role}
             onChange={e => setRole(e.target.value)}
             className="w-full rounded-xl border border-[color:var(--border)] bg-[color:var(--background)] px-3 py-2 text-sm text-[color:var(--foreground)] focus:border-[color:var(--primary)] focus:outline-none"

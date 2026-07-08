@@ -760,12 +760,14 @@ export class CopilotService {
     const msgRes = await this.db.query(
       `INSERT INTO copilot_messages
          (conversation_id, organization_id, role, content, intent, referenced_module,
-          suggestions, latency_ms)
-       VALUES ($1,$2,'assistant',$3,$4,$5,$6,$7) RETURNING *`,
+          suggestions, latency_ms, confidence_level, explainability_data)
+       VALUES ($1,$2,'assistant',$3,$4,$5,$6,$7,$8,$9) RETURNING *`,
       [
         conversationId, orgId, responseContent, intent, module,
         JSON.stringify(persistedSuggestions),
         latencyMs,
+        confidence,
+        JSON.stringify(explainability),
       ],
     );
 
@@ -913,14 +915,18 @@ export class CopilotService {
 
     // Save completed assistant message
     const latencyMs = Date.now() - startMs;
+    const streamConfidence = computeConfidence(intent, module, rawSuggestions, conv['context_snapshot'] as Record<string, unknown>);
+    const streamExplainability = buildExplainability(dto.content, intent, module, rawSuggestions);
     const msgRes = await this.db.query(
       `INSERT INTO copilot_messages
          (conversation_id, organization_id, role, content, intent, referenced_module,
-          suggestions, latency_ms)
-       VALUES ($1,$2,'assistant',$3,$4,$5,$6,$7) RETURNING id`,
+          suggestions, latency_ms, confidence_level, explainability_data)
+       VALUES ($1,$2,'assistant',$3,$4,$5,$6,$7,$8,$9) RETURNING id`,
       [
         conversationId, orgId, fullResponse, intent, module,
         JSON.stringify(persistedSuggestions), latencyMs,
+        streamConfidence,
+        JSON.stringify(streamExplainability),
       ],
     );
     await this.db.query(
@@ -932,8 +938,8 @@ export class CopilotService {
     yield { type: 'done', messageId: msgRes.rows[0]['id'] as string };
     yield {
       type: 'meta',
-      confidence: computeConfidence(intent, module, rawSuggestions, conv['context_snapshot'] as Record<string, unknown>),
-      explainability: buildExplainability(dto.content, intent, module, rawSuggestions),
+      confidence: streamConfidence,
+      explainability: streamExplainability,
     };
   }
 
@@ -1036,8 +1042,8 @@ export class CopilotService {
   private rowToMessage(
     r: Record<string, unknown>,
     suggestions: CopilotSuggestion[],
-    confidenceLevel: ConfidenceLevel = 'unknown',
-    explainabilityData: ExplainabilityData | null = null,
+    confidenceLevel?: ConfidenceLevel | null,
+    explainabilityData?: ExplainabilityData | null,
   ): CopilotMessage {
     return {
       id:               r['id'] as string,
@@ -1049,8 +1055,8 @@ export class CopilotService {
       suggestions,
       latencyMs:        r['latency_ms'] as number | null,
       createdAt:        r['created_at'] as string,
-      confidenceLevel,
-      explainability:   explainabilityData,
+      confidenceLevel:  (confidenceLevel ?? r['confidence_level'] as ConfidenceLevel) ?? 'unknown',
+      explainability:   explainabilityData ?? (r['explainability_data'] as ExplainabilityData | null),
     };
   }
 

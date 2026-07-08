@@ -115,7 +115,8 @@ export class ScansController {
       fileFormat === 'stl' ? 'model/stl' :
       fileFormat === 'obj' ? 'model/obj' :
       'application/octet-stream';
-    res.setHeader('Content-Disposition', `inline; filename="${originalFilename}"`);
+    const safeFilename = originalFilename.replace(/["\r\n\\]/g, '_');
+    res.setHeader('Content-Disposition', `inline; filename="${safeFilename}"`);
     res.setHeader('Content-Type', mime);
     res.setHeader('Cache-Control', 'private, max-age=3600');
     return new StreamableFile(fs.createReadStream(filePath));

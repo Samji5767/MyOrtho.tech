@@ -3,6 +3,7 @@
 import Link from "next/link";
 import Image from "next/image";
 import { usePathname } from "next/navigation";
+import { APP_VERSION } from "@/lib/version";
 import {
   BarChart3,
   Box,
@@ -214,6 +215,11 @@ export function SidebarNav() {
               </div>
             </div>
           ))}
+        </div>
+
+        {/* Version badge */}
+        <div className="mt-auto pt-4 px-2">
+          <span className="text-[10px] text-[color:var(--muted-foreground)] select-none">v{APP_VERSION}</span>
         </div>
       </div>
     </aside>

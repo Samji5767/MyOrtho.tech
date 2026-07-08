@@ -1,9 +1,12 @@
 import { Module, Global } from '@nestjs/common';
 import { CryptoService } from './crypto.service';
+import { CorrelationIdMiddleware } from './correlation-id.middleware';
+import { VersionController } from './version.controller';
 
 @Global()
 @Module({
-  providers: [CryptoService],
+  controllers: [VersionController],
+  providers: [CryptoService, CorrelationIdMiddleware],
   exports: [CryptoService],
 })
 export class CommonModule {}

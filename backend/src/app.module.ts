@@ -2,6 +2,7 @@ import { MiddlewareConsumer, Module, NestModule } from '@nestjs/common';
 import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 import { APP_GUARD } from '@nestjs/core';
 import { TimingMiddleware } from './common/timing.middleware';
+import { CorrelationIdMiddleware } from './common/correlation-id.middleware';
 import { CommonModule } from './common/common.module';
 import { DatabaseModule } from './database/database.module';
 import { RedisModule } from './redis/redis.module';
@@ -190,11 +191,14 @@ import { ReleasesModule } from './releases/releases.module';
       provide: APP_GUARD,
       useClass: ThrottlerGuard,
     },
+    CorrelationIdMiddleware,
     TimingMiddleware,
   ],
 })
 export class AppModule implements NestModule {
   configure(consumer: MiddlewareConsumer) {
-    consumer.apply(TimingMiddleware).forRoutes('*');
+    consumer
+      .apply(CorrelationIdMiddleware, TimingMiddleware)
+      .forRoutes('*');
   }
 }

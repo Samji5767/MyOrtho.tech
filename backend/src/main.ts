@@ -3,8 +3,9 @@ import { ValidationPipe, Logger } from '@nestjs/common';
 import * as cookieParser from 'cookie-parser';
 import helmet from 'helmet';
 import { AppModule } from './app.module';
-import { AllExceptionsFilter } from './common/all-exceptions.filter';
+import { GlobalExceptionFilter } from './common/global-exception.filter';
 import { LoggingInterceptor } from './common/logging.interceptor';
+import { validateConfig } from './common/config.validator';
 
 const logger = new Logger('Bootstrap');
 
@@ -58,6 +59,7 @@ function assertRequiredEnv(): void {
 }
 
 async function bootstrap() {
+  validateConfig();
   assertRequiredEnv();
 
   const app = await NestFactory.create(AppModule, { rawBody: true });
@@ -117,7 +119,7 @@ async function bootstrap() {
     }),
   );
 
-  app.useGlobalFilters(new AllExceptionsFilter());
+  app.useGlobalFilters(new GlobalExceptionFilter());
   app.useGlobalInterceptors(new LoggingInterceptor());
 
   const port = process.env.PORT || 4000;

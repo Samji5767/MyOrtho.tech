@@ -1,6 +1,7 @@
 import { Injectable, Inject, NotFoundException, BadRequestException } from '@nestjs/common';
 import type { Pool } from 'pg';
 import { PG_POOL } from '../database/database.module';
+import { createHash } from 'crypto';
 
 export interface FeatureFlag {
   id: string;
@@ -39,7 +40,7 @@ export class FeatureFlagsService {
     if (!rows[0]) return false;
     if (!rows[0]['enabled']) return false;
     const rollout = rows[0]['rollout_percentage'] as number;
-    return rollout >= 100 || (Math.random() * 100) < rollout;
+    return rollout >= 100 || this.rolloutBucket(orgId, flagKey) < rollout;
   }
 
   async createFlag(orgId: string, dto: {
@@ -97,6 +98,16 @@ export class FeatureFlagsService {
       result[key] = await this.getFlag(orgId, key);
     }
     return result;
+  }
+
+  /**
+   * Returns a deterministic rollout bucket in [0, 100) for a given org + flag combination.
+   * Using SHA-256 instead of Math.random() ensures the same org always falls in the same
+   * bucket, making flag evaluation sticky across requests (consistent user experience).
+   */
+  private rolloutBucket(orgId: string, flagKey: string): number {
+    const hash = createHash('sha256').update(`${flagKey}:${orgId}`).digest();
+    return (hash.readUInt32BE(0) / 0xFFFFFFFF) * 100;
   }
 
   private map(r: Record<string, unknown>): FeatureFlag {

@@ -1,12 +1,13 @@
-import { 
-  WebSocketGateway, 
-  SubscribeMessage, 
-  MessageBody, 
-  WebSocketServer, 
-  ConnectedSocket 
+import {
+  WebSocketGateway,
+  SubscribeMessage,
+  MessageBody,
+  WebSocketServer,
+  ConnectedSocket
 } from '@nestjs/websockets';
 import { Server, Socket } from 'socket.io';
 import { Logger } from '@nestjs/common';
+import { randomUUID } from 'crypto';
 
 @WebSocketGateway({ namespace: 'collaboration', cors: true })
 export class CollaborationGateway {
@@ -101,7 +102,7 @@ export class CollaborationGateway {
     },
     @ConnectedSocket() client: Socket
   ): void {
-    const commentId = `comm-${Math.floor(Math.random() * 9000) + 1000}`;
+    const commentId = `comm-${randomUUID()}`;
     client.to(data.caseId).emit('comment_3d_added', {
       id: commentId,
       authorId: data.authorId,

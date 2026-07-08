@@ -1,4 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { randomUUID } from 'crypto';
 
 export type EventType =
   | 'CaseCreated'
@@ -34,7 +35,7 @@ export class EventBusService {
     payload: T
   ): Promise<PlatformEvent<T>> {
     const event: PlatformEvent<T> = {
-      eventId: `evt-${Math.floor(Math.random() * 900000) + 100000}`,
+      eventId: `evt-${randomUUID()}`,
       eventType,
       timestamp: new Date(),
       organizationId: orgId,

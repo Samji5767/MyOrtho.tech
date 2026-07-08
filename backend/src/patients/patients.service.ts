@@ -40,7 +40,7 @@ export class PatientsService {
   async findAllByOrg(orgId: string, limit = 100, offset = 0) {
     const { rows } = await this.pool.query(
       `SELECT
-         p.id, p.first_name, p.last_name, p.dob AS date_of_birth, p.gender,
+         p.id, p.first_name, p.last_name, p.dob AS date_of_birth, p.dob_encrypted, p.gender,
          p.created_at, p.updated_at,
          COUNT(c.id)::int AS case_count
        FROM patients p
@@ -56,7 +56,7 @@ export class PatientsService {
 
   async findOne(id: string, orgId: string) {
     const { rows } = await this.pool.query(
-      `SELECT p.id, p.first_name, p.last_name, p.dob AS date_of_birth, p.gender,
+      `SELECT p.id, p.first_name, p.last_name, p.dob AS date_of_birth, p.dob_encrypted, p.gender,
               p.clinical_notes, p.organization_id, p.created_at, p.updated_at,
               COUNT(c.id)::int AS case_count
        FROM patients p
@@ -92,14 +92,15 @@ export class PatientsService {
     this.assertValidDob(dto.dateOfBirth);
     const { rows } = await this.pool.query(
       `INSERT INTO patients
-         (organization_id, first_name, last_name, dob, gender, clinical_notes, created_by)
-       VALUES ($1, $2, $3, $4, $5, $6, $7)
+         (organization_id, first_name, last_name, dob, dob_encrypted, gender, clinical_notes, created_by)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
        RETURNING id`,
       [
         orgId,
         this.cryptoService.encrypt(dto.firstName),
         this.cryptoService.encrypt(dto.lastName),
         dto.dateOfBirth ?? null,
+        this.cryptoService.encrypt(dto.dateOfBirth ?? null),
         this.cryptoService.encrypt(dto.gender ?? null),
         this.cryptoService.encrypt(dto.clinicalNotes ?? null),
         createdBy,
@@ -139,7 +140,12 @@ export class PatientsService {
 
     if (dto.firstName !== undefined)    { fields.push(`first_name = $${i++}`);    values.push(this.cryptoService.encrypt(dto.firstName)); }
     if (dto.lastName !== undefined)     { fields.push(`last_name = $${i++}`);     values.push(this.cryptoService.encrypt(dto.lastName)); }
-    if (dto.dateOfBirth !== undefined)  { fields.push(`dob = $${i++}`);           values.push(dto.dateOfBirth); }
+    if (dto.dateOfBirth !== undefined) {
+      fields.push(`dob = $${i++}`);
+      values.push(dto.dateOfBirth ?? null);
+      fields.push(`dob_encrypted = $${i++}`);
+      values.push(this.cryptoService.encrypt(dto.dateOfBirth ?? null));
+    }
     if (dto.gender !== undefined)       { fields.push(`gender = $${i++}`);        values.push(this.cryptoService.encrypt(dto.gender)); }
     if (dto.clinicalNotes !== undefined){ fields.push(`clinical_notes = $${i++}`); values.push(this.cryptoService.encrypt(dto.clinicalNotes)); }
 
@@ -183,12 +189,17 @@ export class PatientsService {
       ? this.cryptoService.decrypt(row['clinical_notes'] as string | null)
       : row['clinical_notes'];
 
+    const rawDobEncrypted = row['dob_encrypted'] as string | null | undefined;
+    const dateOfBirth = decrypt && rawDobEncrypted
+      ? this.cryptoService.decrypt(rawDobEncrypted)
+      : (row['date_of_birth'] as string | null) ?? null;
+
     return {
       id: row['id'],
       firstName,
       lastName,
       fullName: `${firstName ?? ''} ${lastName ?? ''}`.trim(),
-      dateOfBirth: row['date_of_birth'],
+      dateOfBirth,
       gender,
       clinicalNotes,
       caseCount: row['case_count'] ?? 0,

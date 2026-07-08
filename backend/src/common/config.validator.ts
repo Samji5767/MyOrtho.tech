@@ -13,6 +13,7 @@ interface ConfigCheck {
 const CONFIG_CHECKS: ConfigCheck[] = [
   { key: 'DATABASE_URL', required: true, secret: true, description: 'PostgreSQL connection string' },
   { key: 'JWT_SECRET', required: true, secret: true, description: 'JWT signing secret (min 32 chars)' },
+  { key: 'ENCRYPTION_KEY', required: true, secret: true, description: 'AES-256-GCM key for PHI field encryption (32+ chars or 64 hex chars)' },
   { key: 'PORT', required: false, description: 'HTTP port', default: '4001' },
   { key: 'NODE_ENV', required: false, description: 'Runtime environment', default: 'development' },
   { key: 'SMTP_HOST', required: false, description: 'SMTP server (optional — email disabled if absent)' },

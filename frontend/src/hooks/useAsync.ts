@@ -85,9 +85,10 @@ export function useAsync<T>(
 
   useEffect(() => {
     run();
+    const ref = generationRef;
     return () => {
       // Invalidate any in-flight request when deps change or component unmounts.
-      generationRef.current++;
+      ref.current++;
     };
   }, deps); // eslint-disable-line react-hooks/exhaustive-deps
 

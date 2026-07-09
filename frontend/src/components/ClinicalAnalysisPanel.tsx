@@ -3,6 +3,7 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { AlertCircle, Info, RefreshCw } from "lucide-react";
 import { Button, Card } from "@/components/DesignSystem";
+import { ClinicalWarningBanner } from "@/components/ui/ClinicalWarningBanner";
 import {
   getLatestAnalysis,
   type CaseAnalysis,
@@ -262,6 +263,8 @@ export default function ClinicalAnalysisPanel({ caseId }: { caseId: string }) {
 
   return (
     <div className="space-y-4">
+
+      <ClinicalWarningBanner message="AI-assisted recommendation only. Final treatment decisions remain the responsibility of the licensed orthodontist." />
 
       {/* Section 1 — Bolton Analysis */}
       <Section title="Bolton Analysis">

@@ -26,6 +26,7 @@ import {
   StatusBadge,
 } from "@/components/DesignSystem";
 import { fetchPatient } from "@/lib/api/patients";
+import { ApiError } from "@/lib/api/client";
 import { fetchCases, type CaseListItem } from "@/lib/api/cases";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -77,24 +78,31 @@ function relativeTime(dateStr: string): string {
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
+// Local patient shape — extends PatientListItem with clinicalNotes
+
+interface PatientState {
+  id: string;
+  firstName: string;
+  lastName: string;
+  dateOfBirth: string | null;
+  gender: string | null;
+  clinicalNotes: string | null;
+  caseCount: number;
+  createdAt: string;
+}
+
 export default function PatientDetailClient({ id }: { id: string }) {
   const router = useRouter();
-  const [patient, setPatient] = useState<{
-    id: string;
-    firstName: string;
-    lastName: string;
-    dateOfBirth: string | null;
-    gender: string | null;
-    caseCount: number;
-    createdAt: string;
-  } | null>(null);
+  const [patient, setPatient] = useState<PatientState | null>(null);
   const [patientCases, setPatientCases] = useState<CaseListItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
     setNotFound(false);
+    setError(null);
     try {
       const [patRes, casesRes] = await Promise.allSettled([
         fetchPatient(id),
@@ -109,11 +117,22 @@ export default function PatientDetailClient({ id }: { id: string }) {
           lastName: p.lastName,
           dateOfBirth: p.dateOfBirth ?? null,
           gender: p.gender ?? null,
+          clinicalNotes: p.clinicalNotes ?? null,
           caseCount: p.caseCount ?? 0,
           createdAt: p.createdAt,
         });
       } else {
-        setNotFound(true);
+        const err = patRes.reason;
+        // Distinguish a 404 ("patient doesn't exist") from other failures
+        if (err instanceof ApiError && err.status === 404) {
+          setNotFound(true);
+        } else {
+          setError(
+            err instanceof Error
+              ? err.message
+              : "Failed to load patient record. Please try again.",
+          );
+        }
       }
 
       if (casesRes.status === "fulfilled") {
@@ -147,6 +166,28 @@ export default function PatientDetailClient({ id }: { id: string }) {
         <SkeletonBlock className="h-24 w-full" />
         <SkeletonBlock className="h-20 w-full" />
         <SkeletonBlock className="h-48 w-full" />
+      </div>
+    );
+  }
+
+  // ── Error (non-404 failure) ────────────────────────────────────────────────
+  if (error) {
+    return (
+      <div className="mx-auto w-full max-w-3xl px-4 pt-10 sm:px-5">
+        <div className="flex items-start gap-3 rounded-xl border border-rose-200/60 bg-rose-50/60 px-4 py-4 text-sm text-rose-700 dark:border-rose-500/20 dark:bg-rose-500/10 dark:text-rose-300">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="mt-0.5 shrink-0" aria-hidden>
+            <circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" />
+          </svg>
+          <div className="flex-1">
+            <p className="font-semibold">Unable to load patient</p>
+            <p className="mt-0.5 text-xs opacity-80">{error}</p>
+          </div>
+        </div>
+        <div className="mt-4 flex justify-center">
+          <Button variant="secondary" size="sm" onClick={() => router.back()}>
+            <ArrowLeft size={14} /> Go back
+          </Button>
+        </div>
       </div>
     );
   }
@@ -302,6 +343,16 @@ export default function PatientDetailClient({ id }: { id: string }) {
             })}
           />
         </div>
+        {patient.clinicalNotes && (
+          <div className="mt-4 border-t border-[color:var(--border)]/60 pt-4">
+            <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-[color:var(--muted-foreground)]">
+              Clinical Notes
+            </p>
+            <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-[color:var(--foreground)]">
+              {patient.clinicalNotes}
+            </p>
+          </div>
+        )}
       </Card>
 
       {/* ── Treatment history ── */}

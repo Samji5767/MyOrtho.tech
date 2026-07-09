@@ -1,10 +1,18 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
-import { ShieldAlert, Users, Building2, Settings2, Activity } from "lucide-react";
+import {
+  Activity,
+  ArrowLeft,
+  Building2,
+  Settings2,
+  ShieldAlert,
+  Users,
+} from "lucide-react";
 import Link from "next/link";
 import { useAuth } from "@/context/AuthContext";
+import { StatusBadge } from "@/components/DesignSystem";
 
 const ADMIN_ROLES = ["admin", "super_admin"];
 
@@ -35,34 +43,154 @@ const ADMIN_SECTIONS = [
   },
 ];
 
+interface PlatformStats {
+  users: { total: number; active: number };
+  orgs: { total: number };
+  cases: { total: number };
+  credits: { total: number };
+}
+
+function AdminSkeleton() {
+  return (
+    <div className="mx-auto max-w-4xl px-4 py-8 sm:px-6 animate-pulse">
+      <div className="mb-6 h-12 rounded-xl bg-[color:var(--border)] opacity-50" />
+      <div className="mb-6 h-7 w-40 rounded-lg bg-[color:var(--border)] opacity-50" />
+      <div className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-4">
+        {[...Array(4)].map((_, i) => (
+          <div key={i} className="h-20 rounded-xl border border-[color:var(--border)] bg-[color:var(--card)] opacity-60" />
+        ))}
+      </div>
+      <div className="grid gap-4 sm:grid-cols-2">
+        {[...Array(4)].map((_, i) => (
+          <div key={i} className="h-20 rounded-xl border border-[color:var(--border)] bg-[color:var(--card)] opacity-60" />
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export default function AdminPage() {
   const { status, user } = useAuth();
   const router = useRouter();
+
+  const [stats, setStats] = useState<PlatformStats | null>(null);
+  const [statsError, setStatsError] = useState<string | null>(null);
+  const [loadingStats, setLoadingStats] = useState(false);
+
+  const fetchStats = useCallback(async () => {
+    setLoadingStats(true);
+    setStatsError(null);
+    try {
+      const res = await fetch("/api/admin/stats", { credentials: "include" });
+      if (!res.ok) throw new Error(`Stats unavailable (${res.status})`);
+      setStats(await res.json() as PlatformStats);
+    } catch (err) {
+      setStatsError(err instanceof Error ? err.message : "Could not load stats");
+    } finally {
+      setLoadingStats(false);
+    }
+  }, []);
 
   useEffect(() => {
     if (status === "loading") return;
     if (status === "unauthenticated" || !user || !ADMIN_ROLES.includes(user.role)) {
       router.replace("/dashboard");
+      return;
     }
-  }, [status, user, router]);
+    // Only super_admin can see global stats
+    if (user.role === "super_admin") {
+      void fetchStats();
+    }
+  }, [status, user, router, fetchStats]);
 
-  if (status === "loading") return null;
+  if (status === "loading") return <AdminSkeleton />;
   if (!user || !ADMIN_ROLES.includes(user.role)) return null;
 
   return (
     <div className="mx-auto max-w-4xl px-4 py-8 sm:px-6">
+      {/* Back navigation */}
+      <div className="mb-5 flex items-center gap-3">
+        <Link
+          href="/settings"
+          className="flex h-9 w-9 items-center justify-center rounded-full border border-[color:var(--border)] bg-[color:var(--card)] text-[color:var(--foreground)] hover:opacity-80 transition-opacity"
+          aria-label="Back to settings"
+        >
+          <ArrowLeft size={16} />
+        </Link>
+        <div>
+          <h1 className="text-xl font-bold text-[color:var(--foreground)]">Administration</h1>
+          <p className="text-sm text-[color:var(--muted-foreground)]">
+            Manage users, organizations, and platform settings
+          </p>
+        </div>
+      </div>
+
+      {/* Access notice */}
       <div className="mb-6 flex items-center gap-2 rounded-xl border border-rose-200/60 bg-rose-50/60 px-4 py-3 text-sm text-rose-700 dark:border-rose-700/30 dark:bg-rose-900/10 dark:text-rose-400">
         <ShieldAlert size={15} className="shrink-0" />
         <span>
-          <strong>Admin only.</strong> This panel is restricted to <code className="rounded bg-rose-100/80 px-1 py-0.5 text-xs dark:bg-rose-900/30">admin</code> and <code className="rounded bg-rose-100/80 px-1 py-0.5 text-xs dark:bg-rose-900/30">super_admin</code> accounts.
-          Unauthorized access attempts are logged.
+          <strong>Admin only.</strong> This panel is restricted to{" "}
+          <code className="rounded bg-rose-100/80 px-1 py-0.5 text-xs dark:bg-rose-900/30">admin</code>{" "}
+          and{" "}
+          <code className="rounded bg-rose-100/80 px-1 py-0.5 text-xs dark:bg-rose-900/30">super_admin</code>{" "}
+          accounts. Unauthorized access attempts are logged.
         </span>
       </div>
 
-      <h1 className="mb-6 text-xl font-bold text-[color:var(--foreground)]">Administration</h1>
+      {/* Platform stats — super_admin only */}
+      {user.role === "super_admin" && (
+        <div className="mb-6">
+          {statsError ? (
+            <div className="rounded-xl border border-amber-200/60 bg-amber-50/60 px-4 py-3 text-sm text-amber-700 dark:border-amber-700/30 dark:bg-amber-900/10 dark:text-amber-400">
+              {statsError}
+            </div>
+          ) : (
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+              {[
+                { label: "Total users", value: stats?.users?.total, sub: `${stats?.users?.active ?? "—"} active` },
+                { label: "Organizations", value: stats?.orgs?.total, sub: null },
+                { label: "Cases", value: stats?.cases?.total, sub: null },
+                { label: "Credits", value: stats?.credits?.total?.toLocaleString(), sub: "across all orgs" },
+              ].map((tile) => (
+                <div
+                  key={tile.label}
+                  className="rounded-xl border border-[color:var(--border)] bg-[color:var(--card)] p-4"
+                >
+                  {loadingStats ? (
+                    <div className="space-y-2 animate-pulse">
+                      <div className="h-6 w-12 rounded bg-[color:var(--border)] opacity-50" />
+                      <div className="h-3 w-20 rounded bg-[color:var(--border)] opacity-40" />
+                    </div>
+                  ) : (
+                    <>
+                      <p className="text-2xl font-bold text-[color:var(--foreground)]">
+                        {tile.value ?? "—"}
+                      </p>
+                      <p className="mt-0.5 text-xs text-[color:var(--muted-foreground)]">{tile.label}</p>
+                      {tile.sub && (
+                        <p className="mt-0.5 text-[11px] text-[color:var(--muted-foreground)]">{tile.sub}</p>
+                      )}
+                    </>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
+      {/* Session user info */}
+      <div className="mb-5 flex items-center gap-3 rounded-xl border border-[color:var(--border)] bg-[color:var(--card)] px-4 py-3">
+        <div className="min-w-0 flex-1">
+          <p className="text-sm font-semibold text-[color:var(--foreground)] truncate">{user.name}</p>
+          <p className="text-xs text-[color:var(--muted-foreground)] truncate">{user.email}</p>
+        </div>
+        <StatusBadge tone="danger">{user.role.replace("_", " ")}</StatusBadge>
+      </div>
+
+      {/* Navigation sections */}
       <div className="grid gap-4 sm:grid-cols-2">
-        {ADMIN_SECTIONS.map(section => (
+        {ADMIN_SECTIONS.map((section) => (
           <Link
             key={section.href}
             href={section.href}

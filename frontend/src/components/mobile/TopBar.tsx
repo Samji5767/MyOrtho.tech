@@ -2,10 +2,11 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { LogOut, Search, Stethoscope } from "lucide-react";
+import { LogOut, Search } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { roleLabel } from "@/lib/auth";
 import NotificationBell from "@/components/NotificationBell";
+import BrandMark from "@/components/BrandMark";
 
 function userInitials(name: string): string {
   const parts = name.trim().split(/\s+/);
@@ -35,12 +36,7 @@ export function TopBar({ onOpenSearch }: TopBarProps) {
     >
       <div className="mx-auto flex h-[var(--top-bar-height)] max-w-screen-sm items-center gap-3 px-4">
         <Link href="/" aria-label="MyOrtho Home" className="flex min-w-0 items-center gap-2.5">
-          <span
-            aria-hidden
-            className="grid h-8 w-8 place-items-center rounded-2xl bg-gradient-to-br from-[color:var(--primary)] to-[color:var(--clinical-highlight)] text-[color:var(--primary-foreground)] shadow-[var(--shadow-sm)]"
-          >
-            <Stethoscope size={15} strokeWidth={2.4} />
-          </span>
+          <BrandMark variant="icon-only" size="sm" />
           <span className="flex min-w-0 flex-col leading-none">
             <span className="text-[9px] font-semibold uppercase tracking-[0.24em] text-[color:var(--muted-foreground)]">
               MY ORTHO

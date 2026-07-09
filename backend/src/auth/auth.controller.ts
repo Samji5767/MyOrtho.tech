@@ -5,6 +5,7 @@ import {
   HttpCode,
   HttpException,
   HttpStatus,
+  Patch,
   Post,
   Req,
   Res,
@@ -257,6 +258,20 @@ export class AuthController {
     const payload = await this.authService.verifyToken(token);
     await this.authService.markOnboarded(payload.sub);
     return { ok: true, role: payload.role };
+  }
+
+  @Patch('profile')
+  @HttpCode(HttpStatus.OK)
+  async updateProfile(
+    @Req() req: Request,
+    @Body('name') name: string,
+  ) {
+    const token = (req.cookies as Record<string, string>)[COOKIE_NAME];
+    if (!token) throw new UnauthorizedException('No session');
+    const payload = await this.authService.verifyToken(token);
+    if (!name?.trim()) throw new HttpException('name is required', HttpStatus.BAD_REQUEST);
+    await this.authService.updateProfile(payload.sub, name);
+    return { ok: true };
   }
 }
 

@@ -619,11 +619,23 @@ export function AISegmentationCenter({ caseId }: Props) {
                   </div>
                 )}
 
+                {/* Fallback banner when AI model is unavailable */}
+                {(activeJob.resultSummary as Record<string, unknown>).fallback === true && (
+                  <div className="flex items-start gap-2.5 rounded-xl border border-amber-300/50 bg-amber-50/80 px-3.5 py-2.5 text-xs text-amber-800 dark:border-amber-700/35 dark:bg-amber-900/10 dark:text-amber-300">
+                    <span className="mt-0.5 shrink-0 text-amber-600 dark:text-amber-400">⚠</span>
+                    <span>
+                      <span className="font-semibold">AI model unavailable — rule-engine fallback active.</span>{' '}
+                      Segmentation results were produced by the deterministic rule-based engine, not the ML model.
+                      Configure <code className="font-mono text-[10px]">AI_SEGMENTATION_URL</code> to enable ML inference.
+                      Results should be reviewed with extra care.
+                    </span>
+                  </div>
+                )}
+
                 {/* AI version note */}
                 <div className="flex items-center gap-1.5 text-[10px] text-[color:var(--muted-foreground)]">
                   <Cpu size={10} />
                   AI version: {activeJob.aiVersion} · Model: {MODEL_LABELS[activeJob.modelType]}
-                  {(activeJob.resultSummary as Record<string, unknown>).fallback === true && " · Rule-based fallback (configure AI_SEGMENTATION_URL for ML inference)"}
                 </div>
               </>
             )}

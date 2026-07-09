@@ -183,27 +183,45 @@ function PackageCard({
             <button
               onClick={() => act(() => validateExportPackage(caseId, planId, pkg.id))}
               disabled={loading}
-              className="px-2 py-1 text-xs bg-[color:var(--primary)] text-[color:var(--primary-foreground)] rounded-lg hover:opacity-90 disabled:opacity-50"
+              className="inline-flex items-center gap-1 px-2 py-1 text-xs bg-[color:var(--primary)] text-[color:var(--primary-foreground)] rounded-lg hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              Validate
+              {loading && (
+                <svg className="animate-spin h-3 w-3" viewBox="0 0 24 24" fill="none" aria-hidden>
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4l3-3-3-3v4a8 8 0 100 16v-4l-3 3 3 3v-4a8 8 0 01-8-8z" />
+                </svg>
+              )}
+              {loading ? 'Validating…' : 'Validate'}
             </button>
           )}
           {pkg.status === 'validated' && (
             <button
               onClick={() => act(() => approveExportPackage(caseId, planId, pkg.id))}
               disabled={loading}
-              className="px-2 py-1 text-xs bg-[color:var(--clinical-safe)] text-white rounded-lg hover:opacity-90 disabled:opacity-50"
+              className="inline-flex items-center gap-1 px-2 py-1 text-xs bg-[color:var(--clinical-safe)] text-white rounded-lg hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              Approve
+              {loading && (
+                <svg className="animate-spin h-3 w-3" viewBox="0 0 24 24" fill="none" aria-hidden>
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4l3-3-3-3v4a8 8 0 100 16v-4l-3 3 3 3v-4a8 8 0 01-8-8z" />
+                </svg>
+              )}
+              {loading ? 'Approving…' : 'Approve'}
             </button>
           )}
           {pkg.status === 'approved' && (
             <button
               onClick={() => act(() => markExported(caseId, planId, pkg.id, 'zip', 1024 * 1024))}
               disabled={loading}
-              className="px-2 py-1 text-xs bg-emerald-600 text-white rounded-lg hover:opacity-90 disabled:opacity-50"
+              className="inline-flex items-center gap-1 px-2 py-1 text-xs bg-emerald-600 text-white rounded-lg hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              Mark Exported
+              {loading && (
+                <svg className="animate-spin h-3 w-3" viewBox="0 0 24 24" fill="none" aria-hidden>
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4l3-3-3-3v4a8 8 0 100 16v-4l-3 3 3 3v-4a8 8 0 01-8-8z" />
+                </svg>
+              )}
+              {loading ? 'Exporting…' : 'Mark Exported'}
             </button>
           )}
           {totalCount > 0 && (
@@ -340,10 +358,24 @@ export default function ExportPackagePanel({ caseId, planId }: Props) {
           </div>
         )}
 
+        {loading && packages.length === 0 && (
+          <div className="space-y-2" aria-busy="true" aria-label="Loading export packages">
+            {[1, 2].map((i) => (
+              <div
+                key={i}
+                className="h-14 w-full rounded-xl bg-[color:var(--border)] animate-pulse"
+              />
+            ))}
+          </div>
+        )}
+
         {packages.length === 0 && !loading && (
-          <p className="text-xs text-[color:var(--muted-foreground)] italic">
-            Select an export type and click &ldquo;Create Package&rdquo; to begin the validation workflow.
-          </p>
+          <div className="rounded-xl border border-dashed border-[color:var(--border)] bg-[color:var(--card)] p-6 text-center space-y-1.5">
+            <p className="text-sm font-semibold text-[color:var(--foreground)]">No export packages yet</p>
+            <p className="text-xs text-[color:var(--muted-foreground)]">
+              Select an export type above and click <strong>Create Package</strong> to start the validation workflow.
+            </p>
+          </div>
         )}
 
         {/* Workflow explanation */}

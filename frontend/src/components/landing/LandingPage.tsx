@@ -8,11 +8,12 @@ import {
   Cpu, Download, Edit3, FileBox, FileText, Globe,
   Hexagon, Layers, Lock, Menu, Monitor, Package,
   Printer, RefreshCw, ScanLine, Settings2,
-  Shield, Star, Stethoscope, Target, Upload,
+  Shield, Star, Target, Upload,
   Users, Wand2, X, Zap,
   type LucideIcon,
 } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
+import BrandMark from "@/components/BrandMark";
 
 // ── Brand constants ────────────────────────────────────────────────────────────
 const TEAL   = "#3dd9b5";
@@ -182,17 +183,13 @@ function Navbar() {
         {/* Logo */}
         <Link
           href="/"
-          style={{ display: "flex", alignItems: "center", gap: 10, textDecoration: "none", flexShrink: 0, marginRight: 32 }}
+          style={{ display: "flex", alignItems: "center", textDecoration: "none", flexShrink: 0, marginRight: 32 }}
           aria-label="MyOrtho home"
         >
-          <div style={{
-            width: 36, height: 36, borderRadius: 10,
-            background: `linear-gradient(135deg, ${BLUE} 0%, ${TEAL} 100%)`,
-            display: "flex", alignItems: "center", justifyContent: "center",
-            fontWeight: 800, fontSize: 17, color: "#fff",
-            boxShadow: "0 0 18px rgba(61,217,181,0.25)",
-          }}>M</div>
-          <span style={{ fontSize: 15, fontWeight: 700, color: TEXT, letterSpacing: "-0.01em" }}>MyOrtho</span>
+          {/* Override --foreground so BrandMark text is legible on the dark landing background */}
+          <span style={{ "--foreground": TEXT } as React.CSSProperties}>
+            <BrandMark variant="compact" size="sm" />
+          </span>
         </Link>
 
         {/* Desktop nav links */}
@@ -223,7 +220,7 @@ function Navbar() {
           >Sign In</Link>
 
           <Link
-            href="/login"
+            href="/signup"
             style={{
               display: "inline-flex", alignItems: "center", gap: 6,
               background: TEAL, color: "#050d0c",
@@ -277,7 +274,7 @@ function Navbar() {
                 borderRadius: 9, fontSize: 14, fontWeight: 600, color: TEXT, textDecoration: "none",
               }}
             >Sign In</Link>
-            <Link href="/login" onClick={() => setMenuOpen(false)}
+            <Link href="/signup" onClick={() => setMenuOpen(false)}
               style={{
                 flex: 1, textAlign: "center", padding: "12px",
                 background: TEAL, borderRadius: 9,
@@ -371,7 +368,7 @@ function HeroSection() {
               animation: "pulse-dot 2s ease-in-out infinite",
               flexShrink: 0,
             }} />
-            Version 2.0 · AI Segmentation · Now in Production
+            From Scan to Smile · AI Segmentation · v2.0
           </div>
 
           <h1 style={{
@@ -645,8 +642,8 @@ function AISection() {
             MyOrtho&apos;s segmentation engine processes raw dental mesh files and
             returns per-tooth STLs in seconds — no manual labelling required.
           </p>
-          <a
-            href="/login"
+          <Link
+            href="/signup"
             style={{
               display: "inline-flex", alignItems: "center", gap: 8,
               background: TEAL, color: "#050d0c",
@@ -657,7 +654,7 @@ function AISection() {
           >
             <Brain size={16} />
             Try AI Segmentation
-          </a>
+          </Link>
         </div>
 
         {/* Right: capability list */}
@@ -822,7 +819,7 @@ function PricingSection() {
               <br />Free during beta.
             </p>
 
-            <Link href="/login"
+            <Link href="/signup"
               style={{
                 display: "flex", justifyContent: "center", alignItems: "center", gap: 8,
                 background: TEAL, color: "#050d0c",
@@ -1122,14 +1119,11 @@ function Footer() {
         <div style={{ display: "grid", gridTemplateColumns: "1.5fr repeat(4, 1fr)", gap: 40, marginBottom: 48 }} className="footer-grid">
           {/* Brand */}
           <div>
-            <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14 }}>
-              <div style={{
-                width: 34, height: 34, borderRadius: 9,
-                background: `linear-gradient(135deg, ${BLUE} 0%, ${TEAL} 100%)`,
-                display: "flex", alignItems: "center", justifyContent: "center",
-                fontWeight: 800, fontSize: 16, color: "#fff",
-              }}>M</div>
-              <span style={{ fontSize: 15, fontWeight: 700, color: TEXT }}>MyOrtho</span>
+            <div style={{ marginBottom: 14 }}>
+              {/* Override --foreground for legibility on the dark footer background */}
+              <span style={{ "--foreground": TEXT } as React.CSSProperties}>
+                <BrandMark variant="compact" size="sm" />
+              </span>
             </div>
             <p style={{ fontSize: 13, color: MUTED, lineHeight: 1.65, maxWidth: 220 }}>
               The clinical operating system for modern orthodontics.

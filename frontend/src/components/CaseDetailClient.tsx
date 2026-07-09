@@ -6,6 +6,7 @@ import { fetchCase, type CaseDetail } from "@/lib/api/cases";
 import { ApiError } from "@/lib/api/client";
 import {
   Activity,
+  AlertTriangle,
   ArrowLeft,
   BarChart2,
   Bot,
@@ -512,8 +513,10 @@ export default function CaseDetailClient({ id }: { id: string }) {
   const [tab, setTab] = useState<Tab>("summary");
   const [liveData, setLiveData] = useState<CaseDetail | null>(null);
   const [dataSource, setDataSource] = useState<'api' | 'demo' | 'loading' | 'not_found'>('loading');
+  const [fetchError, setFetchError] = useState<string | null>(null);
 
   useEffect(() => {
+    setFetchError(null);
     fetchCase(id)
       .then(({ data, source }) => { setLiveData(data); setDataSource(source); })
       .catch((err) => {
@@ -521,6 +524,10 @@ export default function CaseDetailClient({ id }: { id: string }) {
           setDataSource('not_found');
         } else {
           setDataSource('demo');
+          // Surface the error if it came from the server (not a network/timeout fallback)
+          if (err instanceof ApiError && err.status !== 0 && err.status !== 408) {
+            setFetchError(err.message);
+          }
         }
       });
   }, [id]);
@@ -652,6 +659,23 @@ export default function CaseDetailClient({ id }: { id: string }) {
       </div>
 
       <div className="px-4 pt-4 sm:px-5">
+        {/* API error banner — only shown when the server returned an unexpected error */}
+        {fetchError && (
+          <div className="mb-4 flex items-center gap-2 rounded-xl border border-rose-300/50 bg-rose-50/60 px-3 py-2 text-xs text-rose-700 dark:border-rose-700/40 dark:bg-rose-900/10 dark:text-rose-400">
+            <AlertTriangle size={12} className="shrink-0" />
+            <span className="flex-1">
+              Could not load live data — showing representative data. ({fetchError})
+            </span>
+            <button
+              type="button"
+              onClick={() => setFetchError(null)}
+              className="shrink-0 font-semibold hover:underline"
+            >
+              Dismiss
+            </button>
+          </div>
+        )}
+
         {/* Overview */}
         {tab === "summary"   && <SummaryTab profile={profile} caseId={id} isLive={dataSource === 'api'} />}
         {tab === "workflow"  && (

@@ -2,6 +2,7 @@
 
 import React, { useState, useCallback, useRef, useEffect } from 'react';
 import { Copy, Check, Plus, ListChecks } from 'lucide-react';
+import { ClinicalWarningBanner } from '@/components/ui/ClinicalWarningBanner';
 import {
   startConversation,
   sendMessage,
@@ -199,6 +200,7 @@ export default function ClinicalCopilot({ caseId, planId }: Props) {
   const [loading, setLoading] = useState(false);
   const [starting, setStarting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [aiUnavailable, setAiUnavailable] = useState(false);
   const [resolvedExpanded, setResolvedExpanded] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -220,7 +222,7 @@ export default function ClinicalCopilot({ caseId, planId }: Props) {
   }, [messages]);
 
   const handleStart = useCallback(async () => {
-    setStarting(true); setError(null);
+    setStarting(true); setError(null); setAiUnavailable(false);
     try {
       const c = await startConversation(caseId, planId);
       setConv(c);
@@ -232,6 +234,7 @@ export default function ClinicalCopilot({ caseId, planId }: Props) {
       setSuggestions(sugg);
     } catch (e) {
       setError((e as Error).message);
+      setAiUnavailable(true);
     } finally {
       setStarting(false);
     }
@@ -379,15 +382,26 @@ export default function ClinicalCopilot({ caseId, planId }: Props) {
             <span className="text-2xl">🩺</span>
           </div>
           <p className="text-sm font-medium text-[color:var(--foreground)] mb-1">Clinical Copilot</p>
-          <p className="text-xs text-[color:var(--muted-foreground)] mb-4 max-w-xs">
-            Ask questions about this treatment plan. The copilot scans prescriptions, IPR, simulation, attachments, and PDL data to provide context-aware answers.
-          </p>
+          {aiUnavailable ? (
+            <div className="mb-4 max-w-xs text-left">
+              <p className="text-xs font-semibold text-amber-700 dark:text-amber-400 mb-1">
+                AI Copilot unavailable
+              </p>
+              <p className="text-xs text-[color:var(--muted-foreground)]">
+                The AI service could not be reached. Rule-based clinical checks are still available — use the Suggestions tab or manual review workflow. Retry when connectivity is restored.
+              </p>
+            </div>
+          ) : (
+            <p className="text-xs text-[color:var(--muted-foreground)] mb-4 max-w-xs">
+              Ask questions about this treatment plan. The copilot scans prescriptions, IPR, simulation, attachments, and PDL data to provide context-aware answers.
+            </p>
+          )}
           <button
             onClick={handleStart}
             disabled={starting}
             className="px-4 py-2 text-sm bg-[color:var(--primary)] text-[color:var(--primary-foreground)] rounded-lg hover:opacity-90 disabled:opacity-50"
           >
-            {starting ? 'Starting…' : 'Start Conversation'}
+            {starting ? 'Starting…' : aiUnavailable ? 'Retry' : 'Start Conversation'}
           </button>
         </div>
       )}
@@ -454,9 +468,10 @@ export default function ClinicalCopilot({ caseId, planId }: Props) {
               value={input}
               onChange={e => setInput(e.target.value)}
               onKeyDown={handleKeyDown}
+              disabled={loading}
               placeholder="Ask about prescriptions, IPR, attachments, simulation… (Enter to send)"
               rows={2}
-              className="flex-1 text-xs p-2 border border-[color:var(--border)] rounded-lg resize-none focus:outline-none focus:ring-1 focus:ring-[color:var(--primary)] bg-[color:var(--background)] text-[color:var(--foreground)]"
+              className="flex-1 text-xs p-2 border border-[color:var(--border)] rounded-lg resize-none focus:outline-none focus:ring-1 focus:ring-[color:var(--primary)] bg-[color:var(--background)] text-[color:var(--foreground)] disabled:opacity-50 disabled:cursor-not-allowed"
             />
             <button
               onClick={() => handleSend()}
@@ -513,10 +528,8 @@ export default function ClinicalCopilot({ caseId, planId }: Props) {
       )}
 
       {/* Disclaimer */}
-      <div className="border-t border-[color:var(--border)] px-4 py-1.5 shrink-0">
-        <p className="text-[10px] text-amber-700">
-          All Copilot responses are automated suggestions only. Clinician review and approval required for all clinical decisions.
-        </p>
+      <div className="border-t border-[color:var(--border)] px-4 py-2 shrink-0">
+        <ClinicalWarningBanner message="AI-assisted recommendation only. Final treatment decisions remain the responsibility of the licensed orthodontist." />
       </div>
     </div>
   );

@@ -723,9 +723,15 @@ function PatientPortalContent() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-[color:var(--muted-foreground)]">
-            Patient Portal
-          </p>
+          <div className="flex items-center gap-2 mb-1">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-[color:var(--muted-foreground)]">
+              Patient Portal
+            </p>
+            {/* Badge — clearly marks this page as patient-facing, not clinician-facing */}
+            <span className="inline-flex items-center gap-1 rounded-full border border-blue-300/60 bg-blue-50/80 px-2 py-0.5 text-[10px] font-semibold text-blue-700 dark:border-blue-700/40 dark:bg-blue-900/20 dark:text-blue-300">
+              For Patients
+            </span>
+          </div>
           <h1 className="text-xl font-bold text-[color:var(--foreground)]">My Treatment</h1>
         </div>
         <div className="flex items-center gap-2">

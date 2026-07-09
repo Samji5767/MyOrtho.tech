@@ -51,55 +51,59 @@ interface DemoCase {
 
 // ─── Demo data ─────────────────────────────────────────────────────────────────
 
-const _t = Date.now();
 const H = 3600000;
 
-const DEMO_CASES: DemoCase[] = [
-  {
-    id: "C-2883", patient: "Oliver T.", initials: "OT", accentClass: "bg-rose-500",
-    status: "clinical_review", urgency: "critical", doctor: "Dr. Park",
-    type: "Class II Div1 — Canine reposition", age: "4 h",
-    lastModifiedMs: _t - 4 * H, progress: 45, slaRisk: true, estWeeksRemaining: 12,
-  },
-  {
-    id: "C-2847", patient: "Sarah M.", initials: "SM", accentClass: "bg-amber-500",
-    status: "approved", urgency: "urgent", doctor: "Dr. Chen",
-    type: "Aligner Stage 14 approval", age: "2 d",
-    lastModifiedMs: _t - 48 * H, progress: 72, slaRisk: false, estWeeksRemaining: 6,
-  },
-  {
-    id: "C-2876", patient: "Emma K.", initials: "EK", accentClass: "bg-violet-500",
-    status: "active_treatment", urgency: "urgent", doctor: "Dr. Chen",
-    type: "Refinement — 8 upper aligners", age: "3 d",
-    lastModifiedMs: _t - 72 * H, progress: 85, slaRisk: false, estWeeksRemaining: 3,
-  },
-  {
-    id: "C-2901", patient: "James R.", initials: "JR", accentClass: "bg-teal-500",
-    status: "clinical_review", urgency: "routine", doctor: "Dr. Lee",
-    type: "Class I — Upper arch IPR 0.3 mm", age: "1 d",
-    lastModifiedMs: _t - 24 * H, progress: 35, slaRisk: false, estWeeksRemaining: 18,
-  },
-  {
-    id: "C-2859", patient: "Marcus D.", initials: "MD", accentClass: "bg-blue-500",
-    status: "scan_review", urgency: "urgent", doctor: "Dr. Torres",
-    type: "Full-arch correction — 7 attachments", age: "3 d",
-    lastModifiedMs: _t - 72 * H, progress: 60, slaRisk: true, estWeeksRemaining: 10,
-  },
-  {
-    id: "C-2912", patient: "Ava N.", initials: "AN", accentClass: "bg-emerald-500",
-    status: "completed", urgency: "routine", doctor: "Dr. Lee",
-    type: "Retention Phase — Hawley + Vivera", age: "5 d",
-    lastModifiedMs: _t - 120 * H, progress: 100, slaRisk: false,
-  },
-  {
-    id: "C-2900", patient: "Lily S.", initials: "LS", accentClass: "bg-indigo-500",
-    status: "draft", urgency: "routine", doctor: "Dr. Nguyen",
-    type: "Initial consultation — Class I moderate crowding", age: "12 h",
-    lastModifiedMs: _t - 12 * H, progress: 15, slaRisk: false, estWeeksRemaining: 24,
-  },
-];
+// Returns demo cases with lastModifiedMs computed at call time (not module load
+// time) so that server and client see the same relative offsets during hydration.
+function makeDemoCases(): DemoCase[] {
+  const t = Date.now();
+  return [
+    {
+      id: "C-2883", patient: "Oliver T.", initials: "OT", accentClass: "bg-rose-500",
+      status: "clinical_review", urgency: "critical", doctor: "Dr. Park",
+      type: "Class II Div1 — Canine reposition", age: "4 h",
+      lastModifiedMs: t - 4 * H, progress: 45, slaRisk: true, estWeeksRemaining: 12,
+    },
+    {
+      id: "C-2847", patient: "Sarah M.", initials: "SM", accentClass: "bg-amber-500",
+      status: "approved", urgency: "urgent", doctor: "Dr. Chen",
+      type: "Aligner Stage 14 approval", age: "2 d",
+      lastModifiedMs: t - 48 * H, progress: 72, slaRisk: false, estWeeksRemaining: 6,
+    },
+    {
+      id: "C-2876", patient: "Emma K.", initials: "EK", accentClass: "bg-violet-500",
+      status: "active_treatment", urgency: "urgent", doctor: "Dr. Chen",
+      type: "Refinement — 8 upper aligners", age: "3 d",
+      lastModifiedMs: t - 72 * H, progress: 85, slaRisk: false, estWeeksRemaining: 3,
+    },
+    {
+      id: "C-2901", patient: "James R.", initials: "JR", accentClass: "bg-teal-500",
+      status: "clinical_review", urgency: "routine", doctor: "Dr. Lee",
+      type: "Class I — Upper arch IPR 0.3 mm", age: "1 d",
+      lastModifiedMs: t - 24 * H, progress: 35, slaRisk: false, estWeeksRemaining: 18,
+    },
+    {
+      id: "C-2859", patient: "Marcus D.", initials: "MD", accentClass: "bg-blue-500",
+      status: "scan_review", urgency: "urgent", doctor: "Dr. Torres",
+      type: "Full-arch correction — 7 attachments", age: "3 d",
+      lastModifiedMs: t - 72 * H, progress: 60, slaRisk: true, estWeeksRemaining: 10,
+    },
+    {
+      id: "C-2912", patient: "Ava N.", initials: "AN", accentClass: "bg-emerald-500",
+      status: "completed", urgency: "routine", doctor: "Dr. Lee",
+      type: "Retention Phase — Hawley + Vivera", age: "5 d",
+      lastModifiedMs: t - 120 * H, progress: 100, slaRisk: false,
+    },
+    {
+      id: "C-2900", patient: "Lily S.", initials: "LS", accentClass: "bg-indigo-500",
+      status: "draft", urgency: "routine", doctor: "Dr. Nguyen",
+      type: "Initial consultation — Class I moderate crowding", age: "12 h",
+      lastModifiedMs: t - 12 * H, progress: 15, slaRisk: false, estWeeksRemaining: 24,
+    },
+  ];
+}
 
-const ALL_DOCTORS = Array.from(new Set(DEMO_CASES.map((c) => c.doctor))).sort();
+const ALL_DOCTORS = Array.from(new Set(makeDemoCases().map((c) => c.doctor))).sort();
 
 // ─── Lookup maps ───────────────────────────────────────────────────────────────
 
@@ -109,9 +113,9 @@ const STATUS_META: Record<CaseStageStatus, {
 }> = {
   draft:            { label: "Draft",            tone: "neutral" },
   scan_review:      { label: "Scan Review",      tone: "info"    },
-  clinical_review:  { label: "Clinical Review",  tone: "primary" },
+  clinical_review:  { label: "Clinical Review",  tone: "info"    },
   approved:         { label: "Approved",         tone: "success" },
-  active_treatment: { label: "Active Treatment", tone: "info"    },
+  active_treatment: { label: "Active Treatment", tone: "success" },
   completed:        { label: "Completed",        tone: "success" },
 };
 
@@ -174,15 +178,17 @@ function statusToProgress(status: string): number {
 // ─── Demo CaseRow ─────────────────────────────────────────────────────────────
 
 function CaseRow({
-  c, bulkMode, selected, onToggleSelect, onArchive,
+  c, bulkMode, selected, onToggleSelect, onArchive, archivingIds,
 }: {
   c: DemoCase;
   bulkMode: boolean;
   selected: boolean;
   onToggleSelect: (id: string) => void;
   onArchive: (id: string) => void;
+  archivingIds: Set<string>;
 }) {
   const statusMeta = STATUS_META[c.status];
+  const isArchiving = archivingIds.has(c.id);
 
   return (
     <div
@@ -260,11 +266,14 @@ function CaseRow({
               <div className="hidden items-center gap-0.5 group-hover:flex">
                 <button
                   type="button"
-                  title="Archive case"
-                  onClick={(e) => { e.preventDefault(); onArchive(c.id); }}
-                  className="grid h-6 w-6 place-items-center rounded text-[color:var(--muted-foreground)] transition hover:bg-[color:var(--border)]/70 hover:text-[color:var(--foreground)]"
+                  title={isArchiving ? "Archiving…" : "Archive case"}
+                  onClick={(e) => { e.preventDefault(); if (!isArchiving) onArchive(c.id); }}
+                  disabled={isArchiving}
+                  className="grid h-6 w-6 place-items-center rounded text-[color:var(--muted-foreground)] transition hover:bg-[color:var(--border)]/70 hover:text-[color:var(--foreground)] disabled:cursor-not-allowed disabled:opacity-40"
                 >
-                  <Archive size={11} />
+                  {isArchiving
+                    ? <Clock size={11} className="animate-spin" />
+                    : <Archive size={11} />}
                 </button>
                 <Link
                   href={`/export?caseId=${c.id}`}
@@ -294,10 +303,9 @@ function LiveCaseRow({ c }: { c: CaseListItem }) {
   const patientName = `${c.patient.firstName} ${c.patient.lastName}`;
   const initials = `${c.patient.firstName[0] ?? "?"}${c.patient.lastName[0] ?? "?"}`.toUpperCase();
   const progress = statusToProgress(c.status);
-  const statusTone: "neutral" | "info" | "warning" | "success" =
-    c.status === "completed" ? "success"
-    : c.status === "scan_review" || c.status === "segmentation" || c.status === "active_treatment" ? "info"
-    : c.status === "clinical_review" || c.status === "planning" ? "warning"
+  const statusTone: "neutral" | "info" | "success" =
+    c.status === "completed" || c.status === "active_treatment" || c.status === "approved" ? "success"
+    : c.status === "scan_review" || c.status === "segmentation" || c.status === "clinical_review" || c.status === "planning" ? "info"
     : "neutral";
   const label = c.status.replace(/_/g, " ").replace(/\b\w/g, (l) => l.toUpperCase());
 
@@ -368,8 +376,15 @@ function CasesPageInner() {
 
   const [apiCases, setApiCases] = useState<CaseListItem[]>([]);
   const [apiSource, setApiSource] = useState<"loading" | "api" | "demo">("loading");
+  const [apiError, setApiError] = useState<string | null>(null);
   const [hiddenDemoCaseIds, setHiddenDemoCaseIds] = useState<Set<string>>(new Set());
   const [archiveError, setArchiveError] = useState<string | null>(null);
+  const [archiveSuccess, setArchiveSuccess] = useState<string | null>(null);
+
+  // Demo data initialised client-side to avoid server/client Date.now() mismatch.
+  const [demoCases] = useState<DemoCase[]>(makeDemoCases);
+  const [archivingIds, setArchivingIds] = useState<Set<string>>(new Set());
+  const [isBulkArchiving, setIsBulkArchiving] = useState(false);
 
   const sortRef = useRef<HTMLDivElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
@@ -433,9 +448,13 @@ function CasesPageInner() {
   useEffect(() => {
     if (previewMode) return;
     setApiSource("loading");
+    setApiError(null);
     fetchCases()
       .then(({ cases, source }) => { setApiCases(cases); setApiSource(source); })
-      .catch(() => setApiSource("demo"));
+      .catch((err) => {
+        setApiSource("demo");
+        setApiError(err instanceof Error ? err.message : "Failed to load cases");
+      });
   }, [previewMode]);
 
   // ── Bulk helpers ───────────────────────────────────────────────────────────
@@ -455,34 +474,64 @@ function CasesPageInner() {
   const handleBulkArchive = useCallback(async () => {
     const ids = Array.from(selectedIds);
     if (!ids.length) return;
+
+    // Preview mode: hide locally, no API call needed
+    if (previewMode) {
+      setHiddenDemoCaseIds((prev) => {
+        const next = new Set(prev);
+        ids.forEach((id) => next.add(id));
+        return next;
+      });
+      const msg = `${ids.length} case${ids.length !== 1 ? "s" : ""} archived`;
+      setArchiveSuccess(msg);
+      setTimeout(() => setArchiveSuccess(null), 3000);
+      clearBulk();
+      return;
+    }
+
     setArchiveError(null);
+    setIsBulkArchiving(true);
+    setArchivingIds(new Set(ids));
     try {
       await Promise.all(ids.map((id) => transitionCase(id, "archived")));
       setApiCases((prev) => prev.filter((c) => !selectedIds.has(c.id)));
+      const msg = `${ids.length} case${ids.length !== 1 ? "s" : ""} archived`;
+      setArchiveSuccess(msg);
+      setTimeout(() => setArchiveSuccess(null), 3000);
       clearBulk();
     } catch (e) {
       setArchiveError(e instanceof Error ? e.message : "Failed to archive selected cases");
+    } finally {
+      setIsBulkArchiving(false);
+      setArchivingIds(new Set());
     }
-  }, [selectedIds, clearBulk]);
+  }, [selectedIds, clearBulk, previewMode]);
 
   const handleArchiveCase = useCallback(async (id: string) => {
     if (previewMode) {
       setHiddenDemoCaseIds((prev) => { const next = new Set(prev); next.add(id); return next; });
+      setArchiveSuccess("Case archived");
+      setTimeout(() => setArchiveSuccess(null), 3000);
       return;
     }
     setArchiveError(null);
+    setArchivingIds((prev) => { const next = new Set(prev); next.add(id); return next; });
     try {
       await transitionCase(id, "archived");
       setApiCases((prev) => prev.filter((c) => c.id !== id));
+      setArchiveSuccess("Case archived");
+      setTimeout(() => setArchiveSuccess(null), 3000);
     } catch (e) {
       setArchiveError(e instanceof Error ? e.message : "Failed to archive case");
+    } finally {
+      setArchivingIds((prev) => { const next = new Set(prev); next.delete(id); return next; });
     }
   }, [previewMode]);
 
   // ── Derived data ───────────────────────────────────────────────────────────
   const visibleDemoCases = useMemo(
-    () => DEMO_CASES.filter((c) => !hiddenDemoCaseIds.has(c.id)),
-    [hiddenDemoCaseIds],
+    () => demoCases.filter((c) => !hiddenDemoCaseIds.has(c.id)),
+    [demoCases, hiddenDemoCaseIds],
   );
 
   const filteredBySearch = useMemo(() => {
@@ -517,8 +566,8 @@ function CasesPageInner() {
     );
   }, [apiCases, searchQuery]);
 
-  const slaCount   = DEMO_CASES.filter((c) => c.slaRisk).length;
-  const reviewCount = DEMO_CASES.filter((c) => c.status === "clinical_review" || c.status === "scan_review").length;
+  const slaCount   = demoCases.filter((c) => c.slaRisk).length;
+  const reviewCount = demoCases.filter((c) => c.status === "clinical_review" || c.status === "scan_review").length;
   const activeSortLabel = SORT_SPECS.find((s) => s.key === sortKey)?.label ?? "Sort";
 
   // When ?id=<uuid> is present render the case detail inline — static export
@@ -612,7 +661,7 @@ function CasesPageInner() {
         <Card className="flex flex-col items-center gap-2 p-3">
           <span className="text-2xl font-bold tabular-nums text-[color:var(--foreground)]">
             {previewMode
-              ? DEMO_CASES.filter((c) => c.status !== "completed").length
+              ? demoCases.filter((c) => c.status !== "completed").length
               : apiSource === "loading" ? "…"
               : apiCases.filter((c) => c.status !== "completed").length}
           </span>
@@ -723,7 +772,7 @@ function CasesPageInner() {
                 >
                   {f.label}
                   <span className="ml-1 tabular-nums opacity-60">
-                    ({filterCases(DEMO_CASES, f.key).length})
+                    ({filterCases(demoCases, f.key).length})
                   </span>
                 </button>
               ))}
@@ -817,6 +866,7 @@ function CasesPageInner() {
                   selected={selectedIds.has(c.id)}
                   onToggleSelect={toggleSelect}
                   onArchive={handleArchiveCase}
+                  archivingIds={archivingIds}
                 />
               ))
             )}
@@ -909,9 +959,27 @@ function CasesPageInner() {
         })}
       </div>
 
+      {/* ── API fetch error banner ── */}
+      {apiError && (
+        <div className="flex items-center gap-2 rounded-xl border border-rose-300/50 bg-rose-50/60 px-3 py-2 text-xs text-rose-700 dark:border-rose-700/40 dark:bg-rose-900/10 dark:text-rose-400">
+          <AlertCircle size={12} className="shrink-0" />
+          <span className="flex-1">{apiError}</span>
+          <button type="button" onClick={() => setApiError(null)} className="shrink-0 font-semibold hover:underline">Dismiss</button>
+        </div>
+      )}
+
+      {/* ── Archive success banner ── */}
+      {archiveSuccess && (
+        <div className="flex items-center gap-2 rounded-xl border border-emerald-300/50 bg-emerald-50/60 px-3 py-2 text-xs text-emerald-700 dark:border-emerald-700/40 dark:bg-emerald-900/10 dark:text-emerald-400">
+          <CheckCircle2 size={12} className="shrink-0" />
+          <span className="flex-1">{archiveSuccess}</span>
+        </div>
+      )}
+
       {/* ── Archive error banner ── */}
       {archiveError && (
-        <div className="mx-4 mb-2 flex items-center gap-2 rounded-xl border border-rose-300/50 bg-rose-50/60 px-3 py-2 text-xs text-rose-700 dark:border-rose-700/40 dark:bg-rose-900/10 dark:text-rose-400">
+        <div className="flex items-center gap-2 rounded-xl border border-rose-300/50 bg-rose-50/60 px-3 py-2 text-xs text-rose-700 dark:border-rose-700/40 dark:bg-rose-900/10 dark:text-rose-400">
+          <AlertCircle size={12} className="shrink-0" />
           <span className="flex-1">{archiveError}</span>
           <button type="button" onClick={() => setArchiveError(null)} className="shrink-0 font-semibold hover:underline">Dismiss</button>
         </div>
@@ -927,9 +995,12 @@ function CasesPageInner() {
             <button
               type="button"
               onClick={() => void handleBulkArchive()}
-              className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold text-[color:var(--muted-foreground)] transition hover:bg-[color:var(--border)]/50 hover:text-[color:var(--foreground)]"
+              disabled={isBulkArchiving}
+              className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold text-[color:var(--muted-foreground)] transition hover:bg-[color:var(--border)]/50 hover:text-[color:var(--foreground)] disabled:pointer-events-none disabled:opacity-50"
             >
-              <Archive size={12} /> Archive
+              {isBulkArchiving
+                ? <><Clock size={12} className="animate-spin" /> Archiving…</>
+                : <><Archive size={12} /> Archive</>}
             </button>
             <Link
               href="/export"

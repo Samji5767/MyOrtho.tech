@@ -1,15 +1,16 @@
 "use client";
 
-import { useState, useRef, type FormEvent } from "react";
+import { useState, useRef, useEffect, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { Eye, EyeOff, Lock, Mail, Stethoscope } from "lucide-react";
+import { Eye, EyeOff, Lock, Mail } from "lucide-react";
 import { login } from "@/lib/auth";
 import { useAuth } from "@/context/AuthContext";
+import BrandMark from "@/components/BrandMark";
 
 export default function LoginPage() {
   const router = useRouter();
-  const { refresh } = useAuth();
+  const { refresh, status } = useAuth();
 
   const [email, setEmail]       = useState("");
   const [password, setPassword] = useState("");
@@ -17,6 +18,13 @@ export default function LoginPage() {
   const [loading, setLoading]   = useState(false);
   const [error, setError]       = useState<string | null>(null);
   const passwordRef = useRef<HTMLInputElement>(null);
+
+  // Redirect away if already authenticated
+  useEffect(() => {
+    if (status === "authenticated") {
+      router.replace("/dashboard");
+    }
+  }, [status, router]);
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -53,34 +61,36 @@ export default function LoginPage() {
     router.replace(destination);
   }
 
+  // While checking auth status or redirecting, show a spinner to avoid flash
+  if (status === "loading" || status === "authenticated") {
+    return (
+      <div className="flex min-h-dvh items-center justify-center bg-[color:var(--background)]">
+        <div className="h-8 w-8 animate-spin rounded-full border-2 border-[color:var(--border)] border-t-[color:var(--primary)]" />
+      </div>
+    );
+  }
+
   return (
     <div className="animate-page-enter flex min-h-dvh flex-col items-center justify-center bg-[color:var(--background)] px-4 pb-8 pt-[env(safe-area-inset-top,0px)]">
-      {/* Logo + wordmark */}
-      <div className="mb-10 flex flex-col items-center gap-3">
-        <div className="grid h-16 w-16 place-items-center rounded-[22px] bg-gradient-to-br from-[color:var(--primary)] to-[color:var(--clinical-highlight)] shadow-[0_8px_24px_rgba(15,159,143,0.3)]">
-          <Stethoscope size={28} strokeWidth={2.2} className="text-white" />
-        </div>
-        <div className="text-center">
-          <p className="text-[10px] font-semibold uppercase tracking-[0.28em] text-[color:var(--muted-foreground)]">
-            MY ORTHO
-          </p>
-          <h1 className="mt-0.5 text-xl font-bold tracking-tight text-[color:var(--foreground)]">
-            Clinical Workspace
-          </h1>
-        </div>
+      {/* Logo + tagline */}
+      <div className="mb-10 flex flex-col items-center">
+        <BrandMark size="lg" variant="full" />
       </div>
 
       {/* Card */}
       <div className="w-full max-w-sm rounded-3xl border border-[color:var(--border)] bg-[color:var(--card)] p-8 shadow-[var(--shadow-md)]">
-        <h2 className="mb-1 text-base font-semibold text-[color:var(--foreground)]">
+        <h1 className="mb-1 text-base font-semibold text-[color:var(--foreground)]">
           Sign in to your account
-        </h2>
+        </h1>
         <p className="mb-6 text-sm text-[color:var(--muted-foreground)]">
           Enter your credentials to access the platform.
         </p>
 
         {error && (
-          <div className="mb-4 flex items-start gap-2.5 rounded-xl border border-rose-200/60 bg-rose-50/60 px-3.5 py-2.5 dark:border-rose-500/20 dark:bg-rose-500/10">
+          <div
+            role="alert"
+            className="mb-4 flex items-start gap-2.5 rounded-xl border border-rose-200/60 bg-rose-50/60 px-3.5 py-2.5 dark:border-rose-500/20 dark:bg-rose-500/10"
+          >
             <Lock size={13} className="mt-0.5 shrink-0 text-rose-500" />
             <p className="text-xs font-medium text-rose-700 dark:text-rose-400">{error}</p>
           </div>
@@ -89,7 +99,10 @@ export default function LoginPage() {
         <form onSubmit={handleSubmit} className="space-y-4" noValidate>
           {/* Email */}
           <div className="space-y-1.5">
-            <label htmlFor="email" className="text-xs font-semibold text-[color:var(--foreground)]">
+            <label
+              htmlFor="email"
+              className="text-xs font-semibold text-[color:var(--foreground)]"
+            >
               Email address
             </label>
             <div className="relative">
@@ -113,7 +126,10 @@ export default function LoginPage() {
 
           {/* Password */}
           <div className="space-y-1.5">
-            <label htmlFor="password" className="text-xs font-semibold text-[color:var(--foreground)]">
+            <label
+              htmlFor="password"
+              className="text-xs font-semibold text-[color:var(--foreground)]"
+            >
               Password
             </label>
             <div className="relative">
@@ -164,7 +180,10 @@ export default function LoginPage() {
 
         <p className="mt-6 text-center text-xs text-[color:var(--muted-foreground)]">
           New to MyOrtho?{" "}
-          <Link href="/signup" className="font-medium text-[color:var(--primary)] hover:underline">
+          <Link
+            href="/signup"
+            className="font-medium text-[color:var(--primary)] hover:underline"
+          >
             Start your free trial
           </Link>
         </p>

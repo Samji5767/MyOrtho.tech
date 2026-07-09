@@ -14,7 +14,7 @@ import {
   UploadCloud,
   XCircle,
 } from "lucide-react";
-import { Button, Card, StatusBadge } from "@/components/DesignSystem";
+import { Button, Card, ProgressBar, StatusBadge } from "@/components/DesignSystem";
 import {
   listScans,
   listSegmentationJobs,
@@ -78,6 +78,7 @@ export default function ScanPanel({ caseId }: { caseId: string }) {
 
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
+  const [uploadPercent, setUploadPercent] = useState<number | null>(null);
   const [jawType, setJawType] = useState<JawType>("auto");
   const fileRef = useRef<HTMLInputElement>(null);
 
@@ -143,16 +144,27 @@ export default function ScanPanel({ caseId }: { caseId: string }) {
     }
     setUploading(true);
     setUploadError(null);
+    setUploadPercent(5);
+
+    // Simulate upload progress — fetch does not expose byte-level events.
+    const interval = setInterval(() => {
+      setUploadPercent((prev) => (prev !== null && prev < 88 ? prev + 5 : prev));
+    }, 400);
+
     try {
       const scan = await uploadScan(caseId, file, jawType);
+      clearInterval(interval);
+      setUploadPercent(100);
       setScans((prev) => [scan, ...prev]);
       // Backend auto-triggers segmentation; reload jobs after a short delay
       // so the new queued job appears without a manual page refresh.
       setTimeout(() => { void loadScans(); }, 1_500);
     } catch (e) {
+      clearInterval(interval);
       setUploadError(e instanceof ApiError ? e.message : "Upload failed");
     } finally {
       setUploading(false);
+      setUploadPercent(null);
       if (fileRef.current) fileRef.current.value = "";
     }
   }
@@ -238,6 +250,16 @@ export default function ScanPanel({ caseId }: { caseId: string }) {
               disabled={uploading}
             />
           </label>
+
+          {uploading && uploadPercent !== null && (
+            <div className="space-y-1">
+              <div className="flex items-center justify-between text-xs text-[color:var(--muted-foreground)]">
+                <span>Uploading…</span>
+                <span className="tabular-nums">{uploadPercent}%</span>
+              </div>
+              <ProgressBar value={uploadPercent} tone="primary" />
+            </div>
+          )}
 
           {uploadError && (
             <p className="flex items-center gap-1.5 text-xs text-red-500">

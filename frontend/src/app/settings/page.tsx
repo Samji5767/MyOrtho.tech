@@ -1,8 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import Image from "next/image";
-import { useState, Suspense } from "react";
+import { useState, Suspense, useEffect, useCallback } from "react";
+import BrandMark from "@/components/BrandMark";
 import dynamic from "next/dynamic";
 
 const FeatureFlagsPanel = dynamic(() => import("@/components/FeatureFlagsPanel"), { ssr: false });
@@ -21,6 +21,7 @@ import {
   Moon,
   Printer,
   RotateCcw,
+  Save,
   Server,
   Shield,
   ShieldCheck,
@@ -31,10 +32,12 @@ import {
   User,
   type LucideIcon,
 } from "lucide-react";
-import { useEffect } from "react";
 import { Button, Card, LiveDot, SectionDivider, StatusBadge } from "@/components/DesignSystem";
 import { safeStorage } from "@/lib/safeStorage";
 import { useTheme } from "@/components/ThemeContext";
+import { useAuth } from "@/context/AuthContext";
+import { useToast } from "@/components/ToastContext";
+import { roleLabel, roleTone } from "@/lib/auth";
 import { APP_VERSION, APP_BUILD, RELEASE_TITLE, RELEASE_SUBTITLE, RELEASE_HIGHLIGHTS } from "@/lib/constants";
 
 // ─── Clinical Feature Flags (localStorage-based) ──────────────────────────────
@@ -146,7 +149,41 @@ function isSupabaseConfigured() {
 export default function SettingsPage() {
   const [mode, setMode] = useState<Mode>("doctor");
   const { theme, resolvedTheme, setTheme } = useTheme();
+  const { user, refresh } = useAuth();
+  const { toast } = useToast();
   const supabaseConnected = isSupabaseConfigured();
+
+  // Profile form state
+  const [profileName, setProfileName] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  // Populate form from auth user once loaded
+  useEffect(() => {
+    if (user?.name) setProfileName(user.name);
+  }, [user?.name]);
+
+  const handleSaveProfile = useCallback(async () => {
+    if (!profileName.trim()) return;
+    setSaving(true);
+    try {
+      const res = await fetch("/api/auth/profile", {
+        method: "PATCH",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: profileName.trim() }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({})) as { message?: string };
+        throw new Error(data.message ?? "Save failed");
+      }
+      await refresh();
+      toast({ title: "Profile saved", type: "success" });
+    } catch (err) {
+      toast({ title: "Could not save profile", description: err instanceof Error ? err.message : "Unknown error", type: "error" });
+    } finally {
+      setSaving(false);
+    }
+  }, [profileName, refresh, toast]);
 
   return (
     <section className="animate-page-enter mx-auto flex w-full max-w-6xl flex-col gap-4 px-4 pb-[calc(var(--tab-bar-height)+var(--sa-bottom)+1.5rem)] pt-4 sm:px-5 lg:px-8 lg:pb-10">
@@ -160,19 +197,70 @@ export default function SettingsPage() {
           <div className="min-w-0 flex-1">
             <p className="text-xs font-bold uppercase tracking-[0.18em] text-[color:var(--primary)]">Profile</p>
             <h1 className="mt-1 text-2xl font-semibold tracking-tight text-[color:var(--foreground)]">
-              Your Profile
+              {user?.name ?? "Your Profile"}
             </h1>
             <p className="mt-1 text-sm text-[color:var(--muted-foreground)]">
-              Complete your clinic profile to personalize the platform.
+              {user?.email ?? "Complete your clinic profile to personalize the platform."}
             </p>
             <div className="mt-3 flex flex-wrap items-center gap-2">
               <div className="flex items-center gap-1.5">
                 <LiveDot tone="success" />
                 <span className="text-xs font-semibold text-emerald-600 dark:text-emerald-400">Platform active</span>
               </div>
-              <StatusBadge tone="primary">Doctor</StatusBadge>
+              {user?.role && <StatusBadge tone={roleTone(user.role)}>{roleLabel(user.role)}</StatusBadge>}
               <StatusBadge tone="info">HIPAA prepared</StatusBadge>
             </div>
+          </div>
+        </div>
+
+        <SectionDivider className="mt-5" />
+
+        {/* Editable profile fields */}
+        <div className="mt-4 space-y-3">
+          <div>
+            <label className="mb-1.5 block text-xs font-semibold text-[color:var(--muted-foreground)] uppercase tracking-wide">
+              Display name
+            </label>
+            <input
+              type="text"
+              value={profileName}
+              onChange={(e) => setProfileName(e.target.value)}
+              placeholder="Your full name"
+              className="w-full rounded-xl border border-[color:var(--border)] bg-[color:var(--background)] px-4 py-2.5 text-sm text-[color:var(--foreground)] placeholder:text-[color:var(--muted-foreground)] outline-none focus:ring-2 focus:ring-[color:var(--primary)] focus:ring-offset-1 transition"
+            />
+          </div>
+          <div>
+            <label className="mb-1.5 block text-xs font-semibold text-[color:var(--muted-foreground)] uppercase tracking-wide">
+              Email
+            </label>
+            <input
+              type="email"
+              value={user?.email ?? ""}
+              readOnly
+              disabled
+              className="w-full rounded-xl border border-[color:var(--border)] bg-[color-mix(in_srgb,var(--card)_50%,transparent)] px-4 py-2.5 text-sm text-[color:var(--muted-foreground)] outline-none cursor-not-allowed"
+            />
+          </div>
+          <div className="flex justify-end">
+            <Button
+              variant="primary"
+              size="sm"
+              disabled={saving || !profileName.trim() || profileName.trim() === user?.name}
+              onClick={handleSaveProfile}
+              className="gap-1.5"
+            >
+              {saving ? (
+                <span className="inline-flex items-center gap-1.5">
+                  <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-white/40 border-t-white" />
+                  Saving…
+                </span>
+              ) : (
+                <span className="inline-flex items-center gap-1.5">
+                  <Save size={13} />
+                  Save profile
+                </span>
+              )}
+            </Button>
           </div>
         </div>
 
@@ -612,17 +700,7 @@ export default function SettingsPage() {
 
       {/* VERSION FOOTER */}
       <div className="flex flex-col items-center gap-1 py-4 text-center">
-        <div className="flex items-center gap-2">
-          <Image
-            src="/app-icon.png"
-            alt="MyOrtho"
-            width={28}
-            height={28}
-            style={{ borderRadius: 10, objectFit: 'cover', flexShrink: 0 }}
-            onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }}
-          />
-          <span className="text-sm font-semibold text-[color:var(--foreground)]">MyOrtho.tech</span>
-        </div>
+        <BrandMark variant="compact" size="sm" />
         <p className="text-xs text-[color:var(--muted-foreground)]">
           Version {APP_VERSION} · Build {APP_BUILD}
         </p>

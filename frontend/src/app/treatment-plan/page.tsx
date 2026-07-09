@@ -4,12 +4,12 @@ import { useEffect, useState, Suspense } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import {
-  CheckCircle2,
   FolderKanban,
   Layers3,
   Search,
 } from "lucide-react";
 import { Card } from "@/components/DesignSystem";
+import { ClinicalWarningBanner } from "@/components/ui/ClinicalWarningBanner";
 import TreatmentPlansPanel from "@/components/TreatmentPlansPanel";
 import { fetchCases, type CaseListItem } from "@/lib/api/cases";
 
@@ -194,11 +194,7 @@ function TreatmentPlanPageContent() {
       )}
 
       {/* AI disclaimer */}
-      <div className="flex items-start gap-2 rounded-xl border border-amber-200/60 bg-amber-50/60 px-3 py-2 text-xs text-amber-800 dark:border-amber-500/20 dark:bg-amber-500/10 dark:text-amber-300">
-        <CheckCircle2 size={12} className="mt-0.5 shrink-0" />
-        AI-generated treatment recommendations are clinical decision support only.
-        Final planning decisions are the responsibility of the licensed orthodontist.
-      </div>
+      <ClinicalWarningBanner message="AI-assisted recommendation only. Final treatment decisions remain the responsibility of the licensed orthodontist." />
 
       {/* Main content */}
       {effectiveCaseId ? (

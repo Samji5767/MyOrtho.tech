@@ -8,9 +8,10 @@ import { PLYLoader } from "three/examples/jsm/loaders/PLYLoader.js";
 import { OBJLoader } from "three/examples/jsm/loaders/OBJLoader.js";
 import * as THREE from "three";
 import {
+  AlertTriangle,
   ArrowDown, ArrowUp, Bookmark, BookmarkPlus, Camera, Expand, Eye,
   FlipHorizontal2, Grid3x3, HelpCircle, LayoutGrid, Maximize2,
-  Redo2, RotateCcw, Ruler, Scissors, Sun, Tag, Undo2, UploadCloud, X,
+  Redo2, RotateCcw, Ruler, Scissors, Sun, Undo2, UploadCloud, X,
 } from "lucide-react";
 import { Button, Card, DataRow, ProgressBar, Spinner, StatusBadge } from "@/components/DesignSystem";
 
@@ -75,48 +76,6 @@ function computeAngleDeg(a: THREE.Vector3, vertex: THREE.Vector3, b: THREE.Vecto
   return THREE.MathUtils.radToDeg(Math.acos(Math.max(-1, Math.min(1, va.dot(vb)))));
 }
 
-function createDemoArchGeometry() {
-  const geometries: THREE.BufferGeometry[] = [];
-  const toothShape = new THREE.SphereGeometry(0.42, 24, 16);
-
-  for (let arch = 0; arch < 2; arch += 1) {
-    const y = arch === 0 ? 0.58 : -0.58;
-    const zBend = arch === 0 ? -0.1 : 0.1;
-    for (let i = 0; i < 14; i += 1) {
-      const t = (i - 6.5) / 6.5;
-      const tooth = toothShape.clone();
-      const matrix = new THREE.Matrix4();
-      const x = t * 4.4;
-      const z = zBend + Math.abs(t) * 1.35;
-      const scale = 0.78 + Math.abs(t) * 0.30;
-      matrix.compose(
-        new THREE.Vector3(x, y, z),
-        new THREE.Quaternion().setFromEuler(new THREE.Euler(0, -t * 0.45, 0)),
-        new THREE.Vector3(scale * 0.86, 0.42, scale)
-      );
-      tooth.applyMatrix4(matrix);
-      geometries.push(tooth);
-    }
-  }
-
-  const merged = new THREE.BufferGeometry();
-  const positions: number[] = [];
-  const normals: number[] = [];
-  geometries.forEach(geometry => {
-    const pos = geometry.getAttribute("position");
-    const normal = geometry.getAttribute("normal");
-    for (let i = 0; i < pos.count; i += 1) {
-      positions.push(pos.getX(i), pos.getY(i), pos.getZ(i));
-      normals.push(normal.getX(i), normal.getY(i), normal.getZ(i));
-    }
-    geometry.dispose();
-  });
-  merged.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
-  merged.setAttribute("normal", new THREE.Float32BufferAttribute(normals, 3));
-  merged.computeBoundingBox();
-  merged.computeBoundingSphere();
-  return merged;
-}
 
 function centerGeometry(geometry: THREE.BufferGeometry) {
   const centered = geometry.clone();
@@ -147,34 +106,6 @@ function getStats(geometry: THREE.BufferGeometry, fileName: string): ModelStats 
     depth: size.z,
   };
 }
-
-// FDI tooth positions computed from the demo arch geometry, pre-centered.
-// Computed once at module load — no WebGL context needed.
-const DEMO_TOOTH_DATA: { fdi: number; pos: [number, number, number] }[] = (() => {
-  const rawGeo = createDemoArchGeometry();
-  rawGeo.computeBoundingBox();
-  const c = new THREE.Vector3();
-  rawGeo.boundingBox!.getCenter(c);
-  rawGeo.dispose();
-
-  const upperFdi = [17, 16, 15, 14, 13, 12, 11, 21, 22, 23, 24, 25, 26, 27];
-  const lowerFdi = [47, 46, 45, 44, 43, 42, 41, 31, 32, 33, 34, 35, 36, 37];
-  const out: { fdi: number; pos: [number, number, number] }[] = [];
-
-  for (let arch = 0; arch < 2; arch += 1) {
-    const y0 = arch === 0 ? 0.58 : -0.58;
-    const zb = arch === 0 ? -0.1 : 0.1;
-    const labels = arch === 0 ? upperFdi : lowerFdi;
-    for (let i = 0; i < 14; i += 1) {
-      const t = (i - 6.5) / 6.5;
-      out.push({
-        fdi: labels[i],
-        pos: [t * 4.4 - c.x, y0 - c.y, zb + Math.abs(t) * 1.35 - c.z],
-      });
-    }
-  }
-  return out;
-})();
 
 // ── Inner R3F components ─────────────────────────────────────────────────────
 
@@ -212,24 +143,6 @@ function CameraTracker({
   });
 
   return null;
-}
-
-// Html labels placed at each demo-arch tooth centroid.
-function FDILabels() {
-  return (
-    <>
-      {DEMO_TOOTH_DATA.map(({ fdi, pos }) => (
-        <Html key={fdi} position={pos} center distanceFactor={14}>
-          <span
-            className="pointer-events-none select-none rounded bg-black/65 px-1 py-0.5 font-mono text-[9px] text-white"
-            style={{ whiteSpace: "nowrap" }}
-          >
-            {fdi}
-          </span>
-        </Html>
-      ))}
-    </>
-  );
 }
 
 // Positions the R3F default camera at `position` looking at origin (used
@@ -511,7 +424,6 @@ function Scene({
   wireframe,
   lighting,
   showAxes,
-  showToothLabels,
   cameraStateRef,
   gotoPositionRef,
 }: {
@@ -530,7 +442,6 @@ function Scene({
   wireframe: boolean;
   lighting: LightingPreset;
   showAxes: boolean;
-  showToothLabels: boolean;
   cameraStateRef: React.MutableRefObject<CameraState | null>;
   gotoPositionRef: React.MutableRefObject<CameraState | null>;
 }) {
@@ -568,7 +479,6 @@ function Scene({
         onHover={setHoverPoint}
       />
       <MeasurementOverlay points={measurePoints} hoverPoint={hoverPoint} measureType={measureType} />
-      {showToothLabels && <FDILabels />}
       <ContactShadows opacity={0.34} scale={10} blur={2.4} far={4} position={[0, -1.25, 0]} />
       <OrbitControls
         makeDefault
@@ -630,12 +540,9 @@ const SHORTCUT_ROWS: [string, string][] = [
 // ── Main component ───────────────────────────────────────────────────────────
 
 export default function Viewer3D() {
-  const [geometry, setGeometry] = useState<THREE.BufferGeometry>(() =>
-    centerGeometry(createDemoArchGeometry())
-  );
-  const [stats, setStats] = useState<ModelStats>(() =>
-    getStats(centerGeometry(createDemoArchGeometry()), "Clinical demo arch")
-  );
+  const [geometry, setGeometry] = useState<THREE.BufferGeometry | null>(null);
+  const [stats, setStats] = useState<ModelStats | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [preset, setPreset] = useState<ViewPreset>("occlusal");
   const [clipping, setClipping] = useState(false);
   const [measurementMode, setMeasurementMode] = useState(false);
@@ -655,7 +562,6 @@ export default function Viewer3D() {
   const [showAxes, setShowAxes] = useState(false);
   const [viewerNode, setViewerNode] = useState<HTMLDivElement | null>(null);
   const [multiView, setMultiView] = useState(false);
-  const [showToothLabels, setShowToothLabels] = useState(false);
   const [showShortcuts, setShowShortcuts] = useState(false);
   const [bookmarks, setBookmarks] = useState<CameraBookmark[]>([]);
   const [editingBookmarkId, setEditingBookmarkId] = useState<string | null>(null);
@@ -666,9 +572,9 @@ export default function Viewer3D() {
   const cameraStateRef = useRef<CameraState | null>(null);
   const gotoPositionRef = useRef<CameraState | null>(null);
 
-  useEffect(() => () => geometry.dispose(), [geometry]);
+  useEffect(() => () => { geometry?.dispose(); }, [geometry]);
 
-  const isDemoModel = stats.fileName === "Clinical demo arch";
+  const hasModel = geometry !== null;
 
   // ── Measurement undo/redo ──────────────────────────────────────────────────
 
@@ -819,6 +725,7 @@ export default function Viewer3D() {
   // ── File loading with FileReader progress ─────────────────────────────────
 
   const loadStl = (file: File) => {
+    setLoadError(null);
     setLoadingProgress(2);
     gotoPositionRef.current = null;
     const reader = new FileReader();
@@ -833,24 +740,27 @@ export default function Viewer3D() {
       setLoadingProgress(80);
       const centered = centerGeometry(parsed);
       setLoadingProgress(92);
-      setGeometry((previous) => { previous.dispose(); return centered; });
+      setGeometry((previous) => { previous?.dispose(); return centered; });
       setStats(getStats(centered, file.name));
       setMeasurePoints([]);
       setHoverPoint(null);
       setMeasurementHistory([]);
       setMeasurementUndoStack([]);
       setMeasurementRedoStack([]);
-      setShowToothLabels(false);
       setPreset("occlusal");
       setResetSignal((s) => s + 1);
       setLoadingProgress(100);
       window.setTimeout(() => setLoadingProgress(null), 450);
     };
-    reader.onerror = () => setLoadingProgress(null);
+    reader.onerror = () => {
+      setLoadingProgress(null);
+      setLoadError("Failed to read file — it may be corrupted or an unsupported format.");
+    };
     reader.readAsArrayBuffer(file);
   };
 
   const loadPly = (file: File) => {
+    setLoadError(null);
     setLoadingProgress(2);
     gotoPositionRef.current = null;
     const reader = new FileReader();
@@ -865,24 +775,27 @@ export default function Viewer3D() {
       setLoadingProgress(80);
       const centered = centerGeometry(parsed);
       setLoadingProgress(92);
-      setGeometry((previous) => { previous.dispose(); return centered; });
+      setGeometry((previous) => { previous?.dispose(); return centered; });
       setStats(getStats(centered, file.name));
       setMeasurePoints([]);
       setHoverPoint(null);
       setMeasurementHistory([]);
       setMeasurementUndoStack([]);
       setMeasurementRedoStack([]);
-      setShowToothLabels(false);
       setPreset("occlusal");
       setResetSignal((s) => s + 1);
       setLoadingProgress(100);
       window.setTimeout(() => setLoadingProgress(null), 450);
     };
-    reader.onerror = () => setLoadingProgress(null);
+    reader.onerror = () => {
+      setLoadingProgress(null);
+      setLoadError("Failed to read file — it may be corrupted or an unsupported format.");
+    };
     reader.readAsArrayBuffer(file);
   };
 
   const loadObj = (file: File) => {
+    setLoadError(null);
     setLoadingProgress(2);
     gotoPositionRef.current = null;
     const reader = new FileReader();
@@ -918,20 +831,22 @@ export default function Viewer3D() {
       merged.computeVertexNormals();
       const centered = centerGeometry(merged);
       setLoadingProgress(88);
-      setGeometry((previous) => { previous.dispose(); return centered; });
+      setGeometry((previous) => { previous?.dispose(); return centered; });
       setStats(getStats(centered, file.name));
       setMeasurePoints([]);
       setHoverPoint(null);
       setMeasurementHistory([]);
       setMeasurementUndoStack([]);
       setMeasurementRedoStack([]);
-      setShowToothLabels(false);
       setPreset("occlusal");
       setResetSignal((s) => s + 1);
       setLoadingProgress(100);
       window.setTimeout(() => setLoadingProgress(null), 450);
     };
-    reader.onerror = () => setLoadingProgress(null);
+    reader.onerror = () => {
+      setLoadingProgress(null);
+      setLoadError("Failed to read file — it may be corrupted or an unsupported format.");
+    };
     reader.readAsText(file);
   };
 
@@ -948,7 +863,7 @@ export default function Viewer3D() {
     const canvas = canvasRef.current;
     if (!canvas) return;
     const anchor = document.createElement("a");
-    anchor.download = `${stats.fileName.replace(/\W+/g, "-").toLowerCase()}-viewer.png`;
+    anchor.download = `${(stats?.fileName ?? "model").replace(/\W+/g, "-").toLowerCase()}-viewer.png`;
     anchor.href = canvas.toDataURL("image/png");
     anchor.click();
   };
@@ -1056,26 +971,27 @@ export default function Viewer3D() {
           </Html>
         }
       >
-        <Scene
-          geometry={geometry}
-          preset={preset}
-          resetSignal={resetSignal}
-          clipping={clipping}
-          measurementMode={measurementMode}
-          measureType={measureType}
-          measurePoints={measurePoints}
-          setMeasurePoints={setMeasurePoints}
-          hoverPoint={hoverPoint}
-          setHoverPoint={setHoverPoint}
-          onMeasurementComplete={addMeasurement}
-          opacity={modelOpacity}
-          wireframe={wireframe}
-          lighting={lighting}
-          showAxes={showAxes}
-          showToothLabels={showToothLabels}
-          cameraStateRef={cameraStateRef}
-          gotoPositionRef={gotoPositionRef}
-        />
+        {geometry && (
+          <Scene
+            geometry={geometry}
+            preset={preset}
+            resetSignal={resetSignal}
+            clipping={clipping}
+            measurementMode={measurementMode}
+            measureType={measureType}
+            measurePoints={measurePoints}
+            setMeasurePoints={setMeasurePoints}
+            hoverPoint={hoverPoint}
+            setHoverPoint={setHoverPoint}
+            onMeasurementComplete={addMeasurement}
+            opacity={modelOpacity}
+            wireframe={wireframe}
+            lighting={lighting}
+            showAxes={showAxes}
+            cameraStateRef={cameraStateRef}
+            gotoPositionRef={gotoPositionRef}
+          />
+        )}
       </Suspense>
     </Canvas>
   );
@@ -1088,29 +1004,32 @@ export default function Viewer3D() {
         {/* ── Header toolbar ── */}
         <div className="flex flex-col gap-3 border-b border-border p-4 lg:flex-row lg:items-center lg:justify-between">
           <div>
-            <div className="flex items-center gap-2">
-              <StatusBadge tone="primary">PBR STL viewer</StatusBadge>
-              <StatusBadge tone={measurementMode ? "success" : "neutral"}>
-                Measurements {measurementMode ? "on" : "off"}
+            <div className="flex flex-wrap items-center gap-2">
+              <StatusBadge tone={hasModel ? "primary" : "neutral"}>
+                {hasModel ? "Model loaded" : "No model"}
               </StatusBadge>
-              <StatusBadge tone={clipping ? "warning" : "neutral"}>
-                Section {clipping ? "on" : "off"}
-              </StatusBadge>
-              <StatusBadge tone={loadingProgress !== null ? "info" : "neutral"}>
-                {loadingProgress !== null ? "Loading" : "Ready"}
-              </StatusBadge>
+              {hasModel && (
+                <StatusBadge tone={measurementMode ? "success" : "neutral"}>
+                  Measure {measurementMode ? "on" : "off"}
+                </StatusBadge>
+              )}
+              {hasModel && (
+                <StatusBadge tone={clipping ? "warning" : "neutral"}>
+                  Section {clipping ? "on" : "off"}
+                </StatusBadge>
+              )}
+              {loadingProgress !== null && (
+                <StatusBadge tone="info">Loading {loadingProgress}%</StatusBadge>
+              )}
             </div>
             <h3 className="mt-2 text-lg font-semibold tracking-tight text-foreground">
-              Treatment model workspace
+              3D Viewer
             </h3>
             <p className="mt-1 text-xs text-secondary">
-              Measurement is based on imported mesh geometry and should be professionally verified.
+              {hasModel
+                ? "Measurements are based on imported mesh geometry — verify clinically before use."
+                : "Upload an STL, PLY, or OBJ file to begin viewing."}
             </p>
-            {isDemoModel && (
-              <p className="mt-1 text-xs text-secondary">
-                No STL selected. Clinical demo geometry is shown until a scan is uploaded.
-              </p>
-            )}
           </div>
           <div className="flex flex-wrap gap-2">
             <input
@@ -1126,6 +1045,7 @@ export default function Viewer3D() {
             <Button
               variant={measurementMode ? "primary" : "secondary"}
               size="sm"
+              disabled={!hasModel}
               onClick={() => {
                 setMeasurementMode((v) => !v);
                 setMeasurePoints([]);
@@ -1137,6 +1057,7 @@ export default function Viewer3D() {
             <Button
               variant={clipping ? "primary" : "secondary"}
               size="sm"
+              disabled={!hasModel}
               onClick={() => setClipping((value) => !value)}
             >
               <Scissors size={15} /> Section
@@ -1145,6 +1066,7 @@ export default function Viewer3D() {
               variant="secondary"
               size="icon"
               aria-label="Reset camera"
+              disabled={!hasModel}
               onClick={() => setResetSignal((s) => s + 1)}
             >
               <RotateCcw size={17} />
@@ -1153,6 +1075,7 @@ export default function Viewer3D() {
               variant="secondary"
               size="icon"
               aria-label="Export screenshot"
+              disabled={!hasModel}
               onClick={exportScreenshot}
             >
               <Camera size={17} />
@@ -1170,19 +1093,10 @@ export default function Viewer3D() {
               size="icon"
               aria-label="Multi-view 2×2 grid"
               title="Multi-view (2×2)"
+              disabled={!hasModel}
               onClick={() => setMultiView((v) => !v)}
             >
               <LayoutGrid size={17} />
-            </Button>
-            <Button
-              variant={showToothLabels ? "primary" : "secondary"}
-              size="icon"
-              aria-label="FDI tooth labels"
-              title={isDemoModel ? "Toggle FDI tooth labels" : "FDI labels available in demo mode"}
-              disabled={!isDemoModel}
-              onClick={() => setShowToothLabels((v) => !v)}
-            >
-              <Tag size={17} />
             </Button>
             <Button
               variant={showShortcuts ? "primary" : "secondary"}
@@ -1268,7 +1182,7 @@ export default function Viewer3D() {
         <div
           ref={setViewerNode}
           className="relative touch-none select-none h-[420px] min-h-[360px] bg-[#0b111a] clinical-grid md:h-[680px]"
-          onDoubleClick={() => setResetSignal((s) => s + 1)}
+          onDoubleClick={() => hasModel && setResetSignal((s) => s + 1)}
         >
           {/* Loading overlay */}
           {loadingProgress !== null && (
@@ -1279,6 +1193,22 @@ export default function Viewer3D() {
                 <span className="tabular-nums">{loadingProgress}%</span>
               </div>
               <ProgressBar value={loadingProgress} />
+            </div>
+          )}
+
+          {/* Error overlay */}
+          {loadError && loadingProgress === null && (
+            <div className="absolute left-4 right-4 top-4 z-20 flex items-start gap-2 rounded-lg border border-rose-500/40 bg-rose-950/90 p-3 shadow-lg backdrop-blur">
+              <AlertTriangle size={14} className="mt-0.5 shrink-0 text-rose-400" />
+              <span className="flex-1 text-xs text-rose-200">{loadError}</span>
+              <button
+                type="button"
+                onClick={() => setLoadError(null)}
+                className="shrink-0 rounded p-0.5 text-rose-400 hover:text-rose-200"
+                aria-label="Dismiss error"
+              >
+                <X size={12} />
+              </button>
             </div>
           )}
 
@@ -1313,8 +1243,30 @@ export default function Viewer3D() {
             </div>
           )}
 
-          {/* Viewport content: single or multi-view */}
-          {multiView ? (
+          {/* Empty state — no model loaded */}
+          {!hasModel && loadingProgress === null && (
+            <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-4 bg-[#0b111a]">
+              <span className="grid h-16 w-16 place-items-center rounded-3xl border border-white/10 bg-white/5 text-slate-400">
+                <UploadCloud size={28} />
+              </span>
+              <div className="text-center">
+                <p className="text-sm font-semibold text-slate-200">No model loaded</p>
+                <p className="mt-1 text-xs text-slate-400">
+                  Select an STL, PLY, or OBJ file to view it in 3D
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => fileRef.current?.click()}
+                className="inline-flex h-9 items-center gap-2 rounded-xl border border-white/20 bg-white/10 px-4 text-xs font-semibold text-slate-200 transition-colors hover:border-white/40 hover:bg-white/15"
+              >
+                <UploadCloud size={13} /> Select file
+              </button>
+            </div>
+          )}
+
+          {/* Viewport content: single or multi-view (only when model is loaded) */}
+          {hasModel && (multiView ? (
             <div className="grid grid-cols-2 grid-rows-2 h-full divide-x divide-y divide-white/10">
               <div className="relative">
                 <StaticViewCanvas
@@ -1359,10 +1311,10 @@ export default function Viewer3D() {
                     : measureType === "overbite"
                     ? "Tap upper incisor edge (A) then lower incisor edge (B). Vertical distance is reported as overbite."
                     : "Tap point A then point B on the surface. Hover to preview. Result appears in the history panel."
-                  : "Tap and drag to rotate · Pinch to zoom · Enable Measure for clinical distance and angle tools · Press ? for shortcuts."}
+                  : "Drag to rotate · Pinch to zoom · Enable Measure for clinical distance and angle tools · Press ? for shortcuts."}
               </div>
             </>
-          )}
+          ))}
         </div>
       </Card>
 
@@ -1389,6 +1341,7 @@ export default function Viewer3D() {
                 key={view}
                 variant={preset === view ? "primary" : "secondary"}
                 size="sm"
+                disabled={!hasModel}
                 onClick={() => setPreset(view)}
               >
                 <Icon size={14} /> {view}
@@ -1411,7 +1364,7 @@ export default function Viewer3D() {
               variant="secondary"
               size="sm"
               onClick={saveBookmark}
-              disabled={bookmarks.length >= 8}
+              disabled={!hasModel || bookmarks.length >= 8}
             >
               <BookmarkPlus size={14} /> Save current view
             </Button>
@@ -1559,15 +1512,21 @@ export default function Viewer3D() {
         {/* Model diagnostics */}
         <Card className="p-4">
           <h3 className="text-sm font-semibold text-foreground">Model diagnostics</h3>
-          <div className="mt-4">
-            <DataRow label="File" value={<span className="break-all">{stats.fileName}</span>} />
-            <DataRow label="Triangles" value={stats.triangles.toLocaleString()} />
-            <DataRow label="Vertices" value={stats.vertices.toLocaleString()} />
-            <DataRow label="Width" value={`${stats.width.toFixed(1)} mm`} />
-            <DataRow label="Height" value={`${stats.height.toFixed(1)} mm`} />
-            <DataRow label="Depth" value={`${stats.depth.toFixed(1)} mm`} />
-            <DataRow label="Material" value="Dental enamel PBR" />
-          </div>
+          {stats ? (
+            <div className="mt-4">
+              <DataRow label="File" value={<span className="break-all">{stats.fileName}</span>} />
+              <DataRow label="Triangles" value={stats.triangles.toLocaleString()} />
+              <DataRow label="Vertices" value={stats.vertices.toLocaleString()} />
+              <DataRow label="Width" value={`${stats.width.toFixed(1)} mm`} />
+              <DataRow label="Height" value={`${stats.height.toFixed(1)} mm`} />
+              <DataRow label="Depth" value={`${stats.depth.toFixed(1)} mm`} />
+              <DataRow label="Material" value="Dental enamel PBR" />
+            </div>
+          ) : (
+            <p className="mt-4 rounded-lg border border-dashed border-border px-3 py-4 text-xs text-secondary">
+              No model loaded. Upload a file to see geometry stats.
+            </p>
+          )}
         </Card>
 
         {/* Measurement history */}

@@ -2,7 +2,6 @@
 
 import { useCallback, useEffect, useState } from "react";
 import {
-  AlertTriangle,
   Brain,
   Check,
   ChevronDown,
@@ -13,6 +12,7 @@ import {
   X,
 } from "lucide-react";
 import { Card, StatusBadge } from "@/components/DesignSystem";
+import { ClinicalWarningBanner } from "@/components/ui/ClinicalWarningBanner";
 import {
   listProposals,
   generateProposal,
@@ -21,19 +21,6 @@ import {
   type AIProposal,
   type AngleClass,
 } from "@/lib/api/aiProposal";
-
-// ─── Disclaimer ───────────────────────────────────────────────────────────────
-
-function AIDisclaimer() {
-  return (
-    <div className="flex items-start gap-2.5 rounded-xl border border-amber-200/60 bg-amber-50/60 px-3 py-2.5 text-xs text-amber-800 dark:border-amber-500/20 dark:bg-amber-500/10 dark:text-amber-300">
-      <AlertTriangle size={13} className="mt-0.5 shrink-0" />
-      <span>
-        <strong>Clinical decision support only.</strong> AI treatment proposals are automated suggestions based on clinical measurements. All outputs require clinician review and approval before any clinical action or export.
-      </span>
-    </div>
-  );
-}
 
 // ─── Status badge ─────────────────────────────────────────────────────────────
 
@@ -524,7 +511,7 @@ export default function AIProposalPanel({ caseId }: { caseId: string }) {
 
   return (
     <div className="space-y-4">
-      <AIDisclaimer />
+      <ClinicalWarningBanner message="AI-assisted recommendation only. Final treatment decisions remain the responsibility of the licensed orthodontist." />
 
       {/* Header */}
       <div className="flex items-center gap-2">
@@ -551,7 +538,10 @@ export default function AIProposalPanel({ caseId }: { caseId: string }) {
       {showForm && <GenerateForm caseId={caseId} onGenerated={handleGenerated} />}
 
       {loadError && (
-        <div className="text-xs text-red-600 dark:text-red-400 px-1">{loadError}</div>
+        <div className="flex items-start gap-2 rounded-xl border border-rose-200 bg-rose-50/60 px-3 py-2.5 text-xs text-rose-700 dark:border-rose-700/30 dark:bg-rose-900/10 dark:text-rose-400">
+          <span className="font-semibold">Could not load proposals.</span>{" "}
+          {loadError} — If the AI service is unavailable, proposals cannot be generated until connectivity is restored.
+        </div>
       )}
 
       {/* Loading */}

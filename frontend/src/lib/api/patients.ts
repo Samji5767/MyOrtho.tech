@@ -9,6 +9,7 @@ export interface PatientListItem {
   fullName: string;
   dateOfBirth: string | null;
   gender: string | null;
+  clinicalNotes?: string | null;
   caseCount: number;
   organizationId: string;
   createdAt: string;
@@ -33,26 +34,30 @@ export interface UpdatePatientDto {
 
 // ─── Demo fallback ────────────────────────────────────────────────────────────
 
-const DEMO_PATIENTS: PatientListItem[] = [
-  {
-    id: 'p-1', firstName: 'Alex', lastName: 'Chen', fullName: 'Alex Chen',
-    dateOfBirth: '1992-04-15', gender: 'prefer_not_to_say', caseCount: 1,
-    organizationId: 'demo-org', createdAt: new Date(Date.now() - 86400000 * 30).toISOString(),
-    updatedAt: new Date(Date.now() - 86400000 * 2).toISOString(),
-  },
-  {
-    id: 'p-2', firstName: 'Jordan', lastName: 'Lee', fullName: 'Jordan Lee',
-    dateOfBirth: '1988-11-22', gender: 'prefer_not_to_say', caseCount: 1,
-    organizationId: 'demo-org', createdAt: new Date(Date.now() - 86400000 * 10).toISOString(),
-    updatedAt: new Date(Date.now() - 86400000 * 1).toISOString(),
-  },
-  {
-    id: 'p-3', firstName: 'Morgan', lastName: 'Taylor', fullName: 'Morgan Taylor',
-    dateOfBirth: '2001-07-08', gender: 'prefer_not_to_say', caseCount: 1,
-    organizationId: 'demo-org', createdAt: new Date(Date.now() - 86400000 * 1).toISOString(),
-    updatedAt: new Date(Date.now() - 86400000 * 1).toISOString(),
-  },
-];
+// Computed at call time (not module load) to avoid server/client Date.now() mismatch.
+function makeDemoPatients(): PatientListItem[] {
+  const now = Date.now();
+  return [
+    {
+      id: 'p-1', firstName: 'Alex', lastName: 'Chen', fullName: 'Alex Chen',
+      dateOfBirth: '1992-04-15', gender: 'prefer_not_to_say', caseCount: 1,
+      organizationId: 'demo-org', createdAt: new Date(now - 86400000 * 30).toISOString(),
+      updatedAt: new Date(now - 86400000 * 2).toISOString(),
+    },
+    {
+      id: 'p-2', firstName: 'Jordan', lastName: 'Lee', fullName: 'Jordan Lee',
+      dateOfBirth: '1988-11-22', gender: 'prefer_not_to_say', caseCount: 1,
+      organizationId: 'demo-org', createdAt: new Date(now - 86400000 * 10).toISOString(),
+      updatedAt: new Date(now - 86400000 * 1).toISOString(),
+    },
+    {
+      id: 'p-3', firstName: 'Morgan', lastName: 'Taylor', fullName: 'Morgan Taylor',
+      dateOfBirth: '2001-07-08', gender: 'prefer_not_to_say', caseCount: 1,
+      organizationId: 'demo-org', createdAt: new Date(now - 86400000 * 1).toISOString(),
+      updatedAt: new Date(now - 86400000 * 1).toISOString(),
+    },
+  ];
+}
 
 // ─── API client ───────────────────────────────────────────────────────────────
 
@@ -62,7 +67,7 @@ export async function fetchPatients(): Promise<{ patients: PatientListItem[]; so
     return { patients, source: 'api' };
   } catch (err) {
     if (err instanceof ApiError && err.status !== 0) throw err;
-    return { patients: DEMO_PATIENTS, source: 'demo' };
+    return { patients: makeDemoPatients(), source: 'demo' };
   }
 }
 
@@ -72,7 +77,8 @@ export async function fetchPatient(id: string): Promise<{ data: PatientListItem;
     return { data, source: 'api' };
   } catch (err) {
     if (err instanceof ApiError && err.status !== 0) throw err;
-    const data = DEMO_PATIENTS.find((p) => p.id === id) ?? DEMO_PATIENTS[0];
+    const demoPatients = makeDemoPatients();
+    const data = demoPatients.find((p) => p.id === id) ?? demoPatients[0];
     return { data, source: 'demo' };
   }
 }

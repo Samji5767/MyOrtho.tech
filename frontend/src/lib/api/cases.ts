@@ -76,41 +76,45 @@ export interface UpdateCaseDto {
 // ─── Demo fallback data ───────────────────────────────────────────────────────
 // Shown when the backend is not reachable (local dev without a running API).
 
-const DEMO_CASES: CaseListItem[] = [
-  {
-    id: 'demo-1',
-    status: 'active_treatment',
-    chiefComplaint: 'Class II malocclusion with crowding',
-    malocclusionClass: 'Class II Div 1',
-    notes: null,
-    createdAt: new Date(Date.now() - 86400000 * 14).toISOString(),
-    updatedAt: new Date(Date.now() - 86400000 * 2).toISOString(),
-    patient: { id: 'p-1', firstName: 'Alex', lastName: 'Chen' },
-    assignedTo: null,
-  },
-  {
-    id: 'demo-2',
-    status: 'scan_review',
-    chiefComplaint: 'Open bite, anterior spacing',
-    malocclusionClass: 'Class I',
-    notes: null,
-    createdAt: new Date(Date.now() - 86400000 * 5).toISOString(),
-    updatedAt: new Date(Date.now() - 86400000 * 1).toISOString(),
-    patient: { id: 'p-2', firstName: 'Jordan', lastName: 'Lee' },
-    assignedTo: null,
-  },
-  {
-    id: 'demo-3',
-    status: 'draft',
-    chiefComplaint: 'Crowding, referred by GP',
-    malocclusionClass: null,
-    notes: null,
-    createdAt: new Date(Date.now() - 86400000 * 1).toISOString(),
-    updatedAt: new Date(Date.now() - 86400000 * 1).toISOString(),
-    patient: { id: 'p-3', firstName: 'Morgan', lastName: 'Taylor' },
-    assignedTo: null,
-  },
-];
+// Computed at call time (not module load) to avoid server/client Date.now() mismatch.
+function makeDemoCases(): CaseListItem[] {
+  const now = Date.now();
+  return [
+    {
+      id: 'demo-1',
+      status: 'active_treatment',
+      chiefComplaint: 'Class II malocclusion with crowding',
+      malocclusionClass: 'Class II Div 1',
+      notes: null,
+      createdAt: new Date(now - 86400000 * 14).toISOString(),
+      updatedAt: new Date(now - 86400000 * 2).toISOString(),
+      patient: { id: 'p-1', firstName: 'Alex', lastName: 'Chen' },
+      assignedTo: null,
+    },
+    {
+      id: 'demo-2',
+      status: 'scan_review',
+      chiefComplaint: 'Open bite, anterior spacing',
+      malocclusionClass: 'Class I',
+      notes: null,
+      createdAt: new Date(now - 86400000 * 5).toISOString(),
+      updatedAt: new Date(now - 86400000 * 1).toISOString(),
+      patient: { id: 'p-2', firstName: 'Jordan', lastName: 'Lee' },
+      assignedTo: null,
+    },
+    {
+      id: 'demo-3',
+      status: 'draft',
+      chiefComplaint: 'Crowding, referred by GP',
+      malocclusionClass: null,
+      notes: null,
+      createdAt: new Date(now - 86400000 * 1).toISOString(),
+      updatedAt: new Date(now - 86400000 * 1).toISOString(),
+      patient: { id: 'p-3', firstName: 'Morgan', lastName: 'Taylor' },
+      assignedTo: null,
+    },
+  ];
+}
 
 // ─── API client ───────────────────────────────────────────────────────────────
 
@@ -120,7 +124,7 @@ export async function fetchCases(): Promise<{ cases: CaseListItem[]; source: 'ap
     return { cases, source: 'api' };
   } catch (err) {
     if (err instanceof ApiError && err.status !== 0) throw err;
-    return { cases: DEMO_CASES, source: 'demo' };
+    return { cases: makeDemoCases(), source: 'demo' };
   }
 }
 
@@ -131,7 +135,8 @@ export async function fetchCase(id: string): Promise<{ data: CaseDetail; source:
   } catch (err) {
     if (err instanceof ApiError && err.status !== 0) throw err;
     // Build a stub demo detail from demo list
-    const base = DEMO_CASES.find((c) => c.id === id) ?? DEMO_CASES[0];
+    const demoCases = makeDemoCases();
+    const base = demoCases.find((c) => c.id === id) ?? demoCases[0];
     const data: CaseDetail = {
       ...base,
       patient: {

@@ -1,6 +1,7 @@
 "use client";
 
 import { Brain, CheckCircle2, Clock, Circle, AlertTriangle } from "lucide-react";
+import { ClinicalWarningBanner } from "@/components/ui/ClinicalWarningBanner";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -106,6 +107,11 @@ export default function AIReadinessPage() {
         Capability maturity matrix for AI-assisted features in MyOrtho 2.0. Each entry reflects
         the current deployment status and data-handling approach.
       </p>
+
+      <ClinicalWarningBanner
+        message="AI-assisted recommendation only. Final treatment decisions remain the responsibility of the licensed orthodontist."
+        className="mb-4"
+      />
 
       {/* Legend */}
       <div className="mb-8 flex flex-wrap gap-3">

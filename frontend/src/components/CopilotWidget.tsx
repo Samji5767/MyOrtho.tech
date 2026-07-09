@@ -9,6 +9,7 @@ import {
   type ConfidenceLevel,
   type ExplainabilityData,
 } from '@/lib/api/copilot';
+import { ClinicalWarningBanner } from '@/components/ui/ClinicalWarningBanner';
 
 // ─── Types ─────────────────────────────────────────────────────────────────
 
@@ -193,6 +194,11 @@ function MessageRow({
           )}
         </p>
         {!isUser && msg.sources && <CitationsRow sources={msg.sources} />}
+        {!isUser && !msg.streaming && msg.content && (
+          <p className="mt-1.5 border-t border-slate-200 dark:border-slate-700 pt-1.5 text-[9px] leading-relaxed text-amber-700 dark:text-amber-400">
+            AI-assisted recommendation only. Final treatment decisions remain the responsibility of the licensed orthodontist.
+          </p>
+        )}
       </div>
     </div>
   );
@@ -216,6 +222,7 @@ export default function CopilotWidget({ caseId, planId }: Props) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [starting, setStarting] = useState(false);
+  const [aiUnavailable, setAiUnavailable] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
@@ -228,6 +235,7 @@ export default function CopilotWidget({ caseId, planId }: Props) {
     if (conv) return;
     setStarting(true);
     setError(null);
+    setAiUnavailable(false);
     try {
       const c = await startConversation(caseId, planId);
       setConv(c);
@@ -238,6 +246,7 @@ export default function CopilotWidget({ caseId, planId }: Props) {
       }]);
     } catch (e) {
       setError((e as Error).message);
+      setAiUnavailable(true);
     } finally {
       setStarting(false);
     }
@@ -398,15 +407,33 @@ export default function CopilotWidget({ caseId, planId }: Props) {
         ))}
       </div>
 
-      {/* Loading / error */}
+      {/* Loading / error / fallback */}
       {starting && (
-        <div className="flex flex-1 items-center justify-center text-xs text-slate-400">
+        <div className="flex flex-1 items-center justify-center gap-2 text-xs text-slate-400">
+          <svg className="h-4 w-4 animate-spin" fill="none" viewBox="0 0 24 24">
+            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
+          </svg>
           Starting conversation…
         </div>
       )}
       {error && !starting && (
-        <div className="mx-3 mt-2 shrink-0 rounded border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
-          {error}
+        <div className="mx-3 mt-2 shrink-0 space-y-2">
+          <div className="rounded border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
+            {error}
+          </div>
+          {aiUnavailable && (
+            <div className="rounded border border-amber-200 bg-amber-50/80 px-3 py-2 text-xs text-amber-800 dark:border-amber-700/40 dark:bg-amber-900/10 dark:text-amber-300">
+              <span className="font-semibold">AI Copilot is unavailable.</span>{' '}
+              Rule-based clinical checks are still active. Retry when connectivity is restored.
+              <button
+                onClick={openPanel}
+                className="ml-2 underline underline-offset-2 hover:no-underline font-medium"
+              >
+                Retry
+              </button>
+            </div>
+          )}
         </div>
       )}
 
@@ -447,9 +474,10 @@ export default function CopilotWidget({ caseId, planId }: Props) {
             value={input}
             onChange={e => setInput(e.target.value)}
             onKeyDown={handleKey}
+            disabled={busy}
             placeholder="Ask a question… (Enter to send)"
             rows={2}
-            className="flex-1 resize-none rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 px-3 py-2 text-xs text-slate-900 dark:text-slate-100 placeholder-slate-400 dark:placeholder-slate-500 focus:border-blue-400 focus:bg-white dark:focus:bg-slate-800 focus:outline-none focus:ring-1 focus:ring-blue-400"
+            className="flex-1 resize-none rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 px-3 py-2 text-xs text-slate-900 dark:text-slate-100 placeholder-slate-400 dark:placeholder-slate-500 focus:border-blue-400 focus:bg-white dark:focus:bg-slate-800 focus:outline-none focus:ring-1 focus:ring-blue-400 disabled:opacity-50 disabled:cursor-not-allowed"
           />
           <button
             onClick={() => send()}
@@ -465,10 +493,8 @@ export default function CopilotWidget({ caseId, planId }: Props) {
       )}
 
       {/* Disclaimer */}
-      <div className="shrink-0 border-t border-slate-100 px-3 py-1.5">
-        <p className="text-[9px] text-amber-700">
-          AI suggestions only. Clinician review required for all clinical decisions.
-        </p>
+      <div className="shrink-0 border-t border-slate-100 dark:border-slate-800 px-3 py-2">
+        <ClinicalWarningBanner message="AI-assisted recommendation only. Final treatment decisions remain the responsibility of the licensed orthodontist." />
       </div>
     </div>
   );

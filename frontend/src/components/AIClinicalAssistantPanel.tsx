@@ -11,6 +11,7 @@ import {
   RefreshCw,
 } from "lucide-react";
 import { Card, EmptyState, Spinner } from "@/components/DesignSystem";
+import { ClinicalWarningBanner } from "@/components/ui/ClinicalWarningBanner";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -127,8 +128,11 @@ function SuggestionCard({
                   FDI {suggestion.tooth_fdi}
                 </span>
               )}
-              <span className="text-[10px] text-secondary font-medium">
-                {Math.round(suggestion.confidence * 100)}% conf.
+              <span
+                className="text-[10px] text-secondary font-medium"
+                title={`AI model confidence: ${Math.round(suggestion.confidence * 100)}%`}
+              >
+                {Math.round(suggestion.confidence * 100)}% confidence
               </span>
             </div>
           </div>
@@ -284,6 +288,8 @@ export default function AIClinicalAssistantPanel({ setupId }: { setupId?: string
 
   return (
     <div className="space-y-4">
+      <ClinicalWarningBanner message="AI-assisted recommendation only. Final treatment decisions remain the responsibility of the licensed orthodontist." />
+
       {/* Action bar */}
       <div className="flex flex-wrap items-center gap-3">
         <button
@@ -356,11 +362,11 @@ export default function AIClinicalAssistantPanel({ setupId }: { setupId?: string
         <div className="flex items-center justify-center py-16"><Spinner size={32} /></div>
       )}
 
-      {!loading && suggestions.length === 0 && (
+      {!loading && suggestions.length === 0 && !error && (
         <EmptyState
           icon={Bot}
           title="No suggestions"
-          body="Click Refresh Suggestions to generate AI clinical recommendations for this setup."
+          body="Click Refresh Suggestions to generate AI clinical recommendations for this setup. If AI is unavailable, rule-based checks will run instead and flag common issues automatically."
         />
       )}
 

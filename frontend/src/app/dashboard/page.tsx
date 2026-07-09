@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback, useMemo } from "react";
 import Link from "next/link";
-import Image from "next/image";
+import BrandMark from "@/components/BrandMark";
 import {
   AlertTriangle,
   Box,
@@ -23,6 +23,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { Card } from "@/components/DesignSystem";
+import { LoadingSkeleton, ErrorState, EmptyState, SectionCard } from "@/components/ui";
 import { fetchCases, type CaseListItem } from "@/lib/api/cases";
 import { api } from "@/lib/api/client";
 import NewCaseModal from "@/components/NewCaseModal";
@@ -335,14 +336,7 @@ export default function OverviewPage() {
         {/* ── Hero ── */}
         <div className="flex items-start justify-between gap-3">
           <div className="flex items-center gap-3">
-            <Image
-              src="/app-icon.png"
-              alt="MyOrtho"
-              width={40}
-              height={40}
-              style={{ borderRadius: 14, objectFit: "cover", flexShrink: 0 }}
-              onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = "none"; }}
-            />
+            <BrandMark variant="icon-only" size="md" className="shrink-0" />
             <div>
               <p className="text-[10px] font-semibold uppercase tracking-[0.24em] text-[color:var(--muted-foreground)]">
                 MyOrtho.tech
@@ -364,9 +358,13 @@ export default function OverviewPage() {
 
         {/* ── Cases load error ── */}
         {casesError && (
-          <div role="alert" className="p-4 text-sm text-red-600 bg-red-50 rounded-md dark:bg-red-900/20 dark:text-red-400">
-            {casesError}
-          </div>
+          <SectionCard>
+            <ErrorState
+              title="Failed to load cases"
+              message={casesError}
+              onRetry={loadCases}
+            />
+          </SectionCard>
         )}
 
         {/* ── Dashboard KPI row ── */}
@@ -405,7 +403,7 @@ export default function OverviewPage() {
             </div>
             <div className="space-y-2">
               {casesLoading
-                ? [1, 2, 3].map((i) => <div key={i} className="ios-card h-[64px] animate-pulse" />)
+                ? <LoadingSkeleton type="card" rows={3} />
                 : attentionCases.map((ac) => (
                     <Link
                       key={ac.id}
@@ -533,14 +531,10 @@ export default function OverviewPage() {
               <p className="mb-3 text-[11px] font-semibold uppercase tracking-[0.2em] text-[color:var(--muted-foreground)]">
                 AI Intelligence Summary
               </p>
-              <Card className="p-4">
-                <div className="flex items-center gap-2 mb-3">
-                  <Brain size={15} className="text-[color:var(--primary)]" />
-                  <p className="text-sm font-semibold text-[color:var(--foreground)]">Planning Queue</p>
-                  <span className="ml-auto text-xs text-[color:var(--muted-foreground)]">
-                    {planningCases.length} case{planningCases.length !== 1 ? "s" : ""}
-                  </span>
-                </div>
+              <SectionCard
+                title="Planning Queue"
+                description={`${planningCases.length} case${planningCases.length !== 1 ? "s" : ""} across active planning stages`}
+              >
                 <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
                   {[
                     {
@@ -585,7 +579,7 @@ export default function OverviewPage() {
                     <ChevronRight size={12} />
                   </Link>
                 )}
-              </Card>
+              </SectionCard>
             </div>
           );
         })()}
@@ -629,30 +623,24 @@ export default function OverviewPage() {
           </div>
 
           {casesLoading ? (
-            <div className="space-y-2">
-              {[1, 2, 3].map((i) => (
-                <div key={i} className="ios-card h-[70px] animate-pulse" />
-              ))}
-            </div>
+            <LoadingSkeleton type="card" rows={3} />
           ) : recentCases.length === 0 ? (
-            <Card className="flex flex-col items-center gap-3 py-10 text-center">
-              <span className="grid h-12 w-12 place-items-center rounded-3xl bg-[color:var(--primary-glow)] text-[color:var(--primary)]">
-                <FolderKanban size={22} />
-              </span>
-              <div>
-                <p className="text-sm font-semibold text-[color:var(--foreground)]">No cases yet</p>
-                <p className="mt-1 text-xs text-[color:var(--muted-foreground)]">
-                  Create your first patient case to get started with the clinical workflow.
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={() => setModalOpen(true)}
-                className="inline-flex h-9 items-center gap-2 rounded-xl bg-[color:var(--primary)] px-4 text-sm font-semibold text-[color:var(--primary-foreground)] transition-transform active:scale-95"
-              >
-                <Plus size={14} strokeWidth={2.5} />
-                Create First Case
-              </button>
+            <Card>
+              <EmptyState
+                icon={<FolderKanban size={22} />}
+                title="No cases yet"
+                description="Create your first patient case to get started with the clinical workflow."
+                action={
+                  <button
+                    type="button"
+                    onClick={() => setModalOpen(true)}
+                    className="inline-flex h-9 items-center gap-2 rounded-xl bg-[color:var(--primary)] px-4 text-sm font-semibold text-[color:var(--primary-foreground)] transition-transform active:scale-95"
+                  >
+                    <Plus size={14} strokeWidth={2.5} />
+                    Create First Case
+                  </button>
+                }
+              />
             </Card>
           ) : (
             <div className="space-y-2">
@@ -668,34 +656,31 @@ export default function OverviewPage() {
           <p className="mb-3 text-[11px] font-semibold uppercase tracking-[0.2em] text-[color:var(--muted-foreground)]">
             Practice Trends
           </p>
-          <Card className="p-4">
+          <SectionCard
+            title="Monthly Case Volume"
+            description={`Cases opened in ${monthLabels[monthLabels.length - 1]}`}
+          >
             <div className="flex items-start justify-between gap-4">
-              <div>
-                <p className="text-sm font-semibold text-[color:var(--foreground)]">Monthly Case Volume</p>
-                <div className="mt-1 flex items-baseline gap-2">
-                  <span className="text-3xl font-bold tabular-nums tracking-tight text-[color:var(--foreground)]">
-                    {monthlyValues[monthlyValues.length - 1]}
+              <div className="flex items-baseline gap-2">
+                <span className="text-3xl font-bold tabular-nums tracking-tight text-[color:var(--foreground)]">
+                  {casesLoading ? "—" : monthlyValues[monthlyValues.length - 1]}
+                </span>
+                {!casesLoading && (
+                  <span className={[
+                    "flex items-center gap-0.5 text-xs font-semibold",
+                    trendChange >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400",
+                  ].join(" ")}>
+                    <TrendingUp size={12} />
+                    {trendChange >= 0 ? "+" : ""}{trendPct}% vs last month
                   </span>
-                  {!casesLoading && (
-                    <span className={[
-                      "flex items-center gap-0.5 text-xs font-semibold",
-                      trendChange >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400",
-                    ].join(" ")}>
-                      <TrendingUp size={12} />
-                      {trendChange >= 0 ? "+" : ""}{trendPct}% vs last month
-                    </span>
-                  )}
-                </div>
-                <p className="mt-1 text-xs text-[color:var(--muted-foreground)]">
-                  Cases opened in {monthLabels[monthLabels.length - 1]}
-                </p>
+                )}
               </div>
               <Zap size={20} className="mt-0.5 shrink-0 text-[color:var(--primary)] opacity-60" />
             </div>
 
             <div className="mt-4">
               {casesLoading
-                ? <div className="h-11 animate-pulse rounded-lg bg-[color:var(--border)]" />
+                ? <LoadingSkeleton type="text" rows={1} className="h-11" />
                 : <Sparkline values={monthlyValues} />
               }
             </div>
@@ -718,7 +703,7 @@ export default function OverviewPage() {
                 Full analytics →
               </Link>
             </div>
-          </Card>
+          </SectionCard>
         </div>
 
       </section>

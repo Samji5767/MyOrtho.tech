@@ -29,6 +29,7 @@ function resolveTheme(theme: ThemePreference): ResolvedTheme {
 }
 
 function applyTheme(theme: ThemePreference) {
+  if (typeof window === "undefined") return;
   const resolvedTheme = resolveTheme(theme);
   const root = window.document.documentElement;
   root.classList.toggle("dark", resolvedTheme === "dark");

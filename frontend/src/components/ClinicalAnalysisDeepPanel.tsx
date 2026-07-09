@@ -10,6 +10,7 @@ import {
   XCircle,
 } from 'lucide-react';
 import { Button, Card, ProgressBar, StatusBadge } from '@/components/DesignSystem';
+import { ClinicalWarningBanner } from '@/components/ui/ClinicalWarningBanner';
 import { api } from '@/lib/api/client';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -385,15 +386,21 @@ export default function ClinicalAnalysisDeepPanel({
         </Button>
 
         {error && (
-          <p className="text-xs text-rose-600 dark:text-rose-400 flex items-center gap-1">
-            <AlertTriangle size={12} /> {error}
-          </p>
+          <div className="flex items-start gap-2 rounded-xl border border-rose-200 bg-rose-50/60 px-3 py-2.5 text-xs text-rose-700 dark:border-rose-700/30 dark:bg-rose-900/10 dark:text-rose-400">
+            <AlertTriangle size={12} className="mt-0.5 shrink-0" />
+            <span>
+              <span className="font-semibold">Analysis failed.</span>{" "}
+              {error} — AI analysis is unavailable. Please check your measurements and try again. If the issue persists, use the rule-based manual review workflow.
+            </span>
+          </div>
         )}
       </Card>
 
       {/* Results */}
       {analysis && (
         <>
+          <ClinicalWarningBanner message="AI-assisted recommendation only. Final treatment decisions remain the responsibility of the licensed orthodontist." />
+
           {/* Bolton Analysis */}
           <Card className="p-5 space-y-4">
             <div className="flex items-center gap-2">

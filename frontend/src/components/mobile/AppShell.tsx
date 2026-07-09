@@ -148,24 +148,29 @@ function DynamicIslandSpacer() {
   );
 }
 
-// ─── iPad detection ───────────────────────────────────────────────────────────
+// ─── Wide-layout detection (iPad + any desktop ≥ 1024 px) ───────────────────
+// On iPad the sidebar is activated by UA; on desktop by viewport width.
+// A resize listener keeps the state live when the browser window is resized.
 
-function useIsIPad(): boolean {
-  const [isIPad, setIsIPad] = useState(false);
+function useIsWideLayout(): boolean {
+  const [isWide, setIsWide] = useState(false);
   useEffect(() => {
     const check = () => {
       const ua = navigator.userAgent;
-      setIsIPad(/iPad/.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 0));
+      const isIPad = /iPad/.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 0);
+      setIsWide(isIPad || window.innerWidth >= 1024);
     };
     check();
+    window.addEventListener("resize", check);
+    return () => window.removeEventListener("resize", check);
   }, []);
-  return isIPad;
+  return isWide;
 }
 
 // ─── App shell ────────────────────────────────────────────────────────────────
 
 export function AppShell({ children }: { children: ReactNode }) {
-  const isIPad = useIsIPad();
+  const isWideLayout = useIsWideLayout();
   const pathname = usePathname() ?? '/';
   useGlobalNavShortcuts();
 
@@ -196,8 +201,8 @@ export function AppShell({ children }: { children: ReactNode }) {
     );
   }
 
-  // ── iPad layout: sidebar + content ──────────────────────────────────────────
-  if (isIPad) {
+  // ── Wide layout (iPad / desktop ≥ 1024 px): sidebar + content ───────────────
+  if (isWideLayout) {
     return (
       <div className="ipad-shell-root">
         <DynamicIslandSpacer />

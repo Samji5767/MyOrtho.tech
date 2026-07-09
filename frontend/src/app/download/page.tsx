@@ -14,6 +14,7 @@ import {
   Download,
   Cpu,
   HardDrive,
+  Loader2,
   Wifi,
   Activity,
   Layers,
@@ -145,7 +146,24 @@ function DownloadCard({
   installSteps: string[];
 }) {
   const [activeVariant, setActiveVariant] = useState(0);
+  const [downloading, setDownloading] = useState(false);
   const v = variants[activeVariant];
+
+  function handleDownload() {
+    if (!v.url || downloading) return;
+    setDownloading(true);
+    // Trigger file download via a temporary anchor element.
+    // Desktop app installers are public files — no auth headers required.
+    const a = document.createElement("a");
+    a.href = v.url;
+    a.download = "";
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    // Reset the downloading flag after the browser has had time to start the
+    // transfer (3 s is more than enough for the download dialog to appear).
+    setTimeout(() => setDownloading(false), 3000);
+  }
 
   return (
     <div className="rounded-2xl border border-dl-border bg-dl-surface overflow-hidden shadow-[0_2px_16px_rgba(0,0,0,0.05)] dark:shadow-[0_2px_16px_rgba(0,0,0,0.25)]">
@@ -210,13 +228,25 @@ function DownloadCard({
 
         {/* Download button */}
         {v.url ? (
-          <a
-            href={v.url}
-            className="flex w-full items-center justify-center gap-2 rounded-xl bg-dl-accent py-3 text-sm font-semibold text-white hover:bg-dl-accent-hover transition-colors shadow-[0_2px_8px_var(--dl-accent-glow)]"
+          <button
+            type="button"
+            onClick={handleDownload}
+            disabled={downloading}
+            aria-label={downloading ? "Downloading…" : `Download ${v.type.toUpperCase()}`}
+            className="flex w-full items-center justify-center gap-2 rounded-xl bg-dl-accent py-3 text-sm font-semibold text-white hover:bg-dl-accent-hover transition-colors shadow-[0_2px_8px_var(--dl-accent-glow)] disabled:opacity-70 disabled:cursor-not-allowed"
           >
-            <Download size={16} />
-            Download {v.type.toUpperCase()}
-          </a>
+            {downloading ? (
+              <>
+                <Loader2 size={16} className="animate-spin" />
+                Downloading…
+              </>
+            ) : (
+              <>
+                <Download size={16} />
+                Download {v.type.toUpperCase()}
+              </>
+            )}
+          </button>
         ) : (
           <div className="flex w-full items-center justify-center gap-2 rounded-xl bg-dl-surface border-2 border-dashed border-dl-border py-3 text-sm font-medium text-dl-muted cursor-not-allowed">
             <HardDrive size={16} />

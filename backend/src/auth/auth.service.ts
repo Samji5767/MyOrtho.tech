@@ -254,6 +254,15 @@ export class AuthService implements OnModuleInit {
     );
   }
 
+  // ─── Update profile ────────────────────────────────────────────────────────
+
+  async updateProfile(userId: string, name: string): Promise<void> {
+    await this.pool.query(
+      'UPDATE auth_users SET full_name = $1, updated_at = now() WHERE id = $2',
+      [name.trim(), userId],
+    );
+  }
+
   // ─── Bootstrap admin ──────────────────────────────────────────────────────
 
   private async ensureSchema(): Promise<void> {

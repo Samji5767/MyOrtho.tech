@@ -1,6 +1,7 @@
 'use client';
 import { useState, useEffect, useCallback } from 'react';
 import { Image as ImageIcon, Plus, Trash2, ExternalLink } from 'lucide-react';
+import { api } from '@/lib/api/client';
 
 interface RadiologyImage {
   id: string; imageType: string; fileUrl: string;
@@ -25,9 +26,9 @@ export default function RadiologyPanel({ patientId, caseId }: Props) {
       const params = new URLSearchParams({ patientId });
       if (caseId) params.set('caseId', caseId);
       if (filter) params.set('imageType', filter);
-      const r = await fetch(`/api/radiology?${params}`, { credentials: "include" });
-      if (r.ok) setImages(await r.json());
-    } finally { setLoading(false); }
+      const data = await api.get<RadiologyImage[]>(`/api/radiology?${params}`);
+      setImages(data);
+    } catch { /* silent on load failure */ } finally { setLoading(false); }
   }, [patientId, caseId, filter]);
 
   useEffect(() => { load(); }, [load]);
@@ -36,12 +37,7 @@ export default function RadiologyPanel({ patientId, caseId }: Props) {
     if (!form.fileUrl.trim()) return;
     setSaving(true);
     try {
-      await fetch('/api/radiology', {
-        method: 'POST',
-        credentials: "include",
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...form, patientId, caseId: caseId ?? null, captureDate: form.captureDate || null, notes: form.notes || null }),
-      });
+      await api.post('/api/radiology', { ...form, patientId, caseId: caseId ?? null, captureDate: form.captureDate || null, notes: form.notes || null });
       setForm({ imageType: 'panoramic', fileUrl: '', captureDate: '', notes: '' });
       setShowForm(false);
       await load();
@@ -49,7 +45,7 @@ export default function RadiologyPanel({ patientId, caseId }: Props) {
   };
 
   const remove = async (id: string) => {
-    await fetch(`/api/radiology/${id}`, { method: 'DELETE', credentials: "include" });
+    await api.delete(`/api/radiology/${id}`);
     await load();
   };
 

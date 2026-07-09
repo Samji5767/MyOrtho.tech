@@ -68,6 +68,7 @@ export default function AdminOrgPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   const isAdmin = user?.role === "admin" || user?.role === "super_admin";
 
@@ -95,6 +96,7 @@ export default function AdminOrgPage() {
 
   async function handleSave() {
     setSaving(true);
+    setSaveError(null);
     try {
       await fetch("/api/admin/orgs", {
         method: "PATCH",
@@ -104,6 +106,8 @@ export default function AdminOrgPage() {
       });
       setSaved(true);
       setTimeout(() => setSaved(false), 2500);
+    } catch (e) {
+      setSaveError(e instanceof Error ? e.message : "Failed to save organization settings");
     } finally {
       setSaving(false);
     }
@@ -159,6 +163,9 @@ export default function AdminOrgPage() {
           </div>
 
           {/* Save */}
+          {saveError && (
+            <p className="text-sm text-rose-600 dark:text-rose-400">{saveError}</p>
+          )}
           <div className="flex items-center justify-end gap-3">
             {saved && (
               <span className="text-sm font-medium text-emerald-600 dark:text-emerald-400">

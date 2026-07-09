@@ -15,6 +15,7 @@ import {
 import type { CSSProperties } from "react";
 import { Card, SkeletonBlock } from "@/components/DesignSystem";
 import { fetchCases, type CaseListItem } from "@/lib/api/cases";
+import { api } from "@/lib/api/client";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -221,17 +222,13 @@ export default function AnalyticsPage() {
       setCases(result.cases);
       setSource(result.source);
 
-      const summaryRes = await fetch('/api/cases/analytics/summary', { credentials: 'include' });
-      if (summaryRes.ok) {
-        const data = await summaryRes.json() as AnalyticsSummary;
-        setSummary(data);
-      }
+      api.get<AnalyticsSummary>('/api/cases/analytics/summary')
+        .then(setSummary)
+        .catch(() => { /* optional metric, ignore failure */ });
 
-      const auditRes = await fetch('/api/audit/summary?hours=24', { credentials: 'include' });
-      if (auditRes.ok) {
-        const d = await auditRes.json() as { recentCount: number };
-        setAuditCount(d.recentCount);
-      }
+      api.get<{ recentCount: number }>('/api/audit/summary?hours=24')
+        .then((d) => setAuditCount(d.recentCount))
+        .catch(() => { /* optional metric, ignore failure */ });
     } catch {
       // fetchCases handles errors internally
     } finally {

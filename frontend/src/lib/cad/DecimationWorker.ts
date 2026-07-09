@@ -13,10 +13,11 @@ self.onmessage = async (e: MessageEvent) => {
       vertices = parsed.vertices;
       faces = parsed.faces;
     } else {
-      // PLY/OBJ mock parsing for simulation
-      const len = 300000; // Mock high-poly count
-      vertices = new Float32Array(len * 3);
-      faces = new Uint32Array(len);
+      throw new Error(
+        `Mesh format "${format as string}" is not supported by this parser. ` +
+        'Only binary STL files are currently supported. ' +
+        'Convert PLY/OBJ files to binary STL before uploading.',
+      );
     }
 
     const initialFacesCount = vertices.length / 9;

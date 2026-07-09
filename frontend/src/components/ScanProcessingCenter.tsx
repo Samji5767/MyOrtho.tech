@@ -27,9 +27,11 @@ import type { ScanFormat, ScanItem, ScanStatus } from "@/types/orthodontic";
 
 const MOCK_SCANS: ScanItem[] = [];
 
+// All scanner vendor connectors throw NotImplementedException — no live API connections.
+// Status is "available" (can be configured) not "connected" (active session established).
 const SCANNER_INTEGRATIONS = [
-  { name: "iTero",          logo: "iT", color: "bg-blue-500",    status: "connected", protocol: "iTero API" },
-  { name: "Medit",          logo: "Md", color: "bg-teal-600",    status: "connected", protocol: "Medit Link" },
+  { name: "iTero",          logo: "iT", color: "bg-blue-500",    status: "available", protocol: "iTero API" },
+  { name: "Medit",          logo: "Md", color: "bg-teal-600",    status: "available", protocol: "Medit Link" },
   { name: "3Shape TRIOS",   logo: "3S", color: "bg-violet-600",  status: "available", protocol: "TRIOS API" },
   { name: "Carestream",     logo: "CS", color: "bg-amber-600",   status: "available", protocol: "CS Connect" },
   { name: "Shining3D",      logo: "SH", color: "bg-rose-500",    status: "available", protocol: "Shining API" },

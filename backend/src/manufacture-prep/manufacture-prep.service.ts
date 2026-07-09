@@ -62,15 +62,18 @@ function buildManifest(dto: CreateExportDto, stageCount: number) {
       break;
     case 'full_case':
       files.push(`case_package.zip`);
-      files.push(`manufacturing_report.pdf`);
-      files.push(`qa_report.pdf`);
+      // manufacturing_report and qa_report are generated server-side as HTML (not PDF);
+      // a PDF rendering library (Puppeteer / WeasyPrint) is not installed.
+      files.push(`manufacturing_report.html`);
+      files.push(`qa_report.html`);
       for (let i = 1; i <= Math.min(stageCount, 30); i++) {
         files.push(`stage_${String(i).padStart(3, '0')}_upper.${format}`);
         files.push(`stage_${String(i).padStart(3, '0')}_lower.${format}`);
       }
       break;
     case 'qa_report':
-      files.push('qa_report.pdf');
+      // HTML report (PDF generation not yet implemented — no PDF library installed)
+      files.push('qa_report.html');
       files.push('qa_report_data.json');
       break;
   }

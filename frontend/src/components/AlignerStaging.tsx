@@ -1,7 +1,6 @@
 "use client";
 
 import React, { useState, useEffect, useCallback } from "react";
-import { useCases } from "@/hooks/useApi";
 import {
   Play,
   Pause,
@@ -15,6 +14,7 @@ import {
 import { listPlans } from "@/lib/api/treatmentPlans";
 import { listAttachments } from "@/lib/api/attachments";
 import { listIprItems } from "@/lib/api/ipr";
+import { transitionCase } from "@/lib/api/cases";
 
 interface AlignerStagingProps {
   caseId: string;
@@ -22,7 +22,6 @@ interface AlignerStagingProps {
 }
 
 export default function AlignerStaging({ caseId, patientName }: AlignerStagingProps) {
-  const { updateCaseStatus } = useCases();
 
   // ── Simulation state (UX only) ──────────────────────────────────────────────
   const [currentStage, setCurrentStage] = useState(1);
@@ -108,7 +107,7 @@ export default function AlignerStaging({ caseId, patientName }: AlignerStagingPr
     setAiApproved(nextApproved);
     setApprovalError(null);
     try {
-      await updateCaseStatus(caseId, nextApproved ? "approved" : "planning");
+      await transitionCase(caseId, nextApproved ? "approved" : "planning");
     } catch (err) {
       setAiApproved(!nextApproved);
       setApprovalError(

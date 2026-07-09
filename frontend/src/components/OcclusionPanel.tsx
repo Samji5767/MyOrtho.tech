@@ -1,6 +1,7 @@
 'use client';
 import { useState, useEffect, useCallback } from 'react';
 import { Target, Plus } from 'lucide-react';
+import { api } from '@/lib/api/client';
 
 interface OcclusionAnalysis {
   id: string; analysisDate: string; angleClass: string | null;
@@ -21,38 +22,37 @@ export default function OcclusionPanel({ caseId }: Props) {
     crowdingUpperMm: '', crowdingLowerMm: '', tmjFindings: '', notes: '',
   });
   const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const r = await fetch(`/api/cases/${caseId}/occlusion`, { credentials: "include" });
-      if (r.ok) setAnalyses(await r.json());
-    } finally { setLoading(false); }
+      const data = await api.get<OcclusionAnalysis[]>(`/api/cases/${caseId}/occlusion`);
+      setAnalyses(data);
+    } catch { /* silent on load failure */ } finally { setLoading(false); }
   }, [caseId]);
 
   useEffect(() => { load(); }, [load]);
 
   const create = async () => {
     setSaving(true);
+    setSaveError(null);
     try {
-      await fetch(`/api/cases/${caseId}/occlusion`, {
-        method: 'POST',
-        credentials: "include",
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          analysisDate: form.analysisDate,
-          angleClass: form.angleClass || null,
-          overjetMm: form.overjetMm ? parseFloat(form.overjetMm) : null,
-          overbitemm: form.overbitemm ? parseFloat(form.overbitemm) : null,
-          midlineShiftMm: form.midlineShiftMm ? parseFloat(form.midlineShiftMm) : null,
-          crowdingUpperMm: form.crowdingUpperMm ? parseFloat(form.crowdingUpperMm) : null,
-          crowdingLowerMm: form.crowdingLowerMm ? parseFloat(form.crowdingLowerMm) : null,
-          tmjFindings: form.tmjFindings || null,
-          notes: form.notes || null,
-        }),
+      await api.post(`/api/cases/${caseId}/occlusion`, {
+        analysisDate: form.analysisDate,
+        angleClass: form.angleClass || null,
+        overjetMm: form.overjetMm ? parseFloat(form.overjetMm) : null,
+        overbitemm: form.overbitemm ? parseFloat(form.overbitemm) : null,
+        midlineShiftMm: form.midlineShiftMm ? parseFloat(form.midlineShiftMm) : null,
+        crowdingUpperMm: form.crowdingUpperMm ? parseFloat(form.crowdingUpperMm) : null,
+        crowdingLowerMm: form.crowdingLowerMm ? parseFloat(form.crowdingLowerMm) : null,
+        tmjFindings: form.tmjFindings || null,
+        notes: form.notes || null,
       });
       setShowForm(false);
       await load();
+    } catch (e) {
+      setSaveError(e instanceof Error ? e.message : "Failed to save analysis");
     } finally { setSaving(false); }
   };
 
@@ -109,6 +109,7 @@ export default function OcclusionPanel({ caseId }: Props) {
           </div>
           <input className="w-full border rounded px-3 py-2 text-sm" placeholder="TMJ findings" value={form.tmjFindings} onChange={e => setForm(f => ({ ...f, tmjFindings: e.target.value }))} />
           <textarea className="w-full border rounded px-3 py-2 text-sm" placeholder="Notes" rows={2} value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} />
+          {saveError && <p className="text-xs text-red-600">{saveError}</p>}
           <button onClick={create} disabled={saving} className="w-full py-2 bg-indigo-600 text-white text-sm rounded-md hover:bg-indigo-700 disabled:opacity-50">
             {saving ? 'Saving…' : 'Save Analysis'}
           </button>

@@ -11,6 +11,7 @@ import {
   RefreshCw,
 } from "lucide-react";
 import { Card } from "@/components/DesignSystem";
+import { api } from "@/lib/api/client";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -362,11 +363,7 @@ export default function PrinterDownloadPanel({
   const loadFiles = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await fetch(`/api/cases/${caseId}/scans`, {
-        credentials: "include",
-      });
-      if (!res.ok) throw new Error("api-unavailable");
-      const data: unknown = await res.json();
+      const data = await api.get<unknown>(`/api/cases/${caseId}/scans`);
       const items = (Array.isArray(data) ? data : []) as {
         id: string;
         jawType?: string;

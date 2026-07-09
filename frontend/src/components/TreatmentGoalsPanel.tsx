@@ -23,6 +23,7 @@ import {
   EmptyState,
   Spinner,
 } from "@/components/DesignSystem";
+import { api } from "@/lib/api/client";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -373,15 +374,11 @@ export default function TreatmentGoalsPanel({ caseId }: { caseId: string }) {
     angle_class: "I",
   });
 
-  const authHeaders = { "Content-Type": "application/json" };
-
   const fetchGoals = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`/api/treatment-goals?caseId=${caseId}`, { credentials: "include", headers: { "Content-Type": "application/json" } });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const data = await res.json() as TreatmentGoals | null;
+      const data = await api.get<TreatmentGoals | null>(`/api/treatment-goals?caseId=${caseId}`);
       setGoals(data);
     } catch (e) {
       const msg = e instanceof Error ? e.message : "Failed to load goals";
@@ -398,21 +395,14 @@ export default function TreatmentGoalsPanel({ caseId }: { caseId: string }) {
     setGenerating(true);
     setError(null);
     try {
-      const res = await fetch("/api/treatment-goals/generate", {
-        method: "POST",
-        credentials: "include",
-        headers: authHeaders,
-        body: JSON.stringify({
-          caseId,
-          crowding_upper: parseFloat(form.crowding_upper) || 0,
-          crowding_lower: parseFloat(form.crowding_lower) || 0,
-          overjet: parseFloat(form.overjet) || 0,
-          overbite: parseFloat(form.overbite) || 0,
-          angle_class: form.angle_class,
-        }),
+      const data = await api.post<TreatmentGoals>("/api/treatment-goals/generate", {
+        caseId,
+        crowding_upper: parseFloat(form.crowding_upper) || 0,
+        crowding_lower: parseFloat(form.crowding_lower) || 0,
+        overjet: parseFloat(form.overjet) || 0,
+        overbite: parseFloat(form.overbite) || 0,
+        angle_class: form.angle_class,
       });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const data = await res.json() as TreatmentGoals;
       setGoals(data);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to generate goals");
@@ -426,13 +416,7 @@ export default function TreatmentGoalsPanel({ caseId }: { caseId: string }) {
     setApproving(true);
     setError(null);
     try {
-      const res = await fetch(`/api/treatment-goals/${goals.id}/approve`, {
-        method: "POST",
-        credentials: "include",
-        headers: authHeaders,
-      });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const updated = await res.json() as TreatmentGoals;
+      const updated = await api.post<TreatmentGoals>(`/api/treatment-goals/${goals.id}/approve`, {});
       setGoals(updated);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to approve");
@@ -445,18 +429,11 @@ export default function TreatmentGoalsPanel({ caseId }: { caseId: string }) {
     if (!goals) return;
     setError(null);
     try {
-      const res = await fetch(`/api/treatment-goals/${goals.id}`, {
-        method: "PATCH",
-        credentials: "include",
-        headers: authHeaders,
-        body: JSON.stringify({
-          predicted_aligners: parseInt(editDraft.aligner_count) || goals.predicted_aligners,
-          duration_weeks: parseInt(editDraft.duration_weeks) || goals.duration_weeks,
-          notes: editDraft.notes,
-        }),
+      const updated = await api.patch<TreatmentGoals>(`/api/treatment-goals/${goals.id}`, {
+        predicted_aligners: parseInt(editDraft.aligner_count) || goals.predicted_aligners,
+        duration_weeks: parseInt(editDraft.duration_weeks) || goals.duration_weeks,
+        notes: editDraft.notes,
       });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const updated = await res.json() as TreatmentGoals;
       setGoals(updated);
       setEditing(false);
     } catch (e) {

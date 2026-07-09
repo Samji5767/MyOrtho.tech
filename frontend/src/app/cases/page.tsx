@@ -365,7 +365,7 @@ function CasesPageInner() {
   const searchParams = useSearchParams();
   const caseId = searchParams.get("id");
 
-  const [previewMode, setPreviewMode] = useState(true);
+  const [previewMode, setPreviewMode] = useState(false);
   const [filter, setFilter] = useState<FilterKey>("all");
   const [sortKey, setSortKey] = useState<SortKey>("newest");
   const [doctorFilter, setDoctorFilter] = useState("all");
@@ -568,6 +568,12 @@ function CasesPageInner() {
 
   const slaCount   = demoCases.filter((c) => c.slaRisk).length;
   const reviewCount = demoCases.filter((c) => c.status === "clinical_review" || c.status === "scan_review").length;
+  const SLA_STALE_MS = 14 * 24 * 60 * 60 * 1000;
+  const apiSlaCount = apiCases.filter((c) => {
+    const active = !["completed", "archived", "cancelled"].includes(c.status);
+    const stale = Date.now() - new Date(c.updatedAt).getTime() > SLA_STALE_MS;
+    return active && stale;
+  }).length;
   const activeSortLabel = SORT_SPECS.find((s) => s.key === sortKey)?.label ?? "Sort";
 
   // When ?id=<uuid> is present render the case detail inline — static export
@@ -592,21 +598,19 @@ function CasesPageInner() {
           </p>
         </div>
         <div className="flex items-center gap-2">
-          {previewMode && (
-            <button
-              type="button"
-              onClick={() => { if (bulkMode) clearBulk(); else setBulkMode(true); }}
-              className={[
-                "hidden h-9 items-center gap-1.5 rounded-xl border px-3 text-xs font-semibold transition sm:flex",
-                bulkMode
-                  ? "border-[color:var(--primary)] bg-[color:var(--primary-glow)] text-[color:var(--primary)]"
-                  : "border-[color:var(--border)] bg-[color:var(--card)] text-[color:var(--muted-foreground)] hover:text-[color:var(--foreground)]",
-              ].join(" ")}
-            >
-              <Check size={12} />
-              {bulkMode ? "Cancel" : "Select"}
-            </button>
-          )}
+          <button
+            type="button"
+            onClick={() => { if (bulkMode) clearBulk(); else setBulkMode(true); }}
+            className={[
+              "hidden h-9 items-center gap-1.5 rounded-xl border px-3 text-xs font-semibold transition sm:flex",
+              bulkMode
+                ? "border-[color:var(--primary)] bg-[color:var(--primary-glow)] text-[color:var(--primary)]"
+                : "border-[color:var(--border)] bg-[color:var(--card)] text-[color:var(--muted-foreground)] hover:text-[color:var(--foreground)]",
+            ].join(" ")}
+          >
+            <Check size={12} />
+            {bulkMode ? "Cancel" : "Select"}
+          </button>
           <Link href="/cases/new">
             <Button variant="primary" size="sm">
               <Plus size={15} /> New Case
@@ -678,8 +682,8 @@ function CasesPageInner() {
         </Card>
         <Card className="flex flex-col items-center gap-2 p-3">
           <span className="flex items-center gap-1 text-2xl font-bold tabular-nums text-[color:var(--foreground)]">
-            {previewMode ? slaCount : "0"}
-            {previewMode && slaCount > 0 && <AlertCircle size={16} className="text-rose-500" />}
+            {previewMode ? slaCount : apiSource === "loading" ? "…" : apiSlaCount}
+            {(previewMode ? slaCount : apiSlaCount) > 0 && <AlertCircle size={16} className="text-rose-500" />}
           </span>
           <StatusBadge tone="danger">SLA risk</StatusBadge>
         </Card>

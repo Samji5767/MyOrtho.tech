@@ -14,6 +14,7 @@ import {
   Zap,
 } from "lucide-react";
 import { Card, EmptyState, Spinner } from "@/components/DesignSystem";
+import { api } from "@/lib/api/client";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -141,13 +142,7 @@ function StageDetail({
     setSavingNotes(true);
     setNotesError(null);
     try {
-      const res = await fetch(`/api/treatment-stages/${stage.id}/notes`, {
-        method: "PATCH",
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ notes: notesDraft }),
-      });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      await api.patch(`/api/treatment-stages/${stage.id}/notes`, { notes: notesDraft });
       onNotesUpdated(stage.id, notesDraft);
       setEditingNotes(false);
     } catch (e) {
@@ -299,9 +294,7 @@ export default function TreatmentStagesPanel({ setupId }: { setupId?: string }) 
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`/api/treatment-stages?setupId=${setupId}`, { credentials: "include" });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const data = await res.json() as TreatmentStage[];
+      const data = await api.get<TreatmentStage[]>(`/api/treatment-stages?setupId=${setupId}`);
       setStages(data);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to load stages");
@@ -324,12 +317,7 @@ export default function TreatmentStagesPanel({ setupId }: { setupId?: string }) 
     setGenerating(true);
     setError(null);
     try {
-      const res = await fetch(`/api/treatment-stages/generate/${setupId}`, {
-        method: "POST",
-        credentials: "include",
-      });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const data = await res.json() as TreatmentStage[];
+      const data = await api.post<TreatmentStage[]>(`/api/treatment-stages/generate/${setupId}`, {});
       setStages(data);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to generate stages");

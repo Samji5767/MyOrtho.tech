@@ -56,6 +56,15 @@ function assertRequiredEnv(): void {
     }
     logger.warn('FRONTEND_URL not set — CORS will only allow localhost origins.');
   }
+  const smtpHost = process.env.SMTP_HOST ?? '';
+  const smtpUser = process.env.SMTP_USER ?? '';
+  const smtpPass = process.env.SMTP_PASS ?? '';
+  if (!smtpHost || !smtpUser || !smtpPass) {
+    logger.warn(
+      'SMTP_HOST / SMTP_USER / SMTP_PASS not fully configured — ' +
+      'email delivery will silently no-op. Set these before production launch.',
+    );
+  }
 }
 
 async function bootstrap() {

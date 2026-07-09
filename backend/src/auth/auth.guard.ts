@@ -2,6 +2,17 @@ import { Injectable, CanActivate, ExecutionContext, UnauthorizedException } from
 import type { Request } from 'express';
 import { AuthService } from './auth.service';
 
+export interface AuthUser {
+  id: string;
+  email: string;
+  role: string;
+  name: string;
+  orgId: string | null;
+  jti: string;
+}
+
+export type AuthenticatedRequest = Request & { user: AuthUser };
+
 const COOKIE_NAME = 'mo_session';
 
 @Injectable()

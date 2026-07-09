@@ -539,7 +539,7 @@ const SHORTCUT_ROWS: [string, string][] = [
 
 // ── Main component ───────────────────────────────────────────────────────────
 
-export default function Viewer3D() {
+export default function Viewer3D(props: Viewer3DProps = {}) {
   const [geometry, setGeometry] = useState<THREE.BufferGeometry | null>(null);
   const [stats, setStats] = useState<ModelStats | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -856,6 +856,13 @@ export default function Viewer3D() {
     if (ext === "obj") return loadObj(file);
     return loadStl(file);
   };
+
+  // ── Load file from props when provided ───────────────────────────────────
+
+  useEffect(() => {
+    if (props.file) loadFile(props.file);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [props.file]);
 
   // ── Screenshot / fullscreen ───────────────────────────────────────────────
 

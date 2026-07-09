@@ -15,6 +15,7 @@ import {
 import type { CSSProperties } from "react";
 import { Card, SkeletonBlock } from "@/components/DesignSystem";
 import { fetchCases, type CaseListItem } from "@/lib/api/cases";
+import { api } from "@/lib/api/client";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -209,6 +210,7 @@ function MetricsSkeleton() {
 export default function AnalyticsPage() {
   const [cases, setCases] = useState<CaseListItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [source, setSource] = useState<"api" | "demo">("demo");
   const [barsVisible, setBarsVisible] = useState(false);
   const [summary, setSummary] = useState<AnalyticsSummary | null>(null);
@@ -216,24 +218,21 @@ export default function AnalyticsPage() {
 
   const load = useCallback(async () => {
     setLoading(true);
+    setLoadError(null);
     try {
       const result = await fetchCases();
       setCases(result.cases);
       setSource(result.source);
 
-      const summaryRes = await fetch('/api/cases/analytics/summary', { credentials: 'include' });
-      if (summaryRes.ok) {
-        const data = await summaryRes.json() as AnalyticsSummary;
-        setSummary(data);
-      }
+      api.get<AnalyticsSummary>('/api/cases/analytics/summary')
+        .then(setSummary)
+        .catch(() => { /* optional metric, ignore failure */ });
 
-      const auditRes = await fetch('/api/audit/summary?hours=24', { credentials: 'include' });
-      if (auditRes.ok) {
-        const d = await auditRes.json() as { recentCount: number };
-        setAuditCount(d.recentCount);
-      }
-    } catch {
-      // fetchCases handles errors internally
+      api.get<{ recentCount: number }>('/api/audit/summary?hours=24')
+        .then((d) => setAuditCount(d.recentCount))
+        .catch(() => { /* optional metric, ignore failure */ });
+    } catch (err) {
+      setLoadError(err instanceof Error ? err.message : 'Failed to load analytics data');
     } finally {
       setLoading(false);
     }
@@ -312,9 +311,23 @@ export default function AnalyticsPage() {
         </div>
       </div>
 
+      {loadError && (
+        <div className="mb-4 flex items-center gap-3 rounded-xl border border-rose-200/60 bg-rose-50/60 px-4 py-3 text-sm text-rose-700 dark:border-rose-700/30 dark:bg-rose-900/10 dark:text-rose-400">
+          <span className="shrink-0">⚠</span>
+          <span>{loadError}</span>
+          <button onClick={() => void load()} className="ml-auto text-xs font-semibold underline underline-offset-2 hover:no-underline">Retry</button>
+        </div>
+      )}
+
       {/* ── Metrics grid ── */}
       {loading ? (
         <MetricsSkeleton />
+      ) : cases.length === 0 && !loadError ? (
+        <div className="rounded-xl border border-dashed border-[color:var(--border)] py-12 text-center">
+          <p className="text-sm font-medium text-[color:var(--foreground)]">No cases yet</p>
+          <p className="mt-1 text-xs text-[color:var(--muted-foreground)]">Analytics will appear once you create your first case.</p>
+          <Link href="/cases/new" className="mt-4 inline-block rounded-xl bg-[color:var(--primary)] px-4 py-2 text-xs font-semibold text-white hover:opacity-90">Create case</Link>
+        </div>
       ) : (
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
           {metrics.map((m, i) => {

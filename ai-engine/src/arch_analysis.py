@@ -53,11 +53,10 @@ class ArchAnalysisEngine:
         """
         logger.info("Malocclusion Classifier: parsing arch lines and molar coordinates")
         
-        # In production, this calculates the sagittal distance between:
-        # Maxillary 1st molar mesiobuccal cusp and Mandibular 1st molar buccal groove.
-        # sagittal_dist = max_molar_cusp.x - man_molar_groove.x
-        
-        # Mocking logic based on spacing / crowding parameters
+        # Classification uses measured overjet as a proxy for Angle's molar relation.
+        # Definitive Angle classification requires sagittal distance between
+        # maxillary first molar mesiobuccal cusp and mandibular buccal groove;
+        # implement when landmark_data includes direct molar landmark coordinates.
         overjet = float(landmark_data.get("overjet_mm", 2.2))
         overbite = float(landmark_data.get("overbite_mm", 2.0))
         crowding = float(landmark_data.get("crowding_mm", 3.5))
@@ -72,8 +71,10 @@ class ArchAnalysisEngine:
             classification = "Class I"
             complexity = 35
 
-        if crowding > 6.0 or overbite < 0.0:
-            complexity += 15 # Severe crowding or open bite adds complexity
+        if crowding > 6.0:
+            complexity += 15  # Severe crowding increases complexity
+        if overbite < 0.0:
+            complexity += 15  # Anterior open bite increases complexity
 
         return {
             "angle_classification": classification,
@@ -84,6 +85,11 @@ class ArchAnalysisEngine:
             "diagnostics": {
                 "crossbite": landmark_data.get("crossbite", False),
                 "openbite": overbite < 0.0,
-                "deepbite": overbite > 4.0
-            }
+                "deepbite": overbite > 4.0,
+            },
+            "disclaimer": (
+                "AI-assisted recommendation only. "
+                "Final treatment decisions remain the responsibility of the licensed orthodontist."
+            ),
+            "classification_basis": "overjet_proxy",
         }

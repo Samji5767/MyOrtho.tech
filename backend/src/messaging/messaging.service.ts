@@ -57,7 +57,13 @@ export class MessagingService {
     return rows;
   }
 
-  async sendMessage(conversationId: string, senderId: string, body: string) {
+  async sendMessage(
+    conversationId: string,
+    senderId: string,
+    body: string,
+    attachmentUrl?: string,
+    voiceNoteDuration?: number,
+  ) {
     const { rows: part } = await this.pool.query(
       `SELECT 1 FROM conversation_participants WHERE conversation_id = $1 AND user_id = $2`,
       [conversationId, senderId],
@@ -65,9 +71,10 @@ export class MessagingService {
     if (!part.length) throw new NotFoundException('Conversation not found');
 
     const { rows } = await this.pool.query(
-      `INSERT INTO messages (conversation_id, sender_id, body, read_by)
-       VALUES ($1, $2, $3, ARRAY[$2]::uuid[]) RETURNING id, body, created_at`,
-      [conversationId, senderId, body],
+      `INSERT INTO messages (conversation_id, sender_id, body, attachment_url, voice_note_duration_s, read_by)
+       VALUES ($1, $2, $3, $4, $5, ARRAY[$2]::uuid[])
+       RETURNING id, body, created_at, attachment_url, voice_note_duration_s`,
+      [conversationId, senderId, body, attachmentUrl ?? null, voiceNoteDuration ?? null],
     );
     return rows[0];
   }

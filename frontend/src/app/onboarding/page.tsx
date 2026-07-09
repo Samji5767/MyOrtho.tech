@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { safeStorage } from "@/lib/safeStorage";
 import {
@@ -169,12 +169,16 @@ export default function OnboardingPage() {
   const [aiReadiness, setAiReadiness]     = useState("");
   const [enableDemo, setEnableDemo]       = useState(false);
   const [saving, setSaving] = useState(false);
+  const [finishError, setFinishError] = useState<string | null>(null);
+  const redirecting = useRef(false);
 
   const resolvedRole = (roleOption?.value ?? user?.role ?? "orthodontist") as RoleKey;
   const roleConfig   = getRoleConfig(resolvedRole);
 
   async function finish() {
+    if (redirecting.current) return;
     setSaving(true);
+    setFinishError(null);
     try {
       await fetch(`/api/auth/onboarding`, {
         method: "POST",
@@ -188,10 +192,12 @@ export default function OnboardingPage() {
           primaryFlow, cadLevel, aiReadiness, enableDemo,
         }),
       });
-    } catch {
-      // Profile save is best-effort; local onboarding state still advances
+    } catch (err) {
+      setFinishError(
+        err instanceof Error ? err.message : "Preferences could not be saved — they will apply locally."
+      );
     }
-    // Persist completion locally so the skip-gate works even without a live session
+    redirecting.current = true;
     safeStorage.set("mo_onboarding_done", "1");
     await refresh();
     router.replace(getPrimaryWorkspace(resolvedRole));
@@ -552,6 +558,12 @@ export default function OnboardingPage() {
           )}
 
           {/* ── Navigation buttons ────────────────────────────────────────────────── */}
+          {finishError && (
+            <div className="mt-4 flex items-start gap-2 rounded-xl border border-amber-300/60 bg-amber-50/70 px-3 py-2.5 text-xs text-amber-800 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-300">
+              <span className="mt-px shrink-0">⚠</span>
+              <span>{finishError} Continuing to workspace…</span>
+            </div>
+          )}
           <div className="mt-6 flex gap-3">
             {step > 0 && (
               <button

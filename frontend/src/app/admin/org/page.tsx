@@ -66,8 +66,10 @@ export default function AdminOrgPage() {
   const router = useRouter();
   const [profile, setProfile] = useState<OrgProfile>(EMPTY);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   const isAdmin = user?.role === "admin" || user?.role === "super_admin";
 
@@ -85,7 +87,7 @@ export default function AdminOrgPage() {
           : null;
         if (org) setProfile({ name: org.name, type: org.type });
       })
-      .catch(() => {})
+      .catch(() => setLoadError("Failed to load organization settings. Please refresh."))
       .finally(() => setLoading(false));
   }, [isAdmin, user?.orgId]);
 
@@ -95,15 +97,22 @@ export default function AdminOrgPage() {
 
   async function handleSave() {
     setSaving(true);
+    setSaveError(null);
     try {
-      await fetch("/api/admin/orgs", {
+      const res = await fetch("/api/admin/orgs", {
         method: "PATCH",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(profile),
       });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({})) as { message?: string };
+        throw new Error(body.message ?? `Save failed (${res.status})`);
+      }
       setSaved(true);
       setTimeout(() => setSaved(false), 2500);
+    } catch (e) {
+      setSaveError(e instanceof Error ? e.message : "Failed to save organization settings");
     } finally {
       setSaving(false);
     }
@@ -125,6 +134,12 @@ export default function AdminOrgPage() {
         <ShieldAlert size={15} className="shrink-0" />
         <span>Only <strong>admin</strong> and <strong>super_admin</strong> accounts can edit organization settings.</span>
       </div>
+
+      {loadError && (
+        <div className="mb-4 rounded-xl border border-rose-200/60 bg-rose-50/60 px-4 py-3 text-sm text-rose-700 dark:border-rose-700/30 dark:bg-rose-900/10 dark:text-rose-400">
+          {loadError}
+        </div>
+      )}
 
       {loading ? (
         <div className="flex flex-col gap-4">
@@ -159,6 +174,9 @@ export default function AdminOrgPage() {
           </div>
 
           {/* Save */}
+          {saveError && (
+            <p className="text-sm text-rose-600 dark:text-rose-400">{saveError}</p>
+          )}
           <div className="flex items-center justify-end gap-3">
             {saved && (
               <span className="text-sm font-medium text-emerald-600 dark:text-emerald-400">

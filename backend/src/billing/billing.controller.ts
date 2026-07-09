@@ -3,9 +3,9 @@ import {
   Res, RawBodyRequest, HttpCode, HttpStatus,
   BadRequestException, ForbiddenException,
 } from '@nestjs/common';
-import type { Request, Response } from 'express';
+import type { Response } from 'express';
 import { BillingService } from './billing.service';
-import { AuthGuard } from '../auth/auth.guard';
+import { AuthGuard, type AuthenticatedRequest } from '../auth/auth.guard';
 
 @Controller('api/billing')
 export class BillingController {
@@ -18,8 +18,8 @@ export class BillingController {
 
   @Get('subscription')
   @UseGuards(AuthGuard)
-  async getSubscription(@Req() req: Request) {
-    const orgId = (req as any).user?.orgId;
+  async getSubscription(@Req() req: AuthenticatedRequest) {
+    const orgId = req.user?.orgId;
     if (!orgId) throw new ForbiddenException('No organization associated with your account');
     return this.billing.getSubscription(orgId);
   }
@@ -28,10 +28,10 @@ export class BillingController {
   @UseGuards(AuthGuard)
   @HttpCode(HttpStatus.OK)
   async createCheckout(
-    @Req() req: Request,
+    @Req() req: AuthenticatedRequest,
     @Body() body: { interval?: 'monthly' | 'annual'; successUrl?: string; cancelUrl?: string },
   ) {
-    const user = (req as any).user;
+    const user = req.user;
     if (!user?.orgId) throw new ForbiddenException('No organization associated with your account');
     if (!body.interval || !['monthly', 'annual'].includes(body.interval)) {
       throw new BadRequestException('interval must be "monthly" or "annual"');
@@ -50,8 +50,8 @@ export class BillingController {
   @Post('portal')
   @UseGuards(AuthGuard)
   @HttpCode(HttpStatus.OK)
-  async createPortal(@Req() req: Request, @Body() body: { returnUrl?: string }) {
-    const user = (req as any).user;
+  async createPortal(@Req() req: AuthenticatedRequest, @Body() body: { returnUrl?: string }) {
+    const user = req.user;
     if (!user?.orgId) throw new ForbiddenException('No organization associated with your account');
     const origin = (req.headers['origin'] as string) ?? process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000';
     return this.billing.createPortalSession(user.orgId, body.returnUrl ?? `${origin}/settings/billing`);

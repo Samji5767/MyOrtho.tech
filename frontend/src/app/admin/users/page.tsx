@@ -271,6 +271,7 @@ export default function AdminUsersPage() {
   const router = useRouter();
   const [members, setMembers] = useState<OrgMember[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [showInvite, setShowInvite] = useState(false);
   const [roleTarget, setRoleTarget] = useState<OrgMember | null>(null);
@@ -287,13 +288,14 @@ export default function AdminUsersPage() {
   useEffect(() => {
     if (!isAdmin) return;
     setLoading(true);
+    setLoadError(null);
     fetch("/api/admin/users", { credentials: "include" })
-      .then(r => r.ok ? r.json() : Promise.reject(r.status))
+      .then(r => r.ok ? r.json() : Promise.reject(new Error(`Failed to load team (${r.status})`)))
       .then((data: RawMember[] | { members: RawMember[] }) => {
         const raw = Array.isArray(data) ? data : (data.members ?? []);
         setMembers(raw.map(normalizeMember));
       })
-      .catch(() => setMembers([]))
+      .catch((err: unknown) => setLoadError(err instanceof Error ? err.message : "Failed to load team members"))
       .finally(() => setLoading(false));
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isAdmin, tick]);
@@ -332,6 +334,19 @@ export default function AdminUsersPage() {
         <ShieldAlert size={15} className="shrink-0" />
         <span>Changes to user roles are logged in the audit trail and take effect immediately.</span>
       </div>
+
+      {loadError && (
+        <div className="mb-6 flex items-center gap-2 rounded-xl border border-rose-200/60 bg-rose-50/60 px-4 py-3 text-sm text-rose-700 dark:border-rose-700/30 dark:bg-rose-900/10 dark:text-rose-400">
+          <ShieldAlert size={15} className="shrink-0" />
+          <span>{loadError}</span>
+          <button
+            onClick={() => setTick(t => t + 1)}
+            className="ml-auto text-xs font-semibold underline underline-offset-2"
+          >
+            Retry
+          </button>
+        </div>
+      )}
 
       {/* Search */}
       <div className="relative mb-4">

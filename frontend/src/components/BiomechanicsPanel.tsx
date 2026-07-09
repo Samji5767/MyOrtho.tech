@@ -14,6 +14,7 @@ import {
   Zap,
 } from "lucide-react";
 import { Card, EmptyState, ProgressBar, Spinner } from "@/components/DesignSystem";
+import { api, ApiError } from "@/lib/api/client";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -148,15 +149,10 @@ export default function BiomechanicsPanel({ setupId }: { setupId?: string }) {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`/api/biomechanics/${setupId}`, {
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
-      });
-      if (res.status === 404) { setResult(null); return; }
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const data = await res.json() as BiomechanicsResult;
+      const data = await api.get<BiomechanicsResult>(`/api/biomechanics/${setupId}`);
       setResult(data);
     } catch (e) {
+      if (e instanceof ApiError && e.status === 404) { setResult(null); return; }
       setError(e instanceof Error ? e.message : "Failed to load analysis");
     } finally {
       setLoading(false);
@@ -170,13 +166,7 @@ export default function BiomechanicsPanel({ setupId }: { setupId?: string }) {
     setRunning(true);
     setError(null);
     try {
-      const res = await fetch(`/api/biomechanics/${setupId}`, {
-        method: "POST",
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
-      });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const data = await res.json() as BiomechanicsResult;
+      const data = await api.post<BiomechanicsResult>(`/api/biomechanics/${setupId}`, {});
       setResult(data);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to run analysis");

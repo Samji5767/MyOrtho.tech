@@ -131,9 +131,8 @@ export default function RootLayout({
           Rendered as static HTML so it paints immediately.
         */}
         <div id="__mo-launch" aria-hidden="true">
-          {/* Plain <img> is intentional here: this renders before React hydration in the launch shell. */}
-          {/* eslint-disable-next-line @next/next/no-img-element */}
           <div id="__mo-launch-logo">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
               src="/app-icon.png"
               alt="MyOrtho"

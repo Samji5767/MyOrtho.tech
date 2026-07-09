@@ -3,7 +3,7 @@
 import React, { useState } from "react";
 import { Activity, Archive, CheckCircle2, ChevronRight, Clock, FileEdit, FlaskConical, Scan, ShieldCheck, XCircle } from "lucide-react";
 import { Button, Card, StatusBadge } from "@/components/DesignSystem";
-import { api } from "@/lib/api/client";
+import { transitionCase } from "@/lib/api/cases";
 
 export type CaseStatus =
   | "draft"
@@ -226,7 +226,7 @@ export default function ClinicalWorkflow({
 
     setTransitionError(null);
     try {
-      await api.patch(`/api/cases/${caseId}/status`, { status: action.toStatus, notes });
+      await transitionCase(caseId, action.toStatus, notes);
     } catch (err) {
       setTransitionError(err instanceof Error ? err.message : "Status transition failed");
       setSubmitting(false);

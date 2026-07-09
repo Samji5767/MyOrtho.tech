@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, Suspense } from "react";
+import { useState, useEffect, useCallback, useRef, Suspense } from "react";
 import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useSearchParams, useRouter } from "next/navigation";
@@ -22,6 +22,7 @@ import {
 import { Button, Card, SkeletonBlock, StatusBadge } from "@/components/DesignSystem";
 import CADCapabilityMatrix from "@/components/CADCapabilityMatrix";
 import { fetchCase, type CaseDetail } from "@/lib/api/cases";
+import { uploadScan, triggerSegmentation, pollJobStatus } from "@/lib/api/scans";
 import OrthoWorkflowRail from "@/components/OrthoWorkflowRail";
 import OrthoAnalysisTabs from "@/components/OrthoAnalysisTabs";
 import { CasePlanningProvider } from "@/components/CasePlanningContext";
@@ -129,20 +130,89 @@ function AIDisclaimer() {
 
 // ─── Import tab ───────────────────────────────────────────────────────────────
 
-function ImportTab({ caseData }: { caseData: CaseDetail | null }) {
-  const PIPELINE_STEPS = [
-    { n: 1,  label: "Upload STL / OBJ / PLY",       done: false },
-    { n: 2,  label: "File validation",               done: false },
-    { n: 3,  label: "Mesh repair",                   done: false },
-    { n: 4,  label: "Orientation correction",        done: false },
-    { n: 5,  label: "Tooth detection",               done: false },
-    { n: 6,  label: "AI segmentation",               done: false },
-    { n: 7,  label: "FDI labelling",                 done: false },
-    { n: 8,  label: "Root apex estimation",          done: false },
-    { n: 9,  label: "Per-tooth mesh extraction",     done: false },
-    { n: 10, label: "Occlusal registration",         done: false },
-    { n: 11, label: "Quality confidence score",      done: false },
-  ];
+const INITIAL_PIPELINE = [
+  { n: 1,  label: "Upload STL / OBJ / PLY",   done: false },
+  { n: 2,  label: "File validation",           done: false },
+  { n: 3,  label: "Mesh repair",               done: false },
+  { n: 4,  label: "Orientation correction",    done: false },
+  { n: 5,  label: "Tooth detection",           done: false },
+  { n: 6,  label: "AI segmentation",           done: false },
+  { n: 7,  label: "FDI labelling",             done: false },
+  { n: 8,  label: "Root apex estimation",      done: false },
+  { n: 9,  label: "Per-tooth mesh extraction", done: false },
+  { n: 10, label: "Occlusal registration",     done: false },
+  { n: 11, label: "Quality confidence score",  done: false },
+];
+
+function ImportTab({
+  caseData,
+  onFileReady,
+}: {
+  caseData: CaseDetail | null;
+  onFileReady: (file: File) => void;
+}) {
+  const [dragOver,       setDragOver]       = useState(false);
+  const [uploading,      setUploading]      = useState(false);
+  const [uploadError,    setUploadError]    = useState<string | null>(null);
+  const [pipelineSteps,  setPipelineSteps]  = useState(INITIAL_PIPELINE);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const pollRef      = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  useEffect(() => () => { if (pollRef.current) clearInterval(pollRef.current); }, []);
+
+  const markDone = (upTo: number) =>
+    setPipelineSteps((prev) => prev.map((s) => ({ ...s, done: s.n <= upTo })));
+
+  const runPipeline = async (file: File) => {
+    if (!caseData) return;
+    setUploading(true);
+    setUploadError(null);
+    setPipelineSteps(INITIAL_PIPELINE);
+    try {
+      const scan = await uploadScan(caseData.id, file, "auto");
+      markDone(2);
+      onFileReady(file);
+      const { jobId } = await triggerSegmentation(caseData.id, scan.id);
+      markDone(3);
+      if (pollRef.current) clearInterval(pollRef.current);
+      pollRef.current = setInterval(async () => {
+        try {
+          const result = await pollJobStatus(jobId);
+          if (result.status === "queued") {
+            markDone(3);
+          } else if (result.status === "processing") {
+            markDone(7);
+          } else if (result.status === "completed") {
+            markDone(11);
+            clearInterval(pollRef.current!);
+            pollRef.current = null;
+            setUploading(false);
+          } else if (result.status === "failed") {
+            clearInterval(pollRef.current!);
+            pollRef.current = null;
+            setUploadError(result.error ?? "Segmentation failed");
+            setUploading(false);
+          }
+        } catch {
+          // transient polling error — keep trying
+        }
+      }, 3000);
+    } catch (err) {
+      setUploadError(err instanceof Error ? err.message : "Upload failed");
+      setUploading(false);
+    }
+  };
+
+  const handleFiles = (files: FileList | null) => {
+    const file = files?.[0];
+    if (!file) return;
+    const ext = file.name.split(".").pop()?.toLowerCase();
+    if (!["stl", "obj", "ply"].includes(ext ?? "")) {
+      setUploadError("Only STL, OBJ, and PLY files are supported.");
+      return;
+    }
+    runPipeline(file);
+  };
 
   return (
     <div className="space-y-4">
@@ -154,24 +224,44 @@ function ImportTab({ caseData }: { caseData: CaseDetail | null }) {
             <UploadCloud size={17} className="text-[color:var(--primary)]" />
             <h2 className="text-base font-semibold text-[color:var(--foreground)]">Upload a scan</h2>
           </div>
-          <div className="flex flex-col items-center gap-4 rounded-2xl border-2 border-dashed border-[color:var(--border)] p-8 text-center">
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".stl,.obj,.ply"
+            className="sr-only"
+            onChange={(e) => handleFiles(e.target.files)}
+          />
+          <div
+            onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+            onDragLeave={() => setDragOver(false)}
+            onDrop={(e) => { e.preventDefault(); setDragOver(false); handleFiles(e.dataTransfer.files); }}
+            onClick={() => !uploading && fileInputRef.current?.click()}
+            className={[
+              "flex cursor-pointer flex-col items-center gap-4 rounded-2xl border-2 border-dashed p-8 text-center transition-colors",
+              dragOver   ? "border-[color:var(--primary)] bg-[color:var(--primary-glow)]" : "border-[color:var(--border)]",
+              uploading  ? "pointer-events-none opacity-70" : "",
+            ].join(" ")}
+          >
             <span className="grid h-14 w-14 place-items-center rounded-3xl bg-[color:var(--primary-glow)] text-[color:var(--primary)]">
-              <UploadCloud size={24} />
+              {uploading ? <Loader2 size={24} className="animate-spin" /> : <UploadCloud size={24} />}
             </span>
             <div>
-              <p className="text-sm font-semibold text-[color:var(--foreground)]">Drop STL, OBJ, or PLY</p>
+              <p className="text-sm font-semibold text-[color:var(--foreground)]">
+                {uploading ? "Processing…" : dragOver ? "Release to upload" : "Drop STL, OBJ, or PLY"}
+              </p>
               <p className="mt-1 text-xs text-[color:var(--muted-foreground)]">
-                Max 500 MB · Full arch or individual teeth
+                {uploading
+                  ? "Running AI pipeline — switch to 3D Viewer to see your scan"
+                  : "Max 500 MB · Full arch or individual teeth · Click to browse"}
               </p>
             </div>
-            <Link
-              href="/studio"
-              className="inline-flex h-10 items-center gap-2 rounded-xl bg-[color:var(--primary)] px-5 text-sm font-semibold text-[color:var(--primary-foreground)] shadow-[var(--shadow-sm)] transition-transform active:scale-95"
-            >
-              <ScanLine size={15} />
-              Open full scan workspace
-            </Link>
           </div>
+          {uploadError && (
+            <div className="mt-3 flex items-center gap-2 rounded-xl border border-rose-300/50 bg-rose-50/60 px-3 py-2 text-xs text-rose-700 dark:border-rose-700/40 dark:bg-rose-900/10 dark:text-rose-400">
+              <AlertTriangle size={12} className="shrink-0" />
+              {uploadError}
+            </div>
+          )}
         </Card>
       )}
 
@@ -184,13 +274,18 @@ function ImportTab({ caseData }: { caseData: CaseDetail | null }) {
           </span>
         </div>
         <div className="space-y-2">
-          {PIPELINE_STEPS.map((step) => (
+          {pipelineSteps.map((step) => (
             <div
               key={step.n}
               className="flex items-center gap-3 rounded-xl border border-[color:var(--border)] bg-[color:var(--card)] px-3 py-2"
             >
-              <span className="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-[color-mix(in_srgb,var(--border)_70%,transparent)] text-[10px] font-bold text-[color:var(--muted-foreground)]">
-                {step.done ? <CheckCircle2 size={13} className="text-emerald-500" /> : step.n}
+              <span className={[
+                "grid h-6 w-6 shrink-0 place-items-center rounded-full text-[10px] font-bold",
+                step.done
+                  ? "bg-emerald-100 text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-400"
+                  : "bg-[color-mix(in_srgb,var(--border)_70%,transparent)] text-[color:var(--muted-foreground)]",
+              ].join(" ")}>
+                {step.done ? <CheckCircle2 size={13} /> : step.n}
               </span>
               <span className="text-xs text-[color:var(--foreground)]">{step.label}</span>
             </div>
@@ -203,12 +298,12 @@ function ImportTab({ caseData }: { caseData: CaseDetail | null }) {
 
 // ─── Viewer tab ───────────────────────────────────────────────────────────────
 
-function ViewerTab({ caseData }: { caseData: CaseDetail | null }) {
+function ViewerTab({ caseData, file }: { caseData: CaseDetail | null; file: File | null }) {
   if (!caseData) return <NoCaseBanner />;
   return (
     <div className="space-y-4">
       <AIDisclaimer />
-      <Viewer3D />
+      <Viewer3D file={file} />
     </div>
   );
 }
@@ -357,6 +452,7 @@ function StudioPageContent() {
   const [caseLoading,     setCaseLoading]    = useState(false);
   const [caseError,       setCaseError]      = useState<string | null>(null);
   const [effectivePlanId, setEffectivePlanId] = useState<string | null>(planIdParam);
+  const [selectedFile,    setSelectedFile]   = useState<File | null>(null);
 
   const handleTabChange = useCallback((tab: StudioTab) => {
     setActiveTab(tab);
@@ -479,8 +575,8 @@ function StudioPageContent() {
       {/* Active panel — wrapped in error boundary so one tab crash doesn't kill the workspace */}
       <RuntimeErrorBoundary>
         <div className="animate-page-enter" id={`studio-panel-${activeTab}`} role="tabpanel">
-          {activeTab === "import"  && <ImportTab  caseData={caseData} />}
-          {activeTab === "viewer"  && <ViewerTab  caseData={caseData} />}
+          {activeTab === "import"  && <ImportTab  caseData={caseData} onFileReady={(f) => { setSelectedFile(f); handleTabChange("viewer"); }} />}
+          {activeTab === "viewer"  && <ViewerTab  caseData={caseData} file={selectedFile} />}
           {activeTab === "cad"     && <CadTab     caseData={caseData} />}
           {activeTab === "plan"    && <PlanTab    caseData={caseData} planId={effectivePlanId} />}
           {activeTab === "preview" && <PreviewTab caseData={caseData} />}

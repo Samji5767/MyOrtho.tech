@@ -32,11 +32,14 @@ const STATUS_LABEL: Record<string, string> = {
 function CaseSelector({ onSelect }: { onSelect: (c: CaseListItem) => void }) {
   const [cases, setCases] = useState<CaseListItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
 
   useEffect(() => {
+    setLoadError(null);
     fetchCases()
       .then(({ cases }) => setCases(cases))
+      .catch((err: unknown) => setLoadError(err instanceof Error ? err.message : "Failed to load cases"))
       .finally(() => setLoading(false));
   }, []);
 
@@ -66,6 +69,12 @@ function CaseSelector({ onSelect }: { onSelect: (c: CaseListItem) => void }) {
           onChange={(e) => setSearch(e.target.value)}
         />
       </div>
+
+      {loadError && (
+        <div className="rounded-xl border border-rose-200/60 bg-rose-50 dark:bg-rose-950/20 px-4 py-3 text-sm text-rose-700 dark:text-rose-400">
+          {loadError}
+        </div>
+      )}
 
       {loading ? (
         <div className="space-y-2 py-2">

@@ -697,7 +697,7 @@ export default function OverviewPage() {
                 ))}
               </div>
               <Link
-                href="/cases"
+                href="/analytics"
                 className="shrink-0 text-xs font-semibold text-[color:var(--primary)] hover:underline underline-offset-2"
               >
                 Full analytics →

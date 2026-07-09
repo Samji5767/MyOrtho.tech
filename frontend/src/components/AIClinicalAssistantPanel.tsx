@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 import { Card, EmptyState, Spinner } from "@/components/DesignSystem";
 import { ClinicalWarningBanner } from "@/components/ui/ClinicalWarningBanner";
+import { api } from "@/lib/api/client";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -83,12 +84,7 @@ function SuggestionCard({
     setAcknowledging(true);
     setActionError(null);
     try {
-      const res = await fetch(`/api/ai-suggestions/${suggestion.id}/acknowledge`, {
-        method: "POST",
-        credentials: "include",
-      });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const updated = await res.json() as AISuggestion;
+      const updated = await api.post<AISuggestion>(`/api/ai-suggestions/${suggestion.id}/acknowledge`, {});
       onUpdated(updated);
     } catch (e) {
       setActionError(e instanceof Error ? e.message : "Failed to acknowledge");
@@ -101,12 +97,7 @@ function SuggestionCard({
     setApplying(true);
     setActionError(null);
     try {
-      const res = await fetch(`/api/ai-suggestions/${suggestion.id}/apply`, {
-        method: "POST",
-        credentials: "include",
-      });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const updated = await res.json() as AISuggestion;
+      const updated = await api.post<AISuggestion>(`/api/ai-suggestions/${suggestion.id}/apply`, {});
       onUpdated(updated);
     } catch (e) {
       setActionError(e instanceof Error ? e.message : "Failed to apply");
@@ -229,11 +220,7 @@ export default function AIClinicalAssistantPanel({ setupId }: { setupId?: string
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`/api/ai-suggestions?setupId=${setupId}&onlyActive=${showActiveOnly}`, {
-        credentials: "include",
-      });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const data = await res.json() as AISuggestion[];
+      const data = await api.get<AISuggestion[]>(`/api/ai-suggestions?setupId=${setupId}&onlyActive=${showActiveOnly}`);
       setSuggestions(data);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to load suggestions");
@@ -249,12 +236,7 @@ export default function AIClinicalAssistantPanel({ setupId }: { setupId?: string
     setGenerating(true);
     setError(null);
     try {
-      const res = await fetch(`/api/ai-suggestions/generate/${setupId}`, {
-        method: "POST",
-        credentials: "include",
-      });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const data = await res.json() as AISuggestion[];
+      const data = await api.post<AISuggestion[]>(`/api/ai-suggestions/generate/${setupId}`, {});
       setSuggestions(data);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to generate suggestions");

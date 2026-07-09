@@ -267,7 +267,7 @@ export default function SettingsPage() {
         <SectionDivider className="mt-5" />
 
         <div className="mt-4 grid gap-3 sm:grid-cols-3">
-          <button type="button" className="ios-chip flex items-center gap-3 px-4 py-3 text-left transition-transform duration-150 active:scale-[0.99]">
+          <Link href="/admin/org" className="ios-chip flex items-center gap-3 px-4 py-3 text-left transition-transform duration-150 active:scale-[0.99]">
             <span className="grid h-9 w-9 place-items-center rounded-2xl bg-[color:var(--primary-glow)] text-[color:var(--primary)]">
               <Globe size={16} />
             </span>
@@ -275,8 +275,12 @@ export default function SettingsPage() {
               <span className="block text-sm font-semibold text-[color:var(--foreground)]">Clinic profile</span>
               <span className="text-xs text-[color:var(--muted-foreground)]">Update details</span>
             </span>
-          </button>
-          <button type="button" className="ios-chip flex items-center gap-3 px-4 py-3 text-left transition-transform duration-150 active:scale-[0.99]">
+          </Link>
+          <button
+            type="button"
+            onClick={() => toast({ title: "Notifications", description: "SLA and alert preferences are configured via the admin portal.", type: "info" })}
+            className="ios-chip flex items-center gap-3 px-4 py-3 text-left transition-transform duration-150 active:scale-[0.99]"
+          >
             <span className="grid h-9 w-9 place-items-center rounded-2xl bg-[color:var(--primary-glow)] text-[color:var(--primary)]">
               <Bell size={16} />
             </span>
@@ -285,7 +289,11 @@ export default function SettingsPage() {
               <span className="text-xs text-[color:var(--muted-foreground)]">SLA, alerts, cases</span>
             </span>
           </button>
-          <button type="button" className="ios-chip flex items-center gap-3 px-4 py-3 text-left transition-transform duration-150 active:scale-[0.99]">
+          <button
+            type="button"
+            onClick={() => toast({ title: "Security", description: "MFA and SSO are configured by your organization administrator.", type: "info" })}
+            className="ios-chip flex items-center gap-3 px-4 py-3 text-left transition-transform duration-150 active:scale-[0.99]"
+          >
             <span className="grid h-9 w-9 place-items-center rounded-2xl bg-[color:var(--primary-glow)] text-[color:var(--primary)]">
               <Lock size={16} />
             </span>
@@ -578,7 +586,7 @@ export default function SettingsPage() {
               connected: supabaseConnected,
             },
             { name: "FastAPI AI Engine", detail: "Scan segmentation and AI predictions", connected: false },
-            { name: "NestJS API", detail: "Clinical workflow orchestration", connected: false },
+            { name: "NestJS API", detail: "Clinical workflow orchestration", connected: !!user },
             { name: "Scanner Integrations", detail: "Direct intraoral scanner import", connected: false },
             { name: "Manufacturing API", detail: "Printer management and print job dispatch", connected: false },
           ].map((service) => (

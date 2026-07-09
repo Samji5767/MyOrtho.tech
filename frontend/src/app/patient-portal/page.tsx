@@ -37,8 +37,24 @@ import { useAsync } from "@/hooks/useAsync";
 // ─── Wear timer ────────────────────────────────────────────────────────────────
 
 function WearTimer({ targetHours }: { targetHours: number }) {
+  const [storageKey] = useState(() => `mo_wear_timer_${new Date().toISOString().slice(0, 10)}`);
   const [seconds, setSeconds] = useState(0);
   const [running, setRunning] = useState(false);
+
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem(storageKey);
+      if (stored) {
+        const parsed = JSON.parse(stored) as { seconds?: number; running?: boolean };
+        if (typeof parsed.seconds === "number") setSeconds(parsed.seconds);
+        if (typeof parsed.running === "boolean") setRunning(parsed.running);
+      }
+    } catch { /* ignore corrupt data */ }
+  }, [storageKey]);
+
+  useEffect(() => {
+    try { localStorage.setItem(storageKey, JSON.stringify({ seconds, running })); } catch { /* ignore */ }
+  }, [storageKey, seconds, running]);
 
   useEffect(() => {
     if (!running) return;
@@ -243,10 +259,25 @@ function TodaysTasks({
   currentPhaseName: string | null;
   loading: boolean;
 }) {
+  const [storageKey] = useState(() => `mo_tasks_${new Date().toISOString().slice(0, 10)}`);
   const [checked, setChecked] = useState<boolean[]>([false, false, false]);
 
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem(storageKey);
+      if (stored) {
+        const arr = JSON.parse(stored) as boolean[];
+        if (Array.isArray(arr) && arr.length === 3) setChecked(arr);
+      }
+    } catch { /* ignore corrupt data */ }
+  }, [storageKey]);
+
   const toggle = (i: number) =>
-    setChecked((prev) => prev.map((v, idx) => (idx === i ? !v : v)));
+    setChecked((prev) => {
+      const next = prev.map((v, idx) => (idx === i ? !v : v));
+      try { localStorage.setItem(storageKey, JSON.stringify(next)); } catch { /* ignore */ }
+      return next;
+    });
 
   const items = [
     {

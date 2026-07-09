@@ -53,9 +53,7 @@ export class QcService {
 
   private async verifyOrgJob(jobId: string, orgId: string) {
     const { rows } = await this.pool.query(
-      `SELECT pj.id FROM print_jobs pj
-       JOIN printers p ON p.id = pj.printer_id
-       WHERE pj.id = $1 AND p.organization_id = $2`,
+      `SELECT id FROM print_jobs WHERE id = $1 AND organization_id = $2`,
       [jobId, orgId],
     );
     if (!rows.length) throw new ForbiddenException('Print job not found or access denied');
@@ -67,7 +65,7 @@ export class QcService {
               p.name AS printer_name
        FROM print_jobs pj
        LEFT JOIN printers p ON p.id = pj.printer_id
-       WHERE p.organization_id = $1
+       WHERE pj.organization_id = $1
        ORDER BY pj.created_at DESC LIMIT $2`,
       [orgId, limit],
     );

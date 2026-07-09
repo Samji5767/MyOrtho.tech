@@ -285,23 +285,42 @@ export class SegmentationService {
     );
   }
 
-  private async runAlgorithmicSegmentation(jobId: string, caseId: string, arch: string, modelType: string) {
+  private async runAlgorithmicSegmentation(jobId: string, caseId: string, arch: string, _modelType: string) {
+    // Gate: rule-based fallback must be explicitly enabled.
+    // In production, AI_SEGMENTATION_URL must point to the real segmentation service.
+    // Fabricated bounding boxes, pseudo-random confidence scores, and hardcoded clinical flags
+    // must never be persisted as real clinical data.
+    const fallbackEnabled = process.env.SEGMENTATION_FALLBACK_ENABLED === 'true';
+    if (!fallbackEnabled) {
+      await this.pool.query(
+        `UPDATE segmentation_jobs
+           SET status = 'failed', completed_at = NOW(),
+               error_message = $2
+         WHERE id = $1`,
+        [
+          jobId,
+          'AI segmentation service is not configured. Set AI_SEGMENTATION_URL to enable real segmentation, ' +
+          'or set SEGMENTATION_FALLBACK_ENABLED=true to allow a rule-based placeholder (development only).',
+        ],
+      );
+      this.logger.warn(`Segmentation job ${jobId} failed — AI_SEGMENTATION_URL not set and SEGMENTATION_FALLBACK_ENABLED is not true`);
+      return;
+    }
+
+    this.logger.warn(
+      `Segmentation job ${jobId}: SEGMENTATION_FALLBACK_ENABLED=true — ` +
+      'using rule-based scaffold. Results are NOT derived from real mesh analysis. ' +
+      'For development/demo use only.',
+    );
+
     const teeth = FDI_CHART.filter(t =>
       arch === 'both' ? true : t.arch === arch,
     );
 
-    // Simulate progressive segmentation
     const batchSize = 4;
     for (let i = 0; i < teeth.length; i += batchSize) {
       const batch = teeth.slice(i, i + batchSize);
       for (const tooth of batch) {
-        // Third molars are included by default in the rule-based fallback.
-        // Actual presence/absence must be determined by the real AI inference
-        // pipeline or clinician correction — not by random simulation.
-        const isMissing = false;
-        const confidence = isMissing ? 0 : deterministicConfidence(tooth.fdi, 42);
-        const hasFlag = [14, 21].includes(tooth.fdi);
-
         await this.pool.query(
           `INSERT INTO tooth_segments
              (job_id, case_id, tooth_number, universal_number, label, arch,
@@ -310,12 +329,10 @@ export class SegmentationService {
              ON CONFLICT (job_id, tooth_number) DO NOTHING`,
           [
             jobId, caseId, tooth.fdi, tooth.universal, tooth.label, tooth.arch,
-            isMissing ? null : confidence,
-            isMissing,
-            JSON.stringify(hasFlag
-              ? { warning: 'Root anatomy requires manual verification', flags: ['root_flag'] }
-              : { flags: [] }),
-            JSON.stringify({ x: 0, y: 0, z: 0, w: 8, h: 12, d: 10 }),
+            null,    // confidence: null — not derived from real model
+            false,   // is_missing: unknown without real analysis; clinician must verify
+            JSON.stringify({ flags: [], source: 'rule_based_scaffold', clinician_review_required: true }),
+            null,    // bounding_box: null — not available without real mesh processing
           ],
         );
       }
@@ -325,14 +342,10 @@ export class SegmentationService {
         `UPDATE segmentation_jobs SET progress = $2 WHERE id = $1`,
         [jobId, progress],
       );
-
-      await new Promise(r => setTimeout(r, 80));
     }
 
     const { rows: countRows } = await this.pool.query(
-      `SELECT COUNT(*) FILTER (WHERE NOT is_missing) AS present_count,
-              COUNT(*) AS total_count
-         FROM tooth_segments WHERE job_id = $1`,
+      `SELECT COUNT(*) AS total_count FROM tooth_segments WHERE job_id = $1`,
       [jobId],
     );
 
@@ -345,15 +358,15 @@ export class SegmentationService {
          WHERE id = $1`,
       [
         jobId,
-        parseInt(countRows[0].total_count, 10),
+        parseInt((countRows[0] as { total_count: string }).total_count, 10),
         JSON.stringify({
-          presentCount: parseInt(countRows[0].present_count, 10),
-          totalCount: parseInt(countRows[0].total_count, 10),
-          modelType,
-          fallback: !process.env.AI_SEGMENTATION_URL,
-          averageConfidence: 0.86,
+          totalCount: parseInt((countRows[0] as { total_count: string }).total_count, 10),
+          fallback: true,
+          fallbackReason: 'AI_SEGMENTATION_URL not configured; SEGMENTATION_FALLBACK_ENABLED=true',
+          clinicianReviewRequired: true,
+          averageConfidence: null,
         }),
-        '1.0.0-rule-based',
+        '0.0.0-rule-based-scaffold',
       ],
     );
 

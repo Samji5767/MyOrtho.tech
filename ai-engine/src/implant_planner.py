@@ -43,14 +43,22 @@ class ImplantPlannerSurgicalGuide:
         drill_angle_pitch_deg: float
     ) -> dict:
         """
-        Generates guide templates using mesh Boolean subtraction (CGAL/OpenCascade simulation).
+        Generates guide templates using mesh Boolean subtraction.
+
+        Status: NOT IMPLEMENTED — requires a real CAD/mesh Boolean pipeline:
+          1. Load jaw STL/OBJ via trimesh or Open3D.
+          2. Construct drill-sleeve cylinder mesh at sleeve_coord with drill_angle_pitch_deg.
+          3. Perform Boolean subtraction (trimesh.boolean or CGAL bindings).
+          4. Validate watertight result and export as STL.
+
+        Raises NotImplementedError until a real mesh Boolean backend is configured.
         """
-        logger.info(f"Guides: Loading jaw template mesh from {jaw_mesh_path}")
-        logger.info(f"CGAL Boolean subtraction: carving sleeve pathway at {sleeve_coord} with pitch {drill_angle_pitch_deg}°")
-        
-        return {
-            "success": True,
-            "guide_stl_path": jaw_mesh_path.replace(".obj", "_surgical_guide.stl"),
-            "triangle_count": 210000,
-            "watertight": True
-        }
+        logger.warning(
+            "generate_surgical_guide_mesh called but mesh Boolean pipeline is not implemented. "
+            "Returning error to prevent fabricated surgical guide paths from reaching clinicians."
+        )
+        raise NotImplementedError(
+            "Surgical guide mesh generation is not yet implemented. "
+            "A real mesh Boolean subtraction pipeline (trimesh.boolean / CGAL) is required. "
+            "Do not use synthetic guide mesh paths for surgical procedures."
+        )

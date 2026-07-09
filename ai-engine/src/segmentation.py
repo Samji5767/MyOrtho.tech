@@ -359,10 +359,12 @@ class OrthoSegmentationEngine:
             voxels = mesh.voxelized(pitch=pitch)
             filled = voxels.filled.astype(np.float32)
         except Exception as exc:
-            logger.warning(f"Voxelization failed ({exc}), using SDF fallback")
-            # Fall back to a bounding-box occupancy grid
-            filled = np.zeros((target, target, target), dtype=np.float32)
-            filled[32:96, 32:96, 32:96] = 1.0
+            raise SegmentationError(
+                f"Mesh voxelization failed: {exc}. "
+                "The mesh may be non-manifold or degenerate. "
+                "Do not run inference on a synthetic fallback — "
+                "repair the source mesh and retry."
+            ) from exc
 
         grid = np.zeros((target, target, target), dtype=np.float32)
         d = tuple(min(target, s) for s in filled.shape[:3])

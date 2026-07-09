@@ -60,18 +60,12 @@ class DentalLandmarkDetector:
                 "confidence": 0.985
             }
         except Exception as e:
-            logger.error(f"Landmark detection failed: {str(e)}")
-            # Fallback mock coordinates
-            x_base = 12.4 + (tooth_id % 10) * 2.5
-            y_base = 8.2
-            z_base = -15.0 if tooth_id < 30 else -18.0
-            return {
-                "tooth_id": tooth_id,
-                "cusp": {"x": x_base, "y": y_base + 0.8, "z": z_base},
-                "contact_mesial": {"x": x_base - 1.2, "y": y_base, "z": z_base},
-                "contact_distal": {"x": x_base + 1.2, "y": y_base, "z": z_base},
-                "confidence": 0.95
-            }
+            logger.error("Landmark detection failed for tooth FDI %d: %s", tooth_id, str(e))
+            raise RuntimeError(
+                f"Landmark detection failed for tooth FDI {tooth_id}: {e}. "
+                "The mesh may be malformed or the file path is incorrect. "
+                "Do not use synthesised coordinates for clinical decisions."
+            ) from e
 
     def fit_arch_form(self, tooth_positions: np.ndarray) -> np.ndarray:
         """

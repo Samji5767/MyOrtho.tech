@@ -101,9 +101,12 @@ export class BillingService {
     const plan = PLANS[opts.interval];
 
     if (!this.stripe) {
+      if (process.env['NODE_ENV'] === 'production') {
+        throw new Error('Stripe is not configured. Set STRIPE_SECRET_KEY in the environment.');
+      }
       return {
         mock: true,
-        url: opts.successUrl + '?session_id=mock_' + Date.now(),
+        url: opts.successUrl + '?session_id=mock_checkout',
         plan: plan.name,
       };
     }
@@ -152,6 +155,9 @@ export class BillingService {
 
   async createPortalSession(orgId: string, returnUrl: string) {
     if (!this.stripe) {
+      if (process.env['NODE_ENV'] === 'production') {
+        throw new Error('Stripe is not configured. Set STRIPE_SECRET_KEY in the environment.');
+      }
       return { mock: true, url: returnUrl };
     }
 

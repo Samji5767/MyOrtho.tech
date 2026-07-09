@@ -263,7 +263,13 @@ function CaseSelector({
 
 // ─── Format grid ──────────────────────────────────────────────────────────────
 
-function FormatGrid({ caseId }: { caseId: string }) {
+function FormatGrid({
+  selectedId,
+  onSelect,
+}: {
+  selectedId: string | null;
+  onSelect: (id: string) => void;
+}) {
   const byCategory = FORMATS.reduce<Record<string, typeof FORMATS>>((acc, f) => {
     (acc[f.category] ??= []).push(f);
     return acc;
@@ -294,20 +300,37 @@ function FormatGrid({ caseId }: { caseId: string }) {
           <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-4">
             {fmts.map((fmt) => {
               const Icon = fmt.icon;
+              const selected = selectedId === fmt.id;
               return (
-                <Card key={fmt.id} className="flex flex-col gap-2 p-3 cursor-default">
+                <button
+                  key={fmt.id}
+                  type="button"
+                  onClick={() => onSelect(fmt.id)}
+                  aria-pressed={selected}
+                  className={[
+                    "flex flex-col gap-2 rounded-[inherit] border p-3 text-left transition-all duration-150 active:scale-[0.97] focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--primary)] focus-visible:ring-offset-1",
+                    selected
+                      ? "border-[color:var(--primary)] bg-[color:var(--primary-glow)] shadow-[0_0_0_2px_color-mix(in_srgb,var(--primary)_25%,transparent)]"
+                      : "border-[color:var(--border)] bg-[color:var(--card)] hover:border-[color:var(--primary)]/50",
+                  ].join(" ")}
+                >
                   <div className="flex items-start justify-between gap-1">
                     <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-[color:var(--primary-glow)]">
                       <Icon size={13} className="text-[color:var(--primary)]" aria-hidden />
                     </span>
-                    {fmt.requiresApproval && (
-                      <span className="rounded-full bg-amber-100 px-1.5 py-0.5 text-[9px] font-semibold text-amber-700 dark:bg-amber-900/40 dark:text-amber-400">
-                        PHI
-                      </span>
-                    )}
+                    <div className="flex items-center gap-1">
+                      {selected && <CheckCircle2 size={12} className="text-[color:var(--primary)]" />}
+                      {fmt.requiresApproval && (
+                        <span className="rounded-full bg-amber-100 px-1.5 py-0.5 text-[9px] font-semibold text-amber-700 dark:bg-amber-900/40 dark:text-amber-400">
+                          PHI
+                        </span>
+                      )}
+                    </div>
                   </div>
                   <div>
-                    <p className="text-xs font-bold text-[color:var(--foreground)]">{fmt.label}</p>
+                    <p className={`text-xs font-bold ${selected ? "text-[color:var(--primary)]" : "text-[color:var(--foreground)]"}`}>
+                      {fmt.label}
+                    </p>
                     <p className="mt-0.5 text-[10px] leading-snug text-[color:var(--muted-foreground)]">
                       {fmt.desc}
                     </p>
@@ -315,12 +338,20 @@ function FormatGrid({ caseId }: { caseId: string }) {
                   <span className="mt-auto font-mono text-[10px] text-[color:var(--muted-foreground)]">
                     {fmt.ext}
                   </span>
-                </Card>
+                </button>
               );
             })}
           </div>
         </div>
       ))}
+      {selectedId && (
+        <p className="text-xs text-[color:var(--muted-foreground)]">
+          Selected: <span className="font-semibold text-[color:var(--foreground)]">
+            {FORMATS.find(f => f.id === selectedId)?.label ?? selectedId}
+          </span>
+          {" "}&mdash; select a case above to generate this export.
+        </p>
+      )}
     </div>
   );
 }
@@ -485,6 +516,7 @@ function ExportPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const caseId = searchParams.get("caseId");
+  const [selectedFormatId, setSelectedFormatId] = useState<string | null>(null);
 
   const handleSelect = useCallback(
     (id: string) => {
@@ -512,7 +544,7 @@ function ExportPageContent() {
       {!caseId ? (
         <>
           <CaseSelector onSelect={handleSelect} />
-          <FormatGrid caseId="" />
+          <FormatGrid selectedId={selectedFormatId} onSelect={setSelectedFormatId} />
           <PrinterCompatibility />
           <ComplianceNotice />
         </>

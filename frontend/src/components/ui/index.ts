@@ -6,3 +6,5 @@ export { ErrorState } from "./ErrorState";
 export { StatusBadge } from "./StatusBadge";
 export { MetricCard } from "./MetricCard";
 export { ClinicalWarningBanner } from "./ClinicalWarningBanner";
+export { PrimaryButton } from "./PrimaryButton";
+export { SecondaryButton } from "./SecondaryButton";

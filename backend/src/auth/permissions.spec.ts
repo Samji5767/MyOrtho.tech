@@ -3,22 +3,15 @@ import { Reflector } from '@nestjs/core';
 import {
   hasPermission,
   getPermissions,
+  isSuperAdmin,
   ROLE_PERMISSIONS,
+  ALL_PERMISSIONS,
   type Permission,
 } from './permissions';
 import { PermissionsGuard } from './permissions.guard';
 import { PERMISSION_KEY } from './require-permission.decorator';
 
 // ─── Fixtures ─────────────────────────────────────────────────────────────────
-
-const ALL_PERMISSIONS: Permission[] = [
-  'patients:read', 'patients:write', 'patients:delete',
-  'cases:read', 'cases:write', 'cases:delete', 'cases:approve', 'cases:send_to_manufacturing',
-  'analytics:read',
-  'manufacturing:read', 'manufacturing:write', 'manufacturing:manage',
-  'admin:users', 'admin:settings', 'admin:org',
-  'audit:read',
-];
 
 const ALL_ROLES = Object.keys(ROLE_PERMISSIONS);
 
@@ -245,6 +238,50 @@ describe('getPermissions', () => {
     const perms = getPermissions('executive');
     expect(perms).toBe(ROLE_PERMISSIONS['executive']);
   });
+
+  it('super_admin returns a copy of ALL_PERMISSIONS (not a shared reference)', () => {
+    const perms = getPermissions('super_admin');
+    expect(perms).not.toBe(ALL_PERMISSIONS);
+    expect(perms).toEqual(ALL_PERMISSIONS);
+  });
+});
+
+// ─── isSuperAdmin ─────────────────────────────────────────────────────────────
+
+describe('isSuperAdmin', () => {
+  it('returns true for super_admin', () => {
+    expect(isSuperAdmin('super_admin')).toBe(true);
+  });
+
+  it('returns false for admin', () => {
+    expect(isSuperAdmin('admin')).toBe(false);
+  });
+
+  it('returns false for every role in ROLE_PERMISSIONS', () => {
+    ALL_ROLES.forEach((role) => {
+      expect(isSuperAdmin(role)).toBe(false);
+    });
+  });
+
+  it('returns false for empty string', () => {
+    expect(isSuperAdmin('')).toBe(false);
+  });
+
+  it('returns false for unknown role', () => {
+    expect(isSuperAdmin('unknown_role')).toBe(false);
+  });
+
+  it('returns false for undefined (cast)', () => {
+    expect(isSuperAdmin(undefined as unknown as string)).toBe(false);
+  });
+});
+
+// ─── ROLE_PERMISSIONS structure ────────────────────────────────────────────────
+
+describe('ROLE_PERMISSIONS', () => {
+  it('super_admin is intentionally absent — wildcard is handled in hasPermission()', () => {
+    expect(Object.keys(ROLE_PERMISSIONS)).not.toContain('super_admin');
+  });
 });
 
 // ─── PermissionsGuard ─────────────────────────────────────────────────────────
@@ -416,5 +453,26 @@ describe('PermissionsGuard.canActivate', () => {
       user: { id: 'u11', email: 'doc@org.com', role: 'orthodontist', name: 'Doc', orgId: null },
     });
     expect(guard.canActivate(ctxNullOrg)).toBe(true);
+  });
+
+  describe('super_admin wildcard — passes guard for every permission', () => {
+    const superAdminUser = {
+      id: 'sa', email: 'superadmin@myortho.tech', role: 'super_admin', name: 'Super Admin', orgId: null,
+    };
+
+    ALL_PERMISSIONS.forEach((perm) => {
+      it(`super_admin passes guard for '${perm}'`, () => {
+        const { guard } = makeGuard(perm);
+        const ctx = makeContext({ requiredPermission: perm, user: superAdminUser });
+        expect(guard.canActivate(ctx)).toBe(true);
+      });
+    });
+
+    it('super_admin passes guard even when the decorator requires an unrecognised permission', () => {
+      // Cast to Permission to simulate a future permission the type system does not yet know about.
+      const { guard } = makeGuard('future:permission' as Permission);
+      const ctx = makeContext({ requiredPermission: 'future:permission' as Permission, user: superAdminUser });
+      expect(guard.canActivate(ctx)).toBe(true);
+    });
   });
 });

@@ -8,6 +8,9 @@
  * Permission format: "resource:action"
  *   resources: patients, cases, analytics, manufacturing, admin, audit
  *   actions:   read, write, delete, approve, manage
+ *
+ * Super Admin: wildcard access — passes every permission check automatically.
+ * New permissions are automatically granted to super_admin without code changes.
  */
 
 export type Permission =
@@ -28,7 +31,7 @@ export type Permission =
   | 'admin:org'
   | 'audit:read';
 
-const ALL_PERMISSIONS: Permission[] = [
+export const ALL_PERMISSIONS: Permission[] = [
   'patients:read', 'patients:write', 'patients:delete',
   'cases:read', 'cases:write', 'cases:delete', 'cases:approve', 'cases:send_to_manufacturing',
   'analytics:read',
@@ -38,7 +41,9 @@ const ALL_PERMISSIONS: Permission[] = [
 ];
 
 export const ROLE_PERMISSIONS: Record<string, Permission[]> = {
-  super_admin: ALL_PERMISSIONS,
+  // super_admin is intentionally absent: hasPermission() grants wildcard access for this role.
+  // Listing ALL_PERMISSIONS here would require manual updates whenever a new permission is added;
+  // the wildcard approach in hasPermission() eliminates that maintenance burden.
 
   admin: [
     'patients:read', 'patients:write',
@@ -107,10 +112,21 @@ export const ROLE_PERMISSIONS: Record<string, Permission[]> = {
   ],
 };
 
+/** Returns true if the given role possesses the given permission. */
 export function hasPermission(role: string, permission: Permission): boolean {
+  // super_admin has wildcard access — passes every permission check, including
+  // permissions added in the future, without requiring any code changes here.
+  if (role === 'super_admin') return true;
   return ROLE_PERMISSIONS[role]?.includes(permission) ?? false;
 }
 
+/** Returns the explicit permission list for a role (empty for super_admin; use hasPermission instead). */
 export function getPermissions(role: string): Permission[] {
+  if (role === 'super_admin') return [...ALL_PERMISSIONS];
   return ROLE_PERMISSIONS[role] ?? [];
+}
+
+/** Returns true when the given role has unrestricted platform access. */
+export function isSuperAdmin(role: string): boolean {
+  return role === 'super_admin';
 }

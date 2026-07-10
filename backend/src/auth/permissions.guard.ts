@@ -7,7 +7,7 @@ import {
 import { Reflector } from '@nestjs/core';
 import type { Request } from 'express';
 import { PERMISSION_KEY } from './require-permission.decorator';
-import { hasPermission, type Permission } from './permissions';
+import { hasPermission, isSuperAdmin, type Permission } from './permissions';
 
 interface AuthenticatedUser {
   id: string;
@@ -36,6 +36,9 @@ export class PermissionsGuard implements CanActivate {
     if (!user) {
       throw new ForbiddenException('Authentication required');
     }
+
+    // super_admin bypasses all permission checks — wildcard access.
+    if (isSuperAdmin(user.role)) return true;
 
     if (!hasPermission(user.role, required)) {
       throw new ForbiddenException(

@@ -37,11 +37,28 @@ export class CreatePatientDto {
   clinicalNotes?: string;
 }
 
-export interface UpdatePatientDto {
+export class UpdatePatientDto {
+  @IsString()
+  @IsOptional()
+  @MaxLength(100)
   firstName?: string;
+
+  @IsString()
+  @IsOptional()
+  @MaxLength(100)
   lastName?: string;
+
+  @IsDateString()
+  @IsOptional()
   dateOfBirth?: string;
+
+  @IsString()
+  @IsOptional()
+  @MaxLength(20)
   gender?: string;
+
+  @IsString()
+  @IsOptional()
   clinicalNotes?: string;
 }
 
@@ -110,14 +127,13 @@ export class PatientsService {
     this.assertValidDob(dto.dateOfBirth);
     const { rows } = await this.pool.query(
       `INSERT INTO patients
-         (organization_id, first_name, last_name, dob, dob_encrypted, gender, clinical_notes, created_by)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+         (organization_id, first_name, last_name, dob_encrypted, gender, clinical_notes, created_by)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)
        RETURNING id`,
       [
         orgId,
         this.cryptoService.encrypt(dto.firstName),
         this.cryptoService.encrypt(dto.lastName),
-        dto.dateOfBirth ?? null,
         this.cryptoService.encrypt(dto.dateOfBirth ?? null),
         this.cryptoService.encrypt(dto.gender ?? null),
         this.cryptoService.encrypt(dto.clinicalNotes ?? null),
@@ -159,8 +175,6 @@ export class PatientsService {
     if (dto.firstName !== undefined)    { fields.push(`first_name = $${i++}`);    values.push(this.cryptoService.encrypt(dto.firstName)); }
     if (dto.lastName !== undefined)     { fields.push(`last_name = $${i++}`);     values.push(this.cryptoService.encrypt(dto.lastName)); }
     if (dto.dateOfBirth !== undefined) {
-      fields.push(`dob = $${i++}`);
-      values.push(dto.dateOfBirth ?? null);
       fields.push(`dob_encrypted = $${i++}`);
       values.push(this.cryptoService.encrypt(dto.dateOfBirth ?? null));
     }

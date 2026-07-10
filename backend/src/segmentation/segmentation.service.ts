@@ -265,6 +265,12 @@ export class SegmentationService {
     if (!res.ok) throw new Error(`AI service returned ${res.status}`);
     const data = await res.json() as { segments: Array<{ toothNumber: number; confidence: number; label: string }> };
 
+    const caseRow = await this.pool.query<{ case_id: string }>(
+      `SELECT case_id FROM segmentation_jobs WHERE id = $1`,
+      [jobId],
+    );
+    const caseId = caseRow.rows[0]?.case_id;
+
     for (const seg of data.segments) {
       const tooth = FDI_CHART.find(t => t.fdi === seg.toothNumber);
       if (!tooth) continue;
@@ -273,8 +279,7 @@ export class SegmentationService {
            (job_id, case_id, tooth_number, universal_number, label, arch, confidence)
            VALUES ($1, $2, $3, $4, $5, $6, $7)
            ON CONFLICT (job_id, tooth_number) DO UPDATE SET confidence = EXCLUDED.confidence`,
-        [jobId, (await this.pool.query(`SELECT case_id FROM segmentation_jobs WHERE id = $1`, [jobId])).rows[0].case_id,
-         seg.toothNumber, tooth.universal, seg.label, tooth.arch, seg.confidence],
+        [jobId, caseId, seg.toothNumber, tooth.universal, seg.label, tooth.arch, seg.confidence],
       );
     }
     await this.pool.query(

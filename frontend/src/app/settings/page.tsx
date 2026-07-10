@@ -8,6 +8,7 @@ import dynamic from "next/dynamic";
 const FeatureFlagsPanel = dynamic(() => import("@/components/FeatureFlagsPanel"), { ssr: false });
 const PlatformHealthPanel = dynamic(() => import("@/components/PlatformHealthPanel"), { ssr: false });
 import {
+  BarChart3,
   Bell,
   BellRing,
   Brain,
@@ -15,8 +16,10 @@ import {
   ChevronRight,
   ClipboardCheck,
   Command,
+  Download,
   Globe,
   Keyboard,
+  Layers3,
   Lock,
   Moon,
   Printer,
@@ -462,7 +465,17 @@ export default function SettingsPage() {
           </div>
 
           <div className="mt-4 flex flex-col gap-2 sm:flex-row">
-            <Button variant="primary" className="flex-1">
+            <Button
+              variant="primary"
+              className="flex-1"
+              onClick={() => toast({
+                title: mode === "doctor" ? "Messaging" : "Status updates",
+                description: mode === "doctor"
+                  ? "Patient communication is managed from the individual case view."
+                  : "Lab status updates are made from the manufacturing queue.",
+                type: "info",
+              })}
+            >
               {mode === "doctor" ? "Open messages" : "Update status"}
             </Button>
             <Link
@@ -703,6 +716,36 @@ export default function SettingsPage() {
               Clear demo
             </button>
           </div>
+        </div>
+      </Card>
+
+      {/* MOBILE-ONLY: Navigation links for clinical tools not in the tab bar */}
+      <Card className="ios-card p-5 lg:hidden">
+        <p className="text-xs font-bold uppercase tracking-[0.18em] text-[color:var(--primary)] mb-3">Clinical tools</p>
+        <p className="text-xs text-[color:var(--muted-foreground)] mb-4">
+          Access additional clinical modules from here on mobile.
+        </p>
+        <div className="flex flex-col gap-2">
+          {[
+            { href: "/treatment-plan", label: "Treatment Plan", desc: "Stage generation · Doctor approval", icon: Layers3 },
+            { href: "/analytics",      label: "Analytics",       desc: "Practice metrics · Case trends",    icon: BarChart3 },
+            { href: "/export",         label: "Export & Downloads", desc: "STL · PDF · Manufacturing package", icon: Download },
+          ].map(({ href, label, desc, icon: Icon }) => (
+            <Link
+              key={href}
+              href={href}
+              className="ios-chip flex items-center gap-3 px-4 py-3 transition-transform duration-150 active:scale-[0.99]"
+            >
+              <span className="grid h-9 w-9 shrink-0 place-items-center rounded-2xl bg-[color:var(--primary-glow)] text-[color:var(--primary)]">
+                <Icon size={16} />
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="block text-sm font-semibold text-[color:var(--foreground)]">{label}</span>
+                <span className="text-xs text-[color:var(--muted-foreground)]">{desc}</span>
+              </span>
+              <ChevronRight size={15} className="shrink-0 text-[color:var(--muted-foreground)]" />
+            </Link>
+          ))}
         </div>
       </Card>
 

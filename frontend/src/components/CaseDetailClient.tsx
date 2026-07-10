@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useAuth } from "@/context/AuthContext";
+import { roleLabel } from "@/lib/auth";
 import Link from "next/link";
 import { fetchCase, type CaseDetail } from "@/lib/api/cases";
 import { ApiError } from "@/lib/api/client";
@@ -510,6 +512,7 @@ function WorkflowPipeline({ status }: { status: CaseStatus }) {
 // ─── Client component ─────────────────────────────────────────────────────────
 
 export default function CaseDetailClient({ id }: { id: string }) {
+  const { user } = useAuth();
   const [tab, setTab] = useState<Tab>("summary");
   const [liveData, setLiveData] = useState<CaseDetail | null>(null);
   const [dataSource, setDataSource] = useState<'api' | 'demo' | 'loading' | 'not_found'>('loading');
@@ -533,7 +536,7 @@ export default function CaseDetailClient({ id }: { id: string }) {
   }, [id]);
 
   const demoProfile = CASE_PROFILES[id] ?? {
-    patient: id, initials: id.slice(-2).toUpperCase(), accentClass: "bg-slate-500",
+    patient: "Unknown Patient", initials: "?", accentClass: "bg-slate-500",
     doctor: "—", malocclusionClass: "—", crowding: "—", chiefComplaint: "—",
     urgency: "routine" as const, progress: 50,
     workflowStatus: "clinical_review" as CaseStatus,
@@ -685,7 +688,7 @@ export default function CaseDetailClient({ id }: { id: string }) {
             initialStatus={workflowStatus}
             initialHistory={workflowHistory}
             currentActor={liveData?.assignedTo?.name ?? "—"}
-            currentActorRole="Clinical Director"
+            currentActorRole={user?.role ? roleLabel(user.role) : "Clinician"}
           />
         )}
         {tab === "audit"     && <AuditTrail caseId={id} isLive={dataSource === 'api'} />}

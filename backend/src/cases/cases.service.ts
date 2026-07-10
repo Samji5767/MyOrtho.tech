@@ -158,11 +158,11 @@ export class CasesService {
       ...this.formatCase(row),
       patient: {
         id: row.patient_id,
-        firstName: row.first_name,
-        lastName: row.last_name,
+        firstName: this.cryptoService.decrypt(row.first_name as string | null),
+        lastName:  this.cryptoService.decrypt(row.last_name  as string | null),
         dateOfBirth: row.date_of_birth,
-        gender: row.gender,
-        clinicalNotes: row.patient_notes,
+        gender:      this.cryptoService.decrypt(row.gender as string | null),
+        clinicalNotes: this.cryptoService.decrypt(row.patient_notes as string | null),
       },
       linkedResources: {
         latestScanId: (linked.latest_scan_id as string | null) ?? null,
@@ -488,7 +488,9 @@ export class CasesService {
 
   // ─── Helpers ──────────────────────────────────────────────────────────────
 
-  private formatCase(row: Record<string, unknown>) {
+  private formatCase = (row: Record<string, unknown>) => {
+    const firstName = this.cryptoService.decrypt(row['first_name'] as string | null);
+    const lastName  = this.cryptoService.decrypt(row['last_name']  as string | null);
     return {
       id: row['id'],
       status: row['status'],
@@ -499,12 +501,12 @@ export class CasesService {
       updatedAt: row['updated_at'],
       patient: {
         id: row['patient_id'],
-        firstName: row['first_name'],
-        lastName: row['last_name'],
+        firstName,
+        lastName,
       },
       assignedTo: row['assigned_to_id']
         ? { id: row['assigned_to_id'], name: row['assigned_to_name'], email: row['assigned_to_email'] }
         : null,
     };
-  }
+  };
 }

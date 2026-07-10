@@ -95,6 +95,15 @@ export class AuthService implements OnModuleInit {
       }
     }
 
+    // Verify account is still active — catches deactivated accounts even within a valid token window
+    const { rows } = await this.pool.query<{ is_active: boolean }>(
+      'SELECT is_active FROM auth_users WHERE id = $1 LIMIT 1',
+      [decoded.sub],
+    );
+    if (!rows[0] || rows[0].is_active === false) {
+      throw new UnauthorizedException('Account is disabled');
+    }
+
     return decoded;
   }
 
@@ -288,9 +297,14 @@ export class AuthService implements OnModuleInit {
   }
 
   private async bootstrapAdmin(): Promise<void> {
-    const email = (process.env.MYORTHO_ADMIN_EMAIL ?? 'admin@myortho.tech').toLowerCase().trim();
-    const password = process.env.MYORTHO_ADMIN_PASSWORD ?? 'adminadmin';
+    const email = (process.env.MYORTHO_ADMIN_EMAIL ?? '').toLowerCase().trim();
+    const password = process.env.MYORTHO_ADMIN_PASSWORD ?? '';
     const fullName = process.env.MYORTHO_ADMIN_NAME ?? 'Platform Admin';
+
+    if (!email || !password) {
+      this.logger.warn('Bootstrap: MYORTHO_ADMIN_EMAIL and MYORTHO_ADMIN_PASSWORD must both be set. Skipping admin creation.');
+      return;
+    }
 
     try {
       const existing = await this.findByEmail(email);

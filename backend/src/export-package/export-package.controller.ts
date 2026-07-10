@@ -1,14 +1,17 @@
 import { Controller, Get, Post, Param, Body, Req, UseGuards } from '@nestjs/common';
 import { AuthGuard } from '../auth/auth.guard';
+import { PermissionsGuard } from '../auth/permissions.guard';
+import { RequirePermission } from '../auth/require-permission.decorator';
 import { ExportPackageService, ExportType } from './export-package.service';
 import type { AuthenticatedRequest } from '../common/auth-request.type';
 
 @Controller()
-@UseGuards(AuthGuard)
+@UseGuards(AuthGuard, PermissionsGuard)
 export class ExportPackageController {
   constructor(private readonly svc: ExportPackageService) {}
 
   @Post('api/cases/:caseId/plans/:planId/export-packages')
+  @RequirePermission('cases:send_to_manufacturing')
   create(
     @Req() req: AuthenticatedRequest,
     @Param('caseId') caseId: string,
@@ -19,6 +22,7 @@ export class ExportPackageController {
   }
 
   @Get('api/cases/:caseId/plans/:planId/export-packages')
+  @RequirePermission('cases:read')
   list(
     @Req() req: AuthenticatedRequest,
     @Param('caseId') caseId: string,
@@ -28,6 +32,7 @@ export class ExportPackageController {
   }
 
   @Post('api/cases/:caseId/plans/:planId/export-packages/:packageId/validate')
+  @RequirePermission('cases:send_to_manufacturing')
   validate(
     @Req() req: AuthenticatedRequest,
     @Param('caseId') caseId: string,
@@ -38,6 +43,7 @@ export class ExportPackageController {
   }
 
   @Post('api/cases/:caseId/plans/:planId/export-packages/:packageId/approve')
+  @RequirePermission('cases:send_to_manufacturing')
   approve(
     @Req() req: AuthenticatedRequest,
     @Param('caseId') caseId: string,
@@ -48,6 +54,7 @@ export class ExportPackageController {
   }
 
   @Post('api/cases/:caseId/plans/:planId/export-packages/:packageId/mark-exported')
+  @RequirePermission('cases:send_to_manufacturing')
   markExported(
     @Req() req: AuthenticatedRequest,
     @Param('caseId') caseId: string,

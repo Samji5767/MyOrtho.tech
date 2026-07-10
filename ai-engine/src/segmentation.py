@@ -33,6 +33,7 @@ MANDIBULAR_TEETH = list(range(31, 39)) + list(range(41, 49))  # FDI 31-38, 41-48
 
 # Channel index → FDI mapping (channel 0 = background/gingiva, 1-32 = teeth in order)
 _CHANNEL_TO_FDI = [0] + MAXILLARY_TEETH + MANDIBULAR_TEETH  # 33 total
+_FDI_TO_CHANNEL = {fdi: idx for idx, fdi in enumerate(_CHANNEL_TO_FDI)}  # O(1) lookup
 
 # Supported file extensions
 SUPPORTED_EXTENSIONS = {".stl", ".ply", ".obj", ".off"}
@@ -275,9 +276,9 @@ class OrthoSegmentationEngine:
 
             extracted = 0
             for fdi in detected_teeth:
-                if fdi not in _CHANNEL_TO_FDI:
+                if fdi not in _FDI_TO_CHANNEL:
                     continue
-                channel_idx = _CHANNEL_TO_FDI.index(fdi)
+                channel_idx = _FDI_TO_CHANNEL[fdi]
                 face_mask = face_labels == channel_idx
                 if int(face_mask.sum()) < 20:
                     continue
@@ -415,9 +416,9 @@ class OrthoSegmentationEngine:
         confidence_maps: dict[str, float] = {}  # mean prob per channel
 
         for fdi in candidate_teeth:
-            if fdi not in _CHANNEL_TO_FDI:
+            if fdi not in _FDI_TO_CHANNEL:
                 continue
-            channel_idx = _CHANNEL_TO_FDI.index(fdi)
+            channel_idx = _FDI_TO_CHANNEL[fdi]
             channel_prob = probs[channel_idx]   # (D, H, W)
 
             mean_prob = float(channel_prob.mean())

@@ -252,7 +252,7 @@ async def run_segmentation_task(job_id: str, req: SegmentationRequest) -> None:
         f"Running segmentation — case={req.case_id} scan={req.scan_id} job={job_id}"
     )
 
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
     try:
         results = await asyncio.wait_for(
             loop.run_in_executor(
@@ -393,11 +393,15 @@ async def hollow_mesh(req: HollowRequest):
     safe_in = _assert_safe_path(req.input_mesh_path)
     safe_out = _assert_safe_path(req.output_mesh_path)
     try:
-        success = mesh_processor.hollow_and_label(
-            safe_in,
-            safe_out,
-            req.wall_thickness_mm,
-            req.engrave_label,
+        loop = asyncio.get_running_loop()
+        success = await loop.run_in_executor(
+            _executor,
+            lambda: mesh_processor.hollow_and_label(
+                safe_in,
+                safe_out,
+                req.wall_thickness_mm,
+                req.engrave_label,
+            ),
         )
         if not success:
             raise HTTPException(status_code=500, detail="Mesh hollowing failed")
@@ -416,7 +420,11 @@ async def hollow_mesh(req: HollowRequest):
 async def detect_landmarks(req: LandmarkRequest):
     safe_path = _assert_safe_path(req.mesh_path)
     try:
-        return landmark_detector.detect_landmarks(safe_path, req.tooth_id)
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(
+            _executor,
+            lambda: landmark_detector.detect_landmarks(safe_path, req.tooth_id),
+        )
     except Exception as exc:
         logger.error("detect_landmarks error: %s", exc)
         raise HTTPException(status_code=500, detail="Internal processing error") from exc
@@ -430,7 +438,11 @@ async def check_collision(req: CollisionRequest):
     try:
         arr_a = np.array(req.centerline_a)
         arr_b = np.array(req.centerline_b)
-        return root_predictor.calculate_root_collision(arr_a, arr_b, req.min_clearance_mm)
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(
+            _executor,
+            lambda: root_predictor.calculate_root_collision(arr_a, arr_b, req.min_clearance_mm),
+        )
     except Exception as exc:
         logger.error("check_collision error: %s", exc)
         raise HTTPException(status_code=500, detail="Internal processing error") from exc
@@ -482,7 +494,7 @@ async def generate_stage_stls(req: GenerateStageStlsRequest):
         raise HTTPException(status_code=400, detail="segmented_mesh_dir does not exist")
 
     try:
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         result = await loop.run_in_executor(
             _executor,
             lambda: _build_stage_stls(safe_dir, req),
@@ -593,7 +605,7 @@ async def generate_aligner_shells(req: GenerateAlignerShellsRequest):
         raise HTTPException(status_code=400, detail="stage_stls_dir does not exist")
 
     try:
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         result = await loop.run_in_executor(
             _executor,
             lambda: _build_aligner_shells(safe_dir, req),

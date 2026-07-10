@@ -29,8 +29,7 @@ function buildManifest(dto: CreateExportDto, stageCount: number) {
       const from = dto.stageRangeFrom ?? 1;
       const to = Math.min(dto.stageRangeTo ?? stageCount, stageCount);
       for (let i = from; i <= to; i++) {
-        files.push(`stage_${String(i).padStart(3, '0')}_upper.${format}`);
-        files.push(`stage_${String(i).padStart(3, '0')}_lower.${format}`);
+        files.push(`stage_${String(i).padStart(3, '0')}.${format}`);
       }
       break;
     }
@@ -65,8 +64,7 @@ function buildManifest(dto: CreateExportDto, stageCount: number) {
       files.push(`manufacturing_report.pdf`);
       files.push(`qa_report.pdf`);
       for (let i = 1; i <= Math.min(stageCount, 30); i++) {
-        files.push(`stage_${String(i).padStart(3, '0')}_upper.${format}`);
-        files.push(`stage_${String(i).padStart(3, '0')}_lower.${format}`);
+        files.push(`stage_${String(i).padStart(3, '0')}.${format}`);
       }
       break;
     case 'qa_report':

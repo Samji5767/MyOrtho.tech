@@ -13,10 +13,8 @@ self.onmessage = async (e: MessageEvent) => {
       vertices = parsed.vertices;
       faces = parsed.faces;
     } else {
-      // PLY/OBJ mock parsing for simulation
-      const len = 300000; // Mock high-poly count
-      vertices = new Float32Array(len * 3);
-      faces = new Uint32Array(len);
+      self.postMessage({ error: `Unsupported format for decimation: ${format}. Only STL is currently supported.` });
+      return;
     }
 
     const initialFacesCount = vertices.length / 9;

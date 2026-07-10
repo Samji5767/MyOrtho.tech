@@ -276,6 +276,7 @@ export class AuthService implements OnModuleInit {
           role            text        NOT NULL DEFAULT 'orthodontist',
           organization_id uuid        REFERENCES organizations(id) ON DELETE SET NULL,
           is_onboarded    boolean     NOT NULL DEFAULT false,
+          is_active       boolean     NOT NULL DEFAULT true,
           created_at      timestamptz DEFAULT now(),
           updated_at      timestamptz DEFAULT now(),
           last_login_at   timestamptz
@@ -289,8 +290,16 @@ export class AuthService implements OnModuleInit {
 
   private async bootstrapAdmin(): Promise<void> {
     const email = (process.env.MYORTHO_ADMIN_EMAIL ?? 'admin@myortho.tech').toLowerCase().trim();
-    const password = process.env.MYORTHO_ADMIN_PASSWORD ?? 'adminadmin';
+    const password = process.env.MYORTHO_ADMIN_PASSWORD ?? '';
     const fullName = process.env.MYORTHO_ADMIN_NAME ?? 'Platform Admin';
+
+    if (!password || password.length < 12) {
+      this.logger.error(
+        'Bootstrap: MYORTHO_ADMIN_PASSWORD is not set or is shorter than 12 characters. ' +
+        'Admin account will not be created. Set a strong password and restart.',
+      );
+      return;
+    }
 
     try {
       const existing = await this.findByEmail(email);

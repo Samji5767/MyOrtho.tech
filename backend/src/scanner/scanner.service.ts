@@ -52,15 +52,14 @@ export class ScannerService {
       [organizationId, vendor],
     );
 
-    const config = rows[0] ?? {
-      client_id: 'sandbox-client-id',
-      client_secret: 'sandbox-client-secret',
-      patient_id: 'ext-p-sandbox-1',
-    };
-
     if (!rows[0]) {
-      this.logger.warn(`No scanner integration found for org=${organizationId} vendor=${vendor}. Using sandbox bypass.`);
+      throw new NotFoundException(
+        `No active scanner integration found for vendor '${vendor}'. ` +
+        `Configure an integration under Settings → Scanner Integrations.`,
+      );
     }
+
+    const config = rows[0];
 
     const connector = this.getConnector(vendor);
     await connector.authenticate(config);

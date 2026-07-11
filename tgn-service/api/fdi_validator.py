@@ -56,6 +56,8 @@ class FDIValidationResult:
     is_valid: bool
     requires_manual_review: bool
     deciduous_detected: bool
+    gingiva_only: bool = False          # model returned no tooth labels at all
+    partial_segmentation: bool = False  # fewer teeth than minimum viable arch
 
 
 def compute_per_tooth_confidence(
@@ -113,13 +115,34 @@ def validate_fdi_sequence(
     # Unique non-zero labels
     label_set: Set[int] = {lbl for lbl in labels if lbl != 0}
 
-    # Expected set for this jaw
+    # Expected set for this jaw (needed before early-exit checks)
     if jaw == "upper":
         expected_set = MAXILLARY_FDI
     elif jaw == "lower":
         expected_set = MANDIBULAR_FDI
     else:
         expected_set = ALL_PERMANENT_FDI
+
+    # ── Gingiva-only / empty output ────────────────────────────────────────────
+    if not label_set:
+        warnings.append(
+            "No tooth labels detected — output is gingiva-only (label 0). "
+            "Model may have failed, scan may be empty, or only soft tissue is present."
+        )
+        return FDIValidationResult(
+            jaw=jaw,
+            detected_teeth=[],
+            missing_teeth=sorted(expected_set),
+            unexpected_teeth=[],
+            low_confidence_teeth=[],
+            confidence_scores={},
+            warnings=warnings,
+            is_valid=False,
+            requires_manual_review=True,
+            deciduous_detected=False,
+            gingiva_only=True,
+            partial_segmentation=False,
+        )
 
     # Separate deciduous from permanent
     deciduous_found = label_set & DECIDUOUS_FDI
@@ -175,10 +198,22 @@ def validate_fdi_sequence(
                 "Possible missing teeth or segmentation artifact."
             )
 
+    # ── Partial segmentation check ──────────────────────────────────────────────
+    # Minimum viable arch: at least 4 permanent teeth in the correct jaw
+    MIN_VIABLE_TEETH = 4
+    partial = len(permanent_detected & expected_set) < MIN_VIABLE_TEETH
+    if partial and permanent_detected:
+        warnings.append(
+            f"Partial segmentation: only {len(permanent_detected & expected_set)} "
+            f"teeth detected in expected jaw range (minimum: {MIN_VIABLE_TEETH}). "
+            "Result may be unreliable — manual review required."
+        )
+
     is_valid = (
         not unexpected_teeth
         and not low_confidence_teeth
         and not deciduous_detected
+        and not partial
     )
     requires_review = not is_valid or bool(missing_teeth) or bool(warnings)
 
@@ -193,4 +228,6 @@ def validate_fdi_sequence(
         is_valid=is_valid,
         requires_manual_review=requires_review,
         deciduous_detected=deciduous_detected,
+        gingiva_only=False,
+        partial_segmentation=partial,
     )

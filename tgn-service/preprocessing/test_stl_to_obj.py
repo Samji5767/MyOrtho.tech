@@ -5,6 +5,7 @@ Run:
     python -m pytest preprocessing/test_stl_to_obj.py -v
 """
 
+import importlib.util
 import os
 import struct
 import tempfile
@@ -12,6 +13,8 @@ import tempfile
 import numpy as np
 import pytest
 import trimesh
+
+_SCIPY_AVAILABLE = importlib.util.find_spec("scipy") is not None
 
 from preprocessing.stl_to_obj import (
     PreprocessResult,
@@ -143,6 +146,10 @@ class TestConvertStlToObj:
         assert result.success is True
         assert result.face_count == 1
 
+    @pytest.mark.skipif(
+        not _SCIPY_AVAILABLE,
+        reason="trimesh watertight detection requires scipy",
+    )
     def test_watertight_flag(self, tmp_path):
         stl = str(tmp_path / "cube.stl")
         obj = str(tmp_path / "cube.obj")

@@ -2,7 +2,17 @@ import { api } from './client';
 
 export type SegmentationModel = 'monai' | 'nnunet' | 'onnx' | 'pytorch' | 'cpu';
 export type SegmentationArch = 'upper' | 'lower' | 'both';
-export type JobStatus = 'pending' | 'processing' | 'completed' | 'failed';
+export type JobStatus =
+  | 'pending'
+  | 'queued'
+  | 'preprocessing'
+  | 'running'
+  | 'validating'
+  | 'processing'
+  | 'completed'
+  | 'failed'
+  | 'manual_review_required'
+  | 'unavailable';
 export type CorrectionType =
   | 'fix_geometry' | 'improve_segmentation' | 'repair_mesh'
   | 'recalculate_landmarks' | 'rebuild_tooth' | 'merge_teeth'

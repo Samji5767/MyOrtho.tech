@@ -6,23 +6,31 @@ Wraps TGN point-cloud inference with:
   - STL → OBJ conversion (Phase 3 preprocessing)
   - FDI validation (Phase 5)
   - Health, readiness, and metrics endpoints
-  - Structured JSON logging
+  - Structured JSON logging with request correlation IDs
   - Graceful shutdown
   - GPU/CPU auto-detection
+  - SHA-256 checkpoint integrity verification
+  - Fail-closed authentication
+
+TGN_ENABLED must be set to "true" (case-insensitive) to activate inference.
+When TGN_ENABLED is false or unset the service starts but rejects /segment requests.
 
 Endpoints (all except /health and /ready require X-Internal-Token):
   POST /segment           — upload or reference a file, start async job
   GET  /jobs/{job_id}     — poll job status and results
   GET  /health            — liveness probe
   GET  /ready             — readiness probe (reports model & device)
-  GET  /metrics           — simple operation counters
+  GET  /metrics           — operation counters
 
-AI disclaimer:
-  All outputs from this service are AI-assisted and require review
+Research use only:
+  This service is research-grade software. All outputs must be reviewed
   by a licensed orthodontist before any clinical decision is made.
+  Not cleared as Software as a Medical Device (SaMD) by any regulatory body.
 """
 
 import asyncio
+import hashlib
+import hmac
 import json
 import logging
 import os
@@ -34,6 +42,7 @@ import uuid
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
+from enum import Enum
 from typing import Any, Dict, List, Optional
 
 import redis as redis_lib
@@ -63,17 +72,50 @@ logger = logging.getLogger("tgn-api")
 
 CHECKPOINT_FPS = os.getenv("TGNET_FPS_CHECKPOINT", "/ckpts/tgnet_fps.h5")
 CHECKPOINT_BDL = os.getenv("TGNET_BDL_CHECKPOINT", "/ckpts/tgnet_bdl.h5")
+CHECKPOINT_SHA256_FPS = os.getenv("CHECKPOINT_SHA256_FPS", "").strip()
+CHECKPOINT_SHA256_BDL = os.getenv("CHECKPOINT_SHA256_BDL", "").strip()
+REQUIRE_CHECKSUM = os.getenv("REQUIRE_CHECKSUM", "false").lower() in ("1", "true", "yes")
+
 REDIS_URL = os.getenv("REDIS_URL", "redis://redis:6379")
-INTERNAL_TOKEN = os.getenv("INTERNAL_API_SECRET", "")
+INTERNAL_TOKEN = os.getenv("INTERNAL_API_SECRET", "").strip()
 MODEL_NAME = os.getenv("TGN_MODEL_NAME", "tgnet_fps")
+MODEL_VERSION = os.getenv("TGN_MODEL_VERSION", "1.0.0")
 INFERENCE_TIMEOUT = int(os.getenv("TGN_TIMEOUT_SEC", "300"))
 UPLOAD_DIR = os.getenv("TGN_UPLOAD_DIR", "/tmp/tgn_uploads")
+TGN_ENABLED = os.getenv("TGN_ENABLED", "false").lower() in ("1", "true", "yes")
+
+# Allowed directories for /segment/by-path (colon-separated)
+_ALLOWED_PATH_DIRS_RAW = os.getenv("TGN_ALLOWED_PATH_DIRS", "/app/uploads:/tmp/tgn_uploads")
+ALLOWED_PATH_DIRS = [
+    os.path.realpath(d.strip()) for d in _ALLOWED_PATH_DIRS_RAW.split(":") if d.strip()
+]
+
 JOB_TTL = 86_400 * 7  # 7 days
-VERSION = "1.0.0"
+VERSION = "1.1.0"
+
 CLINICAL_DISCLAIMER = (
     "AI-assisted recommendation only. "
     "Final treatment decisions remain the responsibility of the licensed orthodontist."
 )
+RESEARCH_USE_NOTICE = (
+    "Research-use segmentation. Manual clinical review required. "
+    "Not cleared as a Software as a Medical Device."
+)
+
+
+# ── Model state ───────────────────────────────────────────────────────────────
+
+class ModelState(str, Enum):
+    unavailable = "unavailable"   # checkpoints missing or TGN_ENABLED=false
+    loading = "loading"           # warm-up in progress
+    ready = "ready"               # model loaded, inference available
+    failed = "failed"             # load attempted but failed
+
+_model_state: ModelState = ModelState.unavailable
+_model_error: Optional[str] = None
+_scan_segmentation: Optional[Any] = None
+_checkpoint_sha256: Dict[str, str] = {}  # {"fps": "abc123...", "bdl": "def456..."}
+
 
 # ── Metrics ───────────────────────────────────────────────────────────────────
 
@@ -84,16 +126,10 @@ _metrics: Dict[str, int] = {
     "total_inference_ms": 0,
 }
 
-# ── Model globals ─────────────────────────────────────────────────────────────
-
-_scan_segmentation: Optional[Any] = None
-_model_loaded = False
-_model_error: Optional[str] = None
-
-# ── Redis ──────────────────────────────────────────────────────────────────────
+# ── Redis / job store ─────────────────────────────────────────────────────────
 
 _redis: Optional[Any] = None
-_job_store: Dict[str, Dict] = {}  # in-memory fallback
+_job_store: Dict[str, Dict] = {}
 
 # ── Thread pool ───────────────────────────────────────────────────────────────
 
@@ -127,20 +163,96 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def _sha256_file(path: str) -> str:
+    """Compute SHA-256 of a file; returns hex digest."""
+    h = hashlib.sha256()
+    with open(path, "rb") as fh:
+        for chunk in iter(lambda: fh.read(65536), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def _assert_safe_path(file_path: str) -> str:
+    """
+    Validate that file_path resolves within an allowed directory.
+    Raises ValueError on traversal or access outside allowed dirs.
+    Returns the realpath.
+    """
+    try:
+        real = os.path.realpath(file_path)
+    except Exception:
+        raise ValueError(f"Cannot resolve path: {file_path}")
+
+    for allowed in ALLOWED_PATH_DIRS:
+        if real.startswith(allowed + os.sep) or real == allowed:
+            return real
+
+    raise ValueError(
+        f"File path is outside allowed directories. "
+        f"Allowed: {ALLOWED_PATH_DIRS}"
+    )
+
+
+# ── Checkpoint verification ───────────────────────────────────────────────────
+
+def _verify_checkpoint(path: str, expected_sha256: str, name: str) -> bool:
+    """
+    Verify checkpoint integrity.
+    - If expected_sha256 is set: compute file hash and compare; fail-closed on mismatch.
+    - If expected_sha256 is empty and REQUIRE_CHECKSUM=true: reject (fail-closed).
+    - If expected_sha256 is empty and REQUIRE_CHECKSUM=false: warn and accept.
+    Returns True on pass, False on fail.
+    """
+    actual = _sha256_file(path)
+    prefix = actual[:16]
+    logger.info("Checkpoint %s SHA-256: %s… (%s)", name, prefix, path)
+
+    if expected_sha256:
+        if not hmac.compare_digest(actual.lower(), expected_sha256.lower()):
+            logger.error(
+                "CHECKSUM MISMATCH for %s: expected=%s… got=%s",
+                name, expected_sha256[:16], prefix,
+            )
+            return False
+        logger.info("Checkpoint %s checksum verified ✓", name)
+    elif REQUIRE_CHECKSUM:
+        logger.error(
+            "REQUIRE_CHECKSUM=true but no expected hash set for %s. Refusing to load.",
+            name,
+        )
+        return False
+    else:
+        logger.warning(
+            "No expected SHA-256 for %s — checksum not verified. "
+            "Set CHECKPOINT_SHA256_%s to enable integrity check.",
+            name, name.upper(),
+        )
+
+    return True
+
+
 # ── Model loading ─────────────────────────────────────────────────────────────
 
 def _load_model() -> bool:
     """
     Import TGN modules and initialise the inference pipeline.
-    Applies cpu_compat patches for CPU inference.
-    Returns True on success, False on failure (model not available).
+    Verifies checkpoint integrity before loading.
+    Returns True on success, False on failure.
     """
-    global _scan_segmentation, _model_loaded, _model_error
+    global _scan_segmentation, _model_state, _model_error, _checkpoint_sha256
+
+    if not TGN_ENABLED:
+        _model_state = ModelState.unavailable
+        _model_error = "TGN_ENABLED is not set to true. Inference disabled."
+        logger.info("TGN inference disabled (TGN_ENABLED != true)")
+        return False
+
+    _model_state = ModelState.loading
 
     # TGN paths — populated by the container's PYTHONPATH / COPY instructions
     tgn_root = "/app/ToothGroupNetwork"
     ext_libs = "/app/ToothGroupNetwork/external_libs"
-    patches_dir = "/app"  # contains cpu_compat.py
+    patches_dir = "/app"
 
     for p in [tgn_root, ext_libs, patches_dir]:
         if p not in sys.path:
@@ -153,15 +265,30 @@ def _load_model() -> bool:
     except ImportError as exc:
         logger.warning("cpu_compat not found (%s); running without patches (GPU only)", exc)
 
-    # Check checkpoints
+    # Check checkpoints exist
     for ckpt, name in [(CHECKPOINT_FPS, "FPS"), (CHECKPOINT_BDL, "BDL")]:
         if not os.path.isfile(ckpt):
+            _model_state = ModelState.unavailable
             _model_error = (
                 f"Checkpoint missing: {ckpt}. "
-                "Download from https://drive.google.com/drive/folders/15oP0CZM_O_-Bir18VbSM8wRUEzoyLXby"
+                "Run scripts/download_checkpoints.sh to download."
             )
             logger.error(_model_error)
             return False
+
+    # Verify checksums
+    fps_ok = _verify_checkpoint(CHECKPOINT_FPS, CHECKPOINT_SHA256_FPS, "FPS")
+    bdl_ok = _verify_checkpoint(CHECKPOINT_BDL, CHECKPOINT_SHA256_BDL, "BDL")
+    if not fps_ok or not bdl_ok:
+        _model_state = ModelState.failed
+        _model_error = "Checkpoint integrity verification failed. Refusing to load model."
+        logger.error(_model_error)
+        return False
+
+    _checkpoint_sha256 = {
+        "fps": _sha256_file(CHECKPOINT_FPS),
+        "bdl": _sha256_file(CHECKPOINT_BDL),
+    }
 
     # Load pipeline
     try:
@@ -173,11 +300,17 @@ def _load_model() -> bool:
             [CHECKPOINT_FPS, CHECKPOINT_BDL],
         )
         _scan_segmentation = ScanSegmentation(pipeline)
-        _model_loaded = True
-        logger.info("TGN model loaded: %s | FPS=%s | BDL=%s", MODEL_NAME, CHECKPOINT_FPS, CHECKPOINT_BDL)
+        _model_state = ModelState.ready
+        logger.info(
+            "TGN model ready | name=%s version=%s | FPS=%s…| BDL=%s…",
+            MODEL_NAME, MODEL_VERSION,
+            _checkpoint_sha256["fps"][:16],
+            _checkpoint_sha256["bdl"][:16],
+        )
         return True
 
     except Exception as exc:
+        _model_state = ModelState.failed
         _model_error = f"Model load failed: {exc}"
         logger.error(_model_error)
         return False
@@ -194,12 +327,10 @@ def _ensure_obj(file_path: str, scan_id: str, jaw: str) -> str:
     if ext == ".obj":
         return file_path
 
-    # Need conversion
     sys.path.insert(0, "/opt/toothgroupnetwork")
     try:
         from preprocessing.stl_to_obj import convert_stl_to_obj
     except ImportError:
-        # Fallback: try trimesh direct export
         import trimesh
         mesh = trimesh.load(file_path, process=False, force="mesh")
         obj_path = file_path.replace(ext, ".obj")
@@ -215,12 +346,10 @@ def _ensure_obj(file_path: str, scan_id: str, jaw: str) -> str:
 
 # ── Inference task ─────────────────────────────────────────────────────────────
 
-def _run_inference_sync(job_id: str, file_path: str, jaw: str, scan_id: str) -> None:
-    """
-    Synchronous inference worker (runs in thread pool).
-    Updates job store on completion or failure.
-    """
-    import collections as _col
+def _run_inference_sync(
+    job_id: str, file_path: str, jaw: str, scan_id: str, request_id: str
+) -> None:
+    """Synchronous inference worker (runs in thread pool)."""
     from api.fdi_validator import compute_per_tooth_confidence, validate_fdi_sequence
 
     t0 = time.monotonic()
@@ -228,7 +357,11 @@ def _run_inference_sync(job_id: str, file_path: str, jaw: str, scan_id: str) -> 
     os.makedirs(working_dir, exist_ok=True)
 
     try:
-        # ── Preprocessing ─────────────────────────────────────────────────────
+        # Update status to preprocessing
+        existing = _job_get(job_id) or {}
+        existing["status"] = "preprocessing"
+        _job_set(job_id, existing)
+
         jaw_norm = jaw.lower()
         if jaw_norm in ("maxillary", "upper", "max"):
             tgn_jaw = "upper"
@@ -239,7 +372,7 @@ def _run_inference_sync(job_id: str, file_path: str, jaw: str, scan_id: str) -> 
 
         obj_path = _ensure_obj(file_path, scan_id, tgn_jaw)
 
-        # TGN expects:  {input_dir}/{scan_id}/{scan_id}_{jaw}.obj
+        # TGN expects: {input_dir}/{scan_id}/{scan_id}_{jaw}.obj
         tgn_input = os.path.join(working_dir, "input")
         scan_subdir = os.path.join(tgn_input, scan_id)
         os.makedirs(scan_subdir, exist_ok=True)
@@ -250,18 +383,27 @@ def _run_inference_sync(job_id: str, file_path: str, jaw: str, scan_id: str) -> 
 
         tgn_output = os.path.join(working_dir, "output")
         os.makedirs(tgn_output, exist_ok=True)
-
         output_json = os.path.join(tgn_output, obj_name.replace(".obj", ".json"))
 
-        # ── Inference ─────────────────────────────────────────────────────────
-        if not _model_loaded or _scan_segmentation is None:
+        # Update status to running
+        existing = _job_get(job_id) or {}
+        existing["status"] = "running"
+        _job_set(job_id, existing)
+
+        if _model_state != ModelState.ready or _scan_segmentation is None:
             raise RuntimeError(
-                f"Model not loaded: {_model_error or 'checkpoints not configured'}"
+                f"Model not ready (state={_model_state.value}): "
+                f"{_model_error or 'checkpoints not configured'}"
             )
 
         _scan_segmentation.process(dest_obj, output_json)
 
-        # ── Parse output ──────────────────────────────────────────────────────
+        # Update status to validating
+        existing = _job_get(job_id) or {}
+        existing["status"] = "validating"
+        _job_set(job_id, existing)
+
+        # Parse output
         with open(output_json) as fh:
             seg = json.load(fh)
 
@@ -269,7 +411,6 @@ def _run_inference_sync(job_id: str, file_path: str, jaw: str, scan_id: str) -> 
         instances: List[int] = seg.get("instances", [])
         seg_jaw: str = seg.get("jaw", tgn_jaw)
 
-        # FDI confidence + validation
         confidence = compute_per_tooth_confidence(labels, instances)
         validation = validate_fdi_sequence(labels, seg_jaw, confidence)
 
@@ -282,6 +423,7 @@ def _run_inference_sync(job_id: str, file_path: str, jaw: str, scan_id: str) -> 
             {
                 "status": "completed",
                 "job_id": job_id,
+                "request_id": request_id,
                 "scan_id": scan_id,
                 "jaw": seg_jaw,
                 "tooth_ids": validation.detected_teeth,
@@ -297,10 +439,19 @@ def _run_inference_sync(job_id: str, file_path: str, jaw: str, scan_id: str) -> 
                 "vertex_instances": instances,
                 "timing_ms": elapsed_ms,
                 "completed_at": _now(),
+                "model_name": MODEL_NAME,
+                "model_version": MODEL_VERSION,
+                "checkpoint_sha256_fps": _checkpoint_sha256.get("fps", "")[:16] or None,
+                "checkpoint_sha256_bdl": _checkpoint_sha256.get("bdl", "")[:16] or None,
+                "research_use": True,
+                "research_use_notice": RESEARCH_USE_NOTICE,
                 "disclaimer": CLINICAL_DISCLAIMER,
             },
         )
-        logger.info("Job %s completed: %d teeth in %dms", job_id, len(validation.detected_teeth), elapsed_ms)
+        logger.info(
+            "Job %s completed: %d teeth in %dms | req=%s",
+            job_id, len(validation.detected_teeth), elapsed_ms, request_id,
+        )
 
     except Exception as exc:
         elapsed_ms = int((time.monotonic() - t0) * 1000)
@@ -311,15 +462,17 @@ def _run_inference_sync(job_id: str, file_path: str, jaw: str, scan_id: str) -> 
             {
                 "status": "failed",
                 "job_id": job_id,
+                "request_id": request_id,
                 "scan_id": scan_id,
                 "error": error_msg,
                 "timing_ms": elapsed_ms,
                 "failed_at": _now(),
+                "research_use": True,
             },
         )
-        logger.error("Job %s failed after %dms: %s", job_id, elapsed_ms, error_msg)
+        logger.error("Job %s failed after %dms: %s | req=%s", job_id, elapsed_ms, error_msg, request_id)
     finally:
-        # Clean up working dir (keep output JSON for debugging)
+        # Clean up input dir; keep output JSON for debugging
         try:
             input_dir = os.path.join(working_dir, "input")
             if os.path.isdir(input_dir):
@@ -328,13 +481,15 @@ def _run_inference_sync(job_id: str, file_path: str, jaw: str, scan_id: str) -> 
             pass
 
 
-async def _run_inference_async(job_id: str, file_path: str, jaw: str, scan_id: str) -> None:
+async def _run_inference_async(
+    job_id: str, file_path: str, jaw: str, scan_id: str, request_id: str
+) -> None:
     loop = asyncio.get_event_loop()
     try:
         await asyncio.wait_for(
             loop.run_in_executor(
                 _executor,
-                lambda: _run_inference_sync(job_id, file_path, jaw, scan_id),
+                lambda: _run_inference_sync(job_id, file_path, jaw, scan_id, request_id),
             ),
             timeout=float(INFERENCE_TIMEOUT),
         )
@@ -345,21 +500,40 @@ async def _run_inference_async(job_id: str, file_path: str, jaw: str, scan_id: s
             {
                 "status": "failed",
                 "job_id": job_id,
+                "request_id": request_id,
                 "error": f"Inference timed out after {INFERENCE_TIMEOUT}s",
                 "failed_at": _now(),
+                "research_use": True,
             },
         )
-        logger.error("Job %s timed out after %ds", job_id, INFERENCE_TIMEOUT)
+        logger.error("Job %s timed out after %ds | req=%s", job_id, INFERENCE_TIMEOUT, request_id)
 
 
 # ── Auth dependency ───────────────────────────────────────────────────────────
 
 def _require_token(request: Request) -> None:
+    """
+    Fail-closed token authentication.
+    - If INTERNAL_API_SECRET is not set: reject all requests (do not allow open access).
+    - Uses hmac.compare_digest to prevent timing attacks.
+    """
     if not INTERNAL_TOKEN:
-        return  # token checking disabled when env var not set
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                "Service not configured: INTERNAL_API_SECRET is not set. "
+                "Set this environment variable before sending authenticated requests."
+            ),
+        )
     token = request.headers.get("X-Internal-Token", "")
-    if token != INTERNAL_TOKEN:
+    if not hmac.compare_digest(token.encode(), INTERNAL_TOKEN.encode()):
         raise HTTPException(status_code=401, detail="Invalid or missing X-Internal-Token")
+
+
+# ── Request ID middleware ─────────────────────────────────────────────────────
+
+def _get_request_id(request: Request) -> str:
+    return request.headers.get("X-Request-ID") or str(uuid.uuid4())
 
 
 # ── Lifespan ──────────────────────────────────────────────────────────────────
@@ -368,6 +542,11 @@ def _require_token(request: Request) -> None:
 async def lifespan(application: FastAPI):
     global _redis
     os.makedirs(UPLOAD_DIR, exist_ok=True)
+
+    logger.info(
+        "TGN API starting | version=%s model=%s enabled=%s",
+        VERSION, MODEL_NAME, TGN_ENABLED,
+    )
 
     # Redis
     try:
@@ -383,13 +562,28 @@ async def lifespan(application: FastAPI):
         _redis = None
         logger.warning("Redis unavailable (%s); using in-memory job store", exc)
 
+    # Auth check
+    if not INTERNAL_TOKEN:
+        logger.warning(
+            "INTERNAL_API_SECRET is not set — all authenticated endpoints will return 503. "
+            "Set this variable before accepting inference requests."
+        )
+
+    # Path whitelist log
+    logger.info("Allowed path dirs for by-path: %s", ALLOWED_PATH_DIRS)
+
     # Model warm-up
     loop = asyncio.get_event_loop()
     loaded = await loop.run_in_executor(_executor, _load_model)
     if loaded:
-        logger.info("TGN model warm-up complete")
+        logger.info(
+            "TGN model warm-up complete | state=%s | fps_sha256=%s… | bdl_sha256=%s…",
+            _model_state.value,
+            _checkpoint_sha256.get("fps", "")[:16],
+            _checkpoint_sha256.get("bdl", "")[:16],
+        )
     else:
-        logger.warning("TGN model not available — %s", _model_error)
+        logger.warning("TGN model not available — state=%s | %s", _model_state.value, _model_error)
 
     yield
 
@@ -404,23 +598,33 @@ app = FastAPI(
     title="ToothGroupNetwork Segmentation API",
     description=(
         "3D dental tooth segmentation microservice (MICCAI 2022 Winner). "
-        f"{CLINICAL_DISCLAIMER}"
+        f"Research use only. {CLINICAL_DISCLAIMER}"
     ),
     version=VERSION,
     lifespan=lifespan,
 )
 
-# ── Request models ────────────────────────────────────────────────────────────
 
+# ── Request ID middleware ─────────────────────────────────────────────────────
+
+@app.middleware("http")
+async def attach_request_id(request: Request, call_next):
+    request_id = _get_request_id(request)
+    request.state.request_id = request_id
+    response = await call_next(request)
+    response.headers["X-Request-ID"] = request_id
+    return response
+
+
+# ── Request models ────────────────────────────────────────────────────────────
 
 class SegmentByPathRequest(BaseModel):
     file_path: str
-    jaw: str  # "upper" / "maxillary" | "lower" / "mandibular"
+    jaw: str
     scan_id: Optional[str] = None
 
 
 # ── Endpoints ─────────────────────────────────────────────────────────────────
-
 
 @app.get("/health")
 async def health():
@@ -437,14 +641,20 @@ async def ready():
     import torch
     cuda = torch.cuda.is_available()
     return {
-        "ready": True,
-        "model_loaded": _model_loaded,
+        "ready": _model_state == ModelState.ready,
+        "model_state": _model_state.value,
+        "model_loaded": _model_state == ModelState.ready,
         "model_error": _model_error,
+        "tgn_enabled": TGN_ENABLED,
         "device": "cuda" if cuda else "cpu",
         "gpu_acceleration": cuda,
         "model_name": MODEL_NAME,
+        "model_version": MODEL_VERSION,
         "checkpoint_fps": CHECKPOINT_FPS,
         "checkpoint_bdl": CHECKPOINT_BDL,
+        "checkpoint_sha256_fps": _checkpoint_sha256.get("fps", "")[:16] or None,
+        "checkpoint_sha256_bdl": _checkpoint_sha256.get("bdl", "")[:16] or None,
+        "research_use": True,
         "disclaimer": CLINICAL_DISCLAIMER,
     }
 
@@ -465,6 +675,7 @@ async def metrics(request: Request, _: None = Depends(_require_token)):
 
 @app.post("/segment", dependencies=[Depends(_require_token)])
 async def segment_file(
+    request: Request,
     background_tasks: BackgroundTasks,
     file: Optional[UploadFile] = File(None),
     jaw: str = Form("auto"),
@@ -476,6 +687,21 @@ async def segment_file(
     Accepts STL, OBJ, PLY, or OFF.  The file is saved to UPLOAD_DIR, then
     TGN inference runs asynchronously.  Poll /jobs/{job_id} for status.
     """
+    if not TGN_ENABLED:
+        raise HTTPException(
+            status_code=503,
+            detail="TGN inference is disabled. Set TGN_ENABLED=true to enable.",
+        )
+    if _model_state == ModelState.unavailable:
+        raise HTTPException(
+            status_code=503,
+            detail="Model unavailable: checkpoints not found or TGN_ENABLED=false.",
+        )
+    if _model_state == ModelState.failed:
+        raise HTTPException(
+            status_code=503,
+            detail=f"Model failed to load: {_model_error}",
+        )
     if file is None:
         raise HTTPException(status_code=400, detail="file field is required")
 
@@ -486,12 +712,14 @@ async def segment_file(
             detail=f"Unsupported file type '{ext}'. Accepted: .stl .obj .ply .off",
         )
 
+    request_id = getattr(request.state, "request_id", str(uuid.uuid4()))
     job_id = str(uuid.uuid4())
     _sid = scan_id or job_id[:8]
 
-    # Save upload
-    os.makedirs(UPLOAD_DIR, exist_ok=True)
-    saved_path = os.path.join(UPLOAD_DIR, f"{job_id}{ext}")
+    # Save upload scoped to job_id directory
+    job_upload_dir = os.path.join(UPLOAD_DIR, job_id)
+    os.makedirs(job_upload_dir, exist_ok=True)
+    saved_path = os.path.join(job_upload_dir, f"upload{ext}")
     with open(saved_path, "wb") as fh:
         content = await file.read()
         fh.write(content)
@@ -502,18 +730,25 @@ async def segment_file(
         {
             "status": "queued",
             "job_id": job_id,
+            "request_id": request_id,
             "scan_id": _sid,
             "jaw": jaw,
             "queued_at": _now(),
+            "research_use": True,
         },
     )
 
-    background_tasks.add_task(_run_inference_async, job_id, saved_path, jaw, _sid)
+    background_tasks.add_task(
+        _run_inference_async, job_id, saved_path, jaw, _sid, request_id
+    )
 
     return {
         "job_id": job_id,
+        "request_id": request_id,
         "status": "queued",
         "message": f"Segmentation job queued. Poll /jobs/{job_id} for results.",
+        "research_use": True,
+        "research_use_notice": RESEARCH_USE_NOTICE,
         "disclaimer": CLINICAL_DISCLAIMER,
     }
 
@@ -521,19 +756,38 @@ async def segment_file(
 @app.post("/segment/by-path", dependencies=[Depends(_require_token)])
 async def segment_by_path(
     req: SegmentByPathRequest,
+    request: Request,
     background_tasks: BackgroundTasks,
 ):
     """
-    Submit a segmentation job referencing a file already on shared storage.
+    Submit a segmentation job referencing a file on shared storage.
 
-    Used by the MyOrtho ai-engine when files are accessible via a shared volume.
+    The file_path must resolve within TGN_ALLOWED_PATH_DIRS (colon-separated).
+    Used by the MyOrtho ai-engine when files are on a shared volume.
     """
-    if not os.path.isfile(req.file_path):
+    if not TGN_ENABLED:
+        raise HTTPException(
+            status_code=503,
+            detail="TGN inference is disabled. Set TGN_ENABLED=true to enable.",
+        )
+    if _model_state == ModelState.unavailable:
+        raise HTTPException(status_code=503, detail="Model unavailable.")
+    if _model_state == ModelState.failed:
+        raise HTTPException(status_code=503, detail=f"Model failed to load: {_model_error}")
+
+    # Path validation — do not expose the real path in error messages
+    try:
+        safe_path = _assert_safe_path(req.file_path)
+    except ValueError:
         raise HTTPException(
             status_code=400,
-            detail=f"File not found: {req.file_path}",
+            detail="file_path is outside the allowed upload directories.",
         )
 
+    if not os.path.isfile(safe_path):
+        raise HTTPException(status_code=400, detail="Referenced file not found.")
+
+    request_id = getattr(request.state, "request_id", str(uuid.uuid4()))
     job_id = str(uuid.uuid4())
     _sid = req.scan_id or job_id[:8]
 
@@ -543,19 +797,25 @@ async def segment_by_path(
         {
             "status": "queued",
             "job_id": job_id,
+            "request_id": request_id,
             "scan_id": _sid,
             "jaw": req.jaw,
-            "file_path": req.file_path,
             "queued_at": _now(),
+            "research_use": True,
         },
     )
 
-    background_tasks.add_task(_run_inference_async, job_id, req.file_path, req.jaw, _sid)
+    background_tasks.add_task(
+        _run_inference_async, job_id, safe_path, req.jaw, _sid, request_id
+    )
 
     return {
         "job_id": job_id,
+        "request_id": request_id,
         "status": "queued",
         "message": f"Segmentation job queued. Poll /jobs/{job_id} for results.",
+        "research_use": True,
+        "research_use_notice": RESEARCH_USE_NOTICE,
         "disclaimer": CLINICAL_DISCLAIMER,
     }
 

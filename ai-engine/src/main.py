@@ -88,14 +88,21 @@ landmark_detector = DentalLandmarkDetector()
 root_predictor = RootPredictorEngine()
 aligner_generator = AlignerGenerationEngine()
 
-# TGN microservice engine (used when TGN_API_URL is configured)
+# TGN microservice engine (used when TGN_API_URL is configured AND TGN_ENABLED=true).
 # Falls back to OrthoSegmentationEngine if TGN is not available.
+_TGN_ENABLED = os.getenv("TGN_ENABLED", "false").lower() in ("1", "true", "yes")
 _tgn_engine: Optional[TGNSegmentationEngine] = None
-try:
-    _tgn_engine = TGNSegmentationEngine()
-    logger.info("TGN segmentation engine proxy initialised (TGN_API_URL=%s)", os.getenv("TGN_API_URL"))
-except TGNUnavailableError:
-    logger.info("TGN_API_URL not set; using built-in segmentation engine")
+if _TGN_ENABLED:
+    try:
+        _tgn_engine = TGNSegmentationEngine()
+        logger.info(
+            "TGN segmentation engine proxy initialised (TGN_API_URL=%s)",
+            os.getenv("TGN_API_URL"),
+        )
+    except TGNUnavailableError:
+        logger.info("TGN_API_URL not set; using built-in segmentation engine")
+else:
+    logger.info("TGN_ENABLED is not true; using built-in MONAI segmentation engine")
 
 # Thread pool for blocking inference calls (keeps the async event loop free)
 _executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="seg-worker")
@@ -291,13 +298,18 @@ async def run_segmentation_task(job_id: str, req: SegmentationRequest) -> None:
                 "teeth_confidence": results.get("confidence_scores", {}),
                 "confidence_maps": results.get("confidence_maps", {}),
                 "weights_loaded": results.get("weights_loaded", False),
+                "fdi_valid": results.get("fdi_valid", True),
+                "requires_manual_review": results.get("requires_manual_review", False),
+                "deciduous_detected": results.get("deciduous_detected", False),
                 "warning": results.get("warning"),
                 "segmented_mesh_path": results.get("segmented_mesh_path"),
                 "timing": results.get("timing", {}),
                 "completed_at": datetime.now(timezone.utc).isoformat(),
+                "research_use": True,
                 "disclaimer": (
-                    "Segmentation is a workflow tool only. "
-                    "Not clinically validated. Requires review by a licensed clinician."
+                    "Research-use segmentation. Manual clinical review required. "
+                    "AI-assisted recommendation only. "
+                    "Final treatment decisions remain the responsibility of the licensed orthodontist."
                 ),
             },
         )

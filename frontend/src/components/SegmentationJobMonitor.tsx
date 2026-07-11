@@ -23,12 +23,64 @@ import {
 
 // ─── Status display ───────────────────────────────────────────────────────────
 
-const STATUS_TONE = {
-  pending:    "neutral",
-  processing: "info",
-  completed:  "success",
-  failed:     "danger",
-} as const;
+const STATUS_TONE: Record<string, "neutral" | "info" | "success" | "danger" | "warning"> = {
+  pending:               "neutral",
+  queued:                "neutral",
+  preprocessing:         "info",
+  running:               "info",
+  validating:            "info",
+  processing:            "info",
+  manual_review_required:"warning",
+  completed:             "success",
+  failed:                "danger",
+  unavailable:           "danger",
+};
+
+const STATUS_LABEL: Record<string, string> = {
+  pending:               "Pending",
+  queued:                "Queued",
+  preprocessing:         "Converting STL…",
+  running:               "Running TGN…",
+  validating:            "Validating FDI…",
+  processing:            "Processing…",
+  manual_review_required:"Review required",
+  completed:             "Completed",
+  failed:                "Failed",
+  unavailable:           "Unavailable",
+};
+
+// ─── Research-use banner ─────────────────────────────────────────────────────
+
+function ResearchUseBanner() {
+  return (
+    <div className="flex items-start gap-2 rounded-lg border border-amber-400/40 bg-amber-50 px-3 py-2.5 text-xs text-amber-800 dark:border-amber-500/30 dark:bg-amber-950/30 dark:text-amber-200">
+      <AlertTriangle size={13} className="mt-0.5 shrink-0 text-amber-500" />
+      <span>
+        <strong>Research-use segmentation.</strong>{" "}
+        Manual clinical review required. AI outputs must be verified by a licensed orthodontist
+        before clinical decision-making. Not cleared as a Software as a Medical Device.
+      </span>
+    </div>
+  );
+}
+
+// ─── Manual-review banner ─────────────────────────────────────────────────────
+
+function ManualReviewBanner({ warnings }: { warnings?: string[] }) {
+  return (
+    <div className="flex items-start gap-2 rounded-lg border border-orange-400/50 bg-orange-50 px-3 py-2.5 text-xs text-orange-800 dark:border-orange-500/30 dark:bg-orange-950/30 dark:text-orange-200">
+      <AlertTriangle size={13} className="mt-0.5 shrink-0 text-orange-500" />
+      <div className="space-y-1">
+        <p className="font-semibold">Manual review required before proceeding</p>
+        {warnings && warnings.length > 0 && (
+          <ul className="list-inside list-disc space-y-0.5 text-[11px]">
+            {warnings.map((w, i) => <li key={i}>{w}</li>)}
+          </ul>
+        )}
+      </div>
+    </div>
+  );
+}
 
 function durationStr(job: SegmentationJob) {
   if (!job.startedAt) return null;
@@ -42,15 +94,19 @@ function durationStr(job: SegmentationJob) {
 
 function JobCard({ job, isLatest }: { job: SegmentationJob; isLatest: boolean }) {
   const tone = STATUS_TONE[job.status] ?? "neutral";
+  const label = STATUS_LABEL[job.status] ?? job.status;
   const dur = durationStr(job);
   const summary = job.resultSummary as Record<string, unknown> | null;
+  const isActive = ["pending", "queued", "preprocessing", "running", "validating", "processing"].includes(job.status);
+  const requiresReview = job.status === "manual_review_required" || (summary as Record<string, unknown>)?.['requires_manual_review'] === true;
+  const warnings = (summary as Record<string, unknown>)?.['warnings'] as string[] | undefined;
 
   return (
     <div className={`rounded-xl border p-4 space-y-3 ${isLatest ? "border-[color:var(--primary)]/40 bg-[color:var(--primary-glow)]/20" : "border-[color:var(--border)]"}`}>
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2 flex-wrap">
-            <StatusBadge tone={tone}>{job.status}</StatusBadge>
+            <StatusBadge tone={tone}>{label}</StatusBadge>
             <span className="text-xs font-mono text-[color:var(--muted-foreground)]">{job.id.slice(0, 8)}…</span>
             {isLatest && <StatusBadge tone="info">Latest</StatusBadge>}
           </div>
@@ -68,26 +124,34 @@ function JobCard({ job, isLatest }: { job: SegmentationJob; isLatest: boolean })
             )}
           </div>
         </div>
-        {job.status === "processing" && (
+        {isActive && (
           <Loader2 size={16} className="shrink-0 animate-spin text-[color:var(--primary)]" />
         )}
-        {job.status === "completed" && (
+        {job.status === "completed" && !requiresReview && (
           <CheckCircle2 size={16} className="shrink-0 text-emerald-500" />
         )}
-        {job.status === "failed" && (
+        {(job.status === "failed" || job.status === "unavailable") && (
           <AlertTriangle size={16} className="shrink-0 text-red-500" />
+        )}
+        {requiresReview && (
+          <AlertTriangle size={16} className="shrink-0 text-orange-500" />
         )}
       </div>
 
-      {/* Progress bar */}
-      {job.status === "processing" && (
+      {/* Progress bar for active states */}
+      {isActive && (
         <div className="space-y-1">
           <div className="flex items-center justify-between text-xs">
-            <span className="text-[color:var(--muted-foreground)]">Processing…</span>
-            <span className="font-semibold tabular-nums text-[color:var(--foreground)]">{job.progress}%</span>
+            <span className="text-[color:var(--muted-foreground)]">{label}</span>
+            <span className="font-semibold tabular-nums text-[color:var(--foreground)]">{job.progress ?? 0}%</span>
           </div>
-          <ProgressBar value={job.progress} tone="primary" />
+          <ProgressBar value={job.progress ?? 0} tone="primary" />
         </div>
+      )}
+
+      {/* Manual review banner — always shown when required */}
+      {requiresReview && job.status !== "failed" && (
+        <ManualReviewBanner warnings={warnings} />
       )}
 
       {/* Completed summary */}
@@ -281,6 +345,8 @@ export default function SegmentationJobMonitor({ caseId, onJobSelect }: Props) {
 
   return (
     <div className="space-y-4">
+      <ResearchUseBanner />
+
       <Card className="p-4">
         <div className="mb-4 flex items-center justify-between gap-3">
           <h3 className="text-sm font-semibold text-[color:var(--foreground)]">New Segmentation Job</h3>

@@ -18,7 +18,9 @@ import {
   type SegmentationJob,
   type SegmentationModel,
   type SegmentationArch,
+  type SegmentationProvider,
   MODEL_LABELS,
+  PROVIDER_LABELS,
 } from "@/lib/api/segmentation";
 
 // ─── Status display ───────────────────────────────────────────────────────────
@@ -40,7 +42,7 @@ const STATUS_LABEL: Record<string, string> = {
   pending:               "Pending",
   queued:                "Queued",
   preprocessing:         "Converting STL…",
-  running:               "Running TGN…",
+  running:               "Running inference…",
   validating:            "Validating FDI…",
   processing:            "Processing…",
   manual_review_required:"Review required",
@@ -48,6 +50,10 @@ const STATUS_LABEL: Record<string, string> = {
   failed:                "Failed",
   unavailable:           "Unavailable",
 };
+
+const IN_PROGRESS_STATUSES = new Set([
+  "pending", "queued", "preprocessing", "running", "validating", "processing",
+]);
 
 // ─── Research-use banner ─────────────────────────────────────────────────────
 
@@ -92,14 +98,33 @@ function durationStr(job: SegmentationJob) {
 
 // ─── Job card ─────────────────────────────────────────────────────────────────
 
+function EngineBadge({ engine }: { engine?: string }) {
+  if (!engine) return null;
+  const colors: Record<string, string> = {
+    TGN:        "bg-violet-100 text-violet-700 dark:bg-violet-900/40 dark:text-violet-300",
+    MESHSEGNET: "bg-sky-100 text-sky-700 dark:bg-sky-900/40 dark:text-sky-300",
+    MONAI:      "bg-teal-100 text-teal-700 dark:bg-teal-900/40 dark:text-teal-300",
+    MANUAL:     "bg-orange-100 text-orange-700 dark:bg-orange-900/40 dark:text-orange-300",
+  };
+  const cls = colors[engine.toUpperCase()] ?? "bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300";
+  return (
+    <span className={`inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-semibold tracking-wide ${cls}`}>
+      {engine}
+    </span>
+  );
+}
+
 function JobCard({ job, isLatest }: { job: SegmentationJob; isLatest: boolean }) {
   const tone = STATUS_TONE[job.status] ?? "neutral";
   const label = STATUS_LABEL[job.status] ?? job.status;
   const dur = durationStr(job);
   const summary = job.resultSummary as Record<string, unknown> | null;
-  const isActive = ["pending", "queued", "preprocessing", "running", "validating", "processing"].includes(job.status);
-  const requiresReview = job.status === "manual_review_required" || (summary as Record<string, unknown>)?.['requires_manual_review'] === true;
+  const isActive = IN_PROGRESS_STATUSES.has(job.status);
+  const requiresReview = job.status === "manual_review_required"
+    || job.requiresManualReview === true
+    || (summary as Record<string, unknown>)?.['requires_manual_review'] === true;
   const warnings = (summary as Record<string, unknown>)?.['warnings'] as string[] | undefined;
+  const engineName = job.engine ?? (summary as Record<string, unknown>)?.['engine'] as string | undefined;
 
   return (
     <div className={`rounded-xl border p-4 space-y-3 ${isLatest ? "border-[color:var(--primary)]/40 bg-[color:var(--primary-glow)]/20" : "border-[color:var(--border)]"}`}>
@@ -109,6 +134,7 @@ function JobCard({ job, isLatest }: { job: SegmentationJob; isLatest: boolean })
             <StatusBadge tone={tone}>{label}</StatusBadge>
             <span className="text-xs font-mono text-[color:var(--muted-foreground)]">{job.id.slice(0, 8)}…</span>
             {isLatest && <StatusBadge tone="info">Latest</StatusBadge>}
+            <EngineBadge engine={engineName} />
           </div>
           <div className="mt-1.5 flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-[color:var(--muted-foreground)]">
             <span className="flex items-center gap-1">
@@ -209,6 +235,7 @@ function SubmitForm({
 }) {
   const [model, setModel] = useState<SegmentationModel>("cpu");
   const [arch, setArch] = useState<SegmentationArch>("both");
+  const [provider, setProvider] = useState<SegmentationProvider>("AUTO");
   const [gpuRequested, setGpuRequested] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -218,7 +245,7 @@ function SubmitForm({
     setSubmitting(true);
     setError(null);
     try {
-      const job = await submitSegmentationJob(caseId, { modelType: model, arch, gpuRequested });
+      const job = await submitSegmentationJob(caseId, { modelType: model, arch, gpuRequested, provider });
       onSubmitted(job);
     } catch (e) {
       setError((e as Error).message);
@@ -264,6 +291,26 @@ function SubmitForm({
             <option value="lower">Lower only</option>
           </select>
         </div>
+      </div>
+
+      <div>
+        <label className="block text-[10px] font-semibold uppercase tracking-wide text-[color:var(--muted-foreground)] mb-1.5">
+          AI Engine
+        </label>
+        <select
+          value={provider}
+          onChange={(e) => setProvider(e.target.value as SegmentationProvider)}
+          className="h-9 w-full rounded-lg border border-[color:var(--border)] bg-[color:var(--card)] px-2 text-sm text-[color:var(--foreground)] focus:outline-none focus:border-[color:var(--primary)]"
+        >
+          {(Object.entries(PROVIDER_LABELS) as [SegmentationProvider, string][]).map(([key, label]) => (
+            <option key={key} value={key}>{label}</option>
+          ))}
+        </select>
+        {provider === "MANUAL" && (
+          <p className="mt-1 text-[10px] text-orange-600 dark:text-orange-400">
+            Manual review: no AI inference will run. The scan will be flagged for direct clinician review.
+          </p>
+        )}
       </div>
 
       <label className="flex items-center gap-2 cursor-pointer">
@@ -321,21 +368,21 @@ export default function SegmentationJobMonitor({ caseId, onJobSelect }: Props) {
 
   useEffect(() => { void load(); }, [load]);
 
-  // Poll while any job is processing
+  // Poll while any job is in an in-progress state
   useEffect(() => {
-    const hasProcessing = jobs.some((j) => j.status === "pending" || j.status === "processing");
-    if (!hasProcessing) return;
+    const hasActive = jobs.some((j) => IN_PROGRESS_STATUSES.has(j.status));
+    if (!hasActive) return;
     const timer = setInterval(() => { void load(true); }, 3000);
     return () => clearInterval(timer);
   }, [jobs, load]);
 
   function handleSubmitted(job: SegmentationJob) {
     setJobs((prev) => [job, ...prev]);
-    // Start polling
+    // Start polling until all in-progress jobs settle
     const timer = setInterval(async () => {
       const list = await listSegmentationJobs(caseId);
       setJobs(list);
-      if (!list.some((j) => j.status === "pending" || j.status === "processing")) {
+      if (!list.some((j) => IN_PROGRESS_STATUSES.has(j.status))) {
         clearInterval(timer);
         const latest = list.find((j) => j.status === "completed");
         if (latest) onJobSelect?.(latest);

@@ -63,6 +63,8 @@ export interface CreateJobDto {
   gpuRequested?: boolean;
   priority?: number;
   onnxModelPath?: string;
+  /** Segmentation engine override: TGN | MESHSEGNET | AUTO | MANUAL */
+  provider?: 'TGN' | 'MESHSEGNET' | 'AUTO' | 'MANUAL';
 }
 
 export type MaskRegionType = 'crown' | 'root' | 'gingiva' | 'implant' | 'restoration' | 'supernumerary';
@@ -205,11 +207,12 @@ export class SegmentationService {
     const { rows } = await this.pool.query(
       `INSERT INTO segmentation_jobs
          (case_id, organization_id, scan_id, model_type, arch, submitted_by,
-          gpu_requested, priority, onnx_model_path)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+          gpu_requested, priority, onnx_model_path, result_summary)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
          RETURNING *`,
       [caseId, orgId, dto.scanId ?? null, modelType, arch, userId,
-       dto.gpuRequested ?? false, dto.priority ?? 5, dto.onnxModelPath ?? null],
+       dto.gpuRequested ?? false, dto.priority ?? 5, dto.onnxModelPath ?? null,
+       dto.provider ? JSON.stringify({ provider: dto.provider }) : null],
     );
     const job = rows[0];
 
@@ -233,7 +236,12 @@ export class SegmentationService {
       // Attempt to call external AI service if configured
       const aiUrl = process.env.AI_SEGMENTATION_URL;
       if (aiUrl) {
-        await this.callExternalAIService(jobId, aiUrl, arch);
+        // provider comes from the job's result_summary field (stored at submit time)
+        const { rows: jobRows } = await this.pool.query(
+          `SELECT result_summary FROM segmentation_jobs WHERE id = $1`, [jobId],
+        );
+        const jobMeta = jobRows[0]?.result_summary as { provider?: string } | null;
+        await this.callExternalAIService(jobId, aiUrl, arch, jobMeta?.provider);
         return;
       }
 
@@ -251,11 +259,11 @@ export class SegmentationService {
     }
   }
 
-  private async callExternalAIService(jobId: string, aiUrl: string, arch: string) {
+  private async callExternalAIService(jobId: string, aiUrl: string, arch: string, provider?: string) {
     const res = await fetch(`${aiUrl}/ai/segment`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ jobId, arch }),
+      body: JSON.stringify({ jobId, arch, ...(provider ? { provider } : {}) }),
     });
     if (!res.ok) throw new Error(`AI service returned ${res.status}`);
     const data = await res.json() as { segments: Array<{ toothNumber: number; confidence: number; label: string }> };

@@ -29,6 +29,7 @@ Every response carries research_use=true and the clinical disclaimer.
 from __future__ import annotations
 
 import hashlib
+import hmac
 import logging
 import os
 import tempfile
@@ -68,6 +69,12 @@ MAX_UPLOAD_BYTES: int = int(os.getenv("MAX_UPLOAD_BYTES", str(50 * 1024 * 1024))
 CONFIDENCE_THRESHOLD: float = float(os.getenv("CONFIDENCE_THRESHOLD", "0.50"))
 DEVICE_STR: str = os.getenv("DEVICE", "cpu")
 
+# Allowed directories for /segment/by-path (colon-separated list)
+_ALLOWED_PATH_DIRS_RAW = os.getenv("MESHSEGNET_ALLOWED_PATH_DIRS", "/app/uploads:/tmp/meshsegnet_uploads")
+ALLOWED_PATH_DIRS = [
+    os.path.realpath(d.strip()) for d in _ALLOWED_PATH_DIRS_RAW.split(":") if d.strip()
+]
+
 CLINICAL_DISCLAIMER = (
     "Research-use segmentation. Manual clinical review required. "
     "AI-assisted recommendation only. "
@@ -104,6 +111,32 @@ _counters: Dict[str, int] = {
     "duration_ms_count": 0,
 }
 _started_at = time.time()
+
+
+# ── Path validation ───────────────────────────────────────────────────────────
+
+def _assert_safe_path(file_path: str) -> str:
+    """
+    Validate that file_path resolves within an allowed directory.
+    Raises HTTPException 400 on traversal or access outside ALLOWED_PATH_DIRS.
+    Returns the realpath.
+    """
+    try:
+        real = os.path.realpath(file_path)
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=f"Cannot resolve path: {exc}")
+
+    for allowed in ALLOWED_PATH_DIRS:
+        if real.startswith(allowed + os.sep) or real == allowed:
+            return real
+
+    raise HTTPException(
+        status_code=400,
+        detail=(
+            "file_path is outside the allowed directories. "
+            "Set MESHSEGNET_ALLOWED_PATH_DIRS to configure allowed roots."
+        ),
+    )
 
 
 # ── Model loading ─────────────────────────────────────────────────────────────
@@ -178,7 +211,8 @@ def _on_startup() -> None:
 def _require_internal_token(x_internal_token: Optional[str] = None) -> None:
     if not INTERNAL_SECRET:
         return  # No secret configured — skip validation (dev/test mode)
-    if x_internal_token != INTERNAL_SECRET:
+    # Use constant-time comparison to prevent timing-based token oracle attacks.
+    if not hmac.compare_digest(x_internal_token or "", INTERNAL_SECRET):
         raise HTTPException(status_code=401, detail="Invalid X-Internal-Token")
 
 
@@ -299,7 +333,8 @@ def _run_inference(file_path: str, jaw: str, job_id: str) -> None:
         x = torch.from_numpy(features).to(_device)        # [N, 15]
         a = torch.from_numpy(adj).to(_device)              # [N, 6]
 
-        assert _model is not None
+        if _model is None:
+            raise RuntimeError("Model is not loaded — cannot run inference (state=%s)" % _state.value)
         with torch.no_grad():
             log_probs = _model(x, a)                       # [N, 17]
             probs = torch.exp(log_probs)                   # [N, 17]
@@ -417,15 +452,17 @@ def segment_by_path(
     if _state != MeshSegNetState.READY:
         raise HTTPException(status_code=503, detail=f"MeshSegNet not ready: {_state.value}")
 
-    if not os.path.isfile(req.file_path):
-        raise HTTPException(status_code=400, detail=f"File not found: {req.file_path}")
+    # Validate path is within allowed directories before attempting to read it.
+    safe_path = _assert_safe_path(req.file_path)
+    if not os.path.isfile(safe_path):
+        raise HTTPException(status_code=400, detail=f"File not found: {safe_path}")
 
     jaw = _normalise_jaw(req.jaw)
-    scan_id = req.scan_id or os.path.splitext(os.path.basename(req.file_path))[0]
+    scan_id = req.scan_id or os.path.splitext(os.path.basename(safe_path))[0]
     job_id, _ = _new_job(jaw, scan_id, "by-path")
 
     import threading
-    t = threading.Thread(target=_run_inference, args=(req.file_path, jaw, job_id), daemon=True)
+    t = threading.Thread(target=_run_inference, args=(safe_path, jaw, job_id), daemon=True)
     t.start()
 
     return {"job_id": job_id, "status": "queued"}

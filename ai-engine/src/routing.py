@@ -27,7 +27,7 @@ from src.providers.registry import ProviderRegistry
 
 logger = logging.getLogger("ai-engine.routing")
 
-_PROVIDER_ENV = os.getenv("SEGMENTATION_PROVIDER", "AUTO").upper().strip()
+_PROVIDER_ENV = os.getenv("SEGMENTATION_PROVIDER", "MANUAL").upper().strip()
 _PRIMARY_ENV = os.getenv("SEGMENTATION_PRIMARY", "TGN").upper().strip()
 
 

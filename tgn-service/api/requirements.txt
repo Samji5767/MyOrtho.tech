@@ -1,0 +1,35 @@
+# ToothGroupNetwork API — Python dependencies
+# Python 3.8 (matches TGN base image)
+
+# ── Web framework ──────────────────────────────────────────────────────────────
+fastapi==0.111.0
+uvicorn==0.30.1
+python-multipart==0.0.9   # multipart file uploads
+pydantic==2.7.1
+
+# ── Job store ─────────────────────────────────────────────────────────────────
+redis==5.0.8
+
+# ── PyTorch (CPU wheel — GPU containers use base image torch) ──────────────────
+# Install with:
+#   pip install torch==1.7.1+cpu torchvision==0.8.2+cpu \
+#       --extra-index-url https://download.pytorch.org/whl/torch_stable.html
+# (handled separately in Dockerfile to avoid pip resolver conflicts)
+
+# ── 3D / Point cloud ──────────────────────────────────────────────────────────
+open3d==0.16.0
+trimesh==3.15.1
+numpy==1.21.6
+
+# ── Scientific computing ───────────────────────────────────────────────────────
+scipy==1.7.3
+scikit-learn==1.0.2
+
+# ── TGN utilities ─────────────────────────────────────────────────────────────
+PyYAML==6.0
+easydict==1.10
+multimethod==1.8
+termcolor==1.1.0
+SharedArray==3.2.1
+wandb==0.13.11
+matplotlib==3.5.3

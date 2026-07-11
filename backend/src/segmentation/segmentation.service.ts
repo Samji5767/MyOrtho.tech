@@ -55,11 +55,6 @@ const SEGMENTATION_STAGES: Record<number, string> = {
   100: 'Segmentation complete',
 };
 
-// Third molars are commonly missing; generates stable confidence based on FDI number
-function deterministicConfidence(fdi: number, seed: number): number {
-  const v = ((fdi * 9301 + seed * 49297) % 233280) / 233280;
-  return 0.78 + v * 0.20;
-}
 
 export interface CreateJobDto {
   scanId?: string;

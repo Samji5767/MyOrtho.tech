@@ -91,6 +91,7 @@ ALLOWED_PATH_DIRS = [
 ]
 
 JOB_TTL = 86_400 * 7  # 7 days
+MAX_UPLOAD_BYTES = 50 * 1024 * 1024  # 50 MB — matches ai-engine limit
 VERSION = "1.1.0"
 
 CLINICAL_DISCLAIMER = (
@@ -472,7 +473,12 @@ def _run_inference_sync(
         )
         logger.error("Job %s failed after %dms: %s | req=%s", job_id, elapsed_ms, error_msg, request_id)
     finally:
-        # Clean up input dir; keep output JSON for debugging
+        # Delete uploaded source file and input working dir; keep output JSON for debugging
+        try:
+            if os.path.isfile(file_path):
+                os.unlink(file_path)
+        except Exception:
+            pass
         try:
             input_dir = os.path.join(working_dir, "input")
             if os.path.isdir(input_dir):
@@ -650,8 +656,6 @@ async def ready():
         "gpu_acceleration": cuda,
         "model_name": MODEL_NAME,
         "model_version": MODEL_VERSION,
-        "checkpoint_fps": CHECKPOINT_FPS,
-        "checkpoint_bdl": CHECKPOINT_BDL,
         "checkpoint_sha256_fps": _checkpoint_sha256.get("fps", "")[:16] or None,
         "checkpoint_sha256_bdl": _checkpoint_sha256.get("bdl", "")[:16] or None,
         "research_use": True,
@@ -712,6 +716,14 @@ async def segment_file(
             detail=f"Unsupported file type '{ext}'. Accepted: .stl .obj .ply .off",
         )
 
+    # Enforce upload size limit before reading into memory
+    content_length = request.headers.get("content-length")
+    if content_length and int(content_length) > MAX_UPLOAD_BYTES:
+        raise HTTPException(
+            status_code=413,
+            detail=f"Upload too large (max {MAX_UPLOAD_BYTES // (1024 * 1024)} MB)",
+        )
+
     request_id = getattr(request.state, "request_id", str(uuid.uuid4()))
     job_id = str(uuid.uuid4())
     _sid = scan_id or job_id[:8]
@@ -720,8 +732,13 @@ async def segment_file(
     job_upload_dir = os.path.join(UPLOAD_DIR, job_id)
     os.makedirs(job_upload_dir, exist_ok=True)
     saved_path = os.path.join(job_upload_dir, f"upload{ext}")
+    content = await file.read(MAX_UPLOAD_BYTES + 1)
+    if len(content) > MAX_UPLOAD_BYTES:
+        raise HTTPException(
+            status_code=413,
+            detail=f"Upload too large (max {MAX_UPLOAD_BYTES // (1024 * 1024)} MB)",
+        )
     with open(saved_path, "wb") as fh:
-        content = await file.read()
         fh.write(content)
 
     _metrics["jobs_queued"] += 1

@@ -125,6 +125,9 @@ services:
     environment:
       - AI_DEVICE=${AI_DEVICE:-cpu}
       - UPLOADS_DIR=/app/uploads
+      - JWT_SECRET=${JWT_SECRET:-}
+      - INTERNAL_API_SECRET=${INTERNAL_API_SECRET:-}
+      - REDIS_URL=${REDIS_URL:-redis://redis:6379}
     volumes:
       - shared_storage:/app/storage
       - uploads_data:/app/uploads:ro

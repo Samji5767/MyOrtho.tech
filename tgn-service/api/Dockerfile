@@ -28,6 +28,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         libgl1-mesa-glx \
         libglib2.0-0 \
         libgomp1 \
+        wget \
     && rm -rf /var/lib/apt/lists/*
 
 # ── PyTorch CPU wheel ─────────────────────────────────────────────────────────
@@ -81,7 +82,13 @@ ENV PYTHONPATH=/app/ToothGroupNetwork:/app/ToothGroupNetwork/external_libs:/app
 ENV PYTHONUNBUFFERED=1
 ENV WANDB_MODE=disabled
 
-VOLUME ["/data/input", "/data/output", "/ckpts"]
+VOLUME ["/ckpts"]
+
+# Run as non-root user (matches ai-engine Dockerfile pattern)
+RUN useradd -r -u 1001 -s /sbin/nologin tgn \
+    && mkdir -p /tmp/tgn_uploads \
+    && chown -R tgn /app /tmp/tgn_uploads
+USER tgn
 
 EXPOSE 8001
 CMD ["uvicorn", "api.main:app", "--host", "0.0.0.0", "--port", "8001"]

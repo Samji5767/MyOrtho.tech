@@ -31,6 +31,7 @@ from src.landmark_detector import DentalLandmarkDetector
 from src.mesh_processing import MeshProcessor
 from src.root_predictor import RootPredictorEngine
 from src.segmentation import INFERENCE_TIMEOUT_SEC, OrthoSegmentationEngine
+from src.tgn_segmentation import TGNSegmentationEngine, TGNUnavailableError
 
 # ── Application ───────────────────────────────────────────────────────────────
 
@@ -86,6 +87,15 @@ mesh_processor = MeshProcessor()
 landmark_detector = DentalLandmarkDetector()
 root_predictor = RootPredictorEngine()
 aligner_generator = AlignerGenerationEngine()
+
+# TGN microservice engine (used when TGN_API_URL is configured)
+# Falls back to OrthoSegmentationEngine if TGN is not available.
+_tgn_engine: Optional[TGNSegmentationEngine] = None
+try:
+    _tgn_engine = TGNSegmentationEngine()
+    logger.info("TGN segmentation engine proxy initialised (TGN_API_URL=%s)", os.getenv("TGN_API_URL"))
+except TGNUnavailableError:
+    logger.info("TGN_API_URL not set; using built-in segmentation engine")
 
 # Thread pool for blocking inference calls (keeps the async event loop free)
 _executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="seg-worker")
@@ -254,10 +264,18 @@ async def run_segmentation_task(job_id: str, req: SegmentationRequest) -> None:
 
     loop = asyncio.get_event_loop()
     try:
+        # Route to TGN microservice when available; fall back to built-in engine
+        if _tgn_engine is not None:
+            _active_engine = _tgn_engine
+            logger.info("Using TGN segmentation engine for job %s", job_id)
+        else:
+            _active_engine = segmentation_engine
+            logger.info("Using built-in MONAI engine for job %s", job_id)
+
         results = await asyncio.wait_for(
             loop.run_in_executor(
                 _executor,
-                lambda: segmentation_engine.segment_mesh(req.file_path, req.jaw_type),
+                lambda: _active_engine.segment_mesh(req.file_path, req.jaw_type),
             ),
             timeout=float(INFERENCE_TIMEOUT_SEC),
         )
@@ -322,12 +340,16 @@ async def health():
 async def ready():
     """Readiness probe — reports active compute backend."""
     cuda = torch.cuda.is_available()
+    tgn_active = _tgn_engine is not None
     return {
         "ready": True,
         "device": "cuda" if cuda else "cpu",
         "gpu_acceleration": cuda,
         "models_loaded": True,
-        "segmentation_weights_loaded": segmentation_engine.weights_loaded,
+        "segmentation_engine": "tgn" if tgn_active else "monai",
+        "tgn_active": tgn_active,
+        "tgn_api_url": os.getenv("TGN_API_URL", ""),
+        "segmentation_weights_loaded": tgn_active or segmentation_engine.weights_loaded,
     }
 
 

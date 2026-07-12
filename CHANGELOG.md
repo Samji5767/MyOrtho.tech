@@ -5,6 +5,46 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [Unreleased] — Final AI Segmentation Activation & Production Verification
+
+**Branch:** `claude/myortho-production-validation-dlmvsi`  
+**Sprint:** Final AI Segmentation Activation & Production Verification  
+**Date:** 2026-07-12
+
+### Outcome: SCENARIO D
+
+Neither AI engine cleared all activation gates. The correct production configuration is:
+- `TGN_ENABLED=false` — P0 blocker: CC BY-NC-ND 4.0 training data prohibits commercial use
+- `MESHSEGNET_ENABLED=false` — P1 blocker: checkpoint not obtained; redistribution rights unconfirmed
+- `SEGMENTATION_PROVIDER=MANUAL` — all segmentation routes to `ManualReviewProvider`
+
+### Added
+
+- `AI_SEGMENTATION_ACTIVATION_REPORT.md`: Master activation report — 7 gate evaluations for both engines, SCENARIO D determination, path-to-activation requirements.
+- `AI_RUNTIME_VERIFICATION.md`: Full runtime verification record — TypeScript (0 errors), Python (35 files OK), tests (25 pass), Docker Compose validation, port audit, security controls.
+- `AI_CHECKPOINT_REGISTRY.md`: Authoritative checkpoint registry — no checkpoints registered; acquisition procedures; SHA-256 verification protocol; rotation and emergency procedures.
+- `AI_LICENSE_ACTIVATION_STATUS.md`: License clearance status for TGN (P0 BLOCKED) and MeshSegNet (P1 BLOCKED); activation requirements; history log.
+- `AI_SECURITY_VERIFICATION.md`: Security audit of all AI services — port exposure, hmac.compare_digest, path traversal, checkpoint integrity, SQL injection, frontend security, backend headers.
+- `AI_PERFORMANCE_RESULTS.md`: Baseline performance data from literature; benchmarking infrastructure description; accuracy gate thresholds; measurement plan for when engines are activated.
+- `AI_ROLLBACK_PLAN.md`: Rollback procedures for AI activation, code revert, checkpoint integrity failure, and service crash loop.
+
+### Changed
+
+- `docs/DEPLOYMENT_GUIDE.md`: Added SCENARIO D production status section; corrected `SEGMENTATION_PROVIDER` default from `AUTO` to `MANUAL` in env variable table; added TGN and MANUAL items to security checklist.
+- `docs/CHECKPOINT_MANAGEMENT.md`: Updated checkpoint inventory table to reflect NOT OBTAINED / BLOCKED status; added reference to `AI_CHECKPOINT_REGISTRY.md`.
+- `docs/SEGMENTATION_PROVIDER_GUIDE.md`: Added SCENARIO D note to quick reference; warning against enabling AI engines before blockers are resolved.
+- `docs/KNOWN_LIMITATIONS.md`: Added TGN P0 and MeshSegNet P1 limitations; updated roadmap table.
+- `docs/RELEASE_NOTES.md`: Added activation sprint entry.
+- `.env.example`: Added full multi-engine segmentation section with TGN, MeshSegNet, and routing variables; included BLOCKED status warnings for both engines.
+
+### Security / Compliance
+
+- All 5 sign-off audit defects confirmed fixed (commit `b4151cf`): port exposure, SEGMENTATION_PROVIDER default, token comparison, path traversal, assert bypass.
+- SCENARIO D minimizes AI attack surface: no AI inference engine ports are active.
+- `SEGMENTATION_PROVIDER=MANUAL` default hard-coded in both `docker-compose.yml` and `ai-engine/src/routing.py`.
+
+---
+
 ## [Unreleased] — Multi-Engine AI Segmentation Integration
 
 **Branch:** `claude/myortho-production-validation-dlmvsi`  

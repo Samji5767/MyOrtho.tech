@@ -1,6 +1,47 @@
-# MyOrtho.tech v2.0.0-rc1 Release Notes
+# MyOrtho.tech — Release Notes
 
-**Release date:** 2026-07-10
+---
+
+## Multi-Engine AI Segmentation Platform — Activation Sprint (2026-07-12)
+
+**Branch:** `claude/myortho-production-validation-dlmvsi`  
+**Status:** Draft PR #3 — not for merge until at least one AI engine clears all activation gates  
+**Outcome:** SCENARIO D — MANUAL-only routing; both AI engines BLOCKED  
+
+### Changes in This Sprint
+
+**New report files (root level):**
+- `AI_SEGMENTATION_ACTIVATION_REPORT.md` — activation gate results for both engines
+- `AI_RUNTIME_VERIFICATION.md` — static analysis, build, test, security verification
+- `AI_CHECKPOINT_REGISTRY.md` — checkpoint provenance and SHA-256 registry
+- `AI_LICENSE_ACTIVATION_STATUS.md` — license clearance status for TGN and MeshSegNet
+- `AI_SECURITY_VERIFICATION.md` — AI service security audit results
+- `AI_PERFORMANCE_RESULTS.md` — performance baseline from literature; benchmarking plan
+- `AI_ROLLBACK_PLAN.md` — rollback procedures for AI engine activation
+
+**Documentation updates:**
+- `docs/DEPLOYMENT_GUIDE.md` — SCENARIO D status section; corrected MANUAL default
+- `docs/CHECKPOINT_MANAGEMENT.md` — updated inventory; reference to checkpoint registry
+- `docs/SEGMENTATION_PROVIDER_GUIDE.md` — SCENARIO D note; activation warning
+- `docs/KNOWN_LIMITATIONS.md` — TGN P0 and MeshSegNet P1 blockers documented
+- `.env.example` — full multi-engine segmentation variable section added
+
+### What Changed in the Codebase
+
+This sprint produced only documentation — no code changes were made. Code changes in this PR branch are from the sign-off audit (commit `b4151cf`) and multi-engine integration (commit `cbb23a4`). See `CHANGELOG.md` for full details.
+
+### Known Blockers (as of 2026-07-12)
+
+| Engine | Blocker | Severity |
+|--------|---------|----------|
+| TGN | No LICENSE; CC BY-NC-ND 4.0 training data prohibits commercial use | P0 |
+| MeshSegNet | Pretrained checkpoint not obtained; redistribution rights unconfirmed | P1 |
+
+---
+
+## v2.0.0-rc1 Release Notes
+
+**Release date:** 2026-07-10  
 **Status:** Release Candidate 1 — not for production until GA sign-off
 
 ---

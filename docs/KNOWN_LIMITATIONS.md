@@ -43,6 +43,26 @@ The 3D viewer and mesh pipeline accept binary STL files only. PLY and OBJ format
 
 ## AI / Clinical Engine
 
+### TGN (ToothGroupNetwork) — Commercially BLOCKED
+**Severity:** Critical (P0)  
+**File:** `tgn-service/`  
+**Env var:** `TGN_ENABLED` (must remain `false`)
+
+TGN has no LICENSE file in its source tree. Its training dataset is published under CC BY-NC-ND 4.0, which prohibits commercial use and redistribution. TGN cannot be used in MyOrtho.tech in any commercial capacity until a commercial license is obtained from the TGN authors and dataset rights are renegotiated.
+
+Full analysis: `TOOTHGROUPNETWORK_LICENSE_REVIEW.md`  
+Activation requirements: `AI_LICENSE_ACTIVATION_STATUS.md`
+
+### MeshSegNet — Checkpoint Not Obtained
+**Severity:** High (P1)  
+**File:** `meshsegnet-service/`  
+**Env var:** `MESHSEGNET_ENABLED` (must remain `false`)
+
+The MeshSegNet source code is MIT-licensed. However, the pretrained checkpoint has not been obtained from the authors, and commercial-use and redistribution rights for the checkpoint have not been confirmed. The engine cannot be activated until the checkpoint is obtained and rights are confirmed in writing.
+
+Activation requirements: `AI_LICENSE_ACTIVATION_STATUS.md`  
+Checkpoint registry: `AI_CHECKPOINT_REGISTRY.md`
+
 ### AI Segmentation Requires a Trained Model Checkpoint
 **Severity:** Medium  
 **Env var:** `MODEL_CHECKPOINT`
@@ -87,7 +107,10 @@ The clinical reports controller renders HTML. No PDF generation library (Puppete
 | PHI key re-encryption utility | Pre-GA |
 | CSRF token middleware | Pre-GA |
 | Scanner integrations (iTero first) | Post-pilot |
-| Real AI segmentation model | Post-pilot |
+| TGN commercial license resolution | Pre-AI activation |
+| MeshSegNet checkpoint acquisition + rights confirmation | Pre-AI activation |
+| Internal clinical validation dataset for AI engines | Pre-AI activation |
+| Real AI segmentation model (production) | Post-pilot |
 | Biomechanical treatment plan AI | Post-pilot |
 | PDF report generation | Post-pilot |
 | Multi-origin CORS support | Post-pilot |

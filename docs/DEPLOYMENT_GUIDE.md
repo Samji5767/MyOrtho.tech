@@ -1,8 +1,25 @@
 # Deployment Guide — Multi-Engine Segmentation Services
 
-**Last updated:** 2026-07-11  
+**Last updated:** 2026-07-12  
 **Audience:** DevOps / ML Engineering  
 **Scope:** VPS deployment of ai-engine, tgn-service, and meshsegnet-service
+
+---
+
+## Current Production Activation Status (2026-07-12)
+
+**SCENARIO D** — Both AI engines are BLOCKED. The correct and only permissible production configuration is:
+
+```
+TGN_ENABLED=false
+MESHSEGNET_ENABLED=false
+SEGMENTATION_PROVIDER=MANUAL
+```
+
+- **TGN**: P0 blocker — no LICENSE file; training data CC BY-NC-ND 4.0 (prohibits commercial use). See `TOOTHGROUPNETWORK_LICENSE_REVIEW.md`.
+- **MeshSegNet**: P1 blocker — checkpoint not obtained; commercial-use and redistribution rights of the checkpoint unconfirmed. See `AI_CHECKPOINT_REGISTRY.md`.
+
+Do not enable either engine until all blockers in `AI_LICENSE_ACTIVATION_STATUS.md` are resolved.
 
 ---
 
@@ -51,7 +68,7 @@ Copy `.env.example` to `.env` on the VPS and fill in all required values.
 | `TGN_API_URL` | If TGN on | *(empty)* | Internal URL of tgn-service |
 | `MESHSEGNET_ENABLED` | No | `false` | Enable MeshSegNet provider |
 | `MESHSEGNET_API_URL` | If MSN on | *(empty)* | Internal URL of meshsegnet-service |
-| `SEGMENTATION_PROVIDER` | No | `AUTO` | `AUTO\|TGN\|MESHSEGNET\|MANUAL` |
+| `SEGMENTATION_PROVIDER` | No | `MANUAL` | `AUTO\|TGN\|MESHSEGNET\|MANUAL` |
 | `SEGMENTATION_PRIMARY` | No | `TGN` | Primary engine in AUTO mode |
 | `INTERNAL_API_SECRET` | Yes | — | Shared secret for engine-to-engine calls |
 | `REDIS_URL` | No | *(empty)* | Redis for benchmark result caching |
@@ -293,3 +310,5 @@ Redis benchmark cache is ephemeral; no backup required.
 - [ ] JWT validation in ai-engine is enforced on all authenticated endpoints
 - [ ] Checkpoint file is stored in a named Docker volume, not bind-mounted from the host filesystem
 - [ ] `MESHSEGNET_ENABLED=false` in all environments until QA sign-off
+- [ ] `TGN_ENABLED=false` in all environments until CC BY-NC-ND license resolved
+- [ ] `SEGMENTATION_PROVIDER=MANUAL` is the default and current production value

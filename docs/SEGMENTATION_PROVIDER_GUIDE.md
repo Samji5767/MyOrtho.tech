@@ -1,7 +1,8 @@
 # Segmentation Provider Operations Guide
 
-**Last updated:** 2026-07-11  
-**Audience:** Engineering / On-Call
+**Last updated:** 2026-07-12  
+**Audience:** Engineering / On-Call  
+**Current production mode:** SCENARIO D — `SEGMENTATION_PROVIDER=MANUAL` (both AI engines BLOCKED)
 
 ---
 
@@ -9,6 +10,7 @@
 
 | Scenario | `SEGMENTATION_PROVIDER` | `SEGMENTATION_PRIMARY` | Result |
 |----------|------------------------|----------------------|--------|
+| **Current production (SCENARIO D)** | **`MANUAL`** | *(ignored)* | **MANUAL only** |
 | Both engines available, TGN preferred | `AUTO` | `TGN` | TGN → MeshSegNet → MANUAL |
 | Both engines available, MeshSegNet preferred | `AUTO` | `MESHSEGNET` | MeshSegNet → TGN → MANUAL |
 | Force TGN only | `TGN` | *(ignored)* | TGN → MANUAL |
@@ -16,6 +18,8 @@
 | No AI (audit / maintenance) | `MANUAL` | *(ignored)* | MANUAL only |
 
 Change is effective after restarting ai-engine. No code deployment required.
+
+> **Note (2026-07-12):** Both TGN and MeshSegNet are BLOCKED and cannot be enabled. TGN has a P0 license blocker (CC BY-NC-ND 4.0). MeshSegNet checkpoint has not been obtained. Do not change `SEGMENTATION_PROVIDER` away from `MANUAL` until blockers are resolved. See `AI_LICENSE_ACTIVATION_STATUS.md`.
 
 ---
 

@@ -1,7 +1,8 @@
 # Checkpoint Management Guide
 
-**Last updated:** 2026-07-11  
-**Audience:** ML Engineering / DevOps
+**Last updated:** 2026-07-12  
+**Audience:** ML Engineering / DevOps  
+**Current status:** NO CHECKPOINTS REGISTERED — see `AI_CHECKPOINT_REGISTRY.md`
 
 ---
 
@@ -13,10 +14,14 @@ AI segmentation engines require pre-trained model checkpoint files (`.pth` forma
 
 ## Checkpoint Inventory
 
-| Engine | File | Size (approx) | License | Storage Location |
-|--------|------|----------------|---------|-----------------|
-| MeshSegNet | `meshsegnet.pth` | ~50–200 MB | Unverified — confirm with authors | `/ckpts/meshsegnet.pth` in `meshsegnet-ckpts` Docker volume |
-| TGN | Managed by tgn-service | ~100–500 MB | CC BY-NC-ND 4.0 | `/ckpts/` in `tgn-ckpts` Docker volume |
+**Current status (2026-07-12):** No checkpoints are present. Both engines are disabled.
+
+| Engine | File | Size (approx) | License | Storage Location | Status |
+|--------|------|----------------|---------|-----------------|--------|
+| MeshSegNet | `meshsegnet.pth` | ~50–200 MB | MIT (source); checkpoint rights TBD | `/ckpts/meshsegnet.pth` in `meshsegnet-ckpts` Docker volume | **NOT OBTAINED** |
+| TGN | Managed by tgn-service | ~100–500 MB | BLOCKED — CC BY-NC-ND 4.0 | `/ckpts/` in `tgn-ckpts` Docker volume | **BLOCKED (P0)** |
+
+For authoritative checkpoint status, see `AI_CHECKPOINT_REGISTRY.md`.
 
 ---
 

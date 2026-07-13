@@ -112,8 +112,8 @@ const STATUS_META: Record<CaseStageStatus, {
   tone: "neutral" | "info" | "primary" | "warning" | "success" | "danger";
 }> = {
   draft:            { label: "Draft",            tone: "neutral" },
-  scan_review:      { label: "Scan Review",      tone: "info"    },
-  clinical_review:  { label: "Clinical Review",  tone: "info"    },
+  scan_review:      { label: "Scan Review",      tone: "warning" },
+  clinical_review:  { label: "Clinical Review",  tone: "warning" },
   approved:         { label: "Approved",         tone: "success" },
   active_treatment: { label: "Active Treatment", tone: "success" },
   completed:        { label: "Completed",        tone: "success" },
@@ -191,6 +191,75 @@ function statusToProgress(status: string): number {
   return map[status] ?? 50;
 }
 
+// ─── BulkActionBar ────────────────────────────────────────────────────────────
+
+function BulkActionBar({
+  count,
+  isBulkArchiving,
+  onArchive,
+  onClear,
+}: {
+  count: number;
+  isBulkArchiving: boolean;
+  onArchive: () => void;
+  onClear: () => void;
+}) {
+  const [confirmBulk, setConfirmBulk] = useState(false);
+
+  return (
+    <div className="sticky bottom-[calc(var(--tab-bar-height)+var(--sa-bottom)+0.5rem)] z-10 flex items-center gap-3 rounded-2xl border border-[color:var(--border)] bg-[color:var(--card)] px-4 py-3 shadow-[var(--shadow-lg)]">
+      <span className="flex-1 text-sm font-semibold text-[color:var(--foreground)]">
+        {count} case{count !== 1 ? "s" : ""} selected
+      </span>
+      {confirmBulk ? (
+        <div className="flex items-center gap-2">
+          <span className="text-xs text-[color:var(--muted-foreground)]">
+            Archive {count} case{count !== 1 ? "s" : ""}?
+          </span>
+          <button
+            type="button"
+            onClick={() => { onArchive(); setConfirmBulk(false); }}
+            disabled={isBulkArchiving}
+            className="flex h-8 items-center gap-1.5 rounded-xl bg-rose-500 px-3 text-xs font-semibold text-white hover:bg-rose-600 disabled:opacity-60"
+          >
+            {isBulkArchiving ? (
+              <span className="h-3 w-3 animate-spin rounded-full border-2 border-white/30 border-t-white" />
+            ) : (
+              <Archive size={12} />
+            )}
+            Confirm
+          </button>
+          <button
+            type="button"
+            onClick={() => setConfirmBulk(false)}
+            className="h-8 rounded-xl border border-[color:var(--border)] px-3 text-xs font-semibold text-[color:var(--muted-foreground)] hover:text-[color:var(--foreground)]"
+          >
+            Cancel
+          </button>
+        </div>
+      ) : (
+        <button
+          type="button"
+          onClick={() => setConfirmBulk(true)}
+          disabled={isBulkArchiving}
+          className="flex h-8 items-center gap-1.5 rounded-xl border border-rose-300/60 bg-rose-50/60 px-3 text-xs font-semibold text-rose-700 hover:bg-rose-100/60 dark:border-rose-700/30 dark:bg-rose-900/10 dark:text-rose-400 disabled:opacity-60"
+        >
+          <Archive size={12} />
+          Archive
+        </button>
+      )}
+      <button
+        type="button"
+        onClick={onClear}
+        aria-label="Clear selection"
+        className="grid h-8 w-8 place-items-center rounded-xl border border-[color:var(--border)] text-[color:var(--muted-foreground)] hover:text-[color:var(--foreground)]"
+      >
+        <X size={14} />
+      </button>
+    </div>
+  );
+}
+
 // ─── Demo CaseRow ─────────────────────────────────────────────────────────────
 
 function CaseRow({
@@ -205,6 +274,7 @@ function CaseRow({
 }) {
   const statusMeta = STATUS_META[c.status];
   const isArchiving = archivingIds.has(c.id);
+  const [confirmArchive, setConfirmArchive] = useState(false);
 
   return (
     <div
@@ -280,17 +350,36 @@ function CaseRow({
             <>
               {/* Quick actions — visible on hover */}
               <div className="hidden items-center gap-0.5 group-hover:flex">
-                <button
-                  type="button"
-                  title={isArchiving ? "Archiving…" : "Archive case"}
-                  onClick={(e) => { e.preventDefault(); if (!isArchiving) onArchive(c.id); }}
-                  disabled={isArchiving}
-                  className="grid h-6 w-6 place-items-center rounded text-[color:var(--muted-foreground)] transition hover:bg-[color:var(--border)]/70 hover:text-[color:var(--foreground)] disabled:cursor-not-allowed disabled:opacity-40"
-                >
-                  {isArchiving
-                    ? <Clock size={11} className="animate-spin" />
-                    : <Archive size={11} />}
-                </button>
+                {confirmArchive ? (
+                  <div className="flex items-center gap-1" onClick={(e) => e.preventDefault()}>
+                    <button
+                      type="button"
+                      onClick={() => { onArchive(c.id); setConfirmArchive(false); }}
+                      className="rounded bg-rose-500 px-1.5 py-0.5 text-[10px] font-semibold text-white hover:bg-rose-600"
+                    >
+                      Confirm
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setConfirmArchive(false)}
+                      className="rounded border border-[color:var(--border)] px-1.5 py-0.5 text-[10px] font-semibold text-[color:var(--muted-foreground)] hover:text-[color:var(--foreground)]"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    title={isArchiving ? "Archiving…" : "Archive case"}
+                    onClick={(e) => { e.preventDefault(); if (!isArchiving) setConfirmArchive(true); }}
+                    disabled={isArchiving}
+                    className="grid h-6 w-6 place-items-center rounded text-[color:var(--muted-foreground)] transition hover:bg-[color:var(--border)]/70 hover:text-[color:var(--foreground)] disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    {isArchiving
+                      ? <Clock size={11} className="animate-spin" />
+                      : <Archive size={11} />}
+                  </button>
+                )}
                 <Link
                   href={`/export?caseId=${c.id}`}
                   title="Export case"
@@ -329,9 +418,11 @@ function LiveCaseRow({
   const initials = `${c.patient.firstName[0] ?? "?"}${c.patient.lastName[0] ?? "?"}`.toUpperCase();
   const progress = statusToProgress(c.status);
   const isArchiving = archivingIds.has(c.id);
-  const statusTone: "neutral" | "info" | "success" =
+  const [confirmArchive, setConfirmArchive] = useState(false);
+  const statusTone: "neutral" | "info" | "warning" | "success" =
     c.status === "completed" || c.status === "active_treatment" || c.status === "approved" ? "success"
-    : c.status === "scan_review" || c.status === "segmentation" || c.status === "clinical_review" || c.status === "planning" ? "info"
+    : c.status === "scan_review" || c.status === "clinical_review" ? "warning"
+    : c.status === "segmentation" || c.status === "planning" ? "info"
     : "neutral";
   const label = c.status.replace(/_/g, " ").replace(/\b\w/g, (l) => l.toUpperCase());
 
@@ -384,17 +475,36 @@ function LiveCaseRow({
           {!bulkMode && (
             <>
               <div className="hidden items-center gap-0.5 group-hover:flex">
-                <button
-                  type="button"
-                  title={isArchiving ? "Archiving…" : "Archive case"}
-                  onClick={(e) => { e.preventDefault(); if (!isArchiving) onArchive(c.id); }}
-                  disabled={isArchiving}
-                  className="grid h-6 w-6 place-items-center rounded text-[color:var(--muted-foreground)] transition hover:bg-[color:var(--border)]/70 hover:text-[color:var(--foreground)] disabled:cursor-not-allowed disabled:opacity-40"
-                >
-                  {isArchiving
-                    ? <Clock size={11} className="animate-spin" />
-                    : <Archive size={11} />}
-                </button>
+                {confirmArchive ? (
+                  <div className="flex items-center gap-1" onClick={(e) => e.preventDefault()}>
+                    <button
+                      type="button"
+                      onClick={() => { onArchive(c.id); setConfirmArchive(false); }}
+                      className="rounded bg-rose-500 px-1.5 py-0.5 text-[10px] font-semibold text-white hover:bg-rose-600"
+                    >
+                      Confirm
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setConfirmArchive(false)}
+                      className="rounded border border-[color:var(--border)] px-1.5 py-0.5 text-[10px] font-semibold text-[color:var(--muted-foreground)] hover:text-[color:var(--foreground)]"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    title={isArchiving ? "Archiving…" : "Archive case"}
+                    onClick={(e) => { e.preventDefault(); if (!isArchiving) setConfirmArchive(true); }}
+                    disabled={isArchiving}
+                    className="grid h-6 w-6 place-items-center rounded text-[color:var(--muted-foreground)] transition hover:bg-[color:var(--border)]/70 hover:text-[color:var(--foreground)] disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    {isArchiving
+                      ? <Clock size={11} className="animate-spin" />
+                      : <Archive size={11} />}
+                  </button>
+                )}
                 <Link
                   href={`/export?caseId=${c.id}`}
                   title="Export case"
@@ -1257,36 +1367,12 @@ function CasesPageInner() {
 
       {/* ── Bulk action bar (sticky) ── */}
       {bulkMode && selectedIds.size > 0 && (
-        <div className="fixed inset-x-0 bottom-[calc(var(--tab-bar-height)+var(--sa-bottom)+0.75rem)] z-30 mx-auto max-w-sm px-4">
-          <div className="flex items-center gap-2 rounded-2xl border border-[color:var(--border)] bg-[color-mix(in_srgb,var(--card)_92%,transparent)] px-4 py-2.5 shadow-[var(--shadow-lg)] backdrop-blur-xl">
-            <span className="flex-1 text-sm font-semibold text-[color:var(--foreground)]">
-              {selectedIds.size} selected
-            </span>
-            <button
-              type="button"
-              onClick={() => void handleBulkArchive()}
-              disabled={isBulkArchiving}
-              className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold text-[color:var(--muted-foreground)] transition hover:bg-[color:var(--border)]/50 hover:text-[color:var(--foreground)] disabled:pointer-events-none disabled:opacity-50"
-            >
-              {isBulkArchiving
-                ? <><Clock size={12} className="animate-spin" /> Archiving…</>
-                : <><Archive size={12} /> Archive</>}
-            </button>
-            <Link
-              href="/export"
-              className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold text-[color:var(--muted-foreground)] transition hover:bg-[color:var(--border)]/50 hover:text-[color:var(--foreground)]"
-            >
-              <Download size={12} /> Export
-            </Link>
-            <button
-              type="button"
-              onClick={clearBulk}
-              className="grid h-7 w-7 place-items-center rounded-lg text-[color:var(--muted-foreground)] transition hover:bg-[color:var(--border)]/50"
-            >
-              <X size={13} />
-            </button>
-          </div>
-        </div>
+        <BulkActionBar
+          count={selectedIds.size}
+          isBulkArchiving={isBulkArchiving}
+          onArchive={() => void handleBulkArchive()}
+          onClear={clearBulk}
+        />
       )}
     </section>
   );

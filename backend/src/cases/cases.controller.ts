@@ -54,12 +54,13 @@ export class CasesController {
     @Req() req: Request,
     @Query('limit') limit?: string,
     @Query('offset') offset?: string,
+    @Query('patientId') patientId?: string,
   ) {
     const user = getUser(req);
     if (!user.orgId) return [];
     const l = limit ? Math.min(500, Math.max(1, parseInt(limit, 10))) : 100;
     const o = offset ? Math.max(0, parseInt(offset, 10)) : 0;
-    return this.casesService.findAllByOrg(user.orgId, l, o);
+    return this.casesService.findAllByOrg(user.orgId, l, o, patientId);
   }
 
   @Post()

@@ -86,7 +86,17 @@ export class CasesService {
 
   // ─── List cases by org (joined with patient name) ─────────────────────────
 
-  async findAllByOrg(orgId: string, limit = 100, offset = 0) {
+  async findAllByOrg(orgId: string, limit = 100, offset = 0, patientId?: string) {
+    const params: (string | number)[] = [orgId];
+    let patientFilter = '';
+    if (patientId) {
+      params.push(patientId);
+      patientFilter = `AND c.patient_id = $${params.length}`;
+    }
+    params.push(limit, offset);
+    const limitIdx = params.length - 1;
+    const offsetIdx = params.length;
+
     const { rows } = await this.pool.query(
       `SELECT
          c.id, c.status, c.notes, c.chief_complaint, c.malocclusion_class,
@@ -97,10 +107,10 @@ export class CasesService {
        FROM cases c
        JOIN patients p ON p.id = c.patient_id
        LEFT JOIN auth_users au ON au.id = c.assigned_to
-       WHERE p.organization_id = $1
+       WHERE p.organization_id = $1 ${patientFilter}
        ORDER BY c.updated_at DESC
-       LIMIT $2 OFFSET $3`,
-      [orgId, limit, offset],
+       LIMIT $${limitIdx} OFFSET $${offsetIdx}`,
+      params,
     );
     return rows.map(this.formatCase);
   }

@@ -555,12 +555,31 @@ export default function CaseDetailClient({ id }: { id: string }) {
     malocclusionClass: liveData.malocclusionClass ?? "—",
     crowding: "—",
     chiefComplaint: liveData.chiefComplaint ?? "—",
-    urgency: "routine" as const,
-    progress: 50,
+    urgency: ((): CaseProfile['urgency'] => {
+      const s = liveData.status;
+      if (s === 'clinical_review' || s === 'approved') return 'urgent';
+      if (s === 'planning' || s === 'scan_review') return 'routine';
+      return 'routine';
+    })(),
+    progress: (() => {
+      const map: Record<string, number> = {
+        draft: 10, scan_review: 25, segmentation: 40, planning: 55,
+        clinical_review: 70, approved: 85, active_treatment: 90,
+        monitoring: 95, retention: 98, completed: 100, archived: 100, cancelled: 0,
+      };
+      return map[liveData.status] ?? 50;
+    })(),
     workflowStatus: liveData.status as CaseStatus,
     goals: [],
     measurements: [],
-    history: [],
+    history: liveData.workflowHistory?.map((e) => ({
+      id: e.id,
+      timestamp: e.createdAt,
+      actor: e.actorName ?? '—',
+      actorRole: e.actorRole ?? '—',
+      action: e.toStatus ? `Status → ${e.toStatus.replace(/_/g, ' ')}` : '—',
+      toStatus: e.toStatus as CaseStatus,
+    })) ?? [],
   } : demoProfile;
 
   const setupId = liveData?.linkedResources?.setupId      ?? undefined;

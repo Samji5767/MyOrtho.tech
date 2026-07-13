@@ -48,11 +48,15 @@ export default function NewCaseModal({ onClose, onCreated }: NewCaseModalProps) 
   const [working, setWorking] = useState(false);
   const [error, setError] = useState("");
   const [caseId, setCaseId] = useState("");
+  const [patientsError, setPatientsError] = useState("");
 
   useEffect(() => {
     fetchPatients()
       .then(({ patients }) => { setPatients(patients); setPatientsLoading(false); })
-      .catch(() => setPatientsLoading(false));
+      .catch((e: unknown) => {
+        setPatientsError(e instanceof Error ? e.message : "Failed to load patients.");
+        setPatientsLoading(false);
+      });
   }, []);
 
   const filteredPatients = patients.filter((p) =>
@@ -220,6 +224,10 @@ export default function NewCaseModal({ onClose, onCreated }: NewCaseModalProps) 
                 <div className="flex items-center justify-center py-6">
                   <Loader2 size={18} className="animate-spin text-[color:var(--muted-foreground)]" />
                 </div>
+              ) : patientsError ? (
+                <p className="rounded-lg bg-rose-50/80 px-3 py-2.5 text-sm text-rose-700 dark:bg-rose-500/10 dark:text-rose-300">
+                  {patientsError}
+                </p>
               ) : filteredPatients.length > 0 ? (
                 <div className="space-y-1.5">
                   {filteredPatients.map((p) => (

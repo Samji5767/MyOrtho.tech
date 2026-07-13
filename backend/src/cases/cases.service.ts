@@ -269,14 +269,14 @@ export class CasesService {
 
       const { rows: patRows } = await client.query<{ id: string }>(
         `INSERT INTO patients
-           (organization_id, first_name, last_name, dob, gender, clinical_notes, created_by)
+           (organization_id, first_name, last_name, dob_encrypted, gender, clinical_notes, created_by)
          VALUES ($1, $2, $3, $4, $5, $6, $7)
          RETURNING id`,
         [
           orgId,
           this.cryptoService.encrypt(dto.patient.firstName),
           this.cryptoService.encrypt(dto.patient.lastName),
-          dto.patient.dateOfBirth ?? null,
+          this.cryptoService.encrypt(dto.patient.dateOfBirth ?? null),
           this.cryptoService.encrypt(dto.patient.gender ?? null),
           this.cryptoService.encrypt(dto.patient.clinicalNotes ?? null),
           actorId,
@@ -468,8 +468,8 @@ export class CasesService {
     toStatus: CaseStatus,
   ): Promise<void> {
     const { rows } = await this.pool.query<{ created_by: string | null }>(
-      'SELECT created_by FROM cases WHERE id = $1',
-      [caseId],
+      'SELECT created_by FROM cases WHERE id = $1 AND organization_id = $2',
+      [caseId, orgId],
     );
     const userId = rows[0]?.created_by;
     if (!userId) return;

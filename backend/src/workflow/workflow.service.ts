@@ -94,8 +94,8 @@ export class WorkflowService {
 
       // Update case status and write workflow event atomically.
       await client.query(
-        'UPDATE cases SET status = $1, updated_at = now() WHERE id = $2',
-        [input.toStatus, input.caseId],
+        'UPDATE cases SET status = $1, updated_at = now() WHERE id = $2 AND organization_id = $3',
+        [input.toStatus, input.caseId, input.orgId],
       );
 
       await client.query(

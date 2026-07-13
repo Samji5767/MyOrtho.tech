@@ -6,7 +6,11 @@ import {
   Activity,
   ArrowLeft,
   Building2,
+  FileBarChart,
+  MapPin,
+  Plug,
   Settings2,
+  Shield,
   ShieldAlert,
   Users,
 } from "lucide-react";
@@ -40,6 +44,30 @@ const ADMIN_SECTIONS = [
     title: "Platform Health",
     description: "System status, uptime, and infrastructure metrics.",
     href: "/platform-health",
+  },
+  {
+    icon: <MapPin size={18} />,
+    title: "Clinic Locations",
+    description: "Manage practice locations, working hours, and chair allocation.",
+    href: "/admin/locations",
+  },
+  {
+    icon: <Plug size={18} />,
+    title: "Integration Hub",
+    description: "Connect scanners, printers, and practice management systems.",
+    href: "/admin/integrations",
+  },
+  {
+    icon: <FileBarChart size={18} />,
+    title: "Reports",
+    description: "Practice reports, financial summaries, and audit exports.",
+    href: "/admin/reports",
+  },
+  {
+    icon: <Shield size={18} />,
+    title: "Audit Log",
+    description: "View audit trail and PHI access logs.",
+    href: "/admin/audit",
   },
 ];
 
@@ -189,7 +217,7 @@ export default function AdminPage() {
       </div>
 
       {/* Navigation sections */}
-      <div className="grid gap-4 sm:grid-cols-2">
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {ADMIN_SECTIONS.map((section) => (
           <Link
             key={section.href}

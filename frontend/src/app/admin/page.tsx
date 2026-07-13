@@ -6,6 +6,7 @@ import {
   Activity,
   ArrowLeft,
   Building2,
+  Factory,
   FileBarChart,
   MapPin,
   Plug,
@@ -68,6 +69,12 @@ const ADMIN_SECTIONS = [
     title: "Audit Log",
     description: "View audit trail and PHI access logs.",
     href: "/admin/audit",
+  },
+  {
+    icon: <Factory size={18} />,
+    title: "Lab",
+    description: "Manufacturing dashboard, print farm, batch tracking, and shipments.",
+    href: "/manufacturing",
   },
 ];
 

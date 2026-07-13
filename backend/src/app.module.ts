@@ -87,6 +87,8 @@ import { EmergencyProtocolsModule } from './emergency-protocols/emergency-protoc
 import { BillingModule } from './billing/billing.module';
 import { OrgBrandingModule } from './org-branding/org-branding.module';
 import { ReleasesModule } from './releases/releases.module';
+import { WorkingHoursModule } from './working-hours/working-hours.module';
+import { ReportsModule } from './reports/reports.module';
 
 @Module({
   imports: [
@@ -185,6 +187,8 @@ import { ReleasesModule } from './releases/releases.module';
     BillingModule,
     OrgBrandingModule,
     ReleasesModule,
+    WorkingHoursModule,
+    ReportsModule,
   ],
   providers: [
     {

@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import {
   Activity,
   AlertCircle,
+  AlertTriangle,
   CheckCircle2,
   ChevronDown,
   ChevronRight,
@@ -24,6 +25,7 @@ import {
   Spinner,
 } from "@/components/DesignSystem";
 import { api } from "@/lib/api/client";
+import { useToast } from "@/components/ToastContext";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -358,11 +360,13 @@ function AIRationaleCard({ rationale, confidence }: { rationale: string; confide
 // ─── Main Component ───────────────────────────────────────────────────────────
 
 export default function TreatmentGoalsPanel({ caseId }: { caseId: string }) {
+  const { toast } = useToast();
   const [goals, setGoals] = useState<TreatmentGoals | null>(null);
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
   const [approving, setApproving] = useState(false);
   const [editing, setEditing] = useState(false);
+  const [savingEdit, setSavingEdit] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [editDraft, setEditDraft] = useState<{ aligner_count: string; duration_weeks: string; notes: string }>({ aligner_count: "", duration_weeks: "", notes: "" });
 
@@ -404,6 +408,7 @@ export default function TreatmentGoalsPanel({ caseId }: { caseId: string }) {
         angle_class: form.angle_class,
       });
       setGoals(data);
+      toast({ title: "AI goals generated", description: "Review and approve before clinical use.", type: "info" });
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to generate goals");
     } finally {
@@ -418,6 +423,7 @@ export default function TreatmentGoalsPanel({ caseId }: { caseId: string }) {
     try {
       const updated = await api.post<TreatmentGoals>(`/api/treatment-goals/${goals.id}/approve`, {});
       setGoals(updated);
+      toast({ title: "Treatment goals approved", type: "success" });
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to approve");
     } finally {
@@ -427,17 +433,31 @@ export default function TreatmentGoalsPanel({ caseId }: { caseId: string }) {
 
   const handleSaveEdit = async () => {
     if (!goals) return;
+    const alignerCount = parseInt(editDraft.aligner_count, 10);
+    const durationWeeks = parseInt(editDraft.duration_weeks, 10);
+    if (editDraft.aligner_count && (isNaN(alignerCount) || alignerCount < 1)) {
+      setError("Aligner count must be a positive integer.");
+      return;
+    }
+    if (editDraft.duration_weeks && (isNaN(durationWeeks) || durationWeeks < 1)) {
+      setError("Duration must be a positive integer.");
+      return;
+    }
+    setSavingEdit(true);
     setError(null);
     try {
       const updated = await api.patch<TreatmentGoals>(`/api/treatment-goals/${goals.id}`, {
-        predicted_aligners: parseInt(editDraft.aligner_count) || goals.predicted_aligners,
-        duration_weeks: parseInt(editDraft.duration_weeks) || goals.duration_weeks,
+        predicted_aligners: alignerCount || goals.predicted_aligners,
+        duration_weeks: durationWeeks || goals.duration_weeks,
         notes: editDraft.notes,
       });
       setGoals(updated);
       setEditing(false);
+      toast({ title: "Goals updated", type: "success" });
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to save");
+    } finally {
+      setSavingEdit(false);
     }
   };
 
@@ -518,6 +538,12 @@ export default function TreatmentGoalsPanel({ caseId }: { caseId: string }) {
 
   return (
     <div className="space-y-4">
+      <div className="flex items-start gap-2 rounded-xl border border-amber-200/60 bg-amber-50/60 px-3 py-2 text-xs text-amber-800 dark:border-amber-500/20 dark:bg-amber-500/10 dark:text-amber-300">
+        <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0" />
+        AI-generated treatment goals are <strong>clinical decision support only.</strong>{" "}
+        All recommendations require review and written approval by a licensed orthodontist before any clinical action.
+      </div>
+
       {error && (
         <div className="flex items-center gap-2 rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700 dark:border-rose-800 dark:bg-rose-950/40 dark:text-rose-300">
           <AlertCircle className="h-4 w-4 shrink-0" />
@@ -568,9 +594,11 @@ export default function TreatmentGoalsPanel({ caseId }: { caseId: string }) {
                   </button>
                   <button
                     onClick={handleSaveEdit}
-                    className="inline-flex items-center gap-1.5 rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-indigo-700"
+                    disabled={savingEdit}
+                    className="inline-flex items-center gap-1.5 rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-indigo-700 disabled:opacity-50"
                   >
-                    <Save className="h-3.5 w-3.5" /> Save
+                    {savingEdit ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
+                    {savingEdit ? "Saving…" : "Save"}
                   </button>
                 </>
               ) : (

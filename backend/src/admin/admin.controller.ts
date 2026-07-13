@@ -23,6 +23,14 @@ function requireSuperAdmin(req: Request): AuthUser {
   return user;
 }
 
+function requireAdmin(req: Request): AuthUser {
+  const user = (req as Request & { user?: AuthUser }).user;
+  if (!user) throw new ForbiddenException('Authentication required');
+  if (user.role !== 'admin' && user.role !== 'super_admin') throw new ForbiddenException('Admin role required');
+  if (!user.orgId) throw new ForbiddenException('No organization context');
+  return user;
+}
+
 @Controller('api/admin')
 @UseGuards(AuthGuard)
 export class AdminController {
@@ -133,6 +141,35 @@ export class AdminController {
   ) {
     requireSuperAdmin(req);
     return this.adminService.upsertFeatureFlag(key, dto);
+  }
+
+  @Get('org')
+  getMyOrg(@Req() req: Request) {
+    const admin = requireAdmin(req);
+    return this.adminService.getMyOrg(admin.orgId!);
+  }
+
+  @Patch('org')
+  updateMyOrg(
+    @Req() req: Request,
+    @Body() dto: {
+      name?: string;
+      type?: string;
+      email?: string;
+      phone?: string;
+      website?: string;
+      address?: string;
+      city?: string;
+      state?: string;
+      postalCode?: string;
+      country?: string;
+      timezone?: string;
+      currency?: string;
+      language?: string;
+    },
+  ) {
+    const admin = requireAdmin(req);
+    return this.adminService.updateMyOrg(admin.orgId!, dto, admin.id, admin.email);
   }
 
   @Get('audit')

@@ -297,4 +297,82 @@ export class AdminService {
     if (!res.rowCount) throw new NotFoundException('User not found');
     return { id: res.rows[0].id as string, role: res.rows[0].role as string };
   }
+
+  // ─── Self-service org profile (admin / super_admin of own org) ───────────────
+
+  async getMyOrg(orgId: string) {
+    const { rows } = await this.pool.query(
+      `SELECT id, name, type, settings, created_at FROM organizations WHERE id = $1`,
+      [orgId],
+    );
+    if (!rows.length) throw new NotFoundException('Organization not found');
+    const r = rows[0];
+    const settings = (r.settings ?? {}) as Record<string, unknown>;
+    return {
+      id: r.id as string,
+      name: r.name as string,
+      type: r.type as string,
+      email: (settings['email'] ?? '') as string,
+      phone: (settings['phone'] ?? '') as string,
+      website: (settings['website'] ?? '') as string,
+      address: (settings['address'] ?? '') as string,
+      city: (settings['city'] ?? '') as string,
+      state: (settings['state'] ?? '') as string,
+      postalCode: (settings['postalCode'] ?? '') as string,
+      country: (settings['country'] ?? '') as string,
+      timezone: (settings['timezone'] ?? 'UTC') as string,
+      currency: (settings['currency'] ?? 'USD') as string,
+      language: (settings['language'] ?? 'en') as string,
+      createdAt: r.created_at as string,
+    };
+  }
+
+  async updateMyOrg(
+    orgId: string,
+    dto: {
+      name?: string;
+      type?: string;
+      email?: string;
+      phone?: string;
+      website?: string;
+      address?: string;
+      city?: string;
+      state?: string;
+      postalCode?: string;
+      country?: string;
+      timezone?: string;
+      currency?: string;
+      language?: string;
+    },
+    actorId: string,
+    actorEmail?: string,
+  ) {
+    const validTypes = ['clinic', 'lab', 'enterprise'];
+    if (dto.type && !validTypes.includes(dto.type)) throw new BadRequestException('Invalid organization type');
+
+    const { name, type, ...settingsFields } = dto;
+    const settingsPatch = JSON.stringify(settingsFields);
+
+    await this.pool.query(
+      `UPDATE organizations
+          SET name     = COALESCE($2, name),
+              type     = COALESCE($3, type),
+              settings = settings || $4::jsonb,
+              updated_at = now()
+        WHERE id = $1`,
+      [orgId, name ?? null, type ?? null, settingsPatch],
+    );
+
+    await this.auditService.log({
+      organizationId: orgId,
+      actorId,
+      actorEmail,
+      resourceType: 'organization',
+      resourceId: orgId,
+      action: 'admin.org.profile_updated',
+      details: { fields: Object.keys(dto) },
+    });
+
+    return this.getMyOrg(orgId);
+  }
 }

@@ -15,6 +15,7 @@ import {
   Layers3,
   LogOut,
   Settings,
+  ShieldCheck,
   Users,
   type LucideIcon,
 } from "lucide-react";
@@ -116,6 +117,7 @@ export function TabBar() {
 type SidebarGroup = {
   label: string;
   items: TabItem[];
+  adminOnly?: boolean;
 };
 
 const SIDEBAR_GROUPS: SidebarGroup[] = [
@@ -157,6 +159,13 @@ const SIDEBAR_GROUPS: SidebarGroup[] = [
       { href: '/settings', label: 'Settings', icon: Settings },
     ],
   },
+  {
+    label: 'Administration',
+    items: [
+      { href: '/admin', label: 'Admin Panel', icon: ShieldCheck },
+    ],
+    adminOnly: true,
+  },
 ];
 
 export function SidebarNav() {
@@ -186,7 +195,9 @@ export function SidebarNav() {
 
         {/* Navigation groups */}
         <div className="flex flex-col gap-4">
-          {SIDEBAR_GROUPS.map((group) => (
+          {SIDEBAR_GROUPS.filter((g) =>
+            !g.adminOnly || user?.role === "admin" || user?.role === "super_admin"
+          ).map((group) => (
             <div key={group.label}>
               <p className="mb-1 px-2 text-[9px] font-bold uppercase tracking-[0.2em] text-[color:var(--muted-foreground)]">
                 {group.label}

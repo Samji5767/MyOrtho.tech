@@ -217,6 +217,7 @@ export default function PatientsPage() {
           <h1 className="mt-0.5 text-2xl font-semibold tracking-tight text-[color:var(--foreground)]">
             Patients
           </h1>
+          <p className="mt-0.5 text-sm text-[color:var(--muted-foreground)]">Records, history, and case links</p>
         </div>
         <Button variant="primary" size="sm" onClick={openSheet}>
           <UserPlus size={13} />

@@ -81,7 +81,7 @@ describe('PatientsService.create', () => {
     expect(params[0]).toBe(ORG_A);
   });
 
-  it('encrypts dateOfBirth and stores in both dob and dob_encrypted columns', async () => {
+  it('encrypts dateOfBirth and stores only in dob_encrypted (no plaintext dob column)', async () => {
     const pool = makePool([[{ id: PAT_ID }], [makeRow()]]);
     const crypto = makeCrypto();
     const svc = makeService(pool, crypto);
@@ -93,9 +93,9 @@ describe('PatientsService.create', () => {
     });
 
     const [, params] = (pool.query as jest.Mock).mock.calls[0];
-    // dob (plaintext) and dob_encrypted (encrypted) are both bound
-    expect(params).toContain('1990-06-15');
+    // only the encrypted value is bound — plaintext dob dual-write was removed
     expect(params).toContain('enc:1990-06-15');
+    expect(params).not.toContain('1990-06-15');
   });
 
   it('encrypts optional gender and clinicalNotes', async () => {

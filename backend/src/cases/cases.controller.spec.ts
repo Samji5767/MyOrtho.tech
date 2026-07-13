@@ -47,7 +47,7 @@ describe('CasesController.getCases', () => {
     const ctrl = new CasesController(svc, makeAiSvc(), makeDigitalTwinSvc());
 
     await ctrl.getCases(makeReq());
-    expect(svc.findAllByOrg).toHaveBeenCalledWith('org-1', 100, 0);
+    expect(svc.findAllByOrg).toHaveBeenCalledWith('org-1', 100, 0, undefined);
   });
 
   it('returns [] when user has no orgId', async () => {

@@ -30,6 +30,14 @@ import {
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
+// Print failure risk thresholds (based on print farm operational data)
+// Values below these printability sub-scores indicate elevated failure risk
+const FAILURE_RISK_THRESHOLDS = {
+  meshIntegrity: 75,   // non-watertight mesh causes resin voids
+  printability:  70,   // thin walls / overhangs cause print failures
+  complexity:    60,   // high complexity increases support removal damage
+} as const;
+
 const PRINTER_MODELS = [
   { brand: "Formlabs",  model: "Form 3B+",  resolution: "25 µm" },
   { brand: "Formlabs",  model: "Form 3BL",  resolution: "25 µm" },
@@ -84,20 +92,38 @@ function PlanStatusChip({ status }: { status: AlignerGenerationPlan["status"] })
   );
 }
 
+// Simulated vs Validated badge
+function DataSourceBadge({ validated }: { validated: boolean }) {
+  return validated ? (
+    <span className="rounded px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400">
+      Validated
+    </span>
+  ) : (
+    <span className="rounded px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">
+      Simulated
+    </span>
+  );
+}
+
 function MetricCard({
   icon: Icon,
   label,
   value,
+  validated = false,
 }: {
   icon: React.ElementType;
   label: string;
   value: string;
+  validated?: boolean;
 }) {
   return (
     <div className="rounded-xl border border-[color:var(--border)] bg-[color:var(--card)] p-3 space-y-1">
-      <div className="flex items-center gap-1.5">
-        <Icon size={12} className="text-[color:var(--muted-foreground)]" />
-        <p className="text-[10px] font-bold uppercase tracking-wide text-[color:var(--muted-foreground)]">{label}</p>
+      <div className="flex items-center justify-between gap-1">
+        <div className="flex items-center gap-1.5">
+          <Icon size={12} className="text-[color:var(--muted-foreground)]" />
+          <p className="text-[10px] font-bold uppercase tracking-wide text-[color:var(--muted-foreground)]">{label}</p>
+        </div>
+        <DataSourceBadge validated={validated} />
       </div>
       <p className="text-base font-black tabular-nums text-[color:var(--foreground)]">{value}</p>
     </div>
@@ -258,17 +284,80 @@ export function ManufacturingReadinessPanel({ caseId, planId }: Props) {
         </div>
       )}
 
-      {/* Print time / resin / cost — from readiness */}
+      {/* Print time / resin / cost — from readiness (all Simulated until print validated) */}
       {ps && (
-        <div className="grid grid-cols-3 gap-2">
-          <MetricCard
-            icon={Clock}
-            label="Print Time"
-            value={formatPrintTime(ps.estimatedPrintTimeMinutes)}
-          />
-          <MetricCard icon={Package}    label="Resin Est."     value={`${ps.estimatedResinGrams.toFixed(0)} g`} />
-          <MetricCard icon={DollarSign} label="Estimated Cost" value={`$${ps.estimatedCostUsd.toFixed(2)}`}    />
-        </div>
+        <>
+          <div className="grid grid-cols-3 gap-2">
+            <MetricCard icon={Clock}      label="Print Time"     value={formatPrintTime(ps.estimatedPrintTimeMinutes)} validated={false} />
+            <MetricCard icon={Package}    label="Resin Est."     value={`${ps.estimatedResinGrams.toFixed(0)} g`}      validated={false} />
+            <MetricCard icon={DollarSign} label="Estimated Cost" value={`$${ps.estimatedCostUsd.toFixed(2)}`}          validated={false} />
+          </div>
+          <p className="text-[10px] text-[color:var(--muted-foreground)] italic">
+            ⚠ Values marked "Simulated" are AI estimates from model geometry and have not been validated against actual print output.
+            Values become "Validated" after first physical print QC pass.
+          </p>
+
+          {/* Failure Prediction */}
+          {(() => {
+            const risks: { label: string; risk: "low" | "medium" | "high"; detail: string }[] = [
+              {
+                label: "Mesh failure (non-watertight)",
+                risk: ps.meshIntegrity < FAILURE_RISK_THRESHOLDS.meshIntegrity ? "high" : ps.meshIntegrity < 85 ? "medium" : "low",
+                detail: ps.meshIntegrity < FAILURE_RISK_THRESHOLDS.meshIntegrity
+                  ? `Mesh integrity ${ps.meshIntegrity}/100 — non-watertight regions will cause resin voids. Mesh repair required before printing.`
+                  : "Mesh geometry appears printable. Standard pre-flight validation recommended.",
+              },
+              {
+                label: "Thin-wall / overhang failure",
+                risk: ps.printability < FAILURE_RISK_THRESHOLDS.printability ? "high" : ps.printability < 80 ? "medium" : "low",
+                detail: ps.printability < FAILURE_RISK_THRESHOLDS.printability
+                  ? `Printability score ${ps.printability}/100 — thin walls or unsupported overhangs detected. Review support structure before printing.`
+                  : "Geometry is within printable limits for configured printers.",
+              },
+              {
+                label: "Support removal damage",
+                risk: ps.complexity < FAILURE_RISK_THRESHOLDS.complexity ? "high" : ps.complexity < 75 ? "medium" : "low",
+                detail: ps.complexity < FAILURE_RISK_THRESHOLDS.complexity
+                  ? `Complexity score ${ps.complexity}/100 — complex geometry increases support removal damage risk. Manual post-processing review required.`
+                  : "Complexity within manageable range for trained post-processing technician.",
+              },
+            ];
+            const highRisk = risks.filter(r => r.risk === "high").length;
+            const medRisk = risks.filter(r => r.risk === "medium").length;
+            return (
+              <div className="rounded-xl border border-[color:var(--border)] bg-[color:var(--card)] p-4 space-y-2">
+                <div className="flex items-center justify-between">
+                  <p className="text-[11px] font-bold uppercase tracking-wide text-[color:var(--muted-foreground)]">Print Failure Prediction</p>
+                  <DataSourceBadge validated={false} />
+                </div>
+                <div className="flex gap-3 text-[10px] mb-1">
+                  <span className="text-rose-600 dark:text-rose-400 font-semibold">{highRisk} high risk</span>
+                  <span className="text-amber-600 dark:text-amber-400 font-semibold">{medRisk} medium risk</span>
+                </div>
+                <div className="space-y-1.5">
+                  {risks.map((r, i) => (
+                    <div key={i} className={`flex items-start gap-2 rounded-lg px-3 py-2 text-xs ${
+                      r.risk === "high" ? "bg-rose-50/50 dark:bg-rose-900/10" :
+                      r.risk === "medium" ? "bg-amber-50/50 dark:bg-amber-900/10" :
+                      "bg-emerald-50/30 dark:bg-emerald-900/10"
+                    }`}>
+                      {r.risk === "high" ? <XCircle size={13} className="shrink-0 mt-0.5 text-rose-500" /> :
+                       r.risk === "medium" ? <AlertTriangle size={13} className="shrink-0 mt-0.5 text-amber-500" /> :
+                       <CheckCircle2 size={13} className="shrink-0 mt-0.5 text-emerald-500" />}
+                      <div>
+                        <p className="font-semibold text-[color:var(--foreground)]">{r.label}</p>
+                        <p className="text-[color:var(--muted-foreground)]">{r.detail}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                <p className="text-[10px] text-[color:var(--muted-foreground)] italic pt-1">
+                  Failure predictions are simulated estimates. Physical print testing is the definitive validation method.
+                </p>
+              </div>
+            );
+          })()}
+        </>
       )}
 
       {/* Quality score + manufacturing readiness */}

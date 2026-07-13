@@ -14,6 +14,8 @@ import {
 import type { Request } from 'express';
 import { IsNumber, IsObject, IsOptional, IsString, Min } from 'class-validator';
 import { AuthGuard } from '../auth/auth.guard';
+import { PermissionsGuard } from '../auth/permissions.guard';
+import { RequirePermission } from '../auth/require-permission.decorator';
 import { TreatmentPlansService } from './treatment-plans.service';
 
 class CreatePlanBody {
@@ -67,11 +69,12 @@ function auth(req: Request): AuthUser {
 }
 
 @Controller('api/cases/:caseId/plans')
-@UseGuards(AuthGuard)
+@UseGuards(AuthGuard, PermissionsGuard)
 export class TreatmentPlansController {
   constructor(private readonly service: TreatmentPlansService) {}
 
   @Get()
+  @RequirePermission('cases:read')
   listPlans(@Req() req: Request, @Param('caseId') caseId: string) {
     const user = auth(req);
     return this.service.listPlans(caseId, user.orgId!);
@@ -79,6 +82,7 @@ export class TreatmentPlansController {
 
   @Post()
   @HttpCode(HttpStatus.CREATED)
+  @RequirePermission('cases:write')
   createPlan(
     @Req() req: Request,
     @Param('caseId') caseId: string,
@@ -89,6 +93,7 @@ export class TreatmentPlansController {
   }
 
   @Get(':planId')
+  @RequirePermission('cases:read')
   getPlan(
     @Req() req: Request,
     @Param('caseId') caseId: string,
@@ -101,6 +106,7 @@ export class TreatmentPlansController {
   /** Doctor approval — sets doctor_approval = true and advances case status. */
   @Post(':planId/approve')
   @HttpCode(HttpStatus.OK)
+  @RequirePermission('cases:approve')
   approvePlan(
     @Req() req: Request,
     @Param('caseId') caseId: string,
@@ -112,6 +118,7 @@ export class TreatmentPlansController {
   }
 
   @Patch(':planId')
+  @RequirePermission('cases:write')
   updatePlan(
     @Req() req: Request,
     @Param('caseId') caseId: string,
@@ -124,6 +131,7 @@ export class TreatmentPlansController {
 
   @Post(':planId/stages/generate')
   @HttpCode(HttpStatus.OK)
+  @RequirePermission('cases:write')
   generateStages(
     @Req() req: Request,
     @Param('caseId') caseId: string,
@@ -136,6 +144,7 @@ export class TreatmentPlansController {
 
   @Post(':planId/stages/bulk')
   @HttpCode(HttpStatus.OK)
+  @RequirePermission('cases:write')
   bulkUpsertStages(
     @Req() req: Request,
     @Param('caseId') caseId: string,
@@ -147,6 +156,7 @@ export class TreatmentPlansController {
   }
 
   @Get(':planId/stages')
+  @RequirePermission('cases:read')
   listStages(
     @Req() req: Request,
     @Param('caseId') caseId: string,
@@ -158,6 +168,7 @@ export class TreatmentPlansController {
 
   @Post(':planId/stages')
   @HttpCode(HttpStatus.CREATED)
+  @RequirePermission('cases:write')
   createStage(
     @Req() req: Request,
     @Param('caseId') caseId: string,

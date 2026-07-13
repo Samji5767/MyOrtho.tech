@@ -13,6 +13,8 @@ import {
 } from '@nestjs/common';
 import type { Request } from 'express';
 import { AuthGuard } from '../auth/auth.guard';
+import { PermissionsGuard } from '../auth/permissions.guard';
+import { RequirePermission } from '../auth/require-permission.decorator';
 import { ManufacturingService } from './manufacturing.service';
 import { CreatePrintJobDto, UpdatePrintJobStatusDto, CancelJobDto } from './manufacturing.dto';
 
@@ -30,7 +32,8 @@ function auth(req: Request): AuthUser {
 
 /** Print job management — requires auth. */
 @Controller('api/manufacturing/jobs')
-@UseGuards(AuthGuard)
+@UseGuards(AuthGuard, PermissionsGuard)
+@RequirePermission('manufacturing:read')
 export class ManufacturingController {
   constructor(private readonly service: ManufacturingService) {}
 
@@ -41,6 +44,7 @@ export class ManufacturingController {
 
   @Post()
   @HttpCode(HttpStatus.CREATED)
+  @RequirePermission('manufacturing:write')
   createJob(@Req() req: Request, @Body() dto: CreatePrintJobDto) {
     const user = auth(req);
     return this.service.createJob(user.orgId!, user.id, dto, user.email);
@@ -83,7 +87,8 @@ export class ManufacturingController {
  * Real-time telemetry requires a configured vendor connector.
  */
 @Controller('api/printers')
-@UseGuards(AuthGuard)
+@UseGuards(AuthGuard, PermissionsGuard)
+@RequirePermission('manufacturing:read')
 export class PrinterRegistryController {
   constructor(private readonly service: ManufacturingService) {}
 

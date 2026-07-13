@@ -33,6 +33,7 @@ import {
   type AlignStage,
 } from "@/lib/api/treatmentPlans";
 import { ApiError } from "@/lib/api/client";
+import { useToast } from "@/components/ToastContext";
 
 // Dynamic imports to avoid SSR issues with the clinical sub-panels
 const BiomechanicsPanel = dynamic(() => import("@/components/BiomechanicsPanel"), { ssr: false });
@@ -229,6 +230,7 @@ function PlanRow({
   onApproved: (p: TreatmentPlanSummary) => void;
   onUpdated: (p: TreatmentPlanSummary) => void;
 }) {
+  const { toast } = useToast();
   const [expanded, setExpanded] = useState(false);
   const [activeTab, setActiveTab] = useState<PlanTab>("stages");
   const [stages, setStages] = useState<AlignStage[]>([]);
@@ -275,6 +277,7 @@ function PlanRow({
     try {
       await generateStages(caseId, plan.id, plan.estimatedStages);
       await loadStages();
+      toast({ title: "Stages generated", description: `${plan.estimatedStages} stages created. Review required before clinical use.`, type: "info" });
     } catch (e) {
       setGenerateError(e instanceof ApiError ? e.message : "Stage generation failed");
     } finally {
@@ -291,6 +294,7 @@ function PlanRow({
       onApproved(await approvePlan(caseId, plan.id, sig));
       setShowApproveForm(false);
       setApproveSignature("");
+      toast({ title: "Plan approved", description: `Signed by ${sig}`, type: "success" });
     } catch (e) {
       setApproveError(e instanceof ApiError ? e.message : "Approval failed");
     } finally {
@@ -312,6 +316,7 @@ function PlanRow({
       });
       onUpdated(updated);
       setEditingNotes(false);
+      toast({ title: "Notes saved", type: "success" });
     } catch (e) {
       setNotesError(e instanceof Error ? e.message : "Failed to save notes");
     } finally {
@@ -417,7 +422,7 @@ function PlanRow({
         {showApproveForm && !plan.doctorApproval && (
           <div className="mt-2 rounded-xl border border-[color:var(--border)] bg-[color:var(--background)] p-3">
             <p className="mb-2 text-xs font-semibold text-[color:var(--foreground)]">
-              Doctor approval — enter your name as signature
+              Doctor approval — enter your name as signature <span className="text-rose-500">*</span>
             </p>
             <div className="flex items-center gap-2">
               <input
@@ -664,6 +669,7 @@ function CreatePlanForm({
 // ─── Panel ────────────────────────────────────────────────────────────────────
 
 export default function TreatmentPlansPanel({ caseId }: { caseId: string }) {
+  const { toast } = useToast();
   const [plans, setPlans] = useState<TreatmentPlanSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -685,6 +691,7 @@ export default function TreatmentPlansPanel({ caseId }: { caseId: string }) {
   function handleCreated(plan: TreatmentPlanSummary) {
     setPlans((prev) => [plan, ...prev]);
     setShowCreate(false);
+    toast({ title: "Treatment plan created", type: "success" });
   }
 
   function handleApproved(updated: TreatmentPlanSummary) {

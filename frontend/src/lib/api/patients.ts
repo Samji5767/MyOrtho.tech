@@ -90,3 +90,7 @@ export async function createPatient(dto: CreatePatientDto): Promise<PatientListI
 export async function updatePatient(id: string, dto: UpdatePatientDto): Promise<PatientListItem> {
   return api.patch<PatientListItem>(`/api/patients/${id}`, dto);
 }
+
+export async function fetchPatientCases(patientId: string): Promise<import('./cases').CaseListItem[]> {
+  return api.get<import('./cases').CaseListItem[]>(`/api/cases?patientId=${encodeURIComponent(patientId)}`);
+}

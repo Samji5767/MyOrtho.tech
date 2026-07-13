@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   AlertCircle,
@@ -123,12 +123,16 @@ export default function PatientsPage() {
   }, []);
 
   // ── Load patients ───────────────────────────────────────────────────────────
-  useEffect(() => {
+  const loadPatients = useCallback(() => {
+    setLoading(true);
+    setError(null);
     fetchPatients()
       .then(({ patients: data }) => setPatients(data as Patient[]))
       .catch((e: Error) => setError(e?.message ?? "Failed to load patients"))
       .finally(() => setLoading(false));
   }, []);
+
+  useEffect(() => { loadPatients(); }, [loadPatients]);
 
   const filteredPatients = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -213,6 +217,7 @@ export default function PatientsPage() {
           <h1 className="mt-0.5 text-2xl font-semibold tracking-tight text-[color:var(--foreground)]">
             Patients
           </h1>
+          <p className="mt-0.5 text-sm text-[color:var(--muted-foreground)]">Records, history, and case links</p>
         </div>
         <Button variant="primary" size="sm" onClick={openSheet}>
           <UserPlus size={13} />
@@ -303,9 +308,18 @@ export default function PatientsPage() {
 
         {/* ── Error ── */}
         {!loading && error && (
-          <div className="mt-4 flex items-center gap-2 rounded-xl border border-rose-200/60 bg-rose-50/60 px-4 py-3 text-sm text-rose-700 dark:border-rose-500/20 dark:bg-rose-500/10 dark:text-rose-300">
-            <AlertCircle size={14} className="shrink-0" />
-            {error}
+          <div className="mt-4 rounded-xl border border-rose-200/60 bg-rose-50/60 px-4 py-3 dark:border-rose-500/20 dark:bg-rose-500/10">
+            <div className="flex items-center gap-2 text-sm text-rose-700 dark:text-rose-300">
+              <AlertCircle size={14} className="shrink-0" />
+              <span className="flex-1">{error}</span>
+              <button
+                type="button"
+                onClick={loadPatients}
+                className="shrink-0 font-semibold hover:underline"
+              >
+                Retry
+              </button>
+            </div>
           </div>
         )}
 

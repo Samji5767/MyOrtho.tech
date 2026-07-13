@@ -13,8 +13,11 @@ self.onmessage = async (e: MessageEvent) => {
       vertices = parsed.vertices;
       faces = parsed.faces;
     } else {
-      self.postMessage({ error: `Unsupported format for decimation: ${format}. Only STL is currently supported.` });
-      return;
+      throw new Error(
+        `Mesh format "${format as string}" is not supported by this parser. ` +
+        'Only binary STL files are currently supported. ' +
+        'Convert PLY/OBJ files to binary STL before uploading.',
+      );
     }
 
     const initialFacesCount = vertices.length / 9;

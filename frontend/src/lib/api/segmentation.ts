@@ -1,8 +1,27 @@
 import { api } from './client';
 
-export type SegmentationModel = 'monai' | 'nnunet' | 'onnx' | 'pytorch' | 'cpu';
+export type SegmentationModel = 'monai' | 'nnunet' | 'onnx' | 'pytorch' | 'cpu' | 'tgn' | 'meshsegnet';
 export type SegmentationArch = 'upper' | 'lower' | 'both';
-export type JobStatus = 'pending' | 'processing' | 'completed' | 'failed';
+export type SegmentationProvider = 'TGN' | 'MESHSEGNET' | 'AUTO' | 'MANUAL';
+
+export interface EngineInfo {
+  name: string;
+  healthy: boolean;
+  ready: boolean;
+  version: string;
+  error: string | null;
+}
+export type JobStatus =
+  | 'pending'
+  | 'queued'
+  | 'preprocessing'
+  | 'running'
+  | 'validating'
+  | 'processing'
+  | 'completed'
+  | 'failed'
+  | 'manual_review_required'
+  | 'unavailable';
 export type CorrectionType =
   | 'fix_geometry' | 'improve_segmentation' | 'repair_mesh'
   | 'recalculate_landmarks' | 'rebuild_tooth' | 'merge_teeth'
@@ -59,6 +78,10 @@ export interface SegmentationJob {
   completedAt: string | null;
   submittedByEmail: string | null;
   createdAt: string;
+  engine?: string;
+  engineVersion?: string;
+  requiresManualReview?: boolean;
+  disclaimer?: string;
   // Populated by getJob only
   segments?: ToothSegment[];
   corrections?: SegmentationCorrection[];
@@ -81,11 +104,20 @@ export const CORRECTION_LABELS: Record<CorrectionType, string> = {
 };
 
 export const MODEL_LABELS: Record<SegmentationModel, string> = {
-  monai:   'MONAI (GPU)',
-  nnunet:  'nnU-Net (GPU)',
-  onnx:    'ONNX Runtime',
-  pytorch: 'PyTorch',
-  cpu:     'CPU (Rule-based)',
+  monai:       'MONAI (GPU)',
+  nnunet:      'nnU-Net (GPU)',
+  onnx:        'ONNX Runtime',
+  pytorch:     'PyTorch',
+  cpu:         'CPU (Rule-based)',
+  tgn:         'ToothGroupNetwork',
+  meshsegnet:  'MeshSegNet (IEEE TMI 2021)',
+};
+
+export const PROVIDER_LABELS: Record<SegmentationProvider, string> = {
+  AUTO:       'Auto (recommended)',
+  TGN:        'ToothGroupNetwork only',
+  MESHSEGNET: 'MeshSegNet only',
+  MANUAL:     'Manual review (no AI)',
 };
 
 export const listSegmentationJobs = (caseId: string) =>
@@ -98,6 +130,7 @@ export const submitSegmentationJob = (caseId: string, dto: {
   gpuRequested?: boolean;
   priority?: number;
   onnxModelPath?: string;
+  provider?: SegmentationProvider;
 }) => api.post<SegmentationJob>(`/api/cases/${caseId}/segmentation/jobs`, dto);
 
 export const getSegmentationJob = (caseId: string, jobId: string) =>

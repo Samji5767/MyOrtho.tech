@@ -59,6 +59,24 @@ export class ClinicalReportsController {
     return this.svc.generateInsurancePreauth(caseId, orgId, id, body);
   }
 
+  @Post('patient-report')
+  generatePatientReport(@Req() req: Request, @Param('caseId') caseId: string) {
+    const { id, orgId } = getUser(req);
+    return this.svc.generatePatientReport(caseId, orgId, id);
+  }
+
+  @Post('referring-dentist')
+  generateReferringDentist(@Req() req: Request, @Param('caseId') caseId: string) {
+    const { id, orgId } = getUser(req);
+    return this.svc.generateReferringDentistReport(caseId, orgId, id);
+  }
+
+  @Post('laboratory')
+  generateLaboratoryReport(@Req() req: Request, @Param('caseId') caseId: string) {
+    const { id, orgId } = getUser(req);
+    return this.svc.generateLaboratoryReport(caseId, orgId, id);
+  }
+
   @Get(':reportId/download')
   async downloadReport(
     @Req() req: Request,

@@ -288,7 +288,7 @@ export default function AnalyticsPage() {
             <BarChart3 className="h-5 w-5 text-[color:var(--primary)]" />
           </div>
           <div>
-            <h1 className="text-xl font-semibold text-[color:var(--foreground)]">Analytics</h1>
+            <h1 className="text-2xl font-semibold text-[color:var(--foreground)]">Analytics</h1>
             <p className="text-xs text-[color:var(--muted-foreground)]">Practice performance overview</p>
           </div>
         </div>

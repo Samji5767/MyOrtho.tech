@@ -86,7 +86,17 @@ export class CasesService {
 
   // ─── List cases by org (joined with patient name) ─────────────────────────
 
-  async findAllByOrg(orgId: string, limit = 100, offset = 0) {
+  async findAllByOrg(orgId: string, limit = 100, offset = 0, patientId?: string) {
+    const params: (string | number)[] = [orgId];
+    let patientFilter = '';
+    if (patientId) {
+      params.push(patientId);
+      patientFilter = `AND c.patient_id = $${params.length}`;
+    }
+    params.push(limit, offset);
+    const limitIdx = params.length - 1;
+    const offsetIdx = params.length;
+
     const { rows } = await this.pool.query(
       `SELECT
          c.id, c.status, c.notes, c.chief_complaint, c.malocclusion_class,
@@ -97,10 +107,10 @@ export class CasesService {
        FROM cases c
        JOIN patients p ON p.id = c.patient_id
        LEFT JOIN auth_users au ON au.id = c.assigned_to
-       WHERE p.organization_id = $1
+       WHERE p.organization_id = $1 ${patientFilter}
        ORDER BY c.updated_at DESC
-       LIMIT $2 OFFSET $3`,
-      [orgId, limit, offset],
+       LIMIT $${limitIdx} OFFSET $${offsetIdx}`,
+      params,
     );
     return rows.map(this.formatCase);
   }
@@ -158,11 +168,11 @@ export class CasesService {
       ...this.formatCase(row),
       patient: {
         id: row.patient_id,
-        firstName: row.first_name,
-        lastName: row.last_name,
+        firstName: this.cryptoService.decrypt(row.first_name as string | null),
+        lastName:  this.cryptoService.decrypt(row.last_name  as string | null),
         dateOfBirth: row.date_of_birth,
-        gender: row.gender,
-        clinicalNotes: row.patient_notes,
+        gender:      this.cryptoService.decrypt(row.gender as string | null),
+        clinicalNotes: this.cryptoService.decrypt(row.patient_notes as string | null),
       },
       linkedResources: {
         latestScanId: (linked.latest_scan_id as string | null) ?? null,
@@ -269,14 +279,14 @@ export class CasesService {
 
       const { rows: patRows } = await client.query<{ id: string }>(
         `INSERT INTO patients
-           (organization_id, first_name, last_name, dob, gender, clinical_notes, created_by)
+           (organization_id, first_name, last_name, dob_encrypted, gender, clinical_notes, created_by)
          VALUES ($1, $2, $3, $4, $5, $6, $7)
          RETURNING id`,
         [
           orgId,
           this.cryptoService.encrypt(dto.patient.firstName),
           this.cryptoService.encrypt(dto.patient.lastName),
-          dto.patient.dateOfBirth ?? null,
+          this.cryptoService.encrypt(dto.patient.dateOfBirth ?? null),
           this.cryptoService.encrypt(dto.patient.gender ?? null),
           this.cryptoService.encrypt(dto.patient.clinicalNotes ?? null),
           actorId,
@@ -468,8 +478,8 @@ export class CasesService {
     toStatus: CaseStatus,
   ): Promise<void> {
     const { rows } = await this.pool.query<{ created_by: string | null }>(
-      'SELECT created_by FROM cases WHERE id = $1',
-      [caseId],
+      'SELECT created_by FROM cases WHERE id = $1 AND organization_id = $2',
+      [caseId, orgId],
     );
     const userId = rows[0]?.created_by;
     if (!userId) return;
@@ -488,7 +498,9 @@ export class CasesService {
 
   // ─── Helpers ──────────────────────────────────────────────────────────────
 
-  private formatCase(row: Record<string, unknown>) {
+  private formatCase = (row: Record<string, unknown>) => {
+    const firstName = this.cryptoService.decrypt(row['first_name'] as string | null);
+    const lastName  = this.cryptoService.decrypt(row['last_name']  as string | null);
     return {
       id: row['id'],
       status: row['status'],
@@ -499,12 +511,12 @@ export class CasesService {
       updatedAt: row['updated_at'],
       patient: {
         id: row['patient_id'],
-        firstName: row['first_name'],
-        lastName: row['last_name'],
+        firstName,
+        lastName,
       },
       assignedTo: row['assigned_to_id']
         ? { id: row['assigned_to_id'], name: row['assigned_to_name'], email: row['assigned_to_email'] }
         : null,
     };
-  }
+  };
 }

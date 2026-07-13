@@ -128,14 +128,16 @@ function TreatmentPlanPageContent() {
   const caseId = searchParams?.get("caseId") ?? null;
   const [selectedCase, setSelectedCase] = useState<CaseListItem | null>(null);
 
-  // If caseId is in URL, load the case
+  // Load the case list only when a caseId URL param is present AND we don't already have
+  // the selected case (e.g. user navigated here from Cases list via handleSelect).
+  // This avoids a redundant fetchCases() call when CaseSelector has already loaded the list.
   useEffect(() => {
-    if (!caseId) return;
+    if (!caseId || selectedCase?.id === caseId) return;
     fetchCases().then(({ cases }) => {
       const found = cases.find((c) => c.id === caseId);
       if (found) setSelectedCase(found);
-    });
-  }, [caseId]);
+    }).catch(() => { /* non-fatal — case selector still shows below */ });
+  }, [caseId, selectedCase?.id]);
 
   function handleSelect(c: CaseListItem) {
     setSelectedCase(c);

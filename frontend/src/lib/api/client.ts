@@ -44,6 +44,13 @@ async function request<T>(
   clearTimeout(timer);
 
   if (!res.ok) {
+    // Redirect to login on auth failures (browser context only)
+    if ((res.status === 401 || res.status === 403) && typeof window !== 'undefined') {
+      const current = window.location.pathname + window.location.search;
+      if (!window.location.pathname.startsWith('/login')) {
+        window.location.href = `/login?next=${encodeURIComponent(current)}`;
+      }
+    }
     let msg = `HTTP ${res.status}`;
     try {
       const body = (await res.json()) as { message?: string };

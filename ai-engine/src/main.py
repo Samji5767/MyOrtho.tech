@@ -27,10 +27,19 @@ from pydantic import BaseModel
 
 from src.aligner_generator import AlignerGenerationEngine
 from src.auth import get_trace_id, require_auth, require_upload_size
+from src.benchmarking import BenchmarkEngine
 from src.landmark_detector import DentalLandmarkDetector
+from src.meshsegnet_segmentation import MeshSegNetEngine, MeshSegNetUnavailableError
 from src.mesh_processing import MeshProcessor
+from src.metrics import get_metrics
+from src.providers.manual_provider import ManualReviewProvider
+from src.providers.meshsegnet_provider import MeshSegNetProvider
+from src.providers.registry import ProviderRegistry
+from src.providers.tgn_provider import TGNProvider
 from src.root_predictor import RootPredictorEngine
+from src.routing import SegmentationRouter
 from src.segmentation import INFERENCE_TIMEOUT_SEC, OrthoSegmentationEngine
+from src.tgn_segmentation import TGNSegmentationEngine, TGNUnavailableError
 
 # ── Application ───────────────────────────────────────────────────────────────
 
@@ -86,6 +95,48 @@ mesh_processor = MeshProcessor()
 landmark_detector = DentalLandmarkDetector()
 root_predictor = RootPredictorEngine()
 aligner_generator = AlignerGenerationEngine()
+
+# ── Engine initialization ─────────────────────────────────────────────────────
+
+# TGN microservice engine
+_TGN_ENABLED = os.getenv("TGN_ENABLED", "false").lower() in ("1", "true", "yes")
+_tgn_engine: Optional[TGNSegmentationEngine] = None
+if _TGN_ENABLED:
+    try:
+        _tgn_engine = TGNSegmentationEngine()
+        logger.info(
+            "TGN segmentation engine proxy initialised (TGN_API_URL=%s)",
+            os.getenv("TGN_API_URL"),
+        )
+    except TGNUnavailableError:
+        logger.info("TGN_API_URL not set; TGN provider will report as unavailable")
+else:
+    logger.info("TGN_ENABLED is not true; TGN provider disabled")
+
+# MeshSegNet microservice engine
+_MESHSEGNET_ENABLED = os.getenv("MESHSEGNET_ENABLED", "false").lower() in ("1", "true", "yes")
+_meshsegnet_engine: Optional[MeshSegNetEngine] = None
+if _MESHSEGNET_ENABLED:
+    try:
+        _meshsegnet_engine = MeshSegNetEngine()
+        logger.info(
+            "MeshSegNet engine proxy initialised (MESHSEGNET_API_URL=%s)",
+            os.getenv("MESHSEGNET_API_URL"),
+        )
+    except MeshSegNetUnavailableError:
+        logger.info("MESHSEGNET_API_URL not set; MeshSegNet provider will report as unavailable")
+else:
+    logger.info("MESHSEGNET_ENABLED is not true; MeshSegNet provider disabled")
+
+# ── Provider registry + router ────────────────────────────────────────────────
+
+_provider_registry = ProviderRegistry()
+_provider_registry.register(TGNProvider(engine=_tgn_engine))
+_provider_registry.register(MeshSegNetProvider(engine=_meshsegnet_engine))
+_provider_registry.register(ManualReviewProvider())
+
+_seg_router = SegmentationRouter(_provider_registry)
+_benchmark_engine: Optional[BenchmarkEngine] = None  # initialized after Redis in startup
 
 # Thread pool for blocking inference calls (keeps the async event loop free)
 _executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="seg-worker")
@@ -163,9 +214,10 @@ async def attach_trace_and_version(request: Request, call_next):
 
 @app.on_event("startup")
 async def startup():
-    global _redis_client, _UPLOADS_DIR
+    global _redis_client, _UPLOADS_DIR, _benchmark_engine
     _redis_client = _init_redis()
     _UPLOADS_DIR = _get_uploads_dir()
+    _benchmark_engine = BenchmarkEngine(_provider_registry, _redis_client)
     if _UPLOADS_DIR:
         logger.info(f"File path sandboxing enabled: uploads must be within {_UPLOADS_DIR}")
     else:
@@ -182,6 +234,7 @@ class SegmentationRequest(BaseModel):
     scan_id: str
     file_path: str
     jaw_type: str  # "maxillary" | "mandibular" | "combined" | "auto"
+    provider: Optional[str] = None  # "TGN" | "MESHSEGNET" | "AUTO" | "MANUAL" | None=env default
 
 
 class HollowRequest(BaseModel):
@@ -249,42 +302,66 @@ async def run_segmentation_task(job_id: str, req: SegmentationRequest) -> None:
     existing["started_at"] = datetime.now(timezone.utc).isoformat()
     _job_set(job_id, existing)
     logger.info(
-        f"Running segmentation — case={req.case_id} scan={req.scan_id} job={job_id}"
+        "Running segmentation — case=%s scan=%s job=%s provider_override=%s",
+        req.case_id, req.scan_id, job_id, req.provider,
     )
 
+    _metrics = get_metrics()
     loop = asyncio.get_event_loop()
+    t0 = asyncio.get_event_loop().time()
+
     try:
-        results = await asyncio.wait_for(
+        seg_result = await asyncio.wait_for(
             loop.run_in_executor(
                 _executor,
-                lambda: segmentation_engine.segment_mesh(req.file_path, req.jaw_type),
+                lambda: _seg_router.route(req.file_path, req.jaw_type, req.provider),
             ),
             timeout=float(INFERENCE_TIMEOUT_SEC),
         )
+
+        elapsed_ms = int((asyncio.get_event_loop().time() - t0) * 1000)
+        _metrics.record_success(
+            seg_result.engine_name,
+            elapsed_ms,
+            seg_result.requires_manual_review,
+        )
+        if not seg_result.fdi_valid:
+            _metrics.record_validation_failure(seg_result.engine_name)
+
+        warnings_list = seg_result.warnings or []
+
         _job_set(
             job_id,
             {
                 "status": "completed",
                 "case_id": req.case_id,
                 "scan_id": req.scan_id,
-                "teeth_detected": len(results.get("tooth_ids", [])),
-                "tooth_ids": results.get("tooth_ids", []),
-                "missing_teeth": results.get("missing_teeth", []),
-                "teeth_confidence": results.get("confidence_scores", {}),
-                "confidence_maps": results.get("confidence_maps", {}),
-                "weights_loaded": results.get("weights_loaded", False),
-                "warning": results.get("warning"),
-                "segmented_mesh_path": results.get("segmented_mesh_path"),
-                "timing": results.get("timing", {}),
+                "engine": seg_result.engine_name,
+                "engine_version": seg_result.engine_version,
+                "teeth_detected": len(seg_result.tooth_ids),
+                "tooth_ids": seg_result.tooth_ids,
+                "missing_teeth": seg_result.missing_teeth,
+                "teeth_confidence": seg_result.confidence_scores,
+                "confidence_maps": seg_result.confidence_maps,
+                "weights_loaded": seg_result.weights_loaded,
+                "fdi_valid": seg_result.fdi_valid,
+                "requires_manual_review": seg_result.requires_manual_review,
+                "deciduous_detected": seg_result.deciduous_detected,
+                "warning": "; ".join(warnings_list) if warnings_list else None,
+                "segmented_mesh_path": seg_result.segmented_mesh_path,
+                "timing_ms": seg_result.timing_ms,
                 "completed_at": datetime.now(timezone.utc).isoformat(),
-                "disclaimer": (
-                    "Segmentation is a workflow tool only. "
-                    "Not clinically validated. Requires review by a licensed clinician."
-                ),
+                "research_use": True,
+                "disclaimer": seg_result.disclaimer,
             },
         )
-        logger.info(f"Segmentation completed — job={job_id}")
+        logger.info(
+            "Segmentation completed — job=%s engine=%s teeth=%d",
+            job_id, seg_result.engine_name, len(seg_result.tooth_ids),
+        )
     except asyncio.TimeoutError:
+        elapsed_ms = int((asyncio.get_event_loop().time() - t0) * 1000)
+        _metrics.record_failure("UNKNOWN", elapsed_ms)
         _job_set(
             job_id,
             {
@@ -295,8 +372,10 @@ async def run_segmentation_task(job_id: str, req: SegmentationRequest) -> None:
                 "completed_at": datetime.now(timezone.utc).isoformat(),
             },
         )
-        logger.error(f"Segmentation job {job_id} timed out after {INFERENCE_TIMEOUT_SEC}s")
+        logger.error("Segmentation job %s timed out after %ss", job_id, INFERENCE_TIMEOUT_SEC)
     except Exception as exc:
+        elapsed_ms = int((asyncio.get_event_loop().time() - t0) * 1000)
+        _metrics.record_failure("UNKNOWN", elapsed_ms)
         _job_set(
             job_id,
             {
@@ -307,7 +386,7 @@ async def run_segmentation_task(job_id: str, req: SegmentationRequest) -> None:
                 "completed_at": datetime.now(timezone.utc).isoformat(),
             },
         )
-        logger.error(f"Segmentation job {job_id} failed: {exc}")
+        logger.error("Segmentation job %s failed: %s", job_id, exc)
 
 
 # ── Unauthenticated health probes ─────────────────────────────────────────────
@@ -320,15 +399,91 @@ async def health():
 
 @app.get("/ready")
 async def ready():
-    """Readiness probe — reports active compute backend."""
+    """Readiness probe — reports all active segmentation providers."""
     cuda = torch.cuda.is_available()
+    health_report = _provider_registry.health_report()
+    any_ai_ready = any(
+        v.get("healthy") and v.get("ready")
+        for k, v in health_report.items()
+        if k != "MANUAL"
+    )
     return {
         "ready": True,
         "device": "cuda" if cuda else "cpu",
         "gpu_acceleration": cuda,
-        "models_loaded": True,
-        "segmentation_weights_loaded": segmentation_engine.weights_loaded,
+        "segmentation_provider": os.getenv("SEGMENTATION_PROVIDER", "AUTO"),
+        "segmentation_primary": os.getenv("SEGMENTATION_PRIMARY", "TGN"),
+        "providers": health_report,
+        "any_ai_provider_ready": any_ai_ready,
+        "monai_weights_loaded": segmentation_engine.weights_loaded,
     }
+
+
+@app.get(
+    "/ai/engines",
+    dependencies=[Depends(require_auth)],
+)
+async def list_engines():
+    """List all registered segmentation providers and their health status."""
+    return {
+        "providers": _provider_registry.health_report(),
+        "route_plan": _seg_router.describe_route_plan(),
+        "active_provider": os.getenv("SEGMENTATION_PROVIDER", "AUTO"),
+        "primary_engine": os.getenv("SEGMENTATION_PRIMARY", "TGN"),
+        "research_use": True,
+        "disclaimer": (
+            "AI-assisted segmentation. Manual clinical review required. "
+            "Final treatment decisions remain the responsibility of the licensed orthodontist."
+        ),
+    }
+
+
+@app.post(
+    "/ai/engines/benchmark",
+    dependencies=[Depends(require_auth)],
+)
+async def run_benchmark(req: SegmentationRequest):
+    """
+    Run all available AI providers on the same scan and return a comparison.
+    Research use only — never use benchmark results for clinical decisions.
+    """
+    safe_path = _assert_safe_path(req.file_path)
+    if _benchmark_engine is None:
+        raise HTTPException(status_code=503, detail="Benchmark engine not yet initialised")
+
+    loop = asyncio.get_event_loop()
+    bench_id = await loop.run_in_executor(
+        _executor,
+        lambda: _benchmark_engine.start(safe_path, req.jaw_type),
+    )
+    result = _benchmark_engine.get_result(bench_id)
+    return {
+        "bench_id": bench_id,
+        **(result or {}),
+        "research_use": True,
+        "disclaimer": (
+            "Research-use benchmark only. "
+            "AI-assisted segmentation. Manual clinical review required."
+        ),
+    }
+
+
+from fastapi.responses import PlainTextResponse
+
+
+@app.get("/metrics", response_class=PlainTextResponse)
+async def prometheus_metrics():
+    """Prometheus-format per-engine segmentation counters."""
+    return get_metrics().get_prometheus_text()
+
+
+@app.get(
+    "/metrics/json",
+    dependencies=[Depends(require_auth)],
+)
+async def json_metrics():
+    """JSON-format per-engine segmentation counters."""
+    return get_metrics().get_json_metrics()
 
 
 # ── Authenticated endpoints ───────────────────────────────────────────────────

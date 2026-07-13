@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState, Suspense } from "react";
 import Link from "next/link";
 import { useSearchParams, useRouter } from "next/navigation";
 import {
+  AlertCircle,
   AlertTriangle,
   ArrowRight,
   CheckCircle2,
@@ -148,13 +149,19 @@ function CaseSelector({
 }) {
   const [cases, setCases] = useState<CaseListItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
 
-  useEffect(() => {
+  const loadCases = useCallback(() => {
+    setLoading(true);
+    setLoadError(null);
     fetchCases()
       .then(({ cases: data }) => setCases(data))
+      .catch((e: unknown) => setLoadError(e instanceof Error ? e.message : "Failed to load cases"))
       .finally(() => setLoading(false));
   }, []);
+
+  useEffect(() => { loadCases(); }, [loadCases]);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -200,13 +207,21 @@ function CaseSelector({
         )}
       </div>
 
-      {loading ? (
+      {loadError && (
+        <div className="flex items-center gap-2 rounded-xl border border-rose-200/60 bg-rose-50/60 px-4 py-3 text-sm text-rose-700 dark:border-rose-500/20 dark:bg-rose-500/10 dark:text-rose-300">
+          <AlertCircle size={14} className="shrink-0" />
+          <span className="flex-1">{loadError}</span>
+          <button type="button" onClick={loadCases} className="shrink-0 font-semibold hover:underline">Retry</button>
+        </div>
+      )}
+
+      {!loadError && loading ? (
         <div className="space-y-2">
           {[1, 2, 3].map((i) => (
             <SkeletonBlock key={i} className="h-16 w-full" />
           ))}
         </div>
-      ) : filtered.length === 0 ? (
+      ) : !loadError && filtered.length === 0 ? (
         <EmptyState
           icon={Package}
           title="No cases found"
@@ -216,7 +231,7 @@ function CaseSelector({
               : "Create a case first to access export options."
           }
         />
-      ) : (
+      ) : !loadError ? (
         <div className="divide-y divide-border rounded-xl border border-border bg-card overflow-hidden">
           {filtered.map((c) => {
             const name = `${c.patient.firstName} ${c.patient.lastName}`;
@@ -256,7 +271,7 @@ function CaseSelector({
             );
           })}
         </div>
-      )}
+      ) : null}
     </div>
   );
 }

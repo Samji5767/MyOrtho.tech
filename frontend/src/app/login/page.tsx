@@ -103,7 +103,7 @@ export default function LoginPage() {
               htmlFor="email"
               className="text-xs font-semibold text-[color:var(--foreground)]"
             >
-              Email address
+              Email address <span className="text-rose-500">*</span>
             </label>
             <div className="relative">
               <Mail
@@ -130,7 +130,7 @@ export default function LoginPage() {
               htmlFor="password"
               className="text-xs font-semibold text-[color:var(--foreground)]"
             >
-              Password
+              Password <span className="text-rose-500">*</span>
             </label>
             <div className="relative">
               <Lock

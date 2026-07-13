@@ -83,7 +83,7 @@ export default function PlatformHealthPage() {
       </div>
 
       <div className="border border-[color:var(--border)] rounded-xl bg-[color:var(--card)] p-5 sm:p-6">
-        <PlatformHealthPanel token="" />
+        <PlatformHealthPanel />
       </div>
     </section>
   );

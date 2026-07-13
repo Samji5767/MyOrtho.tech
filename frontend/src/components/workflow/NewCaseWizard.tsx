@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import { Check, ChevronLeft, ChevronRight, Loader2, AlertCircle, Search, UserPlus, Upload, X } from "lucide-react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Button, Card, StatusBadge } from "@/components/DesignSystem";
 import { fetchPatients, type PatientListItem } from "@/lib/api/patients";
 import { createCase, createCaseWithNewPatient } from "@/lib/api/cases";
@@ -250,6 +250,8 @@ function ScanFileRow({
 
 export default function NewCaseWizard() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const preselectedPatientId = searchParams?.get("patientId") ?? null;
   const { toast } = useToast();
   const [step, setStep] = useState(0);
   const [submitting, setSubmitting] = useState(false);
@@ -281,14 +283,20 @@ export default function NewCaseWizard() {
   const [upperFile, setUpperFile] = useState<File | null>(null);
   const [lowerFile, setLowerFile] = useState<File | null>(null);
 
-  // Load patients once
+  // Load patients once; auto-select when ?patientId= is in the URL
   useEffect(() => {
     setPatientsLoading(true);
     fetchPatients()
-      .then(({ patients }) => setPatients(patients))
+      .then(({ patients }) => {
+        setPatients(patients);
+        if (preselectedPatientId) {
+          const match = patients.find((p) => p.id === preselectedPatientId);
+          if (match) setSelectedPatient(match);
+        }
+      })
       .catch(() => setPatients([]))
       .finally(() => setPatientsLoading(false));
-  }, []);
+  }, [preselectedPatientId]);
 
   const filteredPatients = patients.filter((p) => {
     const q = search.toLowerCase();

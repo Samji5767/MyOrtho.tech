@@ -4,10 +4,14 @@ import { AuthService, SessionPayload } from './auth.service';
 
 const SECRET = 'testsecret-32-chars-min-for-tests!!';
 
-function makeService(): AuthService {
+function makeService(poolOverride?: object): AuthService {
   process.env.JWT_SECRET = SECRET;
-  // Pass null for redis (no Redis in unit tests)
-  return new (AuthService as any)(null);
+  // Default mock pool: user is active; individual tests can override.
+  const mockPool = poolOverride ?? {
+    query: jest.fn().mockResolvedValue({ rows: [{ is_active: true }] }),
+  };
+  // AuthService constructor: (pool, redis). Pass null for redis — no Redis in unit tests.
+  return new (AuthService as any)(mockPool, null);
 }
 
 describe('AuthService', () => {
@@ -53,6 +57,24 @@ describe('AuthService', () => {
     it('throws UnauthorizedException for a token signed with a different secret', async () => {
       const wrongToken = jwt.sign(payload, 'totally-different-secret-!!!!!!!!!!!');
       await expect(service.verifyToken(wrongToken)).rejects.toThrow(UnauthorizedException);
+    });
+
+    it('throws UnauthorizedException when the account is deactivated', async () => {
+      const inactivePool = {
+        query: jest.fn().mockResolvedValue({ rows: [{ is_active: false }] }),
+      };
+      const svc = makeService(inactivePool);
+      const token = svc.signToken(payload);
+      await expect(svc.verifyToken(token)).rejects.toThrow(UnauthorizedException);
+    });
+
+    it('throws UnauthorizedException when the user row is missing from the DB', async () => {
+      const missingPool = {
+        query: jest.fn().mockResolvedValue({ rows: [] }),
+      };
+      const svc = makeService(missingPool);
+      const token = svc.signToken(payload);
+      await expect(svc.verifyToken(token)).rejects.toThrow(UnauthorizedException);
     });
   });
 

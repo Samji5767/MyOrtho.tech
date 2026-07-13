@@ -11,10 +11,3 @@ export const config = {
   isProd: process.env.NODE_ENV === 'production',
 } as const;
 
-// Warn in dev if API URL is not set
-if (typeof window !== 'undefined' && !config.apiUrl) {
-  console.warn(
-    '[MyOrtho] NEXT_PUBLIC_API_URL is not set. ' +
-    'API calls will use relative URLs (works if frontend is served from the backend origin).',
-  );
-}

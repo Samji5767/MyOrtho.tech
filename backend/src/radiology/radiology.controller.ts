@@ -1,6 +1,8 @@
 import { Controller, Get, Post, Delete, Body, Param, Query, UseGuards, Req, UnauthorizedException } from '@nestjs/common';
 import type { Request } from 'express';
 import { AuthGuard } from '../auth/auth.guard';
+import { PermissionsGuard } from '../auth/permissions.guard';
+import { RequirePermission } from '../auth/require-permission.decorator';
 import { RadiologyService } from './radiology.service';
 
 interface AuthUser { id: string; orgId: string | null }
@@ -11,7 +13,8 @@ function getUser(req: Request): { id: string; orgId: string } {
 }
 
 @Controller('api/radiology')
-@UseGuards(AuthGuard)
+@UseGuards(AuthGuard, PermissionsGuard)
+@RequirePermission('cases:read')
 export class RadiologyController {
   constructor(private readonly svc: RadiologyService) {}
 

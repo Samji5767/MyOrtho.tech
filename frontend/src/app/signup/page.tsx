@@ -99,7 +99,7 @@ export default function SignupPage() {
               htmlFor="fullName"
               className="text-xs font-semibold text-[color:var(--foreground)]"
             >
-              Your full name
+                Your full name <span className="text-rose-500">*</span>
             </label>
             <div className="relative">
               <User
@@ -126,7 +126,7 @@ export default function SignupPage() {
               htmlFor="clinicName"
               className="text-xs font-semibold text-[color:var(--foreground)]"
             >
-              Clinic / practice name
+              Clinic / practice name <span className="text-rose-500">*</span>
             </label>
             <div className="relative">
               <Building2
@@ -153,7 +153,7 @@ export default function SignupPage() {
               htmlFor="email"
               className="text-xs font-semibold text-[color:var(--foreground)]"
             >
-              Email address
+              Email address <span className="text-rose-500">*</span>
             </label>
             <div className="relative">
               <Mail
@@ -180,7 +180,7 @@ export default function SignupPage() {
               htmlFor="password"
               className="text-xs font-semibold text-[color:var(--foreground)]"
             >
-              Password
+              Password <span className="text-rose-500">*</span>
             </label>
             <div className="relative">
               <Lock

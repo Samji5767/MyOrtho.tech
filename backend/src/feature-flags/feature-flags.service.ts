@@ -93,9 +93,20 @@ export class FeatureFlagsService {
   }
 
   async evaluateFlags(orgId: string, flagKeys: string[]): Promise<Record<string, boolean>> {
+    if (flagKeys.length === 0) return {};
+    const { rows } = await this.db.query<{ flag_key: string; enabled: boolean; rollout_percentage: number }>(
+      `SELECT flag_key, enabled, rollout_percentage FROM feature_flags
+       WHERE flag_key = ANY($1::text[])
+         AND (array_length(allowed_org_ids, 1) IS NULL OR $2::uuid = ANY(allowed_org_ids))`,
+      [flagKeys, orgId],
+    );
     const result: Record<string, boolean> = {};
     for (const key of flagKeys) {
-      result[key] = await this.getFlag(orgId, key);
+      result[key] = false;
+    }
+    for (const row of rows) {
+      if (!row.enabled) continue;
+      result[row.flag_key] = row.rollout_percentage >= 100 || this.rolloutBucket(orgId, row.flag_key) < row.rollout_percentage;
     }
     return result;
   }

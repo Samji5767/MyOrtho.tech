@@ -1,0 +1,98 @@
+# docker-compose.tgn.yml — MyOrtho + ToothGroupNetwork integration overlay
+#
+# Usage:
+#   docker compose -f docker-compose.yml -f docker-compose.tgn.yml up
+#
+# What this adds:
+#   - tgn-api service (ToothGroupNetwork FastAPI microservice, internal port 8001)
+#   - TGN_API_URL injected into ai-engine so it routes segmentation to TGN
+#   - Shared volume between ai-engine and tgn-api for by-path access
+#
+# Feature flag:
+#   TGN_ENABLED defaults to "false". Set TGN_ENABLED=true in your .env ONLY
+#   after checkpoints are downloaded, checksums are set, and clinical validation
+#   is complete. The TGN service starts regardless, but /segment returns 503
+#   until TGN_ENABLED=true.
+#
+# Prerequisites:
+#   1. Build the TGN API image:
+#      docker compose -f tgn-service/api/Dockerfile build tgn-api
+#      OR: bash tgn-service/deploy.sh && docker compose -f /opt/toothgroupnetwork/docker-compose.yml build tgn-api
+#   2. Download checkpoints:
+#      bash tgn-service/scripts/download_checkpoints.sh
+#   3. Set in .env (all required):
+#      INTERNAL_API_SECRET=<random 32+ char string>
+#      TGNET_CKPTS_DIR=/opt/toothgroupnetwork/ckpts
+#      CHECKPOINT_SHA256_FPS=<from checksums.sha256>
+#      CHECKPOINT_SHA256_BDL=<from checksums.sha256>
+#      REQUIRE_CHECKSUM=true
+#   4. Set TGN_ENABLED=true only after clinical validation is complete
+
+services:
+
+  # ── TGN microservice ──────────────────────────────────────────────────────────
+  tgn-api:
+    image: toothgroupnetwork-tgn-api:latest     # built from tgn-service/
+    container_name: myortho-tgn-api
+    # Port 8001 is NOT exposed externally — only reachable from within Docker network.
+    # Remove this comment and add ports: if you need external access for debugging:
+    #   ports:
+    #     - "127.0.0.1:${TGN_API_PORT:-8001}:8001"  # loopback only
+    expose:
+      - "8001"
+    environment:
+      PYTHONUNBUFFERED: "1"
+      PYTHONPATH: "/app/ToothGroupNetwork:/app/ToothGroupNetwork/external_libs:/app"
+      WANDB_MODE: "disabled"
+      TGNET_FPS_CHECKPOINT: /ckpts/tgnet_fps.h5
+      TGNET_BDL_CHECKPOINT: /ckpts/tgnet_bdl.h5
+      REDIS_URL: "redis://redis:6379"
+      INTERNAL_API_SECRET: "${INTERNAL_API_SECRET:?INTERNAL_API_SECRET must be set}"
+      TGN_MODEL_NAME: "tgnet_fps"
+      TGN_MODEL_VERSION: "${TGN_MODEL_VERSION:-1.0.0}"
+      TGN_TIMEOUT_SEC: "${TGN_TIMEOUT_SEC:-300}"
+      TGN_UPLOAD_DIR: "/tmp/tgn_uploads"
+      TGN_ENABLED: "${TGN_ENABLED:-false}"
+      TGN_ALLOWED_PATH_DIRS: "/app/uploads:/tmp/tgn_uploads"
+      CHECKPOINT_SHA256_FPS: "${CHECKPOINT_SHA256_FPS:-}"
+      CHECKPOINT_SHA256_BDL: "${CHECKPOINT_SHA256_BDL:-}"
+      REQUIRE_CHECKSUM: "${REQUIRE_CHECKSUM:-false}"
+    volumes:
+      - "${TGNET_CKPTS_DIR:-/opt/toothgroupnetwork/ckpts}:/ckpts:ro"
+      - uploads_data:/app/uploads:ro          # shared with ai-engine for by-path access
+      - tgn_uploads:/tmp/tgn_uploads
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8001/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    deploy:
+      resources:
+        limits:
+          memory: "4g"
+          cpus: "2.0"
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "5"
+
+  # ── ai-engine: inject TGN routing ────────────────────────────────────────────
+  ai-engine:
+    environment:
+      TGN_API_URL: "http://tgn-api:8001"
+      INTERNAL_API_SECRET: "${INTERNAL_API_SECRET:?INTERNAL_API_SECRET must be set}"
+      TGN_POLL_INTERVAL: "2"
+      TGN_POLL_MAX_WAIT: "360"
+      TGN_ENABLED: "${TGN_ENABLED:-false}"
+    depends_on:
+      tgn-api:
+        condition: service_healthy
+
+volumes:
+  tgn_uploads:

@@ -39,3 +39,20 @@ coverage/
 
 # Redis
 dump.rdb
+
+# TGN model checkpoints — never commit binary model files
+ckpts/
+*.h5
+*.h5.tmp
+*.h5.download
+tgn-service/ckpts/
+
+# TGN runtime artifacts — generated during inference
+tgn_uploads/
+tgn-service/tgn_uploads/
+**/*.ply.tmp
+**/tgn_input/
+**/tgn_output/
+
+# Checkpoint sidecar files (contain real SHA-256 hashes — keep in .env not in VCS)
+checksums.sha256

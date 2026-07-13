@@ -1,0 +1,1 @@
+"""MeshSegNet segmentation microservice."""

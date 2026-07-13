@@ -1,8 +1,8 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ShieldAlert, Users, Mail, Clock, MoreVertical, Search, UserPlus } from "lucide-react";
+import { ArrowUpDown, ChevronDown, ChevronUp, ShieldAlert, Users, Mail, Clock, MoreVertical, Search, UserPlus } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { Button, SkeletonBlock } from "@/components/DesignSystem";
 import { roleLabel, roleTone } from "@/lib/auth";
@@ -62,6 +62,9 @@ function formatDate(iso: string | null): string {
 
 const ROLES = ['admin', 'orthodontist', 'dentist', 'lab_manager', 'lab_technician', 'resident', 'executive'];
 
+type SortCol = "name" | "role" | "lastLogin";
+type SortDir = "asc" | "desc";
+
 // ─── InviteUserModal ──────────────────────────────────────────────────────────
 
 function InviteUserModal({ onClose, onSuccess }: { onClose: () => void; onSuccess: () => void }) {
@@ -77,7 +80,14 @@ function InviteUserModal({ onClose, onSuccess }: { onClose: () => void; onSucces
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    if (!email.trim()) return;
+    if (!email.trim()) {
+      setError('Email address is required.');
+      return;
+    }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
+      setError('Please enter a valid email address.');
+      return;
+    }
     setSaving(true);
     setError(null);
     try {
@@ -122,7 +132,7 @@ function InviteUserModal({ onClose, onSuccess }: { onClose: () => void; onSucces
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
             <label className="block text-xs font-semibold text-[color:var(--muted-foreground)] mb-1.5">
-              Email address
+              Email address <span className="text-rose-500">*</span>
             </label>
             <input
               ref={firstInputRef}
@@ -267,23 +277,29 @@ function RoleChangeModal({
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function AdminUsersPage() {
-  const { user } = useAuth();
+  const { user, status } = useAuth();
   const router = useRouter();
   const [members, setMembers] = useState<OrgMember[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
+  const [roleFilter, setRoleFilter] = useState<string>("all");
+  const [sortCol, setSortCol] = useState<SortCol>("name");
+  const [sortDir, setSortDir] = useState<SortDir>("asc");
   const [showInvite, setShowInvite] = useState(false);
   const [roleTarget, setRoleTarget] = useState<OrgMember | null>(null);
   const [tick, setTick] = useState(0);
+  const [successMsg, setSuccessMsg] = useState<string | null>(null);
 
   const isAdmin = user?.role === "admin" || user?.role === "super_admin";
 
   const reload = () => setTick(t => t + 1);
 
   useEffect(() => {
-    if (user && !isAdmin) router.replace("/admin");
-  }, [user, isAdmin, router]);
+    if (status === "loading") return;
+    if (!user) router.replace("/login");
+    else if (!isAdmin) router.replace("/admin");
+  }, [user, isAdmin, status, router]);
 
   useEffect(() => {
     if (!isAdmin) return;
@@ -300,22 +316,53 @@ export default function AdminUsersPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isAdmin, tick]);
 
-  const filtered = members.filter(m =>
-    search === "" ||
-    m.name.toLowerCase().includes(search.toLowerCase()) ||
-    m.email.toLowerCase().includes(search.toLowerCase()) ||
-    m.role.toLowerCase().includes(search.toLowerCase())
+  const toggleSort = (col: SortCol) => {
+    if (sortCol === col) setSortDir(d => d === "asc" ? "desc" : "asc");
+    else { setSortCol(col); setSortDir("asc"); }
+  };
+
+  const presentRoles = useMemo(
+    () => Array.from(new Set(members.map(m => m.role))).sort(),
+    [members],
   );
 
-  if (!user) return null;
-  if (!isAdmin) return null;
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    let list = members.filter(m =>
+      (roleFilter === "all" || m.role === roleFilter) &&
+      (q === "" ||
+        m.name.toLowerCase().includes(q) ||
+        m.email.toLowerCase().includes(q) ||
+        m.role.toLowerCase().includes(q))
+    );
+    list = [...list].sort((a, b) => {
+      let cmp = 0;
+      if (sortCol === "name")      cmp = a.name.localeCompare(b.name);
+      else if (sortCol === "role") cmp = a.role.localeCompare(b.role);
+      else { // lastLogin
+        const at = a.lastLogin ? new Date(a.lastLogin).getTime() : 0;
+        const bt = b.lastLogin ? new Date(b.lastLogin).getTime() : 0;
+        cmp = at - bt;
+      }
+      return sortDir === "asc" ? cmp : -cmp;
+    });
+    return list;
+  }, [members, search, roleFilter, sortCol, sortDir]);
+
+  if (status === "loading" || !user || !isAdmin) return null;
 
   return (
     <div className="mx-auto max-w-5xl px-4 py-8 sm:px-6">
+      {successMsg && (
+        <div className="mb-4 flex items-center gap-2 rounded-xl border border-emerald-200/60 bg-emerald-50/80 px-4 py-3 text-sm font-medium text-emerald-700 dark:border-emerald-500/20 dark:bg-emerald-500/10 dark:text-emerald-400">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="shrink-0" aria-hidden><polyline points="20 6 9 17 4 12" /></svg>
+          {successMsg}
+        </div>
+      )}
       {/* Header */}
       <div className="mb-6 flex items-start justify-between gap-4">
         <div>
-          <h1 className="text-xl font-bold text-[color:var(--foreground)]">Users &amp; Roles</h1>
+          <h1 className="text-2xl font-bold text-[color:var(--foreground)]">Users &amp; Roles</h1>
           <p className="mt-1 text-sm text-[color:var(--muted-foreground)]">
             Manage organization members and their access levels.
           </p>
@@ -360,13 +407,73 @@ export default function AdminUsersPage() {
         />
       </div>
 
+      {/* Role filter chips */}
+      {presentRoles.length > 0 && (
+        <div className="mb-3 flex flex-wrap gap-1.5">
+          <button
+            type="button"
+            onClick={() => setRoleFilter("all")}
+            className={[
+              "rounded-full px-3 py-1 text-xs font-semibold transition-all",
+              roleFilter === "all"
+                ? "bg-[color:var(--primary)] text-[color:var(--primary-foreground)]"
+                : "border border-[color:var(--border)] text-[color:var(--muted-foreground)] hover:text-[color:var(--foreground)]",
+            ].join(" ")}
+          >
+            All roles
+          </button>
+          {presentRoles.map(r => (
+            <button
+              key={r}
+              type="button"
+              onClick={() => setRoleFilter(r)}
+              className={[
+                "rounded-full px-3 py-1 text-xs font-semibold transition-all",
+                roleFilter === r
+                  ? "bg-[color:var(--primary)] text-[color:var(--primary-foreground)]"
+                  : "border border-[color:var(--border)] text-[color:var(--muted-foreground)] hover:text-[color:var(--foreground)]",
+              ].join(" ")}
+            >
+              {r.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase())}
+            </button>
+          ))}
+        </div>
+      )}
+
       {/* Table */}
       <div className="overflow-hidden rounded-xl border border-[color:var(--border)] bg-[color:var(--card)]">
         {/* Column headers */}
         <div className="grid grid-cols-[1fr_auto_auto_auto] gap-4 border-b border-[color:var(--border)] px-5 py-3 text-xs font-semibold uppercase tracking-wide text-[color:var(--muted-foreground)]">
-          <span>Member</span>
-          <span className="hidden sm:block">Role</span>
-          <span className="hidden md:block">Last login</span>
+          <button
+            type="button"
+            onClick={() => toggleSort("name")}
+            className="flex items-center gap-1 text-left hover:text-[color:var(--foreground)]"
+          >
+            Member
+            {sortCol === "name"
+              ? (sortDir === "asc" ? <ChevronUp size={11} /> : <ChevronDown size={11} />)
+              : <ArrowUpDown size={10} className="opacity-40" />}
+          </button>
+          <button
+            type="button"
+            onClick={() => toggleSort("role")}
+            className="hidden items-center gap-1 text-left hover:text-[color:var(--foreground)] sm:flex"
+          >
+            Role
+            {sortCol === "role"
+              ? (sortDir === "asc" ? <ChevronUp size={11} /> : <ChevronDown size={11} />)
+              : <ArrowUpDown size={10} className="opacity-40" />}
+          </button>
+          <button
+            type="button"
+            onClick={() => toggleSort("lastLogin")}
+            className="hidden items-center gap-1 text-left hover:text-[color:var(--foreground)] md:flex"
+          >
+            Last login
+            {sortCol === "lastLogin"
+              ? (sortDir === "asc" ? <ChevronUp size={11} /> : <ChevronDown size={11} />)
+              : <ArrowUpDown size={10} className="opacity-40" />}
+          </button>
           <span />
         </div>
 
@@ -417,14 +524,17 @@ export default function AdminUsersPage() {
 
       <p className="mt-4 text-xs text-[color:var(--muted-foreground)]">
         {filtered.length} {filtered.length === 1 ? "member" : "members"}
-        {search && " matching search"} · Joined from{" "}
-        {members.length > 0 ? formatDate(members[members.length - 1]?.createdAt) : "—"}
+        {(search || roleFilter !== "all") && " matching filters"} · {members.length} total
       </p>
 
       {showInvite && (
         <InviteUserModal
           onClose={() => setShowInvite(false)}
-          onSuccess={reload}
+          onSuccess={() => {
+            reload();
+            setSuccessMsg("Invitation sent successfully.");
+            setTimeout(() => setSuccessMsg(null), 4000);
+          }}
         />
       )}
       {roleTarget && (

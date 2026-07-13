@@ -254,25 +254,58 @@ export class AlignerGenerationService {
 
     const genPlanId = planRes.rows[0]['id'] as string;
 
-    // Insert per-tooth per-stage allocation rows
-    for (const alloc of allocations) {
+    // Batch-insert all per-tooth per-stage allocation rows in one query
+    if (allocations.length > 0) {
+      const stageNums:      number[] = [];
+      const toothNumbers:   number[] = [];
+      const translationMms: number[] = [];
+      const rotationDegs:   number[] = [];
+      const torqueDegs:     number[] = [];
+      const tipDegs:        number[] = [];
+      const verticalMms:    number[] = [];
+      const archMms:        number[] = [];
+      const hasAttachments: boolean[] = [];
+      const hasIprs:        boolean[] = [];
+
+      for (const alloc of allocations) {
+        stageNums.push(alloc.stageNum);
+        toothNumbers.push(alloc.toothNumber);
+        translationMms.push(alloc.translationMm);
+        rotationDegs.push(alloc.rotationDeg);
+        torqueDegs.push(alloc.torqueDeg);
+        tipDegs.push(alloc.tipDeg);
+        verticalMms.push(alloc.verticalMm);
+        archMms.push(alloc.archMm);
+        hasAttachments.push(alloc.stageNum >= attachmentStart && alloc.stageNum <= attachmentEnd);
+        hasIprs.push(iprSchedule.some(
+          i => i.stageNum === alloc.stageNum && (i.fdiA === alloc.toothNumber || i.fdiB === alloc.toothNumber),
+        ));
+      }
+
       await this.db.query(
         `INSERT INTO aligner_stage_allocations
            (generation_plan_id, stage_num, tooth_number,
             translation_mm, rotation_deg, torque_deg, tip_deg,
             vertical_mm, arch_mm, has_attachment, has_ipr, is_passive, is_retention)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,false,false)
+         SELECT $1,
+                unnest($2::int[]), unnest($3::int[]),
+                unnest($4::float8[]), unnest($5::float8[]),
+                unnest($6::float8[]), unnest($7::float8[]),
+                unnest($8::float8[]), unnest($9::float8[]),
+                unnest($10::bool[]), unnest($11::bool[]),
+                false, false
          ON CONFLICT (generation_plan_id, stage_num, tooth_number) DO UPDATE SET
            translation_mm=EXCLUDED.translation_mm, rotation_deg=EXCLUDED.rotation_deg,
            torque_deg=EXCLUDED.torque_deg, tip_deg=EXCLUDED.tip_deg,
            vertical_mm=EXCLUDED.vertical_mm, arch_mm=EXCLUDED.arch_mm,
            has_attachment=EXCLUDED.has_attachment, has_ipr=EXCLUDED.has_ipr`,
         [
-          genPlanId, alloc.stageNum, alloc.toothNumber,
-          alloc.translationMm, alloc.rotationDeg, alloc.torqueDeg, alloc.tipDeg,
-          alloc.verticalMm, alloc.archMm,
-          alloc.stageNum >= attachmentStart && alloc.stageNum <= attachmentEnd,
-          iprSchedule.some(i => i.stageNum === alloc.stageNum && (i.fdiA === alloc.toothNumber || i.fdiB === alloc.toothNumber)),
+          genPlanId,
+          stageNums, toothNumbers,
+          translationMms, rotationDegs,
+          torqueDegs, tipDegs,
+          verticalMms, archMms,
+          hasAttachments, hasIprs,
         ],
       );
     }

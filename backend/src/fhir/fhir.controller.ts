@@ -1,6 +1,8 @@
 import { Controller, Get, Post, Param, Query, UseGuards, Req, UnauthorizedException } from '@nestjs/common';
 import type { Request } from 'express';
 import { AuthGuard } from '../auth/auth.guard';
+import { PermissionsGuard } from '../auth/permissions.guard';
+import { RequirePermission } from '../auth/require-permission.decorator';
 import { FhirService } from './fhir.service';
 
 interface AuthUser { id: string; orgId: string | null }
@@ -11,7 +13,8 @@ function getUser(req: Request): { id: string; orgId: string } {
 }
 
 @Controller('api/fhir')
-@UseGuards(AuthGuard)
+@UseGuards(AuthGuard, PermissionsGuard)
+@RequirePermission('patients:read')
 export class FhirController {
   constructor(private readonly svc: FhirService) {}
 

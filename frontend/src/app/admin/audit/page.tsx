@@ -1,8 +1,8 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useMemo, useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
-import { AlertTriangle, RefreshCw, Shield } from "lucide-react";
+import { AlertTriangle, RefreshCw, Search, Shield, X } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { listAuditEvents, getAuditSummary } from "@/lib/api/audit";
 import type { AuditEvent, AuditSummary } from "@/lib/api/audit";
@@ -20,6 +20,7 @@ export default function AuditTrailPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError]     = useState<string | null>(null);
   const [page, setPage]       = useState(0);
+  const [searchQuery, setSearchQuery] = useState("");
 
   const isAdmin = user ? (ADMIN_ROLES as ReadonlyArray<string>).includes(user.role) : false;
 
@@ -49,6 +50,17 @@ export default function AuditTrailPage() {
   }, [page, isAdmin]);
 
   useEffect(() => { void load(); }, [load]);
+
+  const filteredEvents = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    if (!q) return events;
+    return events.filter((e) =>
+      (e.actorEmail ?? "").toLowerCase().includes(q) ||
+      e.action.toLowerCase().includes(q) ||
+      (e.resourceType ?? "").toLowerCase().includes(q) ||
+      (e.resourceId ?? "").toLowerCase().includes(q),
+    );
+  }, [events, searchQuery]);
 
   if (status === "loading" || !user || !isAdmin) return null;
 
@@ -91,6 +103,28 @@ export default function AuditTrailPage() {
         </div>
       )}
 
+      {/* Search */}
+      <div className="mb-4 relative">
+        <Search size={14} className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-[color:var(--muted-foreground)]" />
+        <input
+          type="text"
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          placeholder="Filter by actor, action, resource type, or ID…"
+          className="h-9 w-full rounded-xl border border-[color:var(--border)] bg-[color:var(--card)] pl-9 pr-9 text-sm text-[color:var(--foreground)] placeholder:text-[color:var(--muted-foreground)] focus:border-[color:var(--primary)] focus:outline-none"
+        />
+        {searchQuery && (
+          <button
+            type="button"
+            onClick={() => setSearchQuery("")}
+            aria-label="Clear search"
+            className="absolute right-3 top-1/2 -translate-y-1/2 text-[color:var(--muted-foreground)] hover:text-[color:var(--foreground)]"
+          >
+            <X size={14} />
+          </button>
+        )}
+      </div>
+
       {/* Loading skeleton */}
       {loading && (
         <div role="status" aria-label="Loading audit events" className="flex flex-col gap-3">
@@ -111,19 +145,22 @@ export default function AuditTrailPage() {
           className="flex items-start gap-3 rounded-xl border border-rose-300/50 bg-rose-50/60 px-5 py-4 text-sm text-rose-700 dark:border-rose-700/30 dark:bg-rose-900/10 dark:text-rose-400"
         >
           <AlertTriangle size={18} aria-hidden className="mt-0.5 shrink-0" />
-          <span>{error}</span>
+          <span className="flex-1">{error}</span>
+          <button type="button" onClick={() => void load()} className="shrink-0 font-semibold hover:underline">
+            Retry
+          </button>
         </div>
       )}
 
       {/* Empty state */}
-      {!loading && !error && events.length === 0 && (
+      {!loading && !error && filteredEvents.length === 0 && (
         <div className="py-16 text-center text-[15px] text-[color:var(--muted-foreground)]">
-          No audit events found.
+          {searchQuery ? `No events match "${searchQuery}"` : "No audit events found."}
         </div>
       )}
 
       {/* Table */}
-      {!loading && !error && events.length > 0 && (
+      {!loading && !error && filteredEvents.length > 0 && (
         <div className="overflow-x-auto rounded-xl border border-[color:var(--border)]">
           <table role="table" className="w-full border-collapse bg-[color:var(--card)] text-[13px]">
             <thead>
@@ -140,10 +177,10 @@ export default function AuditTrailPage() {
               </tr>
             </thead>
             <tbody>
-              {events.map((event, idx) => (
+              {filteredEvents.map((event, idx) => (
                 <tr
                   key={event.id}
-                  className={idx < events.length - 1 ? "border-b border-[color:var(--border)]" : ""}
+                  className={idx < filteredEvents.length - 1 ? "border-b border-[color:var(--border)]" : ""}
                 >
                   <td className="whitespace-nowrap px-4 py-3 tabular-nums text-[color:var(--muted-foreground)]">
                     {new Date(event.createdAt).toLocaleString()}

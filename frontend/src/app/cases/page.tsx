@@ -438,6 +438,7 @@ function CasesPageInner() {
   const [apiCases, setApiCases] = useState<CaseListItem[]>([]);
   const [apiSource, setApiSource] = useState<"loading" | "api" | "demo">("loading");
   const [apiError, setApiError] = useState<string | null>(null);
+  const [apiRetryTick, setApiRetryTick] = useState(0);
   const [hiddenDemoCaseIds, setHiddenDemoCaseIds] = useState<Set<string>>(new Set());
   const [archiveError, setArchiveError] = useState<string | null>(null);
   const [archiveSuccess, setArchiveSuccess] = useState<string | null>(null);
@@ -516,7 +517,7 @@ function CasesPageInner() {
         setApiSource("demo");
         setApiError(err instanceof Error ? err.message : "Failed to load cases");
       });
-  }, [previewMode]);
+  }, [previewMode, apiRetryTick]);
 
   // ── Bulk helpers ───────────────────────────────────────────────────────────
   const toggleSelect = useCallback((id: string) => {
@@ -1032,8 +1033,16 @@ function CasesPageInner() {
           </div>
 
           {apiSource === "loading" ? (
-            <div className="flex items-center justify-center py-10">
-              <Clock size={20} className="animate-spin text-[color:var(--muted-foreground)]" />
+            <div className="divide-y divide-[color:var(--border)]">
+              {Array.from({ length: 6 }).map((_, i) => (
+                <div key={i} className="flex items-center gap-3 px-4 py-3.5">
+                  <div className="flex-1 space-y-2">
+                    <div className="h-3.5 w-36 animate-pulse rounded-md bg-[color:var(--border)]" />
+                    <div className="h-3 w-48 animate-pulse rounded-md bg-[color:var(--border)] opacity-60" />
+                  </div>
+                  <div className="h-6 w-20 animate-pulse rounded-full bg-[color:var(--border)] opacity-50" />
+                </div>
+              ))}
             </div>
           ) : (
             <>
@@ -1223,8 +1232,9 @@ function CasesPageInner() {
       {apiError && (
         <div className="flex items-center gap-2 rounded-xl border border-rose-300/50 bg-rose-50/60 px-3 py-2 text-xs text-rose-700 dark:border-rose-700/40 dark:bg-rose-900/10 dark:text-rose-400">
           <AlertCircle size={12} className="shrink-0" />
-          <span className="flex-1">{apiError}</span>
-          <button type="button" onClick={() => setApiError(null)} className="shrink-0 font-semibold hover:underline">Dismiss</button>
+          <span className="flex-1">{apiError} — showing demo data.</span>
+          <button type="button" onClick={() => setApiRetryTick(t => t + 1)} className="shrink-0 font-semibold hover:underline">Retry</button>
+          <button type="button" onClick={() => setApiError(null)} className="shrink-0 text-[color:var(--muted-foreground)] hover:text-[color:var(--foreground)]" aria-label="Dismiss">×</button>
         </div>
       )}
 

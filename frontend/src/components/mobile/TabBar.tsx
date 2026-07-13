@@ -12,14 +12,19 @@ import {
   Box,
   ClipboardCheck,
   Download,
+  Factory,
+  FlaskConical,
   FolderKanban,
   Home,
   Layers3,
   LogOut,
   MapPin,
+  Package,
   Plug,
+  Printer,
   Settings,
   ShieldCheck,
+  Truck,
   Users,
   type LucideIcon,
 } from "lucide-react";
@@ -162,6 +167,18 @@ const SIDEBAR_GROUPS: SidebarGroup[] = [
     label: 'Settings',
     items: [
       { href: '/settings', label: 'Settings', icon: Settings },
+    ],
+  },
+  {
+    label: 'Lab & Manufacturing',
+    items: [
+      { href: '/manufacturing',            label: 'Dashboard',  icon: Factory      },
+      { href: '/manufacturing/batches',    label: 'Batches',    icon: FlaskConical },
+      { href: '/manufacturing/printers',   label: 'Printers',   icon: Printer      },
+      { href: '/manufacturing/qa',         label: 'QA',         icon: ClipboardCheck },
+      { href: '/manufacturing/inventory',  label: 'Inventory',  icon: Package      },
+      { href: '/manufacturing/shipments',  label: 'Shipments',  icon: Truck        },
+      { href: '/manufacturing/analytics',  label: 'Analytics',  icon: BarChart3    },
     ],
   },
   {

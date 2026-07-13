@@ -1,6 +1,11 @@
-import { Injectable, Inject, Logger, NotFoundException } from '@nestjs/common';
+import { Injectable, Inject, Logger, NotFoundException, BadRequestException } from '@nestjs/common';
 import type { Pool } from 'pg';
 import { PG_POOL } from '../database/database.module';
+
+export interface ScannerIntegrationRecord {
+  id: string; organizationId: string; vendor: string;
+  apiEndpoint: string | null; isActive: boolean; createdAt: string;
+}
 import {
   ScannerConnector,
   ThreeShapeConnector,
@@ -35,6 +40,64 @@ export class ScannerService {
       default:
         throw new NotFoundException(`Scanner connector vendor '${vendor}' is not supported.`);
     }
+  }
+
+  // ─── Integration CRUD ───────────────────────────────────────────────────────
+
+  private normalizeVendor(v: string): string {
+    const MAP: Record<string, string> = {
+      '3shape': '3Shape', 'medit': 'Medit', 'itero': 'iTero',
+      'shining3d': 'Shining3D', 'carestream': 'Carestream',
+    };
+    return MAP[v.toLowerCase()] ?? v;
+  }
+
+  async listIntegrations(orgId: string): Promise<ScannerIntegrationRecord[]> {
+    const { rows } = await this.pool.query(
+      `SELECT id, organization_id, vendor, api_endpoint, is_active, created_at
+       FROM scanner_integrations WHERE organization_id=$1 ORDER BY vendor`,
+      [orgId],
+    );
+    return rows.map((r) => ({
+      id: r.id as string, organizationId: r.organization_id as string,
+      vendor: r.vendor as string, apiEndpoint: r.api_endpoint as string | null,
+      isActive: r.is_active as boolean, createdAt: r.created_at as string,
+    }));
+  }
+
+  async upsertIntegration(orgId: string, dto: {
+    vendor: string; apiEndpoint?: string | null; authCredentials?: Record<string, string>; isActive?: boolean;
+  }): Promise<ScannerIntegrationRecord> {
+    const vendor = this.normalizeVendor(dto.vendor);
+    const { rows } = await this.pool.query(
+      `INSERT INTO scanner_integrations (organization_id, vendor, api_endpoint, auth_credentials, is_active)
+       VALUES ($1,$2,$3,$4,$5)
+       ON CONFLICT (organization_id, vendor) DO UPDATE
+         SET api_endpoint=EXCLUDED.api_endpoint,
+             auth_credentials=COALESCE(EXCLUDED.auth_credentials, scanner_integrations.auth_credentials),
+             is_active=EXCLUDED.is_active
+       RETURNING id, organization_id, vendor, api_endpoint, is_active, created_at`,
+      [orgId, vendor, dto.apiEndpoint ?? null, JSON.stringify(dto.authCredentials ?? {}), dto.isActive ?? true],
+    );
+    const r = rows[0];
+    return { id: r.id as string, organizationId: r.organization_id as string, vendor: r.vendor as string, apiEndpoint: r.api_endpoint as string | null, isActive: r.is_active as boolean, createdAt: r.created_at as string };
+  }
+
+  async updateIntegration(id: string, orgId: string, dto: {
+    apiEndpoint?: string | null; authCredentials?: Record<string, string>; isActive?: boolean;
+  }): Promise<ScannerIntegrationRecord> {
+    const { rows } = await this.pool.query(
+      `UPDATE scanner_integrations
+       SET api_endpoint=COALESCE($3,api_endpoint),
+           auth_credentials=CASE WHEN $4::jsonb IS NOT NULL THEN $4::jsonb ELSE auth_credentials END,
+           is_active=COALESCE($5,is_active)
+       WHERE id=$1 AND organization_id=$2
+       RETURNING id, organization_id, vendor, api_endpoint, is_active, created_at`,
+      [id, orgId, dto.apiEndpoint ?? null, dto.authCredentials ? JSON.stringify(dto.authCredentials) : null, dto.isActive ?? null],
+    );
+    if (!rows[0]) throw new NotFoundException('Integration not found');
+    const r = rows[0];
+    return { id: r.id as string, organizationId: r.organization_id as string, vendor: r.vendor as string, apiEndpoint: r.api_endpoint as string | null, isActive: r.is_active as boolean, createdAt: r.created_at as string };
   }
 
   async importScanFromDevice(

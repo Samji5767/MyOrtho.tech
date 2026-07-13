@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body, UseGuards, Req, UnauthorizedException, BadRequestException, Query } from '@nestjs/common';
+import { Controller, Get, Post, Patch, Body, Param, UseGuards, Req, UnauthorizedException, BadRequestException, Query } from '@nestjs/common';
 import type { Request } from 'express';
 import { ScannerService } from './scanner.service';
 import { AuthGuard } from '../auth/auth.guard';
@@ -15,6 +15,30 @@ function getUser(req: Request): { id: string; orgId: string } {
 @UseGuards(AuthGuard)
 export class ScannerController {
   constructor(private readonly scannerService: ScannerService) {}
+
+  // ─── Integration CRUD ───────────────────────────────────────────────────────
+
+  @Get('integrations')
+  listIntegrations(@Req() req: Request) {
+    return this.scannerService.listIntegrations(getUser(req).orgId);
+  }
+
+  @Post('integrations')
+  createIntegration(
+    @Req() req: Request,
+    @Body() body: { vendor: string; apiEndpoint?: string; authCredentials?: Record<string, string>; isActive?: boolean },
+  ) {
+    return this.scannerService.upsertIntegration(getUser(req).orgId, body);
+  }
+
+  @Patch('integrations/:id')
+  updateIntegration(
+    @Req() req: Request,
+    @Param('id') id: string,
+    @Body() body: { apiEndpoint?: string; authCredentials?: Record<string, string>; isActive?: boolean },
+  ) {
+    return this.scannerService.updateIntegration(id, getUser(req).orgId, body);
+  }
 
   @Post('sync')
   async syncScan(

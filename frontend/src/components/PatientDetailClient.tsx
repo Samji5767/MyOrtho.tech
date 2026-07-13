@@ -28,6 +28,7 @@ import {
   SkeletonBlock,
   StatusBadge,
 } from "@/components/DesignSystem";
+import { useToast } from "@/components/ToastContext";
 import { fetchPatient, updatePatient, fetchPatientCases, type UpdatePatientDto } from "@/lib/api/patients";
 import { ApiError } from "@/lib/api/client";
 import type { CaseListItem } from "@/lib/api/cases";
@@ -264,6 +265,7 @@ function EditPatientModal({ patient, onSave, onClose }: EditModalProps) {
 
 export default function PatientDetailClient({ id }: { id: string }) {
   const router = useRouter();
+  const { toast } = useToast();
   const [patient, setPatient] = useState<PatientState | null>(null);
   const [patientCases, setPatientCases] = useState<CaseListItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -399,6 +401,7 @@ export default function PatientDetailClient({ id }: { id: string }) {
           onSave={(updated) => {
             setPatient(updated);
             setShowEditModal(false);
+            toast({ title: "Patient updated", description: "Changes saved successfully.", type: "success" });
           }}
           onClose={() => setShowEditModal(false)}
         />

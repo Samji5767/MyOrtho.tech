@@ -77,7 +77,14 @@ function InviteUserModal({ onClose, onSuccess }: { onClose: () => void; onSucces
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    if (!email.trim()) return;
+    if (!email.trim()) {
+      setError('Email address is required.');
+      return;
+    }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
+      setError('Please enter a valid email address.');
+      return;
+    }
     setSaving(true);
     setError(null);
     try {
@@ -122,7 +129,7 @@ function InviteUserModal({ onClose, onSuccess }: { onClose: () => void; onSucces
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
             <label className="block text-xs font-semibold text-[color:var(--muted-foreground)] mb-1.5">
-              Email address
+              Email address <span className="text-rose-500">*</span>
             </label>
             <input
               ref={firstInputRef}
@@ -276,6 +283,7 @@ export default function AdminUsersPage() {
   const [showInvite, setShowInvite] = useState(false);
   const [roleTarget, setRoleTarget] = useState<OrgMember | null>(null);
   const [tick, setTick] = useState(0);
+  const [successMsg, setSuccessMsg] = useState<string | null>(null);
 
   const isAdmin = user?.role === "admin" || user?.role === "super_admin";
 
@@ -313,6 +321,12 @@ export default function AdminUsersPage() {
 
   return (
     <div className="mx-auto max-w-5xl px-4 py-8 sm:px-6">
+      {successMsg && (
+        <div className="mb-4 flex items-center gap-2 rounded-xl border border-emerald-200/60 bg-emerald-50/80 px-4 py-3 text-sm font-medium text-emerald-700 dark:border-emerald-500/20 dark:bg-emerald-500/10 dark:text-emerald-400">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="shrink-0" aria-hidden><polyline points="20 6 9 17 4 12" /></svg>
+          {successMsg}
+        </div>
+      )}
       {/* Header */}
       <div className="mb-6 flex items-start justify-between gap-4">
         <div>
@@ -425,7 +439,11 @@ export default function AdminUsersPage() {
       {showInvite && (
         <InviteUserModal
           onClose={() => setShowInvite(false)}
-          onSuccess={reload}
+          onSuccess={() => {
+            reload();
+            setSuccessMsg("Invitation sent successfully.");
+            setTimeout(() => setSuccessMsg(null), 4000);
+          }}
         />
       )}
       {roleTarget && (

@@ -23,6 +23,7 @@ export type Permission =
   | 'manufacturing:read'
   | 'manufacturing:write'
   | 'manufacturing:manage'
+  | 'qa:approve'
   | 'admin:users'
   | 'admin:settings'
   | 'admin:org'
@@ -33,6 +34,7 @@ const ALL_PERMISSIONS: Permission[] = [
   'cases:read', 'cases:write', 'cases:delete', 'cases:approve', 'cases:send_to_manufacturing',
   'analytics:read',
   'manufacturing:read', 'manufacturing:write', 'manufacturing:manage',
+  'qa:approve',
   'admin:users', 'admin:settings', 'admin:org',
   'audit:read',
 ];
@@ -78,6 +80,7 @@ export const ROLE_PERMISSIONS: Record<string, Permission[]> = {
   lab_manager: [
     'cases:read',
     'manufacturing:read', 'manufacturing:write', 'manufacturing:manage',
+    'qa:approve',
     'analytics:read',
     'audit:read',
   ],
@@ -97,6 +100,7 @@ export const ROLE_PERMISSIONS: Record<string, Permission[]> = {
   vp_manufacturing: [
     'cases:read', 'cases:send_to_manufacturing',
     'manufacturing:read', 'manufacturing:write', 'manufacturing:manage',
+    'qa:approve',
     'analytics:read',
     'audit:read',
   ],

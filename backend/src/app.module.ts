@@ -59,6 +59,7 @@ import { AlignerDesignModule } from './aligner-design/aligner-design.module';
 import { PreexportQaModule } from './preexport-qa/preexport-qa.module';
 import { TreatmentQAModule } from './treatment-qa/treatment-qa.module';
 import { QcModule } from './qc/qc.module';
+import { QaInspectionModule } from './qa-inspection/qa-inspection.module';
 import { ExportPackageModule } from './export-package/export-package.module';
 // ─── Export / Print Prep ─────────────────────────────────────────────────────
 import { ManufacturingModule } from './manufacturing/manufacturing.module';
@@ -89,6 +90,12 @@ import { OrgBrandingModule } from './org-branding/org-branding.module';
 import { ReleasesModule } from './releases/releases.module';
 import { WorkingHoursModule } from './working-hours/working-hours.module';
 import { ReportsModule } from './reports/reports.module';
+import { LabDashboardModule } from './lab-dashboard/lab-dashboard.module';
+import { LabInventoryModule } from './lab-inventory/lab-inventory.module';
+import { LabShipmentsModule } from './lab-shipments/lab-shipments.module';
+import { ManufacturingAnalyticsModule } from './manufacturing-analytics/manufacturing-analytics.module';
+import { BatchManufacturingModule } from './batch-manufacturing/batch-manufacturing.module';
+import { PrintFarmModule } from './print-farm/print-farm.module';
 
 @Module({
   imports: [
@@ -158,6 +165,7 @@ import { ReportsModule } from './reports/reports.module';
     PreexportQaModule,
     TreatmentQAModule,
     QcModule,
+    QaInspectionModule,
     ExportPackageModule,
     // Export / Print Prep
     ManufacturingModule,
@@ -189,6 +197,12 @@ import { ReportsModule } from './reports/reports.module';
     ReleasesModule,
     WorkingHoursModule,
     ReportsModule,
+    LabDashboardModule,
+    LabInventoryModule,
+    LabShipmentsModule,
+    ManufacturingAnalyticsModule,
+    BatchManufacturingModule,
+    PrintFarmModule,
   ],
   providers: [
     {

@@ -164,7 +164,7 @@ const EMPTY: OrgProfile = {
 };
 
 export default function AdminOrgPage() {
-  const { user } = useAuth();
+  const { user, status } = useAuth();
   const router = useRouter();
   const [profile, setProfile] = useState<OrgProfile>(EMPTY);
   const [loading, setLoading] = useState(true);
@@ -176,8 +176,10 @@ export default function AdminOrgPage() {
   const isAdmin = user?.role === "admin" || user?.role === "super_admin";
 
   useEffect(() => {
-    if (user && !isAdmin) router.replace("/admin");
-  }, [user, isAdmin, router]);
+    if (status === "loading") return;
+    if (!user) router.replace("/login");
+    else if (!isAdmin) router.replace("/admin");
+  }, [user, isAdmin, status, router]);
 
   useEffect(() => {
     if (!isAdmin) return;
@@ -229,7 +231,7 @@ export default function AdminOrgPage() {
     }
   }
 
-  if (!user || !isAdmin) return null;
+  if (status === "loading" || !user || !isAdmin) return null;
 
   return (
     <div className="mx-auto max-w-3xl px-4 py-8 sm:px-6">

@@ -424,6 +424,7 @@ function CasesPageInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const caseId = searchParams.get("id");
+  const patientIdFilter = searchParams.get("patientId");
 
   const [previewMode, setPreviewMode] = useState(false);
   const [filter, setFilter] = useState<FilterKey>("all");
@@ -657,8 +658,15 @@ function CasesPageInner() {
     [filteredApiByStatus, doctorFilter],
   );
 
+  const filteredApiByPatient = useMemo(
+    () => patientIdFilter
+      ? filteredApiByDoctor.filter((c) => c.patient.id === patientIdFilter)
+      : filteredApiByDoctor,
+    [filteredApiByDoctor, patientIdFilter],
+  );
+
   const visibleApiCases = useMemo(() => {
-    const arr = [...filteredApiByDoctor];
+    const arr = [...filteredApiByPatient];
     switch (sortKey) {
       case "newest":        return arr.sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
       case "oldest":        return arr.sort((a, b) => new Date(a.updatedAt).getTime() - new Date(b.updatedAt).getTime());
@@ -666,7 +674,7 @@ function CasesPageInner() {
       case "progress_asc":  return arr.sort((a, b) => statusToProgress(a.status) - statusToProgress(b.status));
       default:              return arr;
     }
-  }, [filteredApiByDoctor, sortKey]);
+  }, [filteredApiByPatient, sortKey]);
 
   const apiSlaCount = useMemo(() => apiCases.filter((c) => {
     const active = !["completed", "archived", "cancelled"].includes(c.status);
@@ -693,9 +701,18 @@ function CasesPageInner() {
           <h1 className="mt-1 text-2xl font-semibold tracking-tight text-[color:var(--foreground)]">
             Cases
           </h1>
-          <p className="mt-1 text-sm text-[color:var(--muted-foreground)]">
-            Approvals, SLA alerts, and active workflows
-          </p>
+          {patientIdFilter ? (
+            <p className="mt-1 flex items-center gap-1.5 text-sm text-[color:var(--primary)]">
+              Filtered by patient
+              <Link href="/cases" className="ml-1 rounded-full border border-[color:var(--border)] px-2 py-0.5 text-[10px] font-semibold text-[color:var(--muted-foreground)] hover:text-[color:var(--foreground)]">
+                Clear ×
+              </Link>
+            </p>
+          ) : (
+            <p className="mt-1 text-sm text-[color:var(--muted-foreground)]">
+              Approvals, SLA alerts, and active workflows
+            </p>
+          )}
         </div>
         <div className="flex items-center gap-2">
           <button

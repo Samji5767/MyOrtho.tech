@@ -22,6 +22,7 @@ import {
   Layers3,
   Lock,
   Moon,
+  Palette,
   Printer,
   RotateCcw,
   Save,
@@ -303,6 +304,20 @@ export default function SettingsPage() {
               <span className="text-xs text-[color:var(--muted-foreground)]">MFA · SSO</span>
             </span>
           </Link>
+          {(user?.role === "admin" || user?.role === "super_admin") && (
+            <Link
+              href="/settings/branding"
+              className="ios-chip flex items-center gap-3 px-4 py-3 text-left transition-transform duration-150 active:scale-[0.99]"
+            >
+              <span className="grid h-9 w-9 place-items-center rounded-2xl bg-[color:var(--primary-glow)] text-[color:var(--primary)]">
+                <Palette size={16} />
+              </span>
+              <span>
+                <span className="block text-sm font-semibold text-[color:var(--foreground)]">Branding</span>
+                <span className="text-xs text-[color:var(--muted-foreground)]">Logo · colors · domain</span>
+              </span>
+            </Link>
+          )}
         </div>
       </Card>
 

@@ -267,7 +267,7 @@ function RoleChangeModal({
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function AdminUsersPage() {
-  const { user } = useAuth();
+  const { user, status } = useAuth();
   const router = useRouter();
   const [members, setMembers] = useState<OrgMember[]>([]);
   const [loading, setLoading] = useState(true);
@@ -282,8 +282,10 @@ export default function AdminUsersPage() {
   const reload = () => setTick(t => t + 1);
 
   useEffect(() => {
-    if (user && !isAdmin) router.replace("/admin");
-  }, [user, isAdmin, router]);
+    if (status === "loading") return;
+    if (!user) router.replace("/login");
+    else if (!isAdmin) router.replace("/admin");
+  }, [user, isAdmin, status, router]);
 
   useEffect(() => {
     if (!isAdmin) return;
@@ -307,8 +309,7 @@ export default function AdminUsersPage() {
     m.role.toLowerCase().includes(search.toLowerCase())
   );
 
-  if (!user) return null;
-  if (!isAdmin) return null;
+  if (status === "loading" || !user || !isAdmin) return null;
 
   return (
     <div className="mx-auto max-w-5xl px-4 py-8 sm:px-6">

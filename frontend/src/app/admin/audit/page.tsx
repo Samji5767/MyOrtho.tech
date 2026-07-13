@@ -1,22 +1,37 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
+import { useRouter } from "next/navigation";
 import { AlertTriangle, RefreshCw, Shield } from "lucide-react";
+import { useAuth } from "@/context/AuthContext";
 import { listAuditEvents, getAuditSummary } from "@/lib/api/audit";
 import type { AuditEvent, AuditSummary } from "@/lib/api/audit";
 
 const PAGE_SIZE = 50;
+const ADMIN_ROLES = ["admin", "super_admin"] as const;
 
 const COLS = ["Time", "Actor", "Action", "Resource Type", "Resource ID", "IP"] as const;
 
 export default function AuditTrailPage() {
+  const { user, status } = useAuth();
+  const router = useRouter();
   const [events, setEvents]   = useState<AuditEvent[]>([]);
   const [summary, setSummary] = useState<AuditSummary | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError]     = useState<string | null>(null);
   const [page, setPage]       = useState(0);
 
+  const isAdmin = user ? (ADMIN_ROLES as ReadonlyArray<string>).includes(user.role) : false;
+
+  useEffect(() => {
+    if (status === "loading") return;
+    if (!user || !isAdmin) {
+      router.replace(user ? "/admin" : "/login");
+    }
+  }, [user, isAdmin, status, router]);
+
   const load = useCallback(async () => {
+    if (!isAdmin) return;
     setLoading(true);
     setError(null);
     try {
@@ -31,9 +46,11 @@ export default function AuditTrailPage() {
     } finally {
       setLoading(false);
     }
-  }, [page]);
+  }, [page, isAdmin]);
 
   useEffect(() => { void load(); }, [load]);
+
+  if (status === "loading" || !user || !isAdmin) return null;
 
   return (
     <div className="mx-auto max-w-screen-xl px-4 py-8 sm:px-6 min-h-screen">

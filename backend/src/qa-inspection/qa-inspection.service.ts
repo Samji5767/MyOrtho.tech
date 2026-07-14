@@ -1,4 +1,4 @@
-import { Injectable, Inject, NotFoundException } from '@nestjs/common';
+import { Injectable, Inject, NotFoundException, BadRequestException } from '@nestjs/common';
 import type { Pool } from 'pg';
 import { PG_POOL } from '../database/database.module';
 
@@ -158,6 +158,18 @@ export class QaInspectionService {
   }
 
   async approve(id: string, orgId: string, approvedById: string): Promise<QaInspection> {
+    // Fetch first to enforce the simulated-inspection block before any write
+    const { rows: existing } = await this.db.query(
+      `SELECT is_simulated FROM qa_inspections WHERE id = $1 AND organization_id = $2`,
+      [id, orgId],
+    );
+    if (!existing[0]) throw new NotFoundException('QA inspection not found');
+    if (existing[0]['is_simulated']) {
+      throw new BadRequestException(
+        'Simulated QA inspections cannot be approved. Perform a real inspection before approving.',
+      );
+    }
+
     const { rows } = await this.db.query(
       `UPDATE qa_inspections
        SET status = 'passed', approved_by = $3, approved_at = NOW(), updated_at = NOW()

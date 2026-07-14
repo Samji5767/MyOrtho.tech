@@ -5,6 +5,40 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [Unreleased] — Enterprise 2.0 Platform Evolution
+
+**Branch:** `claude/myortho-production-validation-dlmvsi`  
+**Sprint:** Enterprise 2.0 Platform Evolution  
+**Date:** 2026-07-14
+
+### Added
+
+- **Integration Provider Registry** — new `integration_providers` and `integration_health_logs` tables (migration 062); `IntegrationProvidersModule` with full CRUD + health-check logging; RBAC via `integrations:read` / `integrations:write` permissions; supports 9 provider types: DICOM/PACS, HL7/FHIR, PMS, scanner, printer, payment, email, SMS, calendar.
+- **Background Job Queue** — new `background_jobs` table (migration 062); `BackgroundJobsModule` with enqueue, cancel, and stats endpoints; priority-based scheduling; DLQ via `dead_letter` status; accessible via `admin:settings` permission.
+- **Clinical Knowledge Platform** — new `clinical_protocols`, `protocol_templates`, `material_libraries`, `appliance_libraries`, `manufacturing_profiles` tables (migration 062); `ClinicalKnowledgeModule` with protocol lifecycle (draft → active → archived), evidence-level classification (A/B/C), material library management, and manufacturing profile management; RBAC via `knowledge:read` / `knowledge:write` permissions.
+- **MLOps / AI Governance** — new `ai_model_registry` and `ai_inference_audit` tables (migration 062); `MlopsModule` with model registration, status lifecycle (staged → active → deprecated/rolled_back), inference audit trail, and utilization stats; `disclaimer_shown` field enforces policy on every inference record; RBAC via `mlops:read` / `mlops:manage` permissions.
+- **Enhanced Reports** — four new reporting endpoints: `GET /api/reports/clinical-kpis`, `GET /api/reports/manufacturing-kpis`, `GET /api/reports/ai-utilization`, `GET /api/reports/dashboard/html`; all existing report endpoints now enforce `analytics:read` / `manufacturing:read` / `mlops:read` RBAC.
+- **New RBAC permissions**: `integrations:read`, `integrations:write`, `knowledge:read`, `knowledge:write`, `mlops:read`, `mlops:manage` — assigned to `super_admin`, `admin`, `lab_manager`, `clinical_director` as appropriate.
+- **ADR-007**: Integration Provider Framework architectural decision record.
+- **ADR-008**: Background Job Queue architectural decision record.
+- **ADR-009**: Clinical Knowledge Platform architectural decision record.
+- **ADR-010**: MLOps Governance architectural decision record.
+
+### Fixed
+
+- All 23 manufacturing module bugs (shipments, inventory, QA inspection, batch manufacturing, printer registration, mobile tab bar).
+- `recipientAddress` type narrowed from `unknown` to `string | null` in shipments page.
+- Lab inventory now rejects transactions that would produce negative stock.
+- QA `reject()` now blocks simulated inspections consistently with `approve()`.
+- Shipment `in_transit` transition now stamps `shipped_at` via `COALESCE`.
+- `AddTrackingModal` validates non-empty courier + tracking number before submitting.
+- Batch manufacturing `create` endpoint now gated by `manufacturing:write` permission.
+- Batch `resinType` and `priority` fields propagated through service, controller, and interface.
+- Mobile `TabBar` navigation now points to `/manufacturing` instead of `/patients`.
+- Register Printer buttons disabled with admin-guidance tooltip.
+
+---
+
 ## [Unreleased] — Final AI Segmentation Activation & Production Verification
 
 **Branch:** `claude/myortho-production-validation-dlmvsi`  

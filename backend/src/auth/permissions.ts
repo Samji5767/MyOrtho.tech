@@ -27,7 +27,13 @@ export type Permission =
   | 'admin:users'
   | 'admin:settings'
   | 'admin:org'
-  | 'audit:read';
+  | 'audit:read'
+  | 'integrations:read'
+  | 'integrations:write'
+  | 'knowledge:read'
+  | 'knowledge:write'
+  | 'mlops:read'
+  | 'mlops:manage';
 
 const ALL_PERMISSIONS: Permission[] = [
   'patients:read', 'patients:write', 'patients:delete',
@@ -37,6 +43,9 @@ const ALL_PERMISSIONS: Permission[] = [
   'qa:approve',
   'admin:users', 'admin:settings', 'admin:org',
   'audit:read',
+  'integrations:read', 'integrations:write',
+  'knowledge:read', 'knowledge:write',
+  'mlops:read', 'mlops:manage',
 ];
 
 export const ROLE_PERMISSIONS: Record<string, Permission[]> = {
@@ -49,6 +58,9 @@ export const ROLE_PERMISSIONS: Record<string, Permission[]> = {
     'manufacturing:read',
     'admin:users', 'admin:settings',
     'audit:read',
+    'integrations:read', 'integrations:write',
+    'knowledge:read', 'knowledge:write',
+    'mlops:read', 'mlops:manage',
   ],
 
   clinical_director: [
@@ -57,6 +69,7 @@ export const ROLE_PERMISSIONS: Record<string, Permission[]> = {
     'analytics:read',
     'manufacturing:read',
     'audit:read',
+    'knowledge:read',
   ],
 
   orthodontist: [
@@ -83,6 +96,7 @@ export const ROLE_PERMISSIONS: Record<string, Permission[]> = {
     'qa:approve',
     'analytics:read',
     'audit:read',
+    'knowledge:read', 'knowledge:write',
   ],
 
   lab_technician: [

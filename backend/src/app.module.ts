@@ -96,6 +96,11 @@ import { LabShipmentsModule } from './lab-shipments/lab-shipments.module';
 import { ManufacturingAnalyticsModule } from './manufacturing-analytics/manufacturing-analytics.module';
 import { BatchManufacturingModule } from './batch-manufacturing/batch-manufacturing.module';
 import { PrintFarmModule } from './print-farm/print-farm.module';
+// ─── Enterprise 2.0 Platform ──────────────────────────────────────────────────
+import { IntegrationProvidersModule } from './integration-providers/integration-providers.module';
+import { BackgroundJobsModule } from './background-jobs/background-jobs.module';
+import { ClinicalKnowledgeModule } from './clinical-knowledge/clinical-knowledge.module';
+import { MlopsModule } from './mlops/mlops.module';
 
 @Module({
   imports: [
@@ -203,6 +208,11 @@ import { PrintFarmModule } from './print-farm/print-farm.module';
     ManufacturingAnalyticsModule,
     BatchManufacturingModule,
     PrintFarmModule,
+    // Enterprise 2.0 Platform
+    IntegrationProvidersModule,
+    BackgroundJobsModule,
+    ClinicalKnowledgeModule,
+    MlopsModule,
   ],
   providers: [
     {

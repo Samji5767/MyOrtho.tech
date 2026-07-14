@@ -18,8 +18,8 @@ import { EmptyState, SkeletonBlock, StatusBadge } from "@/components/DesignSyste
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 interface InventoryItem {
-  id: string; name: string; sku: string | null; category: string;
-  unit: string; unitCostCents: number | null; reorderThreshold: number;
+  id: string; name: string; sku: string | null; category: string | null;
+  unit: string | null; unitCostCents: number | null; reorderThreshold: number;
   quantityOnHand: number; belowReorder: boolean; notes: string | null;
   createdAt: string; updatedAt: string;
 }
@@ -392,6 +392,7 @@ export default function InventoryPage() {
 
   const [items, setItems] = useState<InventoryItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [catFilter, setCatFilter] = useState<FilterKey>("all");
   const [showCreate, setShowCreate] = useState(false);
   const [txn, setTxn] = useState<{
@@ -403,21 +404,19 @@ export default function InventoryPage() {
   // ── Fetch items ──────────────────────────────────────────────────────────
   const load = useCallback(async () => {
     setLoading(true);
+    setLoadError(null);
     try {
       const qs = catFilter !== "all" ? `?category=${catFilter}` : "";
       const data = await api.get<InventoryItem[]>(`/api/lab/inventory/items${qs}`);
       setItems(Array.isArray(data) ? data : []);
     } catch (err) {
-      toast({
-        title: "Failed to load inventory",
-        description: err instanceof Error ? err.message : "Unknown error",
-        type: "error",
-      });
+      const msg = err instanceof Error ? err.message : "Failed to load inventory";
+      setLoadError(msg);
       setItems([]);
     } finally {
       setLoading(false);
     }
-  }, [catFilter, toast]);
+  }, [catFilter]);
 
   useEffect(() => {
     void load();
@@ -484,6 +483,24 @@ export default function InventoryPage() {
           Add Item
         </button>
       </div>
+
+      {/* ── Load error banner ── */}
+      {loadError && (
+        <div
+          role="alert"
+          className="flex items-center gap-3 rounded-xl border border-rose-200/60 bg-rose-50/60 px-4 py-3 text-sm text-rose-700 dark:border-rose-700/30 dark:bg-rose-900/10 dark:text-rose-400"
+        >
+          <AlertCircle size={15} className="shrink-0" aria-hidden />
+          <span className="flex-1">{loadError}</span>
+          <button
+            type="button"
+            onClick={() => void load()}
+            className="shrink-0 text-xs font-semibold underline underline-offset-2 hover:no-underline"
+          >
+            Retry
+          </button>
+        </div>
+      )}
 
       {/* ── Reorder alert banner ── */}
       {!loading && alertCount > 0 && (
@@ -639,8 +656,8 @@ export default function InventoryPage() {
 
                     {/* Category badge */}
                     <td className="hidden px-4 py-3 sm:table-cell">
-                      <StatusBadge tone={CATEGORY_TONE[item.category] ?? "neutral"}>
-                        {CATEGORY_LABEL[item.category] ?? item.category}
+                      <StatusBadge tone={(item.category ? CATEGORY_TONE[item.category] : null) ?? "neutral"}>
+                        {(item.category ? CATEGORY_LABEL[item.category] : null) ?? item.category ?? "—"}
                       </StatusBadge>
                     </td>
 

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { api } from "@/lib/api/client";
 import {
   MetricCard,
@@ -80,7 +81,7 @@ const BATCH_STATUS_TONES: Record<string, "neutral" | "primary" | "success" | "wa
 };
 
 function pct(n: number) {
-  return `${(n * 100).toFixed(1)}%`;
+  return `${n.toFixed(1)}%`;
 }
 
 function fmtHours(h: number | null) {
@@ -122,15 +123,24 @@ export default function ManufacturingAnalyticsPage() {
   const [period, setPeriod] = useState(30);
 
   useEffect(() => {
+    const controller = new AbortController();
     setLoading(true);
+    setMetrics(null);
     api
       .get<ManufacturingMetrics>(`/api/manufacturing/analytics?days=${period}`)
       .then((data: ManufacturingMetrics) => {
-        setMetrics(data);
-        setError(null);
+        if (!controller.signal.aborted) {
+          setMetrics(data);
+          setError(null);
+        }
       })
-      .catch((e: Error) => setError(e.message))
-      .finally(() => setLoading(false));
+      .catch((e: Error) => {
+        if (!controller.signal.aborted) setError(e.message);
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setLoading(false);
+      });
+    return () => controller.abort();
   }, [period]);
 
   const maxThroughput = metrics
@@ -139,6 +149,17 @@ export default function ManufacturingAnalyticsPage() {
 
   return (
     <div className="mx-auto max-w-5xl space-y-8 p-4 pb-24 lg:p-8">
+      {/* Back link */}
+      <Link
+        href="/manufacturing"
+        className="flex w-fit items-center gap-1 text-xs font-semibold text-[color:var(--muted-foreground)] transition hover:text-[color:var(--foreground)]"
+      >
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" aria-hidden>
+          <path d="M15 18l-6-6 6-6" />
+        </svg>
+        Manufacturing
+      </Link>
+
       {/* Header */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>

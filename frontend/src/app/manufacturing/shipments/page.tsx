@@ -29,7 +29,7 @@ interface Shipment {
   trackingNumber: string | null; carrierService: string | null;
   shippedAt: string | null; estimatedDelivery: string | null;
   deliveredAt: string | null; status: string;
-  recipientName: string | null; recipientAddress: unknown;
+  recipientName: string | null; recipientAddress: string | null;
   notes: string | null; createdAt: string; updatedAt: string;
 }
 
@@ -65,6 +65,7 @@ const NEXT_STATUS: Record<string, string> = {
   label_printed:    "in_transit",
   in_transit:       "out_for_delivery",
   out_for_delivery: "delivered",
+  exception:        "in_transit",
 };
 
 const ADVANCE_LABEL: Record<string, string> = {
@@ -72,6 +73,7 @@ const ADVANCE_LABEL: Record<string, string> = {
   label_printed:    "Mark In Transit",
   in_transit:       "Out for Delivery",
   out_for_delivery: "Mark Delivered",
+  exception:        "Retry Shipment",
 };
 
 const FILTER_SPECS: { key: FilterKey; label: string }[] = [
@@ -345,12 +347,17 @@ function AddTrackingModal({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!form.courier.trim() || !form.trackingNumber.trim()) {
+      toast({ title: "Courier and tracking number are required", type: "error" });
+      return;
+    }
     setSubmitting(true);
     try {
-      const dto: Record<string, unknown> = {};
-      if (form.courier.trim())        dto.courier           = form.courier.trim();
-      if (form.trackingNumber.trim()) dto.trackingNumber    = form.trackingNumber.trim();
-      if (form.estimatedDelivery)     dto.estimatedDelivery = form.estimatedDelivery;
+      const dto: Record<string, unknown> = {
+        courier:       form.courier.trim(),
+        trackingNumber: form.trackingNumber.trim(),
+      };
+      if (form.estimatedDelivery) dto.estimatedDelivery = form.estimatedDelivery;
 
       const updated = await api.patch<Shipment>(
         `/api/lab/shipments/${shipment.id}/tracking`,
@@ -468,7 +475,6 @@ function ShipmentCard({
 
   const isTerminal =
     shipment.status === "delivered" ||
-    shipment.status === "exception"  ||
     shipment.status === "returned";
 
   // Offer "Add Tracking" when no tracking number exists and shipment is still active

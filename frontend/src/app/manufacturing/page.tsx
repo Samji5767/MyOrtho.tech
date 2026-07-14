@@ -29,18 +29,20 @@ import {
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
+type StatusCount = { status: string; count: number };
+
 interface LabDashboard {
-  printJobsByStatus: Record<string, number>;
-  batchesByStatus: Record<string, number>;
-  printersByStatus: Record<string, number>;
+  printJobsByStatus: StatusCount[];
+  batchesByStatus: StatusCount[];
+  printersByStatus: StatusCount[];
   failedJobsToday: number;
-  qaInspectionsByStatus: Record<string, number>;
-  shipmentsByStatus: Record<string, number>;
+  qaInspectionsByStatus: StatusCount[];
+  shipmentsByStatus: StatusCount[];
   inventoryAlerts: number;
   dailyMetrics: Array<{
     day: string;
-    jobs_created: number;
-    jobs_completed: number;
+    jobsCreated: number;
+    jobsCompleted: number;
   }>;
 }
 
@@ -64,12 +66,12 @@ function fmtStatus(s: string): string {
   return s.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
-function sumValues(record: Record<string, number>): number {
-  return Object.values(record).reduce((a, b) => a + b, 0);
+function sumCounts(arr: StatusCount[]): number {
+  return arr.reduce((a, r) => a + r.count, 0);
 }
 
-function sumKeys(record: Record<string, number>, ...keys: string[]): number {
-  return keys.reduce((acc, k) => acc + (record[k] ?? 0), 0);
+function sumStatusCounts(arr: StatusCount[], ...statuses: string[]): number {
+  return arr.filter((r) => statuses.includes(r.status)).reduce((a, r) => a + r.count, 0);
 }
 
 // ─── Navigation cards ─────────────────────────────────────────────────────────
@@ -190,24 +192,24 @@ export default function ManufacturingDashboard() {
   // ── Derived quick-stat values ──────────────────────────────────────────
 
   const activeJobs = data
-    ? sumKeys(data.printJobsByStatus, "queued", "printing", "nesting", "cleaning", "curing")
+    ? sumStatusCounts(data.printJobsByStatus, "queued", "printing", "nesting", "cleaning", "curing")
     : 0;
 
   const batchesInProd = data
-    ? sumKeys(data.batchesByStatus, "staging", "printing", "post_processing", "qc")
+    ? sumStatusCounts(data.batchesByStatus, "staging", "printing", "post_processing", "qc")
     : 0;
 
   const printersOnline = data
-    ? sumKeys(data.printersByStatus, "idle", "printing")
+    ? sumStatusCounts(data.printersByStatus, "idle", "printing")
     : 0;
 
   const qaPending = data
-    ? sumKeys(data.qaInspectionsByStatus, "pending", "in_progress")
+    ? sumStatusCounts(data.qaInspectionsByStatus, "pending", "in_progress")
     : 0;
 
   // Throughput bar scaling
   const maxCompleted = Math.max(
-    ...(data?.dailyMetrics?.map((d) => d.jobs_completed) ?? [0]),
+    ...(data?.dailyMetrics?.map((d) => d.jobsCompleted) ?? [0]),
     1,
   );
 
@@ -370,10 +372,10 @@ export default function ManufacturingDashboard() {
                     className="text-xs text-[color:var(--muted-foreground)]"
                     style={{ fontVariantNumeric: "tabular-nums" }}
                   >
-                    {sumValues(data.printJobsByStatus)} total
+                    {sumCounts(data.printJobsByStatus)} total
                   </span>
                 </div>
-                {Object.keys(data.printJobsByStatus).length === 0 ? (
+                {data.printJobsByStatus.length === 0 ? (
                   <EmptyState
                     icon={Activity}
                     title="No print jobs"
@@ -381,7 +383,7 @@ export default function ManufacturingDashboard() {
                   />
                 ) : (
                   <div>
-                    {Object.entries(data.printJobsByStatus).map(([status, count]) => (
+                    {data.printJobsByStatus.map(({ status, count }) => (
                       <StatusRow key={status} status={status} count={count} />
                     ))}
                   </div>
@@ -405,10 +407,10 @@ export default function ManufacturingDashboard() {
                     className="text-xs text-[color:var(--muted-foreground)]"
                     style={{ fontVariantNumeric: "tabular-nums" }}
                   >
-                    {sumValues(data.batchesByStatus)} total
+                    {sumCounts(data.batchesByStatus)} total
                   </span>
                 </div>
-                {Object.keys(data.batchesByStatus).length === 0 ? (
+                {data.batchesByStatus.length === 0 ? (
                   <EmptyState
                     icon={Layers}
                     title="No batches"
@@ -416,7 +418,7 @@ export default function ManufacturingDashboard() {
                   />
                 ) : (
                   <div>
-                    {Object.entries(data.batchesByStatus).map(([status, count]) => (
+                    {data.batchesByStatus.map(({ status, count }) => (
                       <StatusRow key={status} status={status} count={count} />
                     ))}
                   </div>
@@ -452,7 +454,7 @@ export default function ManufacturingDashboard() {
                 <div className="space-y-3">
                   {data.dailyMetrics.map((row) => {
                     const barPct = Math.round(
-                      (row.jobs_completed / maxCompleted) * 100,
+                      (row.jobsCompleted / maxCompleted) * 100,
                     );
                     return (
                       <div key={row.day} className="flex items-center gap-3">
@@ -483,7 +485,7 @@ export default function ManufacturingDashboard() {
                             className="w-7 shrink-0 text-right text-xs font-semibold text-[color:var(--foreground)]"
                             style={{ fontVariantNumeric: "tabular-nums" }}
                           >
-                            {row.jobs_completed}
+                            {row.jobsCompleted}
                           </span>
                         </div>
                         {/* Created count */}
@@ -491,7 +493,7 @@ export default function ManufacturingDashboard() {
                           className="w-16 shrink-0 text-right text-[10px] text-[color:var(--muted-foreground)]"
                           style={{ fontVariantNumeric: "tabular-nums" }}
                         >
-                          {row.jobs_created} created
+                          {row.jobsCreated} created
                         </span>
                       </div>
                     );

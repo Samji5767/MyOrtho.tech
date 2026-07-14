@@ -182,6 +182,17 @@ export class QaInspectionService {
   }
 
   async reject(id: string, orgId: string, notes?: string): Promise<QaInspection> {
+    const { rows: existing } = await this.db.query(
+      `SELECT is_simulated FROM qa_inspections WHERE id = $1 AND organization_id = $2`,
+      [id, orgId],
+    );
+    if (!existing[0]) throw new NotFoundException('QA inspection not found');
+    if (existing[0]['is_simulated']) {
+      throw new BadRequestException(
+        'Simulated QA inspections cannot be rejected. Perform a real inspection first.',
+      );
+    }
+
     const { rows } = await this.db.query(
       `UPDATE qa_inspections
        SET status = 'failed',

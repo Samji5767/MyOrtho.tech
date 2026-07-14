@@ -11,6 +11,7 @@ import {
   XCircle,
 } from "lucide-react";
 import { api } from "@/lib/api/client";
+import { useAuth } from "@/context/AuthContext";
 import { useToast } from "@/components/ToastContext";
 import {
   Button,
@@ -64,13 +65,14 @@ const STATUS_LABEL: Record<string, string> = {
   requires_reprint: "Reprint Required",
 };
 
-type FilterKey = "pending" | "in_progress" | "passed" | "failed" | "all";
+type FilterKey = "pending" | "in_progress" | "passed" | "failed" | "requires_reprint" | "all";
 
 const FILTERS: { key: FilterKey; label: string }[] = [
   { key: "pending", label: "Pending" },
   { key: "in_progress", label: "In Progress" },
   { key: "passed", label: "Passed" },
   { key: "failed", label: "Failed" },
+  { key: "requires_reprint", label: "Reprint Required" },
   { key: "all", label: "All" },
 ];
 
@@ -201,11 +203,13 @@ function RejectForm({
 function QaInspectionCard({
   insp,
   processing,
+  permittedToApprove,
   onApprove,
   onReject,
 }: {
   insp: QaInspection;
   processing: string | null;
+  permittedToApprove: boolean;
   onApprove: (id: string) => void;
   onReject: (id: string, notes: string) => void;
 }) {
@@ -214,6 +218,7 @@ function QaInspectionCard({
   const canAct =
     (insp.status === "pending" || insp.status === "in_progress") &&
     !insp.isSimulated;
+  const canApprove = canAct && permittedToApprove;
   const actionBlockedBySimulation =
     insp.isSimulated &&
     (insp.status === "pending" || insp.status === "in_progress");
@@ -282,32 +287,32 @@ function QaInspectionCard({
           {!rejectOpen && (
             <div className="flex shrink-0 items-center gap-2">
               {canAct && (
-                <>
-                  <Button
-                    size="sm"
-                    variant="secondary"
-                    onClick={() => setRejectOpen(true)}
-                    disabled={busy}
-                    className="border-rose-200/70 text-rose-700 hover:bg-rose-50/70 dark:border-rose-700/30 dark:text-rose-400 dark:hover:bg-rose-900/20"
-                  >
-                    <XCircle size={13} aria-hidden />
-                    Reject
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="primary"
-                    onClick={() => onApprove(insp.id)}
-                    disabled={busy}
-                    className="bg-emerald-600 hover:bg-emerald-700"
-                  >
-                    {busy ? (
-                      <span className="h-3 w-3 animate-spin rounded-full border-2 border-white/30 border-t-white" />
-                    ) : (
-                      <CheckCircle2 size={13} aria-hidden />
-                    )}
-                    {busy ? "Approving…" : "Approve"}
-                  </Button>
-                </>
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  onClick={() => setRejectOpen(true)}
+                  disabled={busy}
+                  className="border-rose-200/70 text-rose-700 hover:bg-rose-50/70 dark:border-rose-700/30 dark:text-rose-400 dark:hover:bg-rose-900/20"
+                >
+                  <XCircle size={13} aria-hidden />
+                  Reject
+                </Button>
+              )}
+              {canApprove && (
+                <Button
+                  size="sm"
+                  variant="primary"
+                  onClick={() => onApprove(insp.id)}
+                  disabled={busy}
+                  className="bg-emerald-600 hover:bg-emerald-700"
+                >
+                  {busy ? (
+                    <span className="h-3 w-3 animate-spin rounded-full border-2 border-white/30 border-t-white" />
+                  ) : (
+                    <CheckCircle2 size={13} aria-hidden />
+                  )}
+                  {busy ? "Approving…" : "Approve"}
+                </Button>
               )}
               {actionBlockedBySimulation && (
                 <Tooltip
@@ -416,14 +421,19 @@ function InspectionSkeleton() {
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
+const QA_APPROVE_ROLES = ["admin", "super_admin", "lab_manager", "vp_manufacturing"];
+
 export default function QaQueuePage() {
   const { toast } = useToast();
+  const { user } = useAuth();
 
   const [inspections, setInspections] = useState<QaInspection[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [filter, setFilter] = useState<FilterKey>("pending");
   const [processing, setProcessing] = useState<string | null>(null);
+
+  const permittedToApprove = user ? QA_APPROVE_ROLES.includes(user.role) : false;
 
   // ── Fetch ──────────────────────────────────────────────────────────────────
 
@@ -459,15 +469,15 @@ export default function QaQueuePage() {
     async (id: string) => {
       setProcessing(id);
       try {
-        await api.post(`/api/qa-inspections/${id}/approve`, {});
-        setInspections((prev) =>
-          prev.map((i) => (i.id === id ? { ...i, status: "passed" } : i)),
-        );
-        toast({ title: "Inspection approved", type: "success" });
-        // Remove from filtered view when filter is pending/in_progress
+        const updated = await api.post<QaInspection>(`/api/qa-inspections/${id}/approve`, {});
         if (filter === "pending" || filter === "in_progress") {
           setInspections((prev) => prev.filter((i) => i.id !== id));
+        } else {
+          setInspections((prev) =>
+            prev.map((i) => (i.id === id ? updated : i)),
+          );
         }
+        toast({ title: "Inspection approved", type: "success" });
       } catch (err) {
         toast({
           title: "Approval failed",
@@ -488,14 +498,15 @@ export default function QaQueuePage() {
     async (id: string, notes: string) => {
       setProcessing(id);
       try {
-        await api.post(`/api/qa-inspections/${id}/reject`, { notes });
-        setInspections((prev) =>
-          prev.map((i) => (i.id === id ? { ...i, status: "failed" } : i)),
-        );
-        toast({ title: "Inspection rejected", type: "info" });
+        const updated = await api.post<QaInspection>(`/api/qa-inspections/${id}/reject`, { notes });
         if (filter === "pending" || filter === "in_progress") {
           setInspections((prev) => prev.filter((i) => i.id !== id));
+        } else {
+          setInspections((prev) =>
+            prev.map((i) => (i.id === id ? updated : i)),
+          );
         }
+        toast({ title: "Inspection rejected", type: "info" });
       } catch (err) {
         toast({
           title: "Rejection failed",
@@ -636,6 +647,7 @@ export default function QaQueuePage() {
               key={insp.id}
               insp={insp}
               processing={processing}
+              permittedToApprove={permittedToApprove}
               onApprove={handleApprove}
               onReject={handleReject}
             />

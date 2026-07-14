@@ -5,6 +5,7 @@ import { PG_POOL } from '../database/database.module';
 export interface ManufacturingBatch {
   id: string; organizationId: string; batchNumber: string; status: string;
   caseIds: string[]; scheduledDate: string | null; shippedAt: string | null;
+  resinType: string | null; priority: number;
   notes: string | null; createdBy: string; createdAt: string; updatedAt: string;
 }
 
@@ -29,6 +30,7 @@ export class BatchManufacturingService {
 
   async create(orgId: string, createdBy: string, dto: {
     caseIds?: string[]; scheduledDate?: string; notes?: string;
+    resinType?: string; priority?: number;
   }): Promise<ManufacturingBatch> {
     // Derive next batch number atomically from DB to survive restarts and concurrent requests
     const { rows } = await this.db.query(
@@ -36,11 +38,12 @@ export class BatchManufacturingService {
          SELECT COALESCE(MAX(CAST(SUBSTRING(batch_number FROM 7) AS INTEGER)), 0) + 1 AS seq
          FROM manufacturing_batches
        )
-       INSERT INTO manufacturing_batches (organization_id, batch_number, case_ids, scheduled_date, notes, created_by)
-       SELECT $1, 'BATCH-' || LPAD(next_seq.seq::text, 5, '0'), $2, $3, $4, $5
+       INSERT INTO manufacturing_batches (organization_id, batch_number, case_ids, scheduled_date, notes, resin_type, priority, created_by)
+       SELECT $1, 'BATCH-' || LPAD(next_seq.seq::text, 5, '0'), $2, $3, $4, $5, $6, $7
        FROM next_seq
        RETURNING *`,
-      [orgId, dto.caseIds ?? [], dto.scheduledDate ?? null, dto.notes ?? null, createdBy],
+      [orgId, dto.caseIds ?? [], dto.scheduledDate ?? null, dto.notes ?? null,
+       dto.resinType ?? null, dto.priority ?? 5, createdBy],
     );
     return this.map(rows[0]);
   }
@@ -81,6 +84,8 @@ export class BatchManufacturingService {
       caseIds: (r['case_ids'] as string[]) ?? [],
       scheduledDate: r['scheduled_date'] ? String(r['scheduled_date']) : null,
       shippedAt: r['shipped_at'] ? String(r['shipped_at']) : null,
+      resinType: (r['resin_type'] as string | null) ?? null,
+      priority: (r['priority'] as number) ?? 5,
       notes: r['notes'] as string | null, createdBy: r['created_by'] as string,
       createdAt: String(r['created_at']), updatedAt: String(r['updated_at']),
     };

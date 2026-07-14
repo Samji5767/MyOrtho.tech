@@ -47,11 +47,11 @@ type TabItem = {
 };
 
 const TABS: TabItem[] = [
-  { href: '/dashboard', label: 'Overview', icon: Home         },
-  { href: '/cases',     label: 'Cases',    icon: FolderKanban },
-  { href: '/patients',  label: 'Patients', icon: Users        },
-  { href: '/studio',    label: 'Studio',   icon: Box          },
-  { href: '/settings',  label: 'Settings', icon: Settings     },
+  { href: '/dashboard',     label: 'Overview', icon: Home         },
+  { href: '/cases',         label: 'Cases',    icon: FolderKanban },
+  { href: '/manufacturing', label: 'Lab',      icon: Factory      },
+  { href: '/studio',        label: 'Studio',   icon: Box          },
+  { href: '/settings',      label: 'Settings', icon: Settings     },
 ];
 
 // A route is "active" when it is an exact match (for single-word routes that

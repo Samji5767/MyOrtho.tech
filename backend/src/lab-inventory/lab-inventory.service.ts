@@ -1,4 +1,4 @@
-import { Injectable, Inject, NotFoundException } from '@nestjs/common';
+import { Injectable, Inject, NotFoundException, BadRequestException } from '@nestjs/common';
 import type { Pool, PoolClient } from 'pg';
 import { PG_POOL } from '../database/database.module';
 
@@ -159,6 +159,11 @@ export class LabInventoryService {
 
       const currentQty = lockRows[0]['quantity_on_hand'] as number;
       const newQty = currentQty + dto.quantityDelta;
+
+      if (newQty < 0) {
+        await client.query('ROLLBACK');
+        throw new BadRequestException(`Insufficient stock: only ${currentQty} units available`);
+      }
 
       const { rows: txRows } = await client.query(
         `INSERT INTO inventory_transactions

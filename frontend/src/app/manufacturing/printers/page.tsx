@@ -477,7 +477,8 @@ export default function PrinterFleetPage() {
         <Button
           variant="primary"
           size="sm"
-          onClick={() => console.log("Register Printer — placeholder")}
+          disabled
+          title="Printer registration is managed by your administrator"
         >
           <Plus size={15} />
           Register Printer
@@ -577,7 +578,8 @@ export default function PrinterFleetPage() {
               <Button
                 variant="primary"
                 size="sm"
-                onClick={() => console.log("Register Printer — placeholder")}
+                disabled
+                title="Printer registration is managed by your administrator"
               >
                 <Plus size={14} />
                 Register Printer

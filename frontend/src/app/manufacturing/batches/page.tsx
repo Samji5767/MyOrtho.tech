@@ -396,6 +396,7 @@ export default function ManufacturingBatchesPage() {
 
   const [batches, setBatches] = useState<ManufacturingBatch[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [filter, setFilter] = useState<FilterKey>("all");
   const [showCreate, setShowCreate] = useState(false);
   const [advancingId, setAdvancingId] = useState<string | null>(null);
@@ -405,6 +406,7 @@ export default function ManufacturingBatchesPage() {
   const fetchBatches = useCallback(
     async (statusFilter: FilterKey) => {
       setLoading(true);
+      setError(null);
       try {
         const url =
           statusFilter === "all"
@@ -413,17 +415,14 @@ export default function ManufacturingBatchesPage() {
         const data = await api.get<ManufacturingBatch[]>(url);
         setBatches(Array.isArray(data) ? data : []);
       } catch (err) {
-        toast({
-          title: "Failed to load batches",
-          description: err instanceof Error ? err.message : "Unknown error",
-          type: "error",
-        });
+        const msg = err instanceof Error ? err.message : "Failed to load batches";
+        setError(msg);
         setBatches([]);
       } finally {
         setLoading(false);
       }
     },
-    [toast],
+    [],
   );
 
   useEffect(() => {
@@ -439,17 +438,18 @@ export default function ManufacturingBatchesPage() {
           `/api/manufacturing-batches/${id}/status`,
           { status: nextStatus },
         );
-        setBatches((prev) =>
-          prev.map((b) => (b.id === id ? updated : b)),
-        );
+        // When filtering by status, remove the now-changed batch from the current view
+        if (filter !== "all") {
+          setBatches((prev) => prev.filter((b) => b.id !== id));
+        } else {
+          setBatches((prev) =>
+            prev.map((b) => (b.id === id ? updated : b)),
+          );
+        }
         toast({
           title: `Batch advanced to ${STATUS_LABEL[nextStatus]}`,
           type: "success",
         });
-        // If we're filtering by a status, remove the batch from the current view
-        if (filter !== "all") {
-          setBatches((prev) => prev.filter((b) => b.id !== id));
-        }
       } catch (err) {
         toast({
           title: "Failed to advance batch",
@@ -472,14 +472,15 @@ export default function ManufacturingBatchesPage() {
           `/api/manufacturing-batches/${id}/status`,
           { status: "cancelled" },
         );
-        setBatches((prev) =>
-          prev.map((b) => (b.id === id ? updated : b)),
-        );
-        toast({ title: "Batch cancelled", type: "info" });
-        // Remove from view when filtering by staging
+        // Remove from view when filtering by staging (cancelled won't match)
         if (filter === "staging") {
           setBatches((prev) => prev.filter((b) => b.id !== id));
+        } else {
+          setBatches((prev) =>
+            prev.map((b) => (b.id === id ? updated : b)),
+          );
         }
+        toast({ title: "Batch cancelled", type: "info" });
       } catch (err) {
         toast({
           title: "Failed to cancel batch",
@@ -544,6 +545,24 @@ export default function ManufacturingBatchesPage() {
           New Batch
         </Button>
       </div>
+
+      {/* ── Error banner ── */}
+      {error && (
+        <div
+          role="alert"
+          className="flex items-center gap-3 rounded-xl border border-rose-200/60 bg-rose-50/60 px-4 py-3 text-sm text-rose-700 dark:border-rose-700/30 dark:bg-rose-900/10 dark:text-rose-400"
+        >
+          <Package size={15} className="shrink-0" aria-hidden />
+          <span className="flex-1">{error}</span>
+          <button
+            type="button"
+            onClick={() => void fetchBatches(filter)}
+            className="shrink-0 text-xs font-semibold underline underline-offset-2 hover:no-underline"
+          >
+            Retry
+          </button>
+        </div>
+      )}
 
       {/* ── Status filter pills ── */}
       <div className="no-scrollbar flex gap-1.5 overflow-x-auto">

@@ -114,9 +114,11 @@ export class LabShipmentsService {
     }
 
     const isDelivered = newStatus === 'delivered';
+    const isInTransit = newStatus === 'in_transit';
     const { rows } = await this.db.query(
       `UPDATE shipments
        SET status=$3,
+           shipped_at=${isInTransit ? 'COALESCE(shipped_at, now())' : 'shipped_at'},
            delivered_at=${isDelivered ? 'now()' : 'delivered_at'},
            updated_at=now()
        WHERE id=$1 AND organization_id=$2
@@ -137,6 +139,11 @@ export class LabShipmentsService {
       estimatedDelivery?: string;
     },
   ): Promise<Shipment> {
+    const courier = dto.courier?.trim();
+    const trackingNumber = dto.trackingNumber?.trim();
+    if (!courier || !trackingNumber) {
+      throw new BadRequestException('courier and trackingNumber are required');
+    }
     const { rows } = await this.db.query(
       `UPDATE shipments
        SET courier=$3,
@@ -149,8 +156,8 @@ export class LabShipmentsService {
       [
         id,
         orgId,
-        dto.courier,
-        dto.trackingNumber,
+        courier,
+        trackingNumber,
         dto.carrierService ?? null,
         dto.estimatedDelivery ?? null,
       ],

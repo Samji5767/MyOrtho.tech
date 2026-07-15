@@ -4,6 +4,7 @@ import { PG_POOL } from '../database/database.module';
 import { LlmService } from './rag/llm.service';
 import { AgentRouterService } from './rag/agent-router.service';
 import { ContextBuilderService } from './rag/context-builder.service';
+import { AiAuditService } from '../mlops/ai-audit.service';
 
 export interface StreamEvent {
   type: 'meta' | 'delta' | 'done' | 'error';
@@ -646,6 +647,7 @@ export class CopilotService {
     @Optional() private readonly llm: LlmService,
     @Optional() private readonly agentRouter: AgentRouterService,
     @Optional() private readonly contextBuilder: ContextBuilderService,
+    @Optional() private readonly aiAudit: AiAuditService,
   ) {}
 
   async startConversation(
@@ -681,6 +683,7 @@ export class CopilotService {
     conversationId: string,
     orgId: string,
     dto: SendMessageDto,
+    userId?: string,
   ): Promise<CopilotMessage> {
     const startMs = Date.now();
 
@@ -779,6 +782,29 @@ export class CopilotService {
       [conversationId],
     );
 
+    // Audit trail: fire-and-forget to avoid blocking the response
+    if (this.aiAudit) {
+      this.aiAudit.beginAudit({
+        organizationId: orgId,
+        invokedBy: userId ?? orgId,
+        modelName: 'copilot-assistant',
+        modelVersion: '1.0',
+        inferenceType: 'copilot.chat',
+        correlationId: conversationId,
+        caseId: conv['case_id'] as string | undefined,
+        disclaimerShown: true,
+        inputMetadata: { intent, module, suggestionCount: persistedSuggestions.length },
+      }).then(audit =>
+        this.aiAudit!.finalizeAudit(audit.id, {
+          outcome: 'accepted',
+          latencyMs,
+          confidenceScore: confidence === 'high' ? 0.9 : confidence === 'medium' ? 0.65 : 0.4,
+          fallbackUsed: true,
+          outputMetadata: { messageId: msgRes.rows[0]['id'] },
+        }),
+      ).catch(err => this.log.warn(`AI audit error (sendMessage): ${(err as Error).message}`));
+    }
+
     this.log.log(`Copilot message: conv ${conversationId} — ${latencyMs}ms, ${persistedSuggestions.length} suggestions`);
 
     return this.rowToMessage(msgRes.rows[0], persistedSuggestions, confidence, explainability);
@@ -791,6 +817,7 @@ export class CopilotService {
     conversationId: string,
     orgId: string,
     dto: SendMessageDto,
+    userId?: string,
   ): AsyncGenerator<StreamEvent> {
     const startMs = Date.now();
 
@@ -940,6 +967,30 @@ export class CopilotService {
     );
 
     this.log.log(`Copilot stream: conv ${conversationId} — ${latencyMs}ms, agent=${agentConfig.agentType}, fallback=${fallbackUsed}`);
+
+    // Audit trail: fire-and-forget
+    if (this.aiAudit) {
+      this.aiAudit.beginAudit({
+        organizationId: orgId,
+        invokedBy: userId ?? orgId,
+        modelName: fallbackUsed ? 'copilot-rule-engine' : 'copilot-llm',
+        modelVersion: '1.0',
+        inferenceType: 'copilot.stream',
+        correlationId: conversationId,
+        caseId: (conv as Record<string, unknown>)['case_id'] as string | undefined,
+        disclaimerShown: true,
+        inputMetadata: { agentType: agentConfig.agentType, suggestionCount: persistedSuggestions.length },
+      }).then(audit =>
+        this.aiAudit!.finalizeAudit(audit.id, {
+          outcome: 'accepted',
+          latencyMs,
+          confidenceScore: streamConfidence === 'high' ? 0.9 : streamConfidence === 'medium' ? 0.65 : 0.4,
+          fallbackUsed,
+          outputMetadata: { messageId: msgRes.rows[0]['id'] },
+        }),
+      ).catch(err => this.log.warn(`AI audit error (streamMessage): ${(err as Error).message}`));
+    }
+
     yield { type: 'done', messageId: msgRes.rows[0]['id'] as string, fallbackUsed };
     yield {
       type: 'meta',

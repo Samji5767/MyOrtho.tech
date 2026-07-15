@@ -32,7 +32,7 @@ export class CopilotController {
     @Param('conversationId', new ParseUUIDPipe()) conversationId: string,
     @Body() dto: SendMessageDto,
   ) {
-    return this.svc.sendMessage(conversationId, req.user.orgId, dto);
+    return this.svc.sendMessage(conversationId, req.user.orgId, dto, req.user.id);
   }
 
   @Get('api/cases/:caseId/copilot/conversations/:conversationId/messages')
@@ -69,7 +69,7 @@ export class CopilotController {
     res.flushHeaders();
 
     try {
-      for await (const event of this.svc.streamMessage(conversationId, req.user.orgId, dto)) {
+      for await (const event of this.svc.streamMessage(conversationId, req.user.orgId, dto, req.user.id)) {
         res.write(`data: ${JSON.stringify(event)}\n\n`);
       }
     } catch (err) {

@@ -75,6 +75,14 @@ export class IntegrationProvidersController {
     });
   }
 
+  @Post('run-health-checks')
+  @UseGuards(PermissionsGuard)
+  @RequirePermission('integrations:write')
+  runHealthChecks(@Req() req: Request) {
+    const { id, orgId } = getUser(req);
+    return this.svc.scheduleHealthChecks(orgId, id);
+  }
+
   @Post(':id/health-check')
   @UseGuards(PermissionsGuard)
   @RequirePermission('integrations:write')

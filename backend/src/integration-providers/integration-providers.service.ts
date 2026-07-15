@@ -3,9 +3,11 @@ import {
   Inject,
   NotFoundException,
   BadRequestException,
+  Optional,
 } from '@nestjs/common';
 import type { Pool } from 'pg';
 import { PG_POOL } from '../database/database.module';
+import { BackgroundJobsService } from '../background-jobs/background-jobs.service';
 
 export interface IntegrationProvider {
   id: string;
@@ -43,7 +45,10 @@ const VALID_HEALTH_STATUSES = ['healthy', 'degraded', 'unhealthy', 'unknown'];
 
 @Injectable()
 export class IntegrationProvidersService {
-  constructor(@Inject(PG_POOL) private readonly db: Pool) {}
+  constructor(
+    @Inject(PG_POOL) private readonly db: Pool,
+    @Optional() private readonly jobs: BackgroundJobsService,
+  ) {}
 
   async list(orgId: string, type?: string): Promise<IntegrationProvider[]> {
     const hasType = type != null && type !== '';
@@ -168,6 +173,27 @@ export class IntegrationProvidersService {
       provider: this.map(providerResult.rows[0]),
       log: this.mapLog(logResult.rows[0]),
     };
+  }
+
+  async scheduleHealthChecks(orgId: string, enqueuedBy: string): Promise<{ scheduled: number; providerIds: string[] }> {
+    const { rows } = await this.db.query(
+      `SELECT id FROM integration_providers WHERE organization_id = $1 AND enabled = TRUE ORDER BY provider_type, name`,
+      [orgId],
+    );
+    if (!this.jobs) {
+      return { scheduled: 0, providerIds: [] };
+    }
+    const providerIds: string[] = [];
+    for (const row of rows) {
+      const providerId = row['id'] as string;
+      await this.jobs.enqueue(orgId, enqueuedBy, {
+        jobType: 'integration.health_check',
+        payloadJson: { providerId, orgId },
+        idempotencyKey: `health-check-${providerId}-${new Date().toISOString().slice(0, 13)}`, // once per hour per provider
+      });
+      providerIds.push(providerId);
+    }
+    return { scheduled: providerIds.length, providerIds };
   }
 
   async getHealthLogs(id: string, orgId: string, limit = 50): Promise<IntegrationHealthLog[]> {

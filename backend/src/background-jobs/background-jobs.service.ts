@@ -16,17 +16,28 @@ export interface BackgroundJob {
   payloadJson: Record<string, unknown>;
   resultJson: Record<string, unknown> | null;
   error: string | null;
+  lastErrorCode: string | null;
   attempts: number;
   maxAttempts: number;
   runAt: string;
   startedAt: string | null;
   completedAt: string | null;
+  workerId: string | null;
+  claimedAt: string | null;
+  leaseExpiresAt: string | null;
+  heartbeatAt: string | null;
+  idempotencyKey: string | null;
+  retryDelayMs: number;
+  retryScheduledAt: string | null;
   createdBy: string | null;
   createdAt: string;
   updatedAt: string;
 }
 
-const VALID_STATUSES = ['pending', 'running', 'completed', 'failed', 'cancelled', 'dead_letter'];
+const VALID_STATUSES = [
+  'pending', 'running', 'completed', 'failed',
+  'cancelled', 'dead_letter', 'retry_scheduled',
+];
 
 @Injectable()
 export class BackgroundJobsService {
@@ -77,12 +88,16 @@ export class BackgroundJobsService {
       priority?: number;
       maxAttempts?: number;
       runAt?: string;
+      idempotencyKey?: string;
     },
   ): Promise<BackgroundJob> {
     const { rows } = await this.db.query(
       `INSERT INTO background_jobs
-         (organization_id, job_type, payload_json, priority, max_attempts, run_at, created_by)
-       VALUES ($1, $2, $3, $4, $5, COALESCE($6::timestamptz, NOW()), $7)
+         (organization_id, job_type, payload_json, priority, max_attempts, run_at, created_by, idempotency_key)
+       VALUES ($1, $2, $3, $4, $5, COALESCE($6::timestamptz, NOW()), $7, $8)
+       ON CONFLICT (organization_id, idempotency_key)
+         WHERE idempotency_key IS NOT NULL
+         DO UPDATE SET updated_at = background_jobs.updated_at
        RETURNING *`,
       [
         orgId,
@@ -92,6 +107,7 @@ export class BackgroundJobsService {
         dto.maxAttempts ?? 3,
         dto.runAt ?? null,
         createdBy,
+        dto.idempotencyKey ?? null,
       ],
     );
     return this.map(rows[0]);
@@ -137,11 +153,19 @@ export class BackgroundJobsService {
       payloadJson: (r['payload_json'] as Record<string, unknown>) ?? {},
       resultJson: (r['result_json'] as Record<string, unknown> | null) ?? null,
       error: (r['error'] as string | null) ?? null,
+      lastErrorCode: (r['last_error_code'] as string | null) ?? null,
       attempts: Number(r['attempts']),
       maxAttempts: Number(r['max_attempts']),
       runAt: String(r['run_at']),
       startedAt: r['started_at'] ? String(r['started_at']) : null,
       completedAt: r['completed_at'] ? String(r['completed_at']) : null,
+      workerId: (r['worker_id'] as string | null) ?? null,
+      claimedAt: r['claimed_at'] ? String(r['claimed_at']) : null,
+      leaseExpiresAt: r['lease_expires_at'] ? String(r['lease_expires_at']) : null,
+      heartbeatAt: r['heartbeat_at'] ? String(r['heartbeat_at']) : null,
+      idempotencyKey: (r['idempotency_key'] as string | null) ?? null,
+      retryDelayMs: Number(r['retry_delay_ms'] ?? 0),
+      retryScheduledAt: r['retry_scheduled_at'] ? String(r['retry_scheduled_at']) : null,
       createdBy: (r['created_by'] as string | null) ?? null,
       createdAt: String(r['created_at']),
       updatedAt: String(r['updated_at']),

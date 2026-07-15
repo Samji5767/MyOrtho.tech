@@ -76,6 +76,18 @@ const ADMIN_SECTIONS = [
     description: "Manufacturing dashboard, print farm, batch tracking, and shipments.",
     href: "/manufacturing",
   },
+  {
+    icon: <Activity size={18} />,
+    title: "Background Jobs",
+    description: "Monitor and manage the platform job queue, retries, and dead-letter queue.",
+    href: "/admin/jobs",
+  },
+  {
+    icon: <ShieldAlert size={18} />,
+    title: "AI Operations",
+    description: "Model registry, inference audit trail, lifecycle governance, and disclaimer compliance.",
+    href: "/admin/ai-ops",
+  },
 ];
 
 interface PlatformStats {

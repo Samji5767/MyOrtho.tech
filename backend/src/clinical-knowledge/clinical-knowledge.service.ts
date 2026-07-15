@@ -20,6 +20,8 @@ export interface ClinicalProtocol {
   createdBy: string;
   createdAt: string;
   updatedAt: string;
+  lastUsedAt: string | null;
+  usageCount: number;
 }
 
 export interface MaterialLibrary {
@@ -35,6 +37,8 @@ export interface MaterialLibrary {
   createdBy: string;
   createdAt: string;
   updatedAt: string;
+  lastUsedAt: string | null;
+  usageCount: number;
 }
 
 export interface ManufacturingProfile {
@@ -52,6 +56,8 @@ export interface ManufacturingProfile {
   createdBy: string;
   createdAt: string;
   updatedAt: string;
+  lastUsedAt: string | null;
+  usageCount: number;
 }
 
 const VALID_AREAS = ['orthodontics', 'restorative', 'surgical', 'pediatric', 'general'];
@@ -79,7 +85,10 @@ export class ClinicalKnowledgeService {
 
   async getProtocol(id: string, orgId: string): Promise<ClinicalProtocol> {
     const { rows } = await this.db.query(
-      `SELECT * FROM clinical_protocols WHERE id = $1 AND organization_id = $2`,
+      `UPDATE clinical_protocols
+       SET last_used_at = NOW(), usage_count = usage_count + 1, updated_at = NOW()
+       WHERE id = $1 AND organization_id = $2
+       RETURNING *`,
       [id, orgId],
     );
     if (!rows[0]) throw new NotFoundException('Protocol not found');
@@ -122,9 +131,27 @@ export class ClinicalKnowledgeService {
     id: string,
     orgId: string,
     status: string,
+    force = false,
   ): Promise<ClinicalProtocol> {
     if (!VALID_PROTOCOL_STATUS.includes(status)) {
       throw new BadRequestException(`Invalid status. Valid: ${VALID_PROTOCOL_STATUS.join(', ')}`);
+    }
+    if (status === 'archived' && !force) {
+      const { rows: current } = await this.db.query(
+        `SELECT usage_count, last_used_at FROM clinical_protocols WHERE id = $1 AND organization_id = $2`,
+        [id, orgId],
+      );
+      if (!current[0]) throw new NotFoundException('Protocol not found');
+      const usageCount = Number(current[0]['usage_count'] ?? 0);
+      const lastUsedAt = current[0]['last_used_at'] as string | null;
+      const recentlyUsed = lastUsedAt
+        ? new Date(lastUsedAt) > new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)
+        : false;
+      if (usageCount > 0 || recentlyUsed) {
+        throw new BadRequestException(
+          `Protocol has been used ${usageCount} time(s)${recentlyUsed ? ' (recently)' : ''}. Pass force=true to archive.`,
+        );
+      }
     }
     const { rows } = await this.db.query(
       `UPDATE clinical_protocols SET status = $3, updated_at = NOW()
@@ -245,6 +272,8 @@ export class ClinicalKnowledgeService {
       createdBy: r['created_by'] as string,
       createdAt: String(r['created_at']),
       updatedAt: String(r['updated_at']),
+      lastUsedAt: r['last_used_at'] ? String(r['last_used_at']) : null,
+      usageCount: Number(r['usage_count'] ?? 0),
     };
   }
 
@@ -262,6 +291,8 @@ export class ClinicalKnowledgeService {
       createdBy: r['created_by'] as string,
       createdAt: String(r['created_at']),
       updatedAt: String(r['updated_at']),
+      lastUsedAt: r['last_used_at'] ? String(r['last_used_at']) : null,
+      usageCount: Number(r['usage_count'] ?? 0),
     };
   }
 
@@ -281,6 +312,8 @@ export class ClinicalKnowledgeService {
       createdBy: r['created_by'] as string,
       createdAt: String(r['created_at']),
       updatedAt: String(r['updated_at']),
+      lastUsedAt: r['last_used_at'] ? String(r['last_used_at']) : null,
+      usageCount: Number(r['usage_count'] ?? 0),
     };
   }
 }

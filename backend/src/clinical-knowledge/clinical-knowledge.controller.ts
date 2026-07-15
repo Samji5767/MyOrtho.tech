@@ -71,9 +71,10 @@ export class ClinicalKnowledgeController {
     @Req() req: Request,
     @Param('id') id: string,
     @Body('status') status: string,
+    @Body('force') force?: boolean,
   ) {
     const { orgId } = getUser(req);
-    return this.svc.updateProtocolStatus(id, orgId, status);
+    return this.svc.updateProtocolStatus(id, orgId, status, force ?? false);
   }
 
   // ─── Material Libraries ───────────────────────────────────────────────────────

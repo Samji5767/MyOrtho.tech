@@ -1,13 +1,13 @@
 import { HttpException, HttpStatus } from '@nestjs/common';
 import { AllExceptionsFilter } from './all-exceptions.filter';
 
-function mockHost(method = 'GET', url = '/test') {
+function mockHost(method = 'GET', url = '/test', correlationId?: string) {
   const json = jest.fn();
   const status = jest.fn().mockReturnValue({ json });
   const host: any = {
     switchToHttp: () => ({
       getResponse: () => ({ status }),
-      getRequest: () => ({ method, url }),
+      getRequest: () => ({ method, url, correlationId }),
     }),
   };
   return { host, status, json };
@@ -48,5 +48,21 @@ describe('AllExceptionsFilter', () => {
     const payload = json.mock.calls[0][0];
     expect(payload.path).toBe('/billing/42');
     expect(payload.timestamp).toBeDefined();
+  });
+
+  it('includes correlationId in the response when present on request', () => {
+    const { host, json } = mockHost('GET', '/cases', 'test-correlation-123');
+    filter.catch(new HttpException('Not found', HttpStatus.NOT_FOUND), host);
+
+    const payload = json.mock.calls[0][0];
+    expect(payload.correlationId).toBe('test-correlation-123');
+  });
+
+  it('omits correlationId when not present on request', () => {
+    const { host, json } = mockHost('GET', '/cases');
+    filter.catch(new HttpException('Not found', HttpStatus.NOT_FOUND), host);
+
+    const payload = json.mock.calls[0][0];
+    expect(payload).not.toHaveProperty('correlationId');
   });
 });

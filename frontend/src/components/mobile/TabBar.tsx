@@ -3,19 +3,28 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import BrandMark from "@/components/BrandMark";
+import NotificationBell from "@/components/NotificationBell";
 import { APP_VERSION } from "@/lib/version";
 import { useAuth } from "@/context/AuthContext";
 import { roleLabel } from "@/lib/auth";
 import {
   BarChart3,
   Box,
+  ClipboardCheck,
   Download,
+  Factory,
+  FlaskConical,
   FolderKanban,
   Home,
   Layers3,
   LogOut,
+  MapPin,
+  Package,
+  Plug,
+  Printer,
   Settings,
   ShieldCheck,
+  Truck,
   Users,
   type LucideIcon,
 } from "lucide-react";
@@ -38,11 +47,11 @@ type TabItem = {
 };
 
 const TABS: TabItem[] = [
-  { href: '/dashboard', label: 'Overview', icon: Home         },
-  { href: '/cases',     label: 'Cases',    icon: FolderKanban },
-  { href: '/patients',  label: 'Patients', icon: Users        },
-  { href: '/studio',    label: 'Studio',   icon: Box          },
-  { href: '/settings',  label: 'Settings', icon: Settings     },
+  { href: '/dashboard',     label: 'Overview', icon: Home         },
+  { href: '/cases',         label: 'Cases',    icon: FolderKanban },
+  { href: '/manufacturing', label: 'Lab',      icon: Factory      },
+  { href: '/studio',        label: 'Studio',   icon: Box          },
+  { href: '/settings',      label: 'Settings', icon: Settings     },
 ];
 
 // A route is "active" when it is an exact match (for single-word routes that
@@ -130,9 +139,10 @@ const SIDEBAR_GROUPS: SidebarGroup[] = [
   {
     label: 'Clinical',
     items: [
-      { href: '/cases',          label: 'Cases',          icon: FolderKanban },
-      { href: '/patients',       label: 'Patients',       icon: Users        },
-      { href: '/treatment-plan', label: 'Treatment Plan', icon: Layers3      },
+      { href: '/cases',           label: 'Cases',          icon: FolderKanban   },
+      { href: '/cases/approvals', label: 'Approval Queue', icon: ClipboardCheck },
+      { href: '/patients',        label: 'Patients',       icon: Users          },
+      { href: '/treatment-plan',  label: 'Treatment Plan', icon: Layers3        },
     ],
   },
   {
@@ -160,9 +170,23 @@ const SIDEBAR_GROUPS: SidebarGroup[] = [
     ],
   },
   {
+    label: 'Lab & Manufacturing',
+    items: [
+      { href: '/manufacturing',            label: 'Dashboard',  icon: Factory      },
+      { href: '/manufacturing/batches',    label: 'Batches',    icon: FlaskConical },
+      { href: '/manufacturing/printers',   label: 'Printers',   icon: Printer      },
+      { href: '/manufacturing/qa',         label: 'QA',         icon: ClipboardCheck },
+      { href: '/manufacturing/inventory',  label: 'Inventory',  icon: Package      },
+      { href: '/manufacturing/shipments',  label: 'Shipments',  icon: Truck        },
+      { href: '/manufacturing/analytics',  label: 'Analytics',  icon: BarChart3    },
+    ],
+  },
+  {
     label: 'Administration',
     items: [
-      { href: '/admin', label: 'Admin Panel', icon: ShieldCheck },
+      { href: '/admin',              label: 'Admin Panel',  icon: ShieldCheck },
+      { href: '/admin/locations',    label: 'Locations',    icon: MapPin      },
+      { href: '/admin/integrations', label: 'Integrations', icon: Plug        },
     ],
     adminOnly: true,
   },
@@ -258,6 +282,9 @@ export function SidebarNav() {
                 {user ? roleLabel(user.role) : ''}
               </p>
             </div>
+
+            {/* Notifications */}
+            <NotificationBell />
 
             {/* Sign out */}
             <button

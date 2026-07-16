@@ -1,6 +1,8 @@
 import { Controller, Get, Post, Patch, Body, Param, Query, UseGuards, Req, UnauthorizedException } from '@nestjs/common';
 import type { Request } from 'express';
 import { AuthGuard } from '../auth/auth.guard';
+import { PermissionsGuard } from '../auth/permissions.guard';
+import { RequirePermission } from '../auth/require-permission.decorator';
 import { BatchManufacturingService } from './batch-manufacturing.service';
 
 interface AuthUser { id: string; orgId: string | null }
@@ -21,7 +23,9 @@ export class BatchManufacturingController {
   }
 
   @Post()
-  create(@Req() req: Request, @Body() body: { caseIds?: string[]; scheduledDate?: string; notes?: string }) {
+  @UseGuards(PermissionsGuard)
+  @RequirePermission('manufacturing:write')
+  create(@Req() req: Request, @Body() body: { caseIds?: string[]; scheduledDate?: string; notes?: string; resinType?: string; priority?: number }) {
     const { id, orgId } = getUser(req);
     return this.svc.create(orgId, id, body);
   }

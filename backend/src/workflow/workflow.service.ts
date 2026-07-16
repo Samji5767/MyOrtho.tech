@@ -93,10 +93,13 @@ export class WorkflowService {
       }
 
       // Update case status and write workflow event atomically.
-      await client.query(
+      const updateResult = await client.query(
         'UPDATE cases SET status = $1, updated_at = now() WHERE id = $2 AND organization_id = $3',
         [input.toStatus, input.caseId, input.orgId],
       );
+      if ((updateResult.rowCount ?? 0) === 0) {
+        throw new BadRequestException(`Case ${input.caseId} not found in this organization`);
+      }
 
       await client.query(
         `INSERT INTO workflow_events

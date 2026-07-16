@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback, useMemo } from "react";
+import React, { useEffect, useState, useCallback, useMemo } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
@@ -11,9 +11,15 @@ import {
   Clock,
   Edit2,
   FolderKanban,
+  GitBranch,
+  History,
   Layers,
+  LayoutDashboard,
+  MessageSquarePlus,
   Plus,
   RefreshCw,
+  ScanLine,
+  Send,
   TrendingUp,
   User,
   X,
@@ -29,7 +35,11 @@ import {
   StatusBadge,
 } from "@/components/DesignSystem";
 import { useToast } from "@/components/ToastContext";
-import { fetchPatient, updatePatient, fetchPatientCases, type UpdatePatientDto } from "@/lib/api/patients";
+import {
+  fetchPatient, updatePatient, fetchPatientCases,
+  fetchPatientTimeline, addPatientTimelineNote,
+  type UpdatePatientDto, type TimelineEvent,
+} from "@/lib/api/patients";
 import { ApiError } from "@/lib/api/client";
 import type { CaseListItem } from "@/lib/api/cases";
 
@@ -263,6 +273,28 @@ function EditPatientModal({ patient, onSave, onClose }: EditModalProps) {
 
 // ─── Main Component ───────────────────────────────────────────────────────────
 
+type TabId = 'overview' | 'timeline';
+
+const TIMELINE_TYPE_META: Record<string, { icon: React.ElementType; color: string; bg: string }> = {
+  case_created:             { icon: FolderKanban, color: 'text-[color:var(--primary)]',              bg: 'bg-[color:var(--primary-glow)]' },
+  case_transition:          { icon: GitBranch,    color: 'text-violet-600 dark:text-violet-400',    bg: 'bg-violet-500/10' },
+  scan_uploaded:            { icon: ScanLine,     color: 'text-sky-600 dark:text-sky-400',          bg: 'bg-sky-500/10' },
+  appointment_scheduled:    { icon: CalendarDays, color: 'text-amber-600 dark:text-amber-400',      bg: 'bg-amber-500/10' },
+  appointment_completed:    { icon: CheckCircle2, color: 'text-emerald-600 dark:text-emerald-400',  bg: 'bg-emerald-500/10' },
+  appointment_cancelled:    { icon: X,            color: 'text-rose-600 dark:text-rose-400',        bg: 'bg-rose-500/10' },
+  note:                     { icon: ClipboardList, color: 'text-slate-600 dark:text-slate-400',     bg: 'bg-slate-500/10' },
+};
+const DEFAULT_TIMELINE_META = { icon: Clock, color: 'text-slate-500', bg: 'bg-slate-500/10' };
+
+function formatTimelineDate(iso: string): { date: string; time: string } {
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return { date: iso, time: '' };
+  return {
+    date: d.toLocaleDateString('en-AU', { day: 'numeric', month: 'short', year: 'numeric' }),
+    time: d.toLocaleTimeString('en-AU', { hour: '2-digit', minute: '2-digit' }),
+  };
+}
+
 export default function PatientDetailClient({ id }: { id: string }) {
   const router = useRouter();
   const { toast } = useToast();
@@ -273,6 +305,11 @@ export default function PatientDetailClient({ id }: { id: string }) {
   const [notFound, setNotFound] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showEditModal, setShowEditModal] = useState(false);
+  const [activeTab, setActiveTab] = useState<TabId>('overview');
+  const [timeline, setTimeline] = useState<TimelineEvent[]>([]);
+  const [timelineLoading, setTimelineLoading] = useState(false);
+  const [newNote, setNewNote] = useState('');
+  const [addingNote, setAddingNote] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -323,6 +360,37 @@ export default function PatientDetailClient({ id }: { id: string }) {
   }, [id]);
 
   useEffect(() => { void load(); }, [load]);
+
+  const loadTimeline = useCallback(async () => {
+    setTimelineLoading(true);
+    try {
+      const events = await fetchPatientTimeline(id);
+      setTimeline(events);
+    } catch {
+      // non-fatal: show empty state
+    } finally {
+      setTimelineLoading(false);
+    }
+  }, [id]);
+
+  useEffect(() => {
+    if (activeTab === 'timeline') void loadTimeline();
+  }, [activeTab, loadTimeline]);
+
+  async function handleAddNote() {
+    if (!newNote.trim()) return;
+    setAddingNote(true);
+    try {
+      const event = await addPatientTimelineNote(id, { note: newNote.trim() });
+      setTimeline((prev) => [event, ...prev]);
+      setNewNote('');
+      toast({ title: 'Note added', type: 'success' });
+    } catch {
+      toast({ title: 'Failed to add note', description: 'Please try again.', type: 'error' });
+    } finally {
+      setAddingNote(false);
+    }
+  }
 
   const stats = useMemo(() => {
     const total = patientCases.length;
@@ -533,127 +601,223 @@ export default function PatientDetailClient({ id }: { id: string }) {
           </Link>
         </div>
 
-        {/* ── Patient details ── */}
-        <Card className="p-4">
-          <SectionHeader eyebrow="Patient" title="Details" />
-          <div className="mt-4 space-y-0">
-            <DataRow label="Full name"    value={fullName} />
-            <DataRow label="Date of birth" value={formatDob(patient.dateOfBirth)} />
-            <DataRow label="Gender"       value={formatGender(patient.gender)} />
-            <DataRow
-              label="Registered"
-              value={new Date(patient.createdAt).toLocaleDateString("en-AU", {
-                day: "numeric", month: "short", year: "numeric",
-              })}
-            />
-          </div>
-          {patient.clinicalNotes && (
-            <div className="mt-4 border-t border-[color:var(--border)]/60 pt-4">
-              <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-[color:var(--muted-foreground)]">
-                Clinical Notes
-              </p>
-              <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-[color:var(--foreground)]">
-                {patient.clinicalNotes}
-              </p>
-            </div>
-          )}
-        </Card>
+        {/* ── Tab switcher ── */}
+        <div className="flex gap-1 rounded-xl border border-[color:var(--border)] bg-[color:var(--muted)]/30 p-1">
+          {([ ['overview', LayoutDashboard, 'Overview'], ['timeline', History, 'Timeline'] ] as const).map(([tab, Icon, label]) => (
+            <button
+              key={tab}
+              type="button"
+              onClick={() => setActiveTab(tab)}
+              className={[
+                'flex flex-1 items-center justify-center gap-2 rounded-lg px-3 py-2 text-sm font-medium transition-all',
+                activeTab === tab
+                  ? 'bg-[color:var(--card)] text-[color:var(--foreground)] shadow-sm'
+                  : 'text-[color:var(--muted-foreground)] hover:text-[color:var(--foreground)]',
+              ].join(' ')}
+            >
+              <Icon size={14} />
+              {label}
+            </button>
+          ))}
+        </div>
 
-        {/* ── Treatment history ── */}
-        <div className="space-y-3">
-          <SectionHeader
-            eyebrow="Clinical"
-            title="Treatment History"
-            action={
-              patientCases.length > 0 ? (
-                <Link href={`/cases?patientId=${patient.id}`}>
-                  <Button variant="ghost" size="sm">View all</Button>
-                </Link>
-              ) : undefined
-            }
-          />
+        {/* ── Overview tab ── */}
+        {activeTab === 'overview' && (
+          <>
+            {/* ── Patient details ── */}
+            <Card className="p-4">
+              <SectionHeader eyebrow="Patient" title="Details" />
+              <div className="mt-4 space-y-0">
+                <DataRow label="Full name"    value={fullName} />
+                <DataRow label="Date of birth" value={formatDob(patient.dateOfBirth)} />
+                <DataRow label="Gender"       value={formatGender(patient.gender)} />
+                <DataRow
+                  label="Registered"
+                  value={new Date(patient.createdAt).toLocaleDateString("en-AU", {
+                    day: "numeric", month: "short", year: "numeric",
+                  })}
+                />
+              </div>
+              {patient.clinicalNotes && (
+                <div className="mt-4 border-t border-[color:var(--border)]/60 pt-4">
+                  <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-[color:var(--muted-foreground)]">
+                    Clinical Notes
+                  </p>
+                  <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-[color:var(--foreground)]">
+                    {patient.clinicalNotes}
+                  </p>
+                </div>
+              )}
+            </Card>
 
-          {casesLoading ? (
+            {/* ── Treatment history ── */}
             <div className="space-y-3">
-              <SkeletonBlock className="h-20 w-full" />
-              <SkeletonBlock className="h-20 w-full" />
-            </div>
-          ) : patientCases.length === 0 ? (
-            <EmptyState
-              icon={ClipboardList}
-              title="No cases yet"
-              body="Create a new case to start the clinical workflow for this patient."
-            />
-          ) : (
-            <div className="relative">
-              {/* Timeline spine */}
-              <div
-                aria-hidden
-                className="absolute left-[19px] top-6 w-px bg-[color:var(--border)]"
-                style={{ bottom: 20 }}
+              <SectionHeader
+                eyebrow="Clinical"
+                title="Treatment History"
+                action={
+                  patientCases.length > 0 ? (
+                    <Link href={`/cases?patientId=${patient.id}`}>
+                      <Button variant="ghost" size="sm">View all</Button>
+                    </Link>
+                  ) : undefined
+                }
               />
-              <div className="space-y-3">
-                {patientCases.map((c, idx) => {
-                  const progress = statusToProgress(c.status);
-                  return (
-                    <Link key={c.id} href={`/cases?id=${c.id}`} className="block">
-                      <div className="relative flex items-start gap-3">
-                        {/* Timeline dot */}
-                        <span
-                          className={[
-                            "relative z-10 mt-3.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-2 transition",
-                            idx === 0
-                              ? "border-[color:var(--primary)] bg-[color:var(--primary-glow)]"
-                              : "border-[color:var(--border)] bg-[color:var(--card)]",
-                          ].join(" ")}
-                        >
-                          {c.status === "completed" && (
-                            <CheckCircle2 size={10} className="text-emerald-500" />
-                          )}
-                          {c.status === "active_treatment" && (
-                            <span className="h-2 w-2 rounded-full bg-[color:var(--primary)]" />
-                          )}
-                        </span>
 
-                        <Card className="flex-1 p-3">
-                          <div className="flex items-start justify-between gap-3">
-                            <div className="min-w-0 flex-1">
-                              <p className="truncate text-sm font-medium text-[color:var(--foreground)]">
-                                {c.chiefComplaint ?? "No chief complaint"}
-                              </p>
-                              {c.malocclusionClass && (
-                                <p className="mt-0.5 truncate text-xs text-[color:var(--muted-foreground)]">
-                                  {c.malocclusionClass}
-                                </p>
-                              )}
-                              <div className="mt-2">
-                                <ProgressBar
-                                  value={progress}
-                                  tone={progress >= 80 ? "success" : progress >= 50 ? "primary" : "warning"}
-                                />
+              {casesLoading ? (
+                <div className="space-y-3">
+                  <SkeletonBlock className="h-20 w-full" />
+                  <SkeletonBlock className="h-20 w-full" />
+                </div>
+              ) : patientCases.length === 0 ? (
+                <EmptyState
+                  icon={ClipboardList}
+                  title="No cases yet"
+                  body="Create a new case to start the clinical workflow for this patient."
+                />
+              ) : (
+                <div className="relative">
+                  <div
+                    aria-hidden
+                    className="absolute left-[19px] top-6 w-px bg-[color:var(--border)]"
+                    style={{ bottom: 20 }}
+                  />
+                  <div className="space-y-3">
+                    {patientCases.map((c, idx) => {
+                      const progress = statusToProgress(c.status);
+                      return (
+                        <Link key={c.id} href={`/cases?id=${c.id}`} className="block">
+                          <div className="relative flex items-start gap-3">
+                            <span
+                              className={[
+                                "relative z-10 mt-3.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-2 transition",
+                                idx === 0
+                                  ? "border-[color:var(--primary)] bg-[color:var(--primary-glow)]"
+                                  : "border-[color:var(--border)] bg-[color:var(--card)]",
+                              ].join(" ")}
+                            >
+                              {c.status === "completed" && <CheckCircle2 size={10} className="text-emerald-500" />}
+                              {c.status === "active_treatment" && <span className="h-2 w-2 rounded-full bg-[color:var(--primary)]" />}
+                            </span>
+                            <Card className="flex-1 p-3">
+                              <div className="flex items-start justify-between gap-3">
+                                <div className="min-w-0 flex-1">
+                                  <p className="truncate text-sm font-medium text-[color:var(--foreground)]">
+                                    {c.chiefComplaint ?? "No chief complaint"}
+                                  </p>
+                                  {c.malocclusionClass && (
+                                    <p className="mt-0.5 truncate text-xs text-[color:var(--muted-foreground)]">{c.malocclusionClass}</p>
+                                  )}
+                                  <div className="mt-2">
+                                    <ProgressBar value={progress} tone={progress >= 80 ? "success" : progress >= 50 ? "primary" : "warning"} />
+                                  </div>
+                                </div>
+                                <div className="flex shrink-0 flex-col items-end gap-1.5">
+                                  <StatusBadge tone={caseStatusTone(c.status)}>
+                                    {c.status.replace(/_/g, " ")}
+                                  </StatusBadge>
+                                  <span className="flex items-center gap-1 text-[10px] text-[color:var(--muted-foreground)]">
+                                    <CalendarDays size={9} />
+                                    {new Date(c.updatedAt).toLocaleDateString("en-AU", { day: "numeric", month: "short", year: "numeric" })}
+                                  </span>
+                                </div>
                               </div>
+                            </Card>
+                          </div>
+                        </Link>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+            </div>
+          </>
+        )}
+
+        {/* ── Timeline tab ── */}
+        {activeTab === 'timeline' && (
+          <div className="space-y-4">
+            {/* Add note input */}
+            <Card className="p-4">
+              <p className="mb-3 text-xs font-semibold uppercase tracking-[0.12em] text-[color:var(--muted-foreground)]">
+                Add Clinical Note
+              </p>
+              <div className="flex gap-2">
+                <textarea
+                  value={newNote}
+                  onChange={(e) => setNewNote(e.target.value)}
+                  placeholder="Record a clinical observation, follow-up note, or event…"
+                  rows={2}
+                  className="flex-1 resize-none rounded-lg border border-[color:var(--border)] bg-[color:var(--background)] px-3 py-2 text-sm text-[color:var(--foreground)] placeholder:text-[color:var(--muted-foreground)] focus:border-[color:var(--primary)] focus:outline-none"
+                />
+                <button
+                  type="button"
+                  onClick={() => void handleAddNote()}
+                  disabled={!newNote.trim() || addingNote}
+                  className="self-end flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[color:var(--primary)] text-white disabled:opacity-40 hover:opacity-90 transition-opacity"
+                  aria-label="Add note"
+                >
+                  {addingNote ? <RefreshCw size={14} className="animate-spin" /> : <Send size={14} />}
+                </button>
+              </div>
+            </Card>
+
+            {/* Timeline events */}
+            {timelineLoading ? (
+              <div className="space-y-3">
+                {[0,1,2,3].map((i) => <SkeletonBlock key={i} className="h-20 w-full" />)}
+              </div>
+            ) : timeline.length === 0 ? (
+              <EmptyState
+                icon={MessageSquarePlus}
+                title="No timeline events yet"
+                body="Case transitions, scan uploads, appointments, and clinical notes will appear here."
+              />
+            ) : (
+              <div className="relative">
+                <div aria-hidden className="absolute left-[19px] top-6 w-px bg-[color:var(--border)]" style={{ bottom: 20 }} />
+                <div className="space-y-3">
+                  {timeline.map((event) => {
+                    const meta = TIMELINE_TYPE_META[event.type] ?? DEFAULT_TIMELINE_META;
+                    const Icon = meta.icon;
+                    const { date, time } = formatTimelineDate(event.occurredAt);
+                    return (
+                      <div key={event.id} className="relative flex items-start gap-3">
+                        <span className={`relative z-10 mt-3.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full ${meta.bg}`}>
+                          <Icon size={10} className={meta.color} />
+                        </span>
+                        <Card className="flex-1 p-3">
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="min-w-0 flex-1">
+                              <p className="text-sm font-medium text-[color:var(--foreground)]">{event.label}</p>
+                              {event.detail && (
+                                <p className="mt-0.5 text-xs text-[color:var(--muted-foreground)] line-clamp-3">{event.detail}</p>
+                              )}
+                              {event.actor && (
+                                <p className="mt-1 text-[10px] text-[color:var(--muted-foreground)]">by {event.actor}</p>
+                              )}
                             </div>
-                            <div className="flex shrink-0 flex-col items-end gap-1.5">
-                              <StatusBadge tone={caseStatusTone(c.status)}>
-                                {c.status.replace(/_/g, " ")}
-                              </StatusBadge>
-                              <span className="flex items-center gap-1 text-[10px] text-[color:var(--muted-foreground)]">
-                                <CalendarDays size={9} />
-                                {new Date(c.updatedAt).toLocaleDateString("en-AU", {
-                                  day: "numeric", month: "short", year: "numeric",
-                                })}
-                              </span>
+                            <div className="shrink-0 text-right">
+                              <p className="text-[10px] font-medium text-[color:var(--muted-foreground)]">{date}</p>
+                              {time && <p className="text-[10px] text-[color:var(--muted-foreground)]">{time}</p>}
                             </div>
                           </div>
+                          {event.caseId && (
+                            <div className="mt-2 border-t border-[color:var(--border)]/50 pt-2">
+                              <Link href={`/cases?id=${event.caseId}`} className="text-[10px] font-medium text-[color:var(--primary)] hover:underline">
+                                View case →
+                              </Link>
+                            </div>
+                          )}
                         </Card>
                       </div>
-                    </Link>
-                  );
-                })}
+                    );
+                  })}
+                </div>
               </div>
-            </div>
-          )}
-        </div>
+            )}
+          </div>
+        )}
 
       </div>
     </>

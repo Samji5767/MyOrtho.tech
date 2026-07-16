@@ -9,12 +9,21 @@ export class HealthController {
   constructor(@Inject(PG_POOL) private readonly pool: Pool) {}
 
   @Get()
-  getHealth() {
+  async getHealth() {
+    let dbOk = false;
+    try {
+      await this.pool.query('SELECT 1');
+      dbOk = true;
+    } catch {
+      dbOk = false;
+    }
+
     return {
-      status: 'ok',
+      status: dbOk ? 'ok' : 'degraded',
       service: 'myortho-backend',
       version: process.env.npm_package_version || '1.0.0',
       uptimeSeconds: Math.floor((Date.now() - this.startedAt) / 1000),
+      checks: { databaseConnected: dbOk },
       timestamp: new Date().toISOString(),
     };
   }

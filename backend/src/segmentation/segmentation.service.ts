@@ -1,4 +1,5 @@
-import { Injectable, Inject, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
+import { Injectable, Inject, Optional, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
+import { AiAuditService } from '../mlops/ai-audit.service';
 import * as fs from 'fs';
 import type { Pool } from 'pg';
 import { PG_POOL } from '../database/database.module';
@@ -139,7 +140,10 @@ export interface SegmentationConfidenceScore {
 export class SegmentationService {
   private readonly logger = new Logger(SegmentationService.name);
 
-  constructor(@Inject(PG_POOL) private readonly pool: Pool) {}
+  constructor(
+    @Inject(PG_POOL) private readonly pool: Pool,
+    @Optional() private readonly aiAudit: AiAuditService,
+  ) {}
 
   // ── Verify case belongs to org ──────────────────────────────────────────────
 
@@ -217,7 +221,7 @@ export class SegmentationService {
     const job = rows[0];
 
     // Process asynchronously without blocking the response
-    this.processJob(job.id, caseId, arch, modelType).catch(err =>
+    this.processJob(job.id, caseId, orgId, userId, arch, modelType).catch(err =>
       this.logger.error(`Segmentation job ${job.id} failed: ${err.message}`),
     );
 
@@ -226,36 +230,72 @@ export class SegmentationService {
 
   // ── AI processing pipeline ───────────────────────────────────────────────────
 
-  private async processJob(jobId: string, caseId: string, arch: string, modelType: string) {
+  private async processJob(
+    jobId: string,
+    caseId: string,
+    orgId: string,
+    userId: string,
+    arch: string,
+    modelType: string,
+  ) {
     await this.pool.query(
       `UPDATE segmentation_jobs SET status = 'processing', started_at = NOW(), progress = 5 WHERE id = $1`,
       [jobId],
     );
 
+    const startMs = Date.now();
+    let auditId: string | null = null;
+    const aiUrl = process.env.AI_SEGMENTATION_URL;
+    const modelName = aiUrl ? 'segmentation-external' : 'segmentation-algorithmic';
+
+    // Begin audit record
+    if (this.aiAudit) {
+      const audit = await this.aiAudit.beginAudit({
+        organizationId: orgId,
+        invokedBy: userId,
+        modelName,
+        modelVersion: '1.0',
+        inferenceType: 'segmentation',
+        correlationId: jobId,
+        caseId,
+        disclaimerShown: true,
+        inputMetadata: { arch, modelType, jobId },
+      }).catch(err => { this.logger.warn(`Audit begin error: ${(err as Error).message}`); return null; });
+      auditId = audit?.id ?? null;
+    }
+
     try {
-      // Attempt to call external AI service if configured
-      const aiUrl = process.env.AI_SEGMENTATION_URL;
       if (aiUrl) {
-        // provider comes from the job's result_summary field (stored at submit time)
         const { rows: jobRows } = await this.pool.query(
           `SELECT result_summary FROM segmentation_jobs WHERE id = $1`, [jobId],
         );
         const jobMeta = jobRows[0]?.result_summary as { provider?: string } | null;
         await this.callExternalAIService(jobId, aiUrl, arch, jobMeta?.provider);
-        return;
+      } else {
+        this.logger.warn(
+          `AI_SEGMENTATION_URL not configured — using rule-based fallback for job ${jobId}`,
+        );
+        await this.runAlgorithmicSegmentation(jobId, caseId, arch, modelType);
       }
 
-      // Algorithmic fallback: deterministic FDI-based segmentation
-      this.logger.warn(
-        `AI_SEGMENTATION_URL not configured — using rule-based fallback for job ${jobId}`,
-      );
-      await this.runAlgorithmicSegmentation(jobId, caseId, arch, modelType);
+      if (this.aiAudit && auditId) {
+        this.aiAudit.finalizeAudit(auditId, {
+          outcome: 'accepted',
+          latencyMs: Date.now() - startMs,
+          fallbackUsed: !aiUrl,
+          outputMetadata: { jobId },
+        }).catch(err => this.logger.warn(`Audit finalize error: ${(err as Error).message}`));
+      }
     } catch (err: any) {
       this.logger.error(`Processing error for job ${jobId}: ${err.message}`);
       await this.pool.query(
         `UPDATE segmentation_jobs SET status = 'failed', error_message = $2, progress = 0 WHERE id = $1`,
         [jobId, err.message],
       );
+      if (this.aiAudit && auditId) {
+        this.aiAudit.failAudit(auditId, 'PROCESSING_ERROR', err.message)
+          .catch(e => this.logger.warn(`Audit fail error: ${(e as Error).message}`));
+      }
     }
   }
 
@@ -945,13 +985,13 @@ export class SegmentationService {
 
   async retryFailedJob(jobId: string, maxRetries = 3) {
     const { rows } = await this.pool.query(
-      `SELECT id, case_id, arch, model_type, status, COALESCE(retry_count, 0) AS retry_count
+      `SELECT id, case_id, organization_id, submitted_by, arch, model_type, status, COALESCE(retry_count, 0) AS retry_count
          FROM segmentation_jobs WHERE id = $1`,
       [jobId],
     );
     if (!rows.length) throw new NotFoundException(`Job ${jobId} not found`);
 
-    const job = rows[0] as { id: string; case_id: string; arch: string; model_type: string; status: string; retry_count: number };
+    const job = rows[0] as { id: string; case_id: string; organization_id: string; submitted_by: string; arch: string; model_type: string; status: string; retry_count: number };
 
     if (job.status !== 'failed') {
       throw new BadRequestException(`Job ${jobId} is not in failed state (current: '${job.status}')`);
@@ -995,7 +1035,7 @@ export class SegmentationService {
 
     // Schedule re-processing with exponential backoff
     setTimeout(() => {
-      this.processJob(jobId, job.case_id, job.arch, job.model_type).catch((err: unknown) =>
+      this.processJob(jobId, job.case_id, job.organization_id, job.submitted_by, job.arch, job.model_type).catch((err: unknown) =>
         this.logger.error(`Retry attempt ${nextAttempt} for job ${jobId} failed: ${err instanceof Error ? err.message : String(err)}`),
       );
     }, delayMs);

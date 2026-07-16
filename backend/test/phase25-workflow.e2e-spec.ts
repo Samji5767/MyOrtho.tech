@@ -16,7 +16,7 @@ import * as cookieParser from 'cookie-parser';
 
 // ─── Mock pool factory ────────────────────────────────────────────────────────
 
-type QueryFn = (sql: string, params?: unknown[]) => { rows: Record<string, unknown>[] };
+type QueryFn = (sql: string, params?: unknown[]) => { rows: Record<string, unknown>[]; rowCount?: number };
 
 const CASE_ID  = 'aaaaaaaa-0001-0000-0000-000000000000';
 const PATIENT_ID = 'bbbbbbbb-0001-0000-0000-000000000000';
@@ -117,7 +117,7 @@ describe('Phase 25 — Full Workflow Integration', () => {
       // Simulate case in 'draft' status
       mockPool = makeMockPool((sql: string) => {
         if (/SELECT status FROM cases/.test(sql)) return { rows: [{ status: 'draft' }] };
-        if (/UPDATE cases/.test(sql))             return { rows: [] };
+        if (/UPDATE cases/.test(sql))             return { rows: [], rowCount: 1 };
         if (/INSERT INTO workflow_events/.test(sql)) return { rows: [] };
         if (/INSERT INTO audit_events/.test(sql))  return { rows: [] };
         return { rows: [] };

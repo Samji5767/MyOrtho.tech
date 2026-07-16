@@ -15,7 +15,10 @@ const ACTOR   = 'actor-workflow-1';
 function makePool(clientRows: unknown[][]) {
   let callIndex = 0;
   const client = {
-    query: jest.fn(async () => ({ rows: clientRows[callIndex++] ?? [] })),
+    query: jest.fn(async () => {
+      const rows = (clientRows[callIndex++] ?? []) as unknown[];
+      return { rows, rowCount: rows.length > 0 ? rows.length : 1 };
+    }),
     release: jest.fn(),
   };
   return {

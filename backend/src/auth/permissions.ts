@@ -23,18 +23,29 @@ export type Permission =
   | 'manufacturing:read'
   | 'manufacturing:write'
   | 'manufacturing:manage'
+  | 'qa:approve'
   | 'admin:users'
   | 'admin:settings'
   | 'admin:org'
-  | 'audit:read';
+  | 'audit:read'
+  | 'integrations:read'
+  | 'integrations:write'
+  | 'knowledge:read'
+  | 'knowledge:write'
+  | 'mlops:read'
+  | 'mlops:manage';
 
 const ALL_PERMISSIONS: Permission[] = [
   'patients:read', 'patients:write', 'patients:delete',
   'cases:read', 'cases:write', 'cases:delete', 'cases:approve', 'cases:send_to_manufacturing',
   'analytics:read',
   'manufacturing:read', 'manufacturing:write', 'manufacturing:manage',
+  'qa:approve',
   'admin:users', 'admin:settings', 'admin:org',
   'audit:read',
+  'integrations:read', 'integrations:write',
+  'knowledge:read', 'knowledge:write',
+  'mlops:read', 'mlops:manage',
 ];
 
 export const ROLE_PERMISSIONS: Record<string, Permission[]> = {
@@ -47,6 +58,9 @@ export const ROLE_PERMISSIONS: Record<string, Permission[]> = {
     'manufacturing:read',
     'admin:users', 'admin:settings',
     'audit:read',
+    'integrations:read', 'integrations:write',
+    'knowledge:read', 'knowledge:write',
+    'mlops:read', 'mlops:manage',
   ],
 
   clinical_director: [
@@ -55,6 +69,7 @@ export const ROLE_PERMISSIONS: Record<string, Permission[]> = {
     'analytics:read',
     'manufacturing:read',
     'audit:read',
+    'knowledge:read',
   ],
 
   orthodontist: [
@@ -78,8 +93,10 @@ export const ROLE_PERMISSIONS: Record<string, Permission[]> = {
   lab_manager: [
     'cases:read',
     'manufacturing:read', 'manufacturing:write', 'manufacturing:manage',
+    'qa:approve',
     'analytics:read',
     'audit:read',
+    'knowledge:read', 'knowledge:write',
   ],
 
   lab_technician: [
@@ -97,6 +114,7 @@ export const ROLE_PERMISSIONS: Record<string, Permission[]> = {
   vp_manufacturing: [
     'cases:read', 'cases:send_to_manufacturing',
     'manufacturing:read', 'manufacturing:write', 'manufacturing:manage',
+    'qa:approve',
     'analytics:read',
     'audit:read',
   ],

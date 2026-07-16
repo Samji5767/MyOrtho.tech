@@ -5,6 +5,7 @@ import { PG_POOL } from '../database/database.module';
 export interface ManufacturingBatch {
   id: string; organizationId: string; batchNumber: string; status: string;
   caseIds: string[]; scheduledDate: string | null; shippedAt: string | null;
+  resinType: string | null; priority: number;
   notes: string | null; createdBy: string; createdAt: string; updatedAt: string;
 }
 
@@ -29,18 +30,44 @@ export class BatchManufacturingService {
 
   async create(orgId: string, createdBy: string, dto: {
     caseIds?: string[]; scheduledDate?: string; notes?: string;
+    resinType?: string; priority?: number;
   }): Promise<ManufacturingBatch> {
+    // Verify all provided cases have an approved treatment plan.
+    const caseIds = dto.caseIds ?? [];
+    if (caseIds.length > 0) {
+      const { rows: unapproved } = await this.db.query(
+        `SELECT c.id
+         FROM unnest($1::uuid[]) AS c(id)
+         WHERE NOT EXISTS (
+           SELECT 1 FROM treatment_plans tp
+           JOIN cases cas ON cas.id = tp.case_id
+           JOIN patients p ON p.id = cas.patient_id
+           WHERE tp.case_id = c.id
+             AND tp.doctor_approval = true
+             AND p.organization_id = $2
+         )`,
+        [caseIds, orgId],
+      );
+      if (unapproved.length > 0) {
+        const ids = unapproved.map((r: Record<string, unknown>) => r['id'] as string).join(', ');
+        throw new BadRequestException(
+          `The following cases do not have an approved treatment plan and cannot be batched: ${ids}`,
+        );
+      }
+    }
+
     // Derive next batch number atomically from DB to survive restarts and concurrent requests
     const { rows } = await this.db.query(
       `WITH next_seq AS (
          SELECT COALESCE(MAX(CAST(SUBSTRING(batch_number FROM 7) AS INTEGER)), 0) + 1 AS seq
          FROM manufacturing_batches
        )
-       INSERT INTO manufacturing_batches (organization_id, batch_number, case_ids, scheduled_date, notes, created_by)
-       SELECT $1, 'BATCH-' || LPAD(next_seq.seq::text, 5, '0'), $2, $3, $4, $5
+       INSERT INTO manufacturing_batches (organization_id, batch_number, case_ids, scheduled_date, notes, resin_type, priority, created_by)
+       SELECT $1, 'BATCH-' || LPAD(next_seq.seq::text, 5, '0'), $2, $3, $4, $5, $6, $7
        FROM next_seq
        RETURNING *`,
-      [orgId, dto.caseIds ?? [], dto.scheduledDate ?? null, dto.notes ?? null, createdBy],
+      [orgId, dto.caseIds ?? [], dto.scheduledDate ?? null, dto.notes ?? null,
+       dto.resinType ?? null, dto.priority ?? 5, createdBy],
     );
     return this.map(rows[0]);
   }
@@ -81,6 +108,8 @@ export class BatchManufacturingService {
       caseIds: (r['case_ids'] as string[]) ?? [],
       scheduledDate: r['scheduled_date'] ? String(r['scheduled_date']) : null,
       shippedAt: r['shipped_at'] ? String(r['shipped_at']) : null,
+      resinType: (r['resin_type'] as string | null) ?? null,
+      priority: (r['priority'] as number) ?? 5,
       notes: r['notes'] as string | null, createdBy: r['created_by'] as string,
       createdAt: String(r['created_at']), updatedAt: String(r['updated_at']),
     };

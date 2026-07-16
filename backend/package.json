@@ -1,6 +1,6 @@
 {
   "name": "myortho-backend",
-  "version": "1.0.0-rc2",
+  "version": "1.0.0-rc4",
   "private": true,
   "scripts": {
     "build": "nest build",

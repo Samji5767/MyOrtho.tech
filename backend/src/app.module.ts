@@ -59,6 +59,7 @@ import { AlignerDesignModule } from './aligner-design/aligner-design.module';
 import { PreexportQaModule } from './preexport-qa/preexport-qa.module';
 import { TreatmentQAModule } from './treatment-qa/treatment-qa.module';
 import { QcModule } from './qc/qc.module';
+import { QaInspectionModule } from './qa-inspection/qa-inspection.module';
 import { ExportPackageModule } from './export-package/export-package.module';
 // ─── Export / Print Prep ─────────────────────────────────────────────────────
 import { ManufacturingModule } from './manufacturing/manufacturing.module';
@@ -87,6 +88,27 @@ import { EmergencyProtocolsModule } from './emergency-protocols/emergency-protoc
 import { BillingModule } from './billing/billing.module';
 import { OrgBrandingModule } from './org-branding/org-branding.module';
 import { ReleasesModule } from './releases/releases.module';
+import { WorkingHoursModule } from './working-hours/working-hours.module';
+import { ReportsModule } from './reports/reports.module';
+import { LabDashboardModule } from './lab-dashboard/lab-dashboard.module';
+import { LabInventoryModule } from './lab-inventory/lab-inventory.module';
+import { LabShipmentsModule } from './lab-shipments/lab-shipments.module';
+import { ManufacturingAnalyticsModule } from './manufacturing-analytics/manufacturing-analytics.module';
+import { BatchManufacturingModule } from './batch-manufacturing/batch-manufacturing.module';
+import { PrintFarmModule } from './print-farm/print-farm.module';
+// ─── Enterprise 2.0 Platform ──────────────────────────────────────────────────
+import { IntegrationProvidersModule } from './integration-providers/integration-providers.module';
+import { BackgroundJobsModule } from './background-jobs/background-jobs.module';
+import { ClinicalKnowledgeModule } from './clinical-knowledge/clinical-knowledge.module';
+import { MlopsModule } from './mlops/mlops.module';
+// ─── MyOrtho 3.0 Intelligent Clinical Platform ───────────────────────────────
+import { SearchModule } from './search/search.module';
+import { DiscussionsModule } from './discussions/discussions.module';
+import { PredictionsModule } from './predictions/predictions.module';
+// ─── Pilot Readiness & Clinical Safety ───────────────────────────────────────
+import { ClinicalSafetyGateModule } from './clinical-safety-gate/clinical-safety-gate.module';
+import { ManufacturingReadinessGateModule } from './manufacturing-readiness-gate/manufacturing-readiness-gate.module';
+import { PilotFeedbackModule } from './pilot-feedback/pilot-feedback.module';
 
 @Module({
   imports: [
@@ -156,6 +178,7 @@ import { ReleasesModule } from './releases/releases.module';
     PreexportQaModule,
     TreatmentQAModule,
     QcModule,
+    QaInspectionModule,
     ExportPackageModule,
     // Export / Print Prep
     ManufacturingModule,
@@ -185,6 +208,27 @@ import { ReleasesModule } from './releases/releases.module';
     BillingModule,
     OrgBrandingModule,
     ReleasesModule,
+    WorkingHoursModule,
+    ReportsModule,
+    LabDashboardModule,
+    LabInventoryModule,
+    LabShipmentsModule,
+    ManufacturingAnalyticsModule,
+    BatchManufacturingModule,
+    PrintFarmModule,
+    // Enterprise 2.0 Platform
+    IntegrationProvidersModule,
+    BackgroundJobsModule,
+    ClinicalKnowledgeModule,
+    MlopsModule,
+    // MyOrtho 3.0 Intelligent Clinical Platform
+    SearchModule,
+    DiscussionsModule,
+    PredictionsModule,
+    // Pilot Readiness & Clinical Safety
+    ClinicalSafetyGateModule,
+    ManufacturingReadinessGateModule,
+    PilotFeedbackModule,
   ],
   providers: [
     {

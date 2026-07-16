@@ -5,8 +5,14 @@ import { useRouter } from "next/navigation";
 import {
   Activity,
   ArrowLeft,
+  BarChart2,
   Building2,
+  Factory,
+  FileBarChart,
+  MapPin,
+  Plug,
   Settings2,
+  Shield,
   ShieldAlert,
   Users,
 } from "lucide-react";
@@ -40,6 +46,54 @@ const ADMIN_SECTIONS = [
     title: "Platform Health",
     description: "System status, uptime, and infrastructure metrics.",
     href: "/platform-health",
+  },
+  {
+    icon: <MapPin size={18} />,
+    title: "Clinic Locations",
+    description: "Manage practice locations, working hours, and chair allocation.",
+    href: "/admin/locations",
+  },
+  {
+    icon: <Plug size={18} />,
+    title: "Integration Hub",
+    description: "Connect scanners, printers, and practice management systems.",
+    href: "/admin/integrations",
+  },
+  {
+    icon: <FileBarChart size={18} />,
+    title: "Reports",
+    description: "Practice reports, financial summaries, and audit exports.",
+    href: "/admin/reports",
+  },
+  {
+    icon: <Shield size={18} />,
+    title: "Audit Log",
+    description: "View audit trail and PHI access logs.",
+    href: "/admin/audit",
+  },
+  {
+    icon: <Factory size={18} />,
+    title: "Lab",
+    description: "Manufacturing dashboard, print farm, batch tracking, and shipments.",
+    href: "/manufacturing",
+  },
+  {
+    icon: <Activity size={18} />,
+    title: "Background Jobs",
+    description: "Monitor and manage the platform job queue, retries, and dead-letter queue.",
+    href: "/admin/jobs",
+  },
+  {
+    icon: <ShieldAlert size={18} />,
+    title: "AI Operations",
+    description: "Model registry, inference audit trail, lifecycle governance, and disclaimer compliance.",
+    href: "/admin/ai-ops",
+  },
+  {
+    icon: <BarChart2 size={18} />,
+    title: "Enterprise Dashboard",
+    description: "Practice growth, clinical quality, AI utilization, and operational metrics.",
+    href: "/admin/enterprise",
   },
 ];
 
@@ -189,7 +243,7 @@ export default function AdminPage() {
       </div>
 
       {/* Navigation sections */}
-      <div className="grid gap-4 sm:grid-cols-2">
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {ADMIN_SECTIONS.map((section) => (
           <Link
             key={section.href}

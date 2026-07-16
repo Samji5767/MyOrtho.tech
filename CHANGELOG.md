@@ -5,6 +5,92 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.0.0-rc4] — Pilot Clinic Readiness & Release Closure
+
+**Branch:** `claude/myortho-production-validation-dlmvsi`  
+**Sprint:** Pilot Clinic Readiness & Release Closure  
+**Date:** 2026-07-16
+
+### Added
+
+- **ClinicalSafetyGate** — centralized service and endpoint (`GET /api/clinical-safety-gate`) that evaluates a case+plan pair and returns blockers, warnings, info findings, and allowed next actions. Checks: org ownership, upper/lower arch scan presence and validation, simulated-stage presence, treatment plan existence, AI disclaimer surfacing, chief-complaint documentation.
+- **ManufacturingReadinessGate** — centralized service and endpoint (`GET /api/manufacturing-readiness-gate`) that validates whether a case/plan is safe to queue for manufacturing. Checks: doctor approval required, simulated-stage block, STL mesh file existence per stage, QA inspection status (blocks on rejected), printer availability warning.
+- **PilotFeedbackModule** — CRUD module for pilot feedback (`POST/GET /api/pilot-feedback`, `GET/PATCH /api/pilot-feedback/:id`). Captures category, severity, page route, browser info, correlation ID, screenshot reference, status lifecycle, assignment, and resolution notes. No PHI captured by default.
+- **Migration 065** — `pilot_feedback`, `onboarding_checklists` tables; `is_demo` boolean column on `patients` and `cases` for demo-data isolation.
+- **Demo seed** (`database/seed-demo.sql`) — idempotent, re-runnable seed with 6 demo patients/cases across all key workflow states; no real PHI; all records marked `is_demo=true`.
+- **Restore validation script** (`scripts/restore-validate.sh`) — validates a backup file with `pg_restore --list`, restores into a staging database, runs smoke queries, and checks for orphaned records.
+- **MyOrtho 3.0 modules** (from prior sprint): Orthodontic Timeline, Global Search, Case Discussions, Predictive Analytics, Enterprise Dashboard.
+
+### Fixed
+
+- `PatientDetailClient.tsx` TIMELINE_TYPE_META icon type changed to `React.ElementType` to satisfy strict TypeScript for Lucide components.
+- `CommandPalette.tsx` global search now uses unified `/api/search` endpoint instead of per-type fetches.
+
+### Security
+
+- ClinicalSafetyGate and ManufacturingReadinessGate enforce org isolation on all queries.
+- PilotFeedbackModule scoped to organization; no PHI fields.
+- Restore validation script uses a staging database; never targets production.
+
+### Quality
+
+- Backend TypeScript: 0 errors
+- Frontend TypeScript: 0 errors
+- Backend tests: 139/139 passing (127 existing + 12 new safety gate tests)
+- All new services follow existing NestJS/pg-pool patterns
+
+---
+
+## [Unreleased] — MyOrtho 3.0 Intelligent Clinical Platform
+
+**Branch:** `claude/myortho-production-validation-dlmvsi`  
+**Sprint:** MyOrtho 3.0 Intelligent Clinical Platform  
+**Date:** 2026-07-16
+
+### Added
+
+- Patient Orthodontic Timeline tab (backend endpoints + frontend component)
+- Global Search module (encryption-safe in-memory patient/case name matching)
+- Case Discussions module (threaded comments, resolve/reopen, author-owned delete)
+- Predictive Analytics module (completion probability, refinement risk, duration — null when insufficient data)
+- Enterprise Dashboard page (`/admin/enterprise`)
+
+---
+
+## [Unreleased] — Enterprise 2.0 Platform Evolution
+
+**Branch:** `claude/myortho-production-validation-dlmvsi`  
+**Sprint:** Enterprise 2.0 Platform Evolution  
+**Date:** 2026-07-14
+
+### Added
+
+- **Integration Provider Registry** — new `integration_providers` and `integration_health_logs` tables (migration 062); `IntegrationProvidersModule` with full CRUD + health-check logging; RBAC via `integrations:read` / `integrations:write` permissions; supports 9 provider types: DICOM/PACS, HL7/FHIR, PMS, scanner, printer, payment, email, SMS, calendar.
+- **Background Job Queue** — new `background_jobs` table (migration 062); `BackgroundJobsModule` with enqueue, cancel, and stats endpoints; priority-based scheduling; DLQ via `dead_letter` status; accessible via `admin:settings` permission.
+- **Clinical Knowledge Platform** — new `clinical_protocols`, `protocol_templates`, `material_libraries`, `appliance_libraries`, `manufacturing_profiles` tables (migration 062); `ClinicalKnowledgeModule` with protocol lifecycle (draft → active → archived), evidence-level classification (A/B/C), material library management, and manufacturing profile management; RBAC via `knowledge:read` / `knowledge:write` permissions.
+- **MLOps / AI Governance** — new `ai_model_registry` and `ai_inference_audit` tables (migration 062); `MlopsModule` with model registration, status lifecycle (staged → active → deprecated/rolled_back), inference audit trail, and utilization stats; `disclaimer_shown` field enforces policy on every inference record; RBAC via `mlops:read` / `mlops:manage` permissions.
+- **Enhanced Reports** — four new reporting endpoints: `GET /api/reports/clinical-kpis`, `GET /api/reports/manufacturing-kpis`, `GET /api/reports/ai-utilization`, `GET /api/reports/dashboard/html`; all existing report endpoints now enforce `analytics:read` / `manufacturing:read` / `mlops:read` RBAC.
+- **New RBAC permissions**: `integrations:read`, `integrations:write`, `knowledge:read`, `knowledge:write`, `mlops:read`, `mlops:manage` — assigned to `super_admin`, `admin`, `lab_manager`, `clinical_director` as appropriate.
+- **ADR-007**: Integration Provider Framework architectural decision record.
+- **ADR-008**: Background Job Queue architectural decision record.
+- **ADR-009**: Clinical Knowledge Platform architectural decision record.
+- **ADR-010**: MLOps Governance architectural decision record.
+
+### Fixed
+
+- All 23 manufacturing module bugs (shipments, inventory, QA inspection, batch manufacturing, printer registration, mobile tab bar).
+- `recipientAddress` type narrowed from `unknown` to `string | null` in shipments page.
+- Lab inventory now rejects transactions that would produce negative stock.
+- QA `reject()` now blocks simulated inspections consistently with `approve()`.
+- Shipment `in_transit` transition now stamps `shipped_at` via `COALESCE`.
+- `AddTrackingModal` validates non-empty courier + tracking number before submitting.
+- Batch manufacturing `create` endpoint now gated by `manufacturing:write` permission.
+- Batch `resinType` and `priority` fields propagated through service, controller, and interface.
+- Mobile `TabBar` navigation now points to `/manufacturing` instead of `/patients`.
+- Register Printer buttons disabled with admin-guidance tooltip.
+
+---
+
 ## [Unreleased] — Final AI Segmentation Activation & Production Verification
 
 **Branch:** `claude/myortho-production-validation-dlmvsi`  

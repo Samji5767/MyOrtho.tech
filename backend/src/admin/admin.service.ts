@@ -262,9 +262,122 @@ export class AdminService {
     };
   }
 
+  // ─── Pilot Operations Snapshot ──────────────────────────────────────────────
+
+  async getPilotOpsSnapshot() {
+    const [
+      feedbackTotals,
+      feedbackBySeverity,
+      feedbackByCategory,
+      feedbackByStatus,
+      onboardingProgress,
+      casesByStatus,
+      recentActivity,
+      demoCount,
+    ] = await Promise.all([
+      this.pool.query(
+        `SELECT
+           COUNT(*)::int AS total,
+           COUNT(*) FILTER (WHERE status NOT IN ('resolved','wont_fix'))::int AS open,
+           COUNT(*) FILTER (WHERE severity = 'critical' AND status NOT IN ('resolved','wont_fix'))::int AS open_critical,
+           COUNT(*) FILTER (WHERE severity = 'high' AND status NOT IN ('resolved','wont_fix'))::int AS open_high
+         FROM pilot_feedback`,
+      ),
+      this.pool.query(
+        `SELECT severity, COUNT(*)::int AS count FROM pilot_feedback GROUP BY severity ORDER BY
+           CASE severity WHEN 'critical' THEN 1 WHEN 'high' THEN 2 WHEN 'medium' THEN 3 ELSE 4 END`,
+      ),
+      this.pool.query(
+        `SELECT category, COUNT(*)::int AS count FROM pilot_feedback
+         WHERE status NOT IN ('resolved','wont_fix')
+         GROUP BY category ORDER BY count DESC`,
+      ),
+      this.pool.query(
+        `SELECT status, COUNT(*)::int AS count FROM pilot_feedback GROUP BY status`,
+      ),
+      this.pool.query(
+        `SELECT
+           o.id AS org_id, o.name AS org_name,
+           COUNT(oc.step_key)::int AS completed_steps,
+           COUNT(oc.step_key) FILTER (WHERE oc.completed_at IS NULL)::int AS pending_steps
+         FROM organizations o
+         LEFT JOIN onboarding_checklists oc ON oc.organization_id = o.id
+         GROUP BY o.id, o.name
+         ORDER BY completed_steps DESC, o.name`,
+      ),
+      this.pool.query(
+        `SELECT status, COUNT(*)::int AS count FROM cases
+         WHERE is_demo = false OR is_demo IS NULL
+         GROUP BY status ORDER BY count DESC`,
+      ),
+      this.pool.query(
+        `SELECT
+           we.case_id, we.from_status, we.to_status, we.actor_role,
+           we.created_at,
+           au.email AS actor_email,
+           o.name AS org_name
+         FROM workflow_events we
+         LEFT JOIN cases c ON c.id = we.case_id
+         LEFT JOIN organizations o ON o.id = c.organization_id
+         LEFT JOIN auth_users au ON au.id = we.actor_id
+         WHERE we.created_at >= now() - interval '48 hours'
+         ORDER BY we.created_at DESC
+         LIMIT 25`,
+      ),
+      this.pool.query(
+        `SELECT COUNT(*)::int AS count FROM cases WHERE is_demo = true`,
+      ),
+    ]);
+
+    const fb = feedbackTotals.rows[0];
+    return {
+      generatedAt: new Date().toISOString(),
+      feedback: {
+        total: fb.total as number,
+        open: fb.open as number,
+        openCritical: fb.open_critical as number,
+        openHigh: fb.open_high as number,
+        bySeverity: Object.fromEntries(
+          feedbackBySeverity.rows.map((r) => [r.severity as string, r.count as number]),
+        ) as Record<string, number>,
+        byCategory: Object.fromEntries(
+          feedbackByCategory.rows.map((r) => [r.category as string, r.count as number]),
+        ) as Record<string, number>,
+        byStatus: Object.fromEntries(
+          feedbackByStatus.rows.map((r) => [r.status as string, r.count as number]),
+        ) as Record<string, number>,
+      },
+      onboarding: {
+        orgs: onboardingProgress.rows.map((r) => ({
+          orgId: r.org_id as string,
+          orgName: r.org_name as string,
+          completedSteps: r.completed_steps as number,
+          pendingSteps: r.pending_steps as number,
+        })),
+      },
+      cases: {
+        byStatus: Object.fromEntries(
+          casesByStatus.rows.map((r) => [r.status as string, r.count as number]),
+        ) as Record<string, number>,
+        demoCount: demoCount.rows[0].count as number,
+      },
+      recentActivity: recentActivity.rows.map((r) => ({
+        caseId: r.case_id as string,
+        fromStatus: r.from_status as string,
+        toStatus: r.to_status as string,
+        actorRole: r.actor_role as string,
+        actorEmail: r.actor_email as string | null,
+        orgName: r.org_name as string | null,
+        createdAt: r.created_at as Date,
+      })),
+    };
+  }
+
   // ─── Org-admin: invite & role management ────────────────────────────────────
 
   async inviteUser(orgId: string, email: string, role: string): Promise<{ message: string }> {
+    const validRoles = ['admin', 'orthodontist', 'dentist', 'lab_manager', 'lab_technician', 'resident', 'executive', 'clinical_director', 'vp_clinical', 'vp_manufacturing'];
+    if (!validRoles.includes(role)) throw new BadRequestException(`Invalid role: ${role}`);
     const existing = await this.pool.query(
       'SELECT id FROM auth_users WHERE email=$1 AND organization_id=$2',
       [email, orgId],

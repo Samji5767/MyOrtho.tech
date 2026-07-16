@@ -82,6 +82,7 @@ const AlignerPreviewPanel = dynamic(() => import("@/components/AlignerPreviewPan
 const PrinterDownloadPanel = dynamic(() => import("@/components/PrinterDownloadPanel"), { ssr: false });
 const AlignerStaging = dynamic(() => import("@/components/AlignerStaging"), { ssr: false });
 const PatientCommunicationPanel = dynamic(() => import("@/components/PatientCommunicationPanel"), { ssr: false });
+const CaseDiscussionsPanel = dynamic(() => import("@/components/CaseDiscussionsPanel"), { ssr: false });
 
 // ─── Representative data keyed to case ID ─────────────────────────────────────
 
@@ -250,7 +251,7 @@ type Tab =
   // AI & Clinical
   | "alerts"
   // Documentation
-  | "reports" | "photos" | "patient-comms";
+  | "reports" | "photos" | "patient-comms" | "discussions";
 
 type TabItem =
   | { type: "tab"; key: Tab; label: string; icon: React.ReactNode }
@@ -311,6 +312,7 @@ const TABS: TabItem[] = [
   { type: "tab", key: "reports",        label: "Reports",         icon: <FileText size={13} /> },
   { type: "tab", key: "photos",         label: "Photos",          icon: <Camera size={13} /> },
   { type: "tab", key: "patient-comms",  label: "Patient",         icon: <MessageCircle size={13} /> },
+  { type: "tab", key: "discussions",    label: "Discussions",     icon: <MessageCircle size={13} /> },
   { type: "tab", key: "audit",          label: "Audit",           icon: <Activity size={13} /> },
 ];
 
@@ -762,6 +764,7 @@ export default function CaseDetailClient({ id }: { id: string }) {
         {tab === "reports"        && <ClinicalReportsPanel caseId={id} planId={planId} />}
         {tab === "photos"         && <PatientPhotosPanel caseId={id} />}
         {tab === "patient-comms"  && <PatientCommunicationPanel caseId={id} patientName={patientName} />}
+        {tab === "discussions"    && <CaseDiscussionsPanel caseId={id} />}
       </div>
     </section>
   );

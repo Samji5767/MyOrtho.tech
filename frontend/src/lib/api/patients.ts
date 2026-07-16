@@ -94,3 +94,26 @@ export async function updatePatient(id: string, dto: UpdatePatientDto): Promise<
 export async function fetchPatientCases(patientId: string): Promise<import('./cases').CaseListItem[]> {
   return api.get<import('./cases').CaseListItem[]>(`/api/cases?patientId=${encodeURIComponent(patientId)}`);
 }
+
+// ─── Timeline ─────────────────────────────────────────────────────────────────
+
+export interface TimelineEvent {
+  id: string;
+  type: string;
+  label: string;
+  detail?: string;
+  actor?: string;
+  caseId?: string;
+  occurredAt: string;
+}
+
+export async function fetchPatientTimeline(patientId: string): Promise<TimelineEvent[]> {
+  return api.get<TimelineEvent[]>(`/api/patients/${patientId}/timeline`);
+}
+
+export async function addPatientTimelineNote(
+  patientId: string,
+  dto: { note: string; caseId?: string; eventType?: string; eventAt?: string },
+): Promise<TimelineEvent> {
+  return api.post<TimelineEvent>(`/api/patients/${patientId}/timeline/notes`, dto);
+}

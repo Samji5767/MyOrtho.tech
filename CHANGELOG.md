@@ -5,6 +5,58 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [1.0.0-rc4] — Pilot Clinic Readiness & Release Closure
+
+**Branch:** `claude/myortho-production-validation-dlmvsi`  
+**Sprint:** Pilot Clinic Readiness & Release Closure  
+**Date:** 2026-07-16
+
+### Added
+
+- **ClinicalSafetyGate** — centralized service and endpoint (`GET /api/clinical-safety-gate`) that evaluates a case+plan pair and returns blockers, warnings, info findings, and allowed next actions. Checks: org ownership, upper/lower arch scan presence and validation, simulated-stage presence, treatment plan existence, AI disclaimer surfacing, chief-complaint documentation.
+- **ManufacturingReadinessGate** — centralized service and endpoint (`GET /api/manufacturing-readiness-gate`) that validates whether a case/plan is safe to queue for manufacturing. Checks: doctor approval required, simulated-stage block, STL mesh file existence per stage, QA inspection status (blocks on rejected), printer availability warning.
+- **PilotFeedbackModule** — CRUD module for pilot feedback (`POST/GET /api/pilot-feedback`, `GET/PATCH /api/pilot-feedback/:id`). Captures category, severity, page route, browser info, correlation ID, screenshot reference, status lifecycle, assignment, and resolution notes. No PHI captured by default.
+- **Migration 065** — `pilot_feedback`, `onboarding_checklists` tables; `is_demo` boolean column on `patients` and `cases` for demo-data isolation.
+- **Demo seed** (`database/seed-demo.sql`) — idempotent, re-runnable seed with 6 demo patients/cases across all key workflow states; no real PHI; all records marked `is_demo=true`.
+- **Restore validation script** (`scripts/restore-validate.sh`) — validates a backup file with `pg_restore --list`, restores into a staging database, runs smoke queries, and checks for orphaned records.
+- **MyOrtho 3.0 modules** (from prior sprint): Orthodontic Timeline, Global Search, Case Discussions, Predictive Analytics, Enterprise Dashboard.
+
+### Fixed
+
+- `PatientDetailClient.tsx` TIMELINE_TYPE_META icon type changed to `React.ElementType` to satisfy strict TypeScript for Lucide components.
+- `CommandPalette.tsx` global search now uses unified `/api/search` endpoint instead of per-type fetches.
+
+### Security
+
+- ClinicalSafetyGate and ManufacturingReadinessGate enforce org isolation on all queries.
+- PilotFeedbackModule scoped to organization; no PHI fields.
+- Restore validation script uses a staging database; never targets production.
+
+### Quality
+
+- Backend TypeScript: 0 errors
+- Frontend TypeScript: 0 errors
+- Backend tests: 139/139 passing (127 existing + 12 new safety gate tests)
+- All new services follow existing NestJS/pg-pool patterns
+
+---
+
+## [Unreleased] — MyOrtho 3.0 Intelligent Clinical Platform
+
+**Branch:** `claude/myortho-production-validation-dlmvsi`  
+**Sprint:** MyOrtho 3.0 Intelligent Clinical Platform  
+**Date:** 2026-07-16
+
+### Added
+
+- Patient Orthodontic Timeline tab (backend endpoints + frontend component)
+- Global Search module (encryption-safe in-memory patient/case name matching)
+- Case Discussions module (threaded comments, resolve/reopen, author-owned delete)
+- Predictive Analytics module (completion probability, refinement risk, duration — null when insufficient data)
+- Enterprise Dashboard page (`/admin/enterprise`)
+
+---
+
 ## [Unreleased] — Enterprise 2.0 Platform Evolution
 
 **Branch:** `claude/myortho-production-validation-dlmvsi`  

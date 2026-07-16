@@ -105,6 +105,10 @@ import { MlopsModule } from './mlops/mlops.module';
 import { SearchModule } from './search/search.module';
 import { DiscussionsModule } from './discussions/discussions.module';
 import { PredictionsModule } from './predictions/predictions.module';
+// ─── Pilot Readiness & Clinical Safety ───────────────────────────────────────
+import { ClinicalSafetyGateModule } from './clinical-safety-gate/clinical-safety-gate.module';
+import { ManufacturingReadinessGateModule } from './manufacturing-readiness-gate/manufacturing-readiness-gate.module';
+import { PilotFeedbackModule } from './pilot-feedback/pilot-feedback.module';
 
 @Module({
   imports: [
@@ -221,6 +225,10 @@ import { PredictionsModule } from './predictions/predictions.module';
     SearchModule,
     DiscussionsModule,
     PredictionsModule,
+    // Pilot Readiness & Clinical Safety
+    ClinicalSafetyGateModule,
+    ManufacturingReadinessGateModule,
+    PilotFeedbackModule,
   ],
   providers: [
     {

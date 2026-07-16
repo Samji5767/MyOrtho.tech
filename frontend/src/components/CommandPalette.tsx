@@ -21,8 +21,7 @@ import {
   FileSearch,
   ChevronRight,
 } from "lucide-react";
-import { fetchCases } from "@/lib/api/cases";
-import { fetchPatients } from "@/lib/api/patients";
+import { globalSearch, type SearchResult } from "@/lib/api/search";
 import { Spinner } from "./DesignSystem";
 import { clsx } from "clsx";
 
@@ -46,8 +45,7 @@ export function CommandPalette() {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [selectedIndex, setSelectedIndex] = useState(0);
-  const [caseItems, setCaseItems] = useState<CommandItem[]>([]);
-  const [patientItems, setPatientItems] = useState<CommandItem[]>([]);
+  const [searchItems, setSearchItems] = useState<CommandItem[]>([]);
   const [loading, setLoading] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -56,8 +54,7 @@ export function CommandPalette() {
     setOpen(false);
     setQuery("");
     setSelectedIndex(0);
-    setCaseItems([]);
-    setPatientItems([]);
+    setSearchItems([]);
   }, []);
 
   const go = useCallback(
@@ -133,64 +130,42 @@ export function CommandPalette() {
     [go],
   );
 
+  const TYPE_ICONS: Record<string, React.ReactNode> = {
+    patient:  <Users size={16} />,
+    case:     <ClipboardList size={16} />,
+    protocol: <FileSearch size={16} />,
+    material: <Layers size={16} />,
+    batch:    <BarChart2 size={16} />,
+  };
+
+  const GROUP_LABELS: Record<string, string> = {
+    patient: 'Patients', case: 'Cases', protocol: 'Protocols',
+    material: 'Materials', batch: 'Batches',
+  };
+
   const doSearch = useCallback(
     async (q: string) => {
       const trimmed = q.trim();
       if (!trimmed) {
-        setCaseItems([]);
-        setPatientItems([]);
+        setSearchItems([]);
         setLoading(false);
         return;
       }
-
       setLoading(true);
       try {
-        const lq = trimmed.toLowerCase();
-        const [casesRes, patientsRes] = await Promise.allSettled([
-          fetchCases(),
-          fetchPatients(),
-        ]);
-
-        if (casesRes.status === "fulfilled") {
-          const hits = casesRes.value.cases
-            .filter(
-              (c) =>
-                `${c.patient.firstName} ${c.patient.lastName}`
-                  .toLowerCase()
-                  .includes(lq) ||
-                (c.chiefComplaint ?? "").toLowerCase().includes(lq) ||
-                c.id.toLowerCase().includes(lq),
-            )
-            .slice(0, 5);
-          setCaseItems(
-            hits.map((c) => ({
-              id: `case-${c.id}`,
-              group: "Cases",
-              icon: <ClipboardList size={16} />,
-              label: `${c.patient.firstName} ${c.patient.lastName}`,
-              subtitle: c.chiefComplaint ?? c.status,
-              action: () => go(`/cases/${c.id}`),
-            })),
-          );
-        }
-
-        if (patientsRes.status === "fulfilled") {
-          const hits = patientsRes.value.patients
-            .filter((p) =>
-              `${p.firstName} ${p.lastName}`.toLowerCase().includes(lq),
-            )
-            .slice(0, 5);
-          setPatientItems(
-            hits.map((p) => ({
-              id: `patient-${p.id}`,
-              group: "Patients",
-              icon: <Users size={16} />,
-              label: `${p.firstName} ${p.lastName}`,
-              subtitle: `${p.caseCount} case${p.caseCount !== 1 ? "s" : ""}`,
-              action: () => go(`/patients/${p.id}`),
-            })),
-          );
-        }
+        const { results } = await globalSearch(trimmed, 'all', 20);
+        setSearchItems(
+          results.map((r: SearchResult) => ({
+            id: `${r.type}-${r.id}`,
+            group: GROUP_LABELS[r.type] ?? r.type,
+            icon: TYPE_ICONS[r.type] ?? <FileSearch size={16} />,
+            label: r.title,
+            subtitle: r.subtitle ?? r.meta,
+            action: () => go(r.href),
+          })),
+        );
+      } catch {
+        setSearchItems([]);
       } finally {
         setLoading(false);
       }
@@ -214,17 +189,16 @@ export function CommandPalette() {
         list.push(item);
         map.set(item.group, list);
       }
-      return Array.from(map.entries()).map(([group, items]) => ({
-        group,
-        items,
-      }));
+      return Array.from(map.entries()).map(([group, items]) => ({ group, items }));
     }
-    const groups: GroupedItems[] = [];
-    if (caseItems.length > 0) groups.push({ group: "Cases", items: caseItems });
-    if (patientItems.length > 0)
-      groups.push({ group: "Patients", items: patientItems });
-    return groups;
-  }, [query, staticItems, caseItems, patientItems]);
+    const map = new Map<string, CommandItem[]>();
+    for (const item of searchItems) {
+      const list = map.get(item.group) ?? [];
+      list.push(item);
+      map.set(item.group, list);
+    }
+    return Array.from(map.entries()).map(([group, items]) => ({ group, items }));
+  }, [query, staticItems, searchItems]);
 
   const flatItems = useMemo(
     () => grouped.flatMap((g) => g.items),

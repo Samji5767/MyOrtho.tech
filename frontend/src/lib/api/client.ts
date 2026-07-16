@@ -4,6 +4,7 @@ const BASE =
     : '';
 
 const DEFAULT_TIMEOUT_MS = 30_000;
+const CSRF_COOKIE = 'XSRF-TOKEN';
 
 export class ApiError extends Error {
   constructor(
@@ -15,6 +16,17 @@ export class ApiError extends Error {
   }
 }
 
+/** Read the CSRF token set by the backend (HttpOnly=false). */
+function getCsrfToken(): string | undefined {
+  if (typeof document === 'undefined') return undefined;
+  const match = document.cookie
+    .split('; ')
+    .find((c) => c.startsWith(`${CSRF_COOKIE}=`));
+  return match ? match.substring(CSRF_COOKIE.length + 1) : undefined;
+}
+
+const MUTATING_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
+
 async function request<T>(
   path: string,
   init?: RequestInit,
@@ -22,6 +34,15 @@ async function request<T>(
 ): Promise<T> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
+
+  const method = (init?.method ?? 'GET').toUpperCase();
+  const csrfHeaders: Record<string, string> = {};
+  if (MUTATING_METHODS.has(method)) {
+    const token = getCsrfToken();
+    if (token) {
+      csrfHeaders['X-CSRF-Token'] = token;
+    }
+  }
 
   let res: Response;
   try {
@@ -31,6 +52,7 @@ async function request<T>(
       credentials: 'include',
       headers: {
         'Content-Type': 'application/json',
+        ...csrfHeaders,
         ...(init?.headers ?? {}),
       },
     });
@@ -81,12 +103,15 @@ export async function uploadFile<T>(path: string, form: FormData, timeoutMs = 60
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
 
+  const csrfToken = getCsrfToken();
+
   let res: Response;
   try {
     res = await fetch(`${BASE}${path}`, {
       method: 'POST',
       credentials: 'include',
       signal: controller.signal,
+      headers: csrfToken ? { 'X-CSRF-Token': csrfToken } : {},
       body: form,
     });
   } catch (err) {

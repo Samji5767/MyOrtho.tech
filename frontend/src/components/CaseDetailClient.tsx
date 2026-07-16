@@ -517,25 +517,32 @@ export default function CaseDetailClient({ id }: { id: string }) {
   const { user } = useAuth();
   const [tab, setTab] = useState<Tab>("summary");
   const [liveData, setLiveData] = useState<CaseDetail | null>(null);
-  const [dataSource, setDataSource] = useState<'api' | 'demo' | 'loading' | 'not_found'>('loading');
+  const [dataSource, setDataSource] = useState<'api' | 'error' | 'loading' | 'not_found'>('loading');
   const [fetchError, setFetchError] = useState<string | null>(null);
+  const [retryTick, setRetryTick] = useState(0);
 
   useEffect(() => {
     setFetchError(null);
+    setDataSource('loading');
     fetchCase(id)
-      .then(({ data, source }) => { setLiveData(data); setDataSource(source); })
+      .then(({ data, source }) => {
+        if (source === 'demo') {
+          setDataSource('error');
+          setFetchError('Could not reach the backend — check your connection');
+        } else {
+          setLiveData(data);
+          setDataSource(source);
+        }
+      })
       .catch((err) => {
         if (err instanceof ApiError && err.status === 404) {
           setDataSource('not_found');
         } else {
-          setDataSource('demo');
-          // Surface the error if it came from the server (not a network/timeout fallback)
-          if (err instanceof ApiError && err.status !== 0 && err.status !== 408) {
-            setFetchError(err.message);
-          }
+          setDataSource('error');
+          setFetchError(err instanceof Error ? err.message : 'Failed to load case');
         }
       });
-  }, [id]);
+  }, [id, retryTick]);
 
   const demoProfile = CASE_PROFILES[id] ?? {
     patient: "Unknown Patient", initials: "?", accentClass: "bg-slate-500",
@@ -623,6 +630,35 @@ export default function CaseDetailClient({ id }: { id: string }) {
     );
   }
 
+  if (dataSource === 'error') {
+    return (
+      <div className="flex flex-col items-center justify-center gap-4 px-6 py-24 text-center">
+        <div className="flex h-16 w-16 items-center justify-center rounded-2xl border border-rose-200/60 bg-rose-50/60 dark:border-rose-700/30 dark:bg-rose-900/10 text-rose-500">
+          <AlertTriangle size={28} />
+        </div>
+        <h1 className="text-xl font-semibold text-[color:var(--foreground)]">Unable to load case</h1>
+        {fetchError && (
+          <p className="max-w-xs text-sm text-[color:var(--muted-foreground)]">{fetchError}</p>
+        )}
+        <div className="flex items-center gap-3 mt-2">
+          <button
+            type="button"
+            onClick={() => setRetryTick((t) => t + 1)}
+            className="inline-flex items-center gap-2 rounded-xl bg-[color:var(--primary)] px-4 py-2.5 text-sm font-semibold text-[color:var(--primary-foreground)] hover:opacity-90 transition-opacity"
+          >
+            Retry
+          </button>
+          <Link
+            href="/cases"
+            className="inline-flex items-center gap-2 rounded-xl border border-[color:var(--border)] px-4 py-2.5 text-sm font-semibold text-[color:var(--foreground)] hover:bg-[color:var(--border)]/40 transition-colors"
+          >
+            <ArrowLeft size={16} /> Back to Cases
+          </Link>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <section className="animate-page-enter mx-auto w-full max-w-4xl pb-[calc(var(--tab-bar-height)+var(--sa-bottom)+1.5rem)]">
       {/* Sticky header */}
@@ -644,7 +680,6 @@ export default function CaseDetailClient({ id }: { id: string }) {
               <span className="font-mono text-xs text-[color:var(--muted-foreground)]">{liveData?.id ?? id}</span>
               {dataSource === 'loading' && <StatusBadge tone="neutral">Loading…</StatusBadge>}
               {dataSource === 'api'     && <StatusBadge tone="success">Live</StatusBadge>}
-              {dataSource === 'demo'    && <StatusBadge tone="info">Representative data</StatusBadge>}
             </div>
           </div>
           <ReportDownloadButton caseId={id} />

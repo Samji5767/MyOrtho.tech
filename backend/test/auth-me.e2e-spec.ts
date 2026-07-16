@@ -123,10 +123,10 @@ describe('Auth — /api/me and /api/auth/session (e2e)', () => {
       .get('/api/me')
       .set('Authorization', `Bearer ${token}`)
       .expect(200);
-    expect(res.body.id).toBe('user-001');
-    expect(res.body.email).toBe('dr@clinic.com');
-    expect(res.body.orgId).toBe('org-001');
-    expect(res.body.isOnboarded).toBe(true);
+    expect(res.body.user.id).toBe('user-001');
+    expect(res.body.user.email).toBe('dr@clinic.com');
+    expect(res.body.user.orgId).toBe('org-001');
+    expect(res.body.user.isOnboarded).toBe(true);
   });
 
   it('GET /api/me succeeds with session cookie', async () => {
@@ -135,7 +135,7 @@ describe('Auth — /api/me and /api/auth/session (e2e)', () => {
       .get('/api/me')
       .set('Cookie', `mo_session=${token}`)
       .expect(200);
-    expect(res.body.id).toBe('user-001');
+    expect(res.body.user.id).toBe('user-001');
   });
 
   it('GET /api/me returns 401 for a tampered token', async () => {

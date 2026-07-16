@@ -285,6 +285,7 @@ export class AuthService implements OnModuleInit {
           role            text        NOT NULL DEFAULT 'orthodontist',
           organization_id uuid        REFERENCES organizations(id) ON DELETE SET NULL,
           is_onboarded    boolean     NOT NULL DEFAULT false,
+          is_active       boolean     NOT NULL DEFAULT true,
           created_at      timestamptz DEFAULT now(),
           updated_at      timestamptz DEFAULT now(),
           last_login_at   timestamptz
@@ -301,8 +302,11 @@ export class AuthService implements OnModuleInit {
     const password = process.env.MYORTHO_ADMIN_PASSWORD ?? '';
     const fullName = process.env.MYORTHO_ADMIN_NAME ?? 'Platform Admin';
 
-    if (!email || !password) {
-      this.logger.warn('Bootstrap: MYORTHO_ADMIN_EMAIL and MYORTHO_ADMIN_PASSWORD must both be set. Skipping admin creation.');
+    if (!email || !password || password.length < 12) {
+      this.logger.error(
+        'Bootstrap: MYORTHO_ADMIN_EMAIL must be set and MYORTHO_ADMIN_PASSWORD must be at least 12 characters. ' +
+        'Admin account will not be created. Set both env vars and restart.',
+      );
       return;
     }
 

@@ -40,9 +40,9 @@ function assertRequiredEnv(): void {
     );
   }
   const adminPw = process.env.MYORTHO_ADMIN_PASSWORD ?? '';
-  if (!adminPw) {
+  if (adminPw.length < 12) {
     throw new Error(
-      'MYORTHO_ADMIN_PASSWORD must be set. ' +
+      'MYORTHO_ADMIN_PASSWORD must be at least 12 characters. ' +
       'Generate one with: openssl rand -base64 24',
     );
   }

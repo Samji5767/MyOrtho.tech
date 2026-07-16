@@ -180,7 +180,7 @@ export default function OnboardingPage() {
     setSaving(true);
     setFinishError(null);
     try {
-      await fetch(`/api/auth/onboarding`, {
+      const res = await fetch(`/api/auth/onboarding`, {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
@@ -192,10 +192,16 @@ export default function OnboardingPage() {
           primaryFlow, cadLevel, aiReadiness, enableDemo,
         }),
       });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error((body as { message?: string }).message ?? `Server error ${res.status}`);
+      }
     } catch (err) {
       setFinishError(
-        err instanceof Error ? err.message : "Preferences could not be saved — they will apply locally."
+        err instanceof Error ? err.message : "Preferences could not be saved. Please try again."
       );
+      setSaving(false);
+      return;
     }
     redirecting.current = true;
     safeStorage.set("mo_onboarding_done", "1");

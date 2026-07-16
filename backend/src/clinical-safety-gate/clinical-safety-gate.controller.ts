@@ -17,7 +17,7 @@ export class ClinicalSafetyGateController {
     @Query('caseId') caseId: string,
     @Query('planId') planId?: string,
   ) {
-    const { organizationId } = (req as any).user as { organizationId: string };
-    return this.gate.evaluate(caseId, organizationId, planId);
+    const orgId = ((req as any).user as { orgId: string }).orgId;
+    return this.gate.evaluate(caseId, orgId, planId);
   }
 }

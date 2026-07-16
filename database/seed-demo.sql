@@ -16,15 +16,15 @@ BEGIN
 -- Idempotent org
 SELECT id INTO org_id FROM organizations WHERE name = 'DEMO Pilot Clinic' LIMIT 1;
 IF org_id IS NULL THEN
-  INSERT INTO organizations (id, name, plan, status)
-  VALUES (gen_random_uuid(), 'DEMO Pilot Clinic', 'enterprise', 'active')
+  INSERT INTO organizations (id, name, type)
+  VALUES (gen_random_uuid(), 'DEMO Pilot Clinic', 'enterprise')
   RETURNING id INTO org_id;
 END IF;
 
 -- Demo admin user
 SELECT id INTO user_id FROM auth_users WHERE email = 'demo-admin@myortho.test' LIMIT 1;
 IF user_id IS NULL THEN
-  INSERT INTO auth_users (id, email, password_hash, role, organization_id, name, active)
+  INSERT INTO auth_users (id, email, password_hash, role, organization_id, full_name, is_active)
   VALUES (gen_random_uuid(), 'demo-admin@myortho.test',
           '$2b$10$demo.hash.not.real.do.not.use.in.prod',
           'admin', org_id, 'Demo Admin', true)
@@ -34,20 +34,20 @@ END IF;
 -- Demo orthodontist
 SELECT id INTO doc_id FROM auth_users WHERE email = 'demo-doctor@myortho.test' LIMIT 1;
 IF doc_id IS NULL THEN
-  INSERT INTO auth_users (id, email, password_hash, role, organization_id, name, active)
+  INSERT INTO auth_users (id, email, password_hash, role, organization_id, full_name, is_active)
   VALUES (gen_random_uuid(), 'demo-doctor@myortho.test',
           '$2b$10$demo.hash.not.real.do.not.use.in.prod',
-          'doctor', org_id, 'Dr Demo Ortho', true)
+          'orthodontist', org_id, 'Dr Demo Ortho', true)
   RETURNING id INTO doc_id;
 END IF;
 
 -- Demo technician
 SELECT id INTO tech_id FROM auth_users WHERE email = 'demo-tech@myortho.test' LIMIT 1;
 IF tech_id IS NULL THEN
-  INSERT INTO auth_users (id, email, password_hash, role, organization_id, name, active)
+  INSERT INTO auth_users (id, email, password_hash, role, organization_id, full_name, is_active)
   VALUES (gen_random_uuid(), 'demo-tech@myortho.test',
           '$2b$10$demo.hash.not.real.do.not.use.in.prod',
-          'technician', org_id, 'Demo Technician', true)
+          'lab_technician', org_id, 'Demo Technician', true)
   RETURNING id INTO tech_id;
 END IF;
 

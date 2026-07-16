@@ -49,7 +49,7 @@ export class DiscussionsService {
       `SELECT d.id, d.case_id, d.content, d.mentioned_user_ids, d.resolved,
               d.resolved_at, d.resolved_by, d.parent_id, d.author_id,
               d.created_at, d.updated_at,
-              u.name AS author_name, u.email AS author_email
+              u.full_name AS author_name, u.email AS author_email
        FROM case_discussions d
        LEFT JOIN auth_users u ON u.id = d.author_id
        WHERE d.case_id = $1 AND d.organization_id = $2
@@ -82,10 +82,10 @@ export class DiscussionsService {
     );
     const row = rows[0];
     const userRow = await this.pool.query(
-      `SELECT name, email FROM auth_users WHERE id = $1`,
+      `SELECT full_name, email FROM auth_users WHERE id = $1`,
       [authorId],
     );
-    return this.mapRow({ ...row, author_name: userRow.rows[0]?.['name'] ?? null, author_email: userRow.rows[0]?.['email'] ?? null });
+    return this.mapRow({ ...row, author_name: userRow.rows[0]?.['full_name'] ?? null, author_email: userRow.rows[0]?.['email'] ?? null });
   }
 
   async resolve(
@@ -108,10 +108,10 @@ export class DiscussionsService {
     );
     if (!rows[0]) throw new NotFoundException(`Discussion ${id} not found`);
     const userRow = await this.pool.query(
-      `SELECT name, email FROM auth_users WHERE id = $1`,
+      `SELECT full_name, email FROM auth_users WHERE id = $1`,
       [existing.authorId],
     );
-    return this.mapRow({ ...rows[0], author_name: userRow.rows[0]?.['name'] ?? null, author_email: userRow.rows[0]?.['email'] ?? null });
+    return this.mapRow({ ...rows[0], author_name: userRow.rows[0]?.['full_name'] ?? null, author_email: userRow.rows[0]?.['email'] ?? null });
   }
 
   async delete(id: string, orgId: string, actorId: string): Promise<void> {
@@ -127,7 +127,7 @@ export class DiscussionsService {
 
   private async findOne(id: string, orgId: string): Promise<DiscussionComment> {
     const { rows } = await this.pool.query(
-      `SELECT d.*, u.name AS author_name, u.email AS author_email
+      `SELECT d.*, u.full_name AS author_name, u.email AS author_email
        FROM case_discussions d
        LEFT JOIN auth_users u ON u.id = d.author_id
        WHERE d.id = $1 AND d.organization_id = $2`,

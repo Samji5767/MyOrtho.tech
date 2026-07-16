@@ -147,7 +147,7 @@ export class ManufacturingReadinessGateService {
 
       if (qaRows.length > 0) {
         const qaStatus = qaRows[0].status as string;
-        if (qaStatus === 'rejected') {
+        if (qaStatus === 'rejected' || qaStatus === 'failed') {
           blockers.push({
             code: 'QA_REJECTED',
             message: 'Most recent QA inspection was rejected. Resolve QA findings before sending to manufacturing.',

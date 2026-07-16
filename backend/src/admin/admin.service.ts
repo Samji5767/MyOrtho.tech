@@ -376,6 +376,8 @@ export class AdminService {
   // ─── Org-admin: invite & role management ────────────────────────────────────
 
   async inviteUser(orgId: string, email: string, role: string): Promise<{ message: string }> {
+    const validRoles = ['admin', 'orthodontist', 'dentist', 'lab_manager', 'lab_technician', 'resident', 'executive', 'clinical_director', 'vp_clinical', 'vp_manufacturing'];
+    if (!validRoles.includes(role)) throw new BadRequestException(`Invalid role: ${role}`);
     const existing = await this.pool.query(
       'SELECT id FROM auth_users WHERE email=$1 AND organization_id=$2',
       [email, orgId],

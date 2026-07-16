@@ -148,7 +148,7 @@ export default function EnterpriseDashboardPage() {
     </div>
   );
 
-  const isAdmin = user?.role === 'admin' || user?.role === 'owner';
+  const isAdmin = user?.role === 'admin' || user?.role === 'super_admin';
   if (!isAdmin) return (
     <div className="flex min-h-[40vh] items-center justify-center text-sm text-[color:var(--muted-foreground)]">
       Admin access required

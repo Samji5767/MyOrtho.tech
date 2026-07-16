@@ -40,7 +40,7 @@ BEGIN
     -- must be soft-deleted (deactivated) rather than hard-deleted.
     ALTER TABLE ai_inference_audit
       ADD CONSTRAINT fk_ai_audit_invoked_by
-      FOREIGN KEY (invoked_by) REFERENCES users(id) ON DELETE RESTRICT;
+      FOREIGN KEY (invoked_by) REFERENCES auth_users(id) ON DELETE RESTRICT;
   END IF;
 END $$;
 

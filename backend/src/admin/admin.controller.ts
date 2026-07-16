@@ -172,6 +172,12 @@ export class AdminController {
     return this.adminService.updateMyOrg(admin.orgId!, dto, admin.id, admin.email);
   }
 
+  @Get('pilot-ops')
+  getPilotOps(@Req() req: Request) {
+    requireSuperAdmin(req);
+    return this.adminService.getPilotOpsSnapshot();
+  }
+
   @Get('audit')
   listAudit(
     @Req() req: Request,

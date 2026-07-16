@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import {
   Activity,
   ArrowLeft,
+  BarChart2,
   Building2,
   Factory,
   FileBarChart,
@@ -87,6 +88,12 @@ const ADMIN_SECTIONS = [
     title: "AI Operations",
     description: "Model registry, inference audit trail, lifecycle governance, and disclaimer compliance.",
     href: "/admin/ai-ops",
+  },
+  {
+    icon: <BarChart2 size={18} />,
+    title: "Enterprise Dashboard",
+    description: "Practice growth, clinical quality, AI utilization, and operational metrics.",
+    href: "/admin/enterprise",
   },
 ];
 

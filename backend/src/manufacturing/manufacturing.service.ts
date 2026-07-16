@@ -48,6 +48,26 @@ export class ManufacturingService {
     dto: CreatePrintJobDto,
     actorEmail: string,
   ) {
+    // Verify the associated treatment plan is doctor-approved before queuing.
+    if (dto.stageId) {
+      const { rows: approvalRows } = await this.pool.query(
+        `SELECT tp.doctor_approval
+         FROM aligner_stages ast
+         JOIN treatment_plans tp ON tp.id = ast.treatment_plan_id
+         JOIN cases c ON c.id = tp.case_id
+         JOIN patients p ON p.id = c.patient_id
+         WHERE ast.id = $1 AND p.organization_id = $2`,
+        [dto.stageId, orgId],
+      );
+      if (!approvalRows[0]) throw new NotFoundException('Stage not found');
+      if (!(approvalRows[0].doctor_approval as boolean)) {
+        throw new BadRequestException(
+          'The treatment plan for this stage has not been approved by a doctor. ' +
+          'Approve the plan before queuing a print job.',
+        );
+      }
+    }
+
     // Check connector state before queuing
     if (dto.printerId) {
       const { rows: printerRows } = await this.pool.query(

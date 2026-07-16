@@ -59,6 +59,7 @@ class CreateStageBody {
 interface AuthUser {
   id: string;
   email: string;
+  role: string;
   orgId: string | null;
 }
 
@@ -114,7 +115,7 @@ export class TreatmentPlansController {
     @Body() body: ApprovePlanBody,
   ) {
     const user = auth(req);
-    return this.service.approvePlan(planId, caseId, user.orgId!, user.id, body.signature);
+    return this.service.approvePlan(planId, caseId, user.orgId!, user.id, user.role, user.email, body.signature);
   }
 
   @Patch(':planId')

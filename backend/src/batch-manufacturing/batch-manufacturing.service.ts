@@ -32,6 +32,30 @@ export class BatchManufacturingService {
     caseIds?: string[]; scheduledDate?: string; notes?: string;
     resinType?: string; priority?: number;
   }): Promise<ManufacturingBatch> {
+    // Verify all provided cases have an approved treatment plan.
+    const caseIds = dto.caseIds ?? [];
+    if (caseIds.length > 0) {
+      const { rows: unapproved } = await this.db.query(
+        `SELECT c.id
+         FROM unnest($1::uuid[]) AS c(id)
+         WHERE NOT EXISTS (
+           SELECT 1 FROM treatment_plans tp
+           JOIN cases cas ON cas.id = tp.case_id
+           JOIN patients p ON p.id = cas.patient_id
+           WHERE tp.case_id = c.id
+             AND tp.doctor_approval = true
+             AND p.organization_id = $2
+         )`,
+        [caseIds, orgId],
+      );
+      if (unapproved.length > 0) {
+        const ids = unapproved.map((r: Record<string, unknown>) => r['id'] as string).join(', ');
+        throw new BadRequestException(
+          `The following cases do not have an approved treatment plan and cannot be batched: ${ids}`,
+        );
+      }
+    }
+
     // Derive next batch number atomically from DB to survive restarts and concurrent requests
     const { rows } = await this.db.query(
       `WITH next_seq AS (

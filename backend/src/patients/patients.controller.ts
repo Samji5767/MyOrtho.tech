@@ -12,11 +12,29 @@ import {
   HttpStatus,
   UnauthorizedException,
 } from '@nestjs/common';
+import { IsString, IsOptional } from 'class-validator';
 import type { Request } from 'express';
 import { PatientsService, CreatePatientDto, type UpdatePatientDto } from './patients.service';
 import { AuthGuard } from '../auth/auth.guard';
 import { PermissionsGuard } from '../auth/permissions.guard';
 import { RequirePermission } from '../auth/require-permission.decorator';
+
+class AddTimelineNoteDto {
+  @IsString()
+  note: string;
+
+  @IsString()
+  @IsOptional()
+  caseId?: string;
+
+  @IsString()
+  @IsOptional()
+  eventType?: string;
+
+  @IsString()
+  @IsOptional()
+  eventAt?: string;
+}
 
 interface AuthUser { id: string; email: string; role: string; name: string; orgId: string | null }
 
@@ -82,5 +100,26 @@ export class PatientsController {
       actorEmail: user.email,
       ipAddress: getIp(req),
     });
+  }
+
+  @Get(':id/timeline')
+  @RequirePermission('patients:read')
+  async getTimeline(@Req() req: Request, @Param('id') id: string) {
+    const user = getUser(req);
+    if (!user.orgId) throw new UnauthorizedException('No organization assigned');
+    return this.patientsService.getTimeline(id, user.orgId);
+  }
+
+  @Post(':id/timeline/notes')
+  @HttpCode(HttpStatus.CREATED)
+  @RequirePermission('patients:write')
+  async addTimelineNote(
+    @Req() req: Request,
+    @Param('id') id: string,
+    @Body() dto: AddTimelineNoteDto,
+  ) {
+    const user = getUser(req);
+    if (!user.orgId) throw new UnauthorizedException('No organization assigned');
+    return this.patientsService.addTimelineNote(id, user.orgId, user.id, dto);
   }
 }

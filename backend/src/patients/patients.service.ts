@@ -37,6 +37,16 @@ export class CreatePatientDto {
   clinicalNotes?: string;
 }
 
+export interface TimelineEvent {
+  id: string;
+  type: string;
+  label: string;
+  detail?: string;
+  actor?: string;
+  caseId?: string;
+  occurredAt: string;
+}
+
 export class UpdatePatientDto {
   @IsString()
   @IsOptional()
@@ -205,6 +215,144 @@ export class PatientsService {
     });
 
     return this.findOne(id, orgId);
+  }
+
+  // ─── Patient Timeline ─────────────────────────────────────────────────────
+
+  async getTimeline(patientId: string, orgId: string): Promise<TimelineEvent[]> {
+    await this.findOne(patientId, orgId); // ownership + existence check
+
+    const [casesRes, scansRes, appointmentsRes, notesRes] = await Promise.all([
+      // Cases with workflow history
+      this.pool.query(
+        `SELECT c.id, c.status, c.created_at, c.updated_at,
+                wh.from_status, wh.to_status, wh.actor_name, wh.notes, wh.created_at AS wh_at
+         FROM cases c
+         LEFT JOIN workflow_history wh ON wh.case_id = c.id
+         WHERE c.patient_id = $1 AND c.patient_id IN (
+           SELECT id FROM patients WHERE organization_id = $2
+         )
+         ORDER BY COALESCE(wh.created_at, c.created_at) DESC
+         LIMIT 200`,
+        [patientId, orgId],
+      ),
+      // Scans
+      this.pool.query(
+        `SELECT s.id, s.jaw_type, s.file_format, s.created_at, s.case_id
+         FROM scans s
+         JOIN cases c ON c.id = s.case_id
+         WHERE c.patient_id = $1 AND c.patient_id IN (
+           SELECT id FROM patients WHERE organization_id = $2
+         )
+         ORDER BY s.created_at DESC LIMIT 100`,
+        [patientId, orgId],
+      ),
+      // Appointments
+      this.pool.query(
+        `SELECT id, visit_reason, scheduled_at, status
+         FROM appointments
+         WHERE patient_id = $1
+         ORDER BY scheduled_at DESC LIMIT 50`,
+        [patientId],
+      ),
+      // Manual timeline notes
+      this.pool.query(
+        `SELECT id, note, event_type, event_at, case_id, author_id
+         FROM patient_timeline_notes
+         WHERE patient_id = $1 AND organization_id = $2
+         ORDER BY event_at DESC LIMIT 50`,
+        [patientId, orgId],
+      ),
+    ]);
+
+    const events: TimelineEvent[] = [];
+
+    for (const row of casesRes.rows) {
+      const caseId = row['id'] as string;
+      if (row['wh_at']) {
+        events.push({
+          id: `wh-${caseId}-${String(row['wh_at'])}`,
+          type: 'case_transition',
+          label: row['from_status']
+            ? `Case moved: ${row['from_status']} → ${row['to_status']}`
+            : `Case created: ${row['to_status']}`,
+          detail: (row['notes'] as string | null) ?? undefined,
+          actor: (row['actor_name'] as string | null) ?? undefined,
+          caseId,
+          occurredAt: String(row['wh_at']),
+        });
+      } else if (!row['wh_at'] && row['created_at']) {
+        events.push({
+          id: `case-${caseId}`,
+          type: 'case_created',
+          label: 'Case opened',
+          detail: `Status: ${row['status']}`,
+          caseId,
+          occurredAt: String(row['created_at']),
+        });
+      }
+    }
+
+    for (const row of scansRes.rows) {
+      events.push({
+        id: `scan-${row['id']}`,
+        type: 'scan_uploaded',
+        label: `${String(row['jaw_type']).charAt(0).toUpperCase() + String(row['jaw_type']).slice(1)} scan uploaded`,
+        detail: `Format: ${row['file_format']}`,
+        caseId: row['case_id'] as string,
+        occurredAt: String(row['created_at']),
+      });
+    }
+
+    for (const row of appointmentsRes.rows) {
+      events.push({
+        id: `appt-${row['id']}`,
+        type: row['status'] === 'completed' ? 'appointment_completed'
+          : row['status'] === 'canceled' ? 'appointment_cancelled'
+          : 'appointment_scheduled',
+        label: String(row['visit_reason']),
+        detail: `Status: ${row['status']}`,
+        occurredAt: String(row['scheduled_at']),
+      });
+    }
+
+    for (const row of notesRes.rows) {
+      events.push({
+        id: `note-${row['id']}`,
+        type: (row['event_type'] as string) || 'note',
+        label: 'Clinical note',
+        detail: row['note'] as string,
+        caseId: (row['case_id'] as string | null) ?? undefined,
+        occurredAt: String(row['event_at']),
+      });
+    }
+
+    return events.sort((a, b) => new Date(b.occurredAt).getTime() - new Date(a.occurredAt).getTime());
+  }
+
+  async addTimelineNote(
+    patientId: string,
+    orgId: string,
+    authorId: string,
+    dto: { note: string; caseId?: string; eventType?: string; eventAt?: string },
+  ): Promise<TimelineEvent> {
+    await this.findOne(patientId, orgId);
+    const { rows } = await this.pool.query(
+      `INSERT INTO patient_timeline_notes
+         (organization_id, patient_id, case_id, author_id, note, event_type, event_at)
+       VALUES ($1, $2, $3, $4, $5, $6, COALESCE($7::timestamptz, NOW()))
+       RETURNING *`,
+      [orgId, patientId, dto.caseId ?? null, authorId, dto.note, dto.eventType ?? 'note', dto.eventAt ?? null],
+    );
+    const r = rows[0];
+    return {
+      id: `note-${r['id']}`,
+      type: r['event_type'] as string,
+      label: 'Clinical note',
+      detail: r['note'] as string,
+      caseId: (r['case_id'] as string | null) ?? undefined,
+      occurredAt: String(r['event_at']),
+    };
   }
 
   private formatPatient(row: Record<string, unknown>, decrypt = false) {

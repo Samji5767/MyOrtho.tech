@@ -45,7 +45,7 @@ export class StlProcessingController {
   ) {
     const { id, orgId } = getUser(req);
 
-    const fileName = body.fileName ?? file?.originalname ?? 'upload.stl';
+    const fileName = path.basename(body.fileName ?? file?.originalname ?? 'upload.stl');
     const rawArchType = body.archType ?? 'unknown';
     const archType = ARCH_TYPE_MAP[rawArchType] ?? rawArchType;
 

@@ -68,8 +68,10 @@ function makeTransactionPool(poolRows: unknown[][], clientRows: unknown[][]) {
   };
 }
 
+const mockWorkflowService = { transition: jest.fn(async () => ({})) } as any;
+
 function makeService(pool: ReturnType<typeof makePool> | ReturnType<typeof makeTransactionPool>) {
-  return new TreatmentPlansService(pool as any);
+  return new TreatmentPlansService(pool as any, mockWorkflowService);
 }
 
 // ─── verifyCaseOwnership (tested implicitly through every public method) ───────
@@ -256,7 +258,7 @@ describe('TreatmentPlansService.approvePlan', () => {
     ]);
     const svc = makeService(pool);
     await expect(
-      svc.approvePlan(PLAN_ID, CASE_ID, ORG_ID, DOCTOR_ID, 'sig-abc'),
+      svc.approvePlan(PLAN_ID, CASE_ID, ORG_ID, DOCTOR_ID, 'orthodontist', 'doctor@test.example', 'sig-abc'),
     ).rejects.toThrow(BadRequestException);
   });
 
@@ -267,7 +269,7 @@ describe('TreatmentPlansService.approvePlan', () => {
     ]);
     const svc = makeService(pool);
     await expect(
-      svc.approvePlan(PLAN_ID, CASE_ID, ORG_ID, DOCTOR_ID, 'sig-abc'),
+      svc.approvePlan(PLAN_ID, CASE_ID, ORG_ID, DOCTOR_ID, 'orthodontist', 'doctor@test.example', 'sig-abc'),
     ).rejects.toThrow(/simulated scaffold stages/);
   });
 
@@ -284,7 +286,7 @@ describe('TreatmentPlansService.approvePlan', () => {
     );
     const svc = makeService(txPool);
 
-    const result = await svc.approvePlan(PLAN_ID, CASE_ID, ORG_ID, DOCTOR_ID, 'Dr. Signature');
+    const result = await svc.approvePlan(PLAN_ID, CASE_ID, ORG_ID, DOCTOR_ID, 'orthodontist', 'doctor@test.example', 'Dr. Signature');
 
     expect(result.id).toBe(PLAN_ID);
     expect(result.doctorApproval).toBe(true);
@@ -299,7 +301,7 @@ describe('TreatmentPlansService.approvePlan', () => {
     );
     const svc = makeService(txPool);
 
-    await svc.approvePlan(PLAN_ID, CASE_ID, ORG_ID, DOCTOR_ID, 'sig');
+    await svc.approvePlan(PLAN_ID, CASE_ID, ORG_ID, DOCTOR_ID, 'orthodontist', 'doctor@test.example', 'sig');
 
     const calls = txPool._client.query.mock.calls.map((c: unknown[]) => c[0] as string);
     expect(calls[0]).toBe('BEGIN');
@@ -313,7 +315,7 @@ describe('TreatmentPlansService.approvePlan', () => {
     );
     const svc = makeService(txPool);
 
-    await svc.approvePlan(PLAN_ID, CASE_ID, ORG_ID, DOCTOR_ID, 'sig');
+    await svc.approvePlan(PLAN_ID, CASE_ID, ORG_ID, DOCTOR_ID, 'orthodontist', 'doctor@test.example', 'sig');
 
     const calls = txPool._client.query.mock.calls.map((c: unknown[]) => c[0] as string);
     expect(calls[calls.length - 1]).toBe('COMMIT');
@@ -326,7 +328,7 @@ describe('TreatmentPlansService.approvePlan', () => {
       [[], [{ id: PLAN_ID, doctor_approval: true, approved_at: approvedAt }], [], []],
     );
     const svc = makeService(txPool);
-    await svc.approvePlan(PLAN_ID, CASE_ID, ORG_ID, DOCTOR_ID, 'sig');
+    await svc.approvePlan(PLAN_ID, CASE_ID, ORG_ID, DOCTOR_ID, 'orthodontist', 'doctor@test.example', 'sig');
     expect(txPool._client.release).toHaveBeenCalled();
   });
 
@@ -337,7 +339,7 @@ describe('TreatmentPlansService.approvePlan', () => {
     );
     const svc = makeService(txPool);
     await expect(
-      svc.approvePlan(PLAN_ID, CASE_ID, ORG_ID, DOCTOR_ID, 'sig'),
+      svc.approvePlan(PLAN_ID, CASE_ID, ORG_ID, DOCTOR_ID, 'orthodontist', 'doctor@test.example', 'sig'),
     ).rejects.toThrow(NotFoundException);
   });
 
@@ -347,7 +349,7 @@ describe('TreatmentPlansService.approvePlan', () => {
       [[], [], [], []],
     );
     const svc = makeService(txPool);
-    try { await svc.approvePlan(PLAN_ID, CASE_ID, ORG_ID, DOCTOR_ID, 'sig'); } catch { /* expected */ }
+    try { await svc.approvePlan(PLAN_ID, CASE_ID, ORG_ID, DOCTOR_ID, 'orthodontist', 'doctor@test.example', 'sig'); } catch { /* expected */ }
     expect(txPool._client.release).toHaveBeenCalled();
   });
 });

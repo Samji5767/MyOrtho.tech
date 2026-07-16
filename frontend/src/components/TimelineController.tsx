@@ -1,26 +1,45 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { Play, Pause, RotateCcw, Copy, Trash, AlertTriangle, Sparkles, Plus } from "lucide-react";
+import { Play, Pause, RotateCcw, AlertTriangle, Sparkles, Plus } from "lucide-react";
 import { validateMovements, ToothDisplacement } from "@/lib/biomechanics/vectorMath";
+import { listStages } from "@/lib/api/stages";
 
 interface TimelineControllerProps {
   caseId: string;
+  planId?: string;
   patientName: string;
   onStageChange: (stageNum: number) => void;
   currentDisplacements: Record<number, ToothDisplacement>;
 }
 
-export default function TimelineController({ 
-  caseId, 
-  patientName, 
+export default function TimelineController({
+  caseId,
+  planId,
+  patientName,
   onStageChange,
-  currentDisplacements 
+  currentDisplacements
 }: TimelineControllerProps) {
   const [stagesList, setStagesList] = useState<number[]>([1, 2, 3, 4, 5]);
   const [activeStage, setActiveStage] = useState(1);
   const [isPlaying, setIsPlaying] = useState(false);
   const [warnings, setWarnings] = useState<string[]>([]);
+  const [confirmRollback, setConfirmRollback] = useState(false);
+
+  // Load stages from API when caseId + planId are available
+  useEffect(() => {
+    if (!caseId || !planId) return;
+    listStages(caseId, planId)
+      .then((stages) => {
+        if (stages.length > 0) {
+          setStagesList(stages.map((_, i) => i + 1));
+          setActiveStage(1);
+        }
+      })
+      .catch(() => {
+        // Keep default [1..5] on error — non-fatal
+      });
+  }, [caseId, planId]);
 
   // Telemetry loop
   useEffect(() => {
@@ -61,8 +80,11 @@ export default function TimelineController({
     onStageChange(newStageNum);
   };
 
-  const handleRollback = () => {
-    alert(`Rolling back stage #${activeStage} coordinates to match original starting parameters.`);
+  const handleRollbackConfirm = () => {
+    setConfirmRollback(false);
+    // Rollback: reset active stage to 1 and notify parent
+    setActiveStage(1);
+    onStageChange(1);
   };
 
   return (
@@ -73,18 +95,36 @@ export default function TimelineController({
           <p className="text-xs text-secondary mt-0.5">Scrub aligner sequences and analyze biological limits</p>
         </div>
         <div className="flex gap-2">
-          <button 
+          <button
             onClick={handleDuplicate}
             className="flex items-center gap-1 px-3 py-1.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-900 dark:hover:bg-slate-800 border border-border text-xs font-semibold rounded-lg transition-colors"
           >
             <Plus size={14} /> Duplicate Stage
           </button>
-          <button 
-            onClick={handleRollback}
-            className="flex items-center gap-1 px-3 py-1.5 bg-red-500/5 hover:bg-red-500/10 text-red-400 border border-red-500/10 text-xs font-semibold rounded-lg transition-colors"
-          >
-            <RotateCcw size={14} /> Rollback
-          </button>
+          {confirmRollback ? (
+            <div className="flex items-center gap-1.5">
+              <span className="text-xs text-red-400 font-medium">Reset to stage 1?</span>
+              <button
+                onClick={handleRollbackConfirm}
+                className="flex items-center gap-1 px-3 py-1.5 bg-red-500 hover:bg-red-600 text-white text-xs font-semibold rounded-lg transition-colors"
+              >
+                Confirm
+              </button>
+              <button
+                onClick={() => setConfirmRollback(false)}
+                className="flex items-center gap-1 px-3 py-1.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-900 dark:hover:bg-slate-800 border border-border text-xs font-semibold rounded-lg transition-colors"
+              >
+                Cancel
+              </button>
+            </div>
+          ) : (
+            <button
+              onClick={() => setConfirmRollback(true)}
+              className="flex items-center gap-1 px-3 py-1.5 bg-red-500/5 hover:bg-red-500/10 text-red-400 border border-red-500/10 text-xs font-semibold rounded-lg transition-colors"
+            >
+              <RotateCcw size={14} /> Rollback
+            </button>
+          )}
         </div>
       </div>
 
@@ -93,7 +133,7 @@ export default function TimelineController({
         <div className="p-4 bg-slate-50 dark:bg-slate-900/40 border border-border rounded-xl space-y-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
-              <button 
+              <button
                 onClick={() => setIsPlaying(!isPlaying)}
                 className="p-2.5 bg-primary hover:bg-primary-hover text-white rounded-full transition-colors shadow-sm"
               >
@@ -103,7 +143,7 @@ export default function TimelineController({
                 Active Stage: {activeStage} <span className="text-xs text-secondary font-medium">of {stagesList.length}</span>
               </div>
             </div>
-            
+
             <div className="flex items-center gap-1 text-xs text-slate-400 font-medium">
               <Sparkles size={12} className="text-primary animate-pulse" />
               SLERP Arch Interpolation Active
@@ -152,13 +192,13 @@ export default function TimelineController({
   );
 }
 
-function CheckSquareIcon(props: any) {
+function CheckSquareIcon({ size, ...props }: React.SVGProps<SVGSVGElement> & { size?: number }) {
   return (
     <svg
       {...props}
       xmlns="http://www.w3.org/2000/svg"
-      width="24"
-      height="24"
+      width={size ?? 24}
+      height={size ?? 24}
       viewBox="0 0 24 24"
       fill="none"
       stroke="currentColor"

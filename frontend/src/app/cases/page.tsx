@@ -546,7 +546,7 @@ function CasesPageInner() {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
   const [apiCases, setApiCases] = useState<CaseListItem[]>([]);
-  const [apiSource, setApiSource] = useState<"loading" | "api" | "demo">("loading");
+  const [apiSource, setApiSource] = useState<"loading" | "api" | "error">("loading");
   const [apiError, setApiError] = useState<string | null>(null);
   const [apiRetryTick, setApiRetryTick] = useState(0);
   const [hiddenDemoCaseIds, setHiddenDemoCaseIds] = useState<Set<string>>(new Set());
@@ -622,9 +622,17 @@ function CasesPageInner() {
     setApiSource("loading");
     setApiError(null);
     fetchCases()
-      .then(({ cases, source }) => { setApiCases(cases); setApiSource(source); })
+      .then(({ cases, source }) => {
+        if (source === 'demo') {
+          setApiSource("error");
+          setApiError("Could not reach the backend — check your connection");
+        } else {
+          setApiCases(cases);
+          setApiSource("api");
+        }
+      })
       .catch((err) => {
-        setApiSource("demo");
+        setApiSource("error");
         setApiError(err instanceof Error ? err.message : "Failed to load cases");
       });
   }, [previewMode, apiRetryTick]);
@@ -881,10 +889,17 @@ function CasesPageInner() {
           Representative preview data · Not connected to live data
         </div>
       )}
-      {!previewMode && apiSource === "demo" && (
-        <div className="flex items-center gap-2 rounded-xl border border-amber-200/60 bg-amber-50/60 px-3 py-2 text-xs text-amber-800 dark:border-amber-500/20 dark:bg-amber-500/10 dark:text-amber-300">
-          <AlertTriangle size={12} className="shrink-0" />
-          API fallback — backend unreachable · Showing demo cases
+      {!previewMode && apiSource === "error" && (
+        <div className="flex items-center gap-2 rounded-xl border border-rose-200/60 bg-rose-50/60 px-3 py-2 text-xs text-rose-700 dark:border-rose-500/20 dark:bg-rose-500/10 dark:text-rose-300">
+          <AlertCircle size={12} className="shrink-0" />
+          {apiError ?? "Could not reach the backend"} ·{" "}
+          <button
+            type="button"
+            className="font-semibold hover:underline"
+            onClick={() => setApiRetryTick((t) => t + 1)}
+          >
+            Retry
+          </button>
         </div>
       )}
 
@@ -1120,7 +1135,7 @@ function CasesPageInner() {
               <FolderKanban size={15} className="text-[color:var(--primary)]" />
               <h2 className="text-sm font-semibold text-[color:var(--foreground)]">
                 {apiSource === "api" ? "Live Cases"
-                  : apiSource === "demo" ? "Demo Cases (Fallback)"
+                  : apiSource === "error" ? "Cases — connection error"
                   : "Loading…"}
               </h2>
             </div>
@@ -1339,11 +1354,11 @@ function CasesPageInner() {
       </div>
 
       {/* ── API fetch error banner ── */}
-      {apiError && (
+      {apiSource === "error" && apiError && (
         <div className="flex items-center gap-2 rounded-xl border border-rose-300/50 bg-rose-50/60 px-3 py-2 text-xs text-rose-700 dark:border-rose-700/40 dark:bg-rose-900/10 dark:text-rose-400">
           <AlertCircle size={12} className="shrink-0" />
-          <span className="flex-1">{apiError} — showing demo data.</span>
-          <button type="button" onClick={() => setApiRetryTick(t => t + 1)} className="shrink-0 font-semibold hover:underline">Retry</button>
+          <span className="flex-1">{apiError}</span>
+          <button type="button" onClick={() => setApiRetryTick((t) => t + 1)} className="shrink-0 font-semibold hover:underline">Retry</button>
           <button type="button" onClick={() => setApiError(null)} className="shrink-0 text-[color:var(--muted-foreground)] hover:text-[color:var(--foreground)]" aria-label="Dismiss">×</button>
         </div>
       )}

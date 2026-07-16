@@ -289,12 +289,14 @@ export class MeController {
     if (!token) throw new UnauthorizedException('No session');
     const payload = await this.authService.verifyToken(token);
     return {
-      id: payload.sub,
-      email: payload.email,
-      name: payload.name,
-      role: payload.role,
-      orgId: payload.orgId,
-      isOnboarded: payload.isOnboarded,
+      user: {
+        id: payload.sub,
+        email: payload.email,
+        name: payload.name,
+        role: payload.role,
+        orgId: payload.orgId,
+        isOnboarded: payload.isOnboarded,
+      },
     };
   }
 }

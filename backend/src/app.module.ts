@@ -3,6 +3,7 @@ import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 import { APP_GUARD } from '@nestjs/core';
 import { TimingMiddleware } from './common/timing.middleware';
 import { CorrelationIdMiddleware } from './common/correlation-id.middleware';
+import { CsrfMiddleware } from './common/csrf.middleware';
 import { CommonModule } from './common/common.module';
 import { DatabaseModule } from './database/database.module';
 import { RedisModule } from './redis/redis.module';
@@ -109,6 +110,8 @@ import { PredictionsModule } from './predictions/predictions.module';
 import { ClinicalSafetyGateModule } from './clinical-safety-gate/clinical-safety-gate.module';
 import { ManufacturingReadinessGateModule } from './manufacturing-readiness-gate/manufacturing-readiness-gate.module';
 import { PilotFeedbackModule } from './pilot-feedback/pilot-feedback.module';
+// ─── AI Governance ────────────────────────────────────────────────────────────
+import { AiGovernanceModule } from './ai-governance/ai-governance.module';
 
 @Module({
   imports: [
@@ -229,6 +232,8 @@ import { PilotFeedbackModule } from './pilot-feedback/pilot-feedback.module';
     ClinicalSafetyGateModule,
     ManufacturingReadinessGateModule,
     PilotFeedbackModule,
+    // AI Governance
+    AiGovernanceModule,
   ],
   providers: [
     {
@@ -237,12 +242,13 @@ import { PilotFeedbackModule } from './pilot-feedback/pilot-feedback.module';
     },
     CorrelationIdMiddleware,
     TimingMiddleware,
+    CsrfMiddleware,
   ],
 })
 export class AppModule implements NestModule {
   configure(consumer: MiddlewareConsumer) {
     consumer
-      .apply(CorrelationIdMiddleware, TimingMiddleware)
+      .apply(CorrelationIdMiddleware, TimingMiddleware, CsrfMiddleware)
       .forRoutes('*');
   }
 }

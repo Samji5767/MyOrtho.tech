@@ -101,6 +101,10 @@ import { IntegrationProvidersModule } from './integration-providers/integration-
 import { BackgroundJobsModule } from './background-jobs/background-jobs.module';
 import { ClinicalKnowledgeModule } from './clinical-knowledge/clinical-knowledge.module';
 import { MlopsModule } from './mlops/mlops.module';
+// ─── MyOrtho 3.0 Intelligent Clinical Platform ───────────────────────────────
+import { SearchModule } from './search/search.module';
+import { DiscussionsModule } from './discussions/discussions.module';
+import { PredictionsModule } from './predictions/predictions.module';
 
 @Module({
   imports: [
@@ -213,6 +217,10 @@ import { MlopsModule } from './mlops/mlops.module';
     BackgroundJobsModule,
     ClinicalKnowledgeModule,
     MlopsModule,
+    // MyOrtho 3.0 Intelligent Clinical Platform
+    SearchModule,
+    DiscussionsModule,
+    PredictionsModule,
   ],
   providers: [
     {

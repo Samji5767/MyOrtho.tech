@@ -6,6 +6,7 @@ import {
   HttpStatus,
   Logger,
 } from '@nestjs/common';
+import { CORRELATION_ID_HEADER } from './correlation-id.middleware';
 
 /**
  * Catches every unhandled exception and returns a consistent JSON envelope
@@ -32,9 +33,13 @@ export class AllExceptionsFilter implements ExceptionFilter {
       message = typeof res === 'string' ? res : (res as any).message ?? res;
     }
 
+    const correlationId: string | undefined =
+      (request as any)?.correlationId ??
+      (request?.headers?.[CORRELATION_ID_HEADER] as string | undefined);
+
     if (status >= 500) {
       this.logger.error(
-        `${request?.method} ${request?.url} -> ${status}`,
+        `${request?.method} ${request?.url} -> ${status} [${correlationId ?? 'no-correlation-id'}]`,
         exception instanceof Error ? exception.stack : String(exception),
       );
     }
@@ -45,6 +50,7 @@ export class AllExceptionsFilter implements ExceptionFilter {
       message,
       path: request?.url,
       timestamp: new Date().toISOString(),
+      ...(correlationId ? { correlationId } : {}),
     });
   }
 }

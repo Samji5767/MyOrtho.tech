@@ -55,13 +55,17 @@ export class ScansService {
     }
 
     const isPly = header.subarray(0, 3).toString('ascii') === 'ply';
-    const isAsciiStl = /^solid\s/i.test(header.toString('ascii', 0, 80));
-    // Binary STL: 80-byte header + uint32 triangle count (>0). No universal magic bytes,
-    // but it must be at least 84 bytes and the triangle count must be non-zero.
+    // Binary STL: 80-byte ASCII header + uint32 triangle count + (N * 50) bytes of triangle data.
+    // No universal magic bytes — validated by total file size.
+    // Must use file.size (total bytes on disk), not header.length (always ≤ 256).
+    const triangleCount = header.length >= 84 ? header.readUInt32LE(80) : 0;
     const isBinaryStl =
-      header.length >= 84 &&
-      header.readUInt32LE(80) > 0 &&
-      header.length >= 84 + header.readUInt32LE(80) * 50; // 50 bytes per triangle
+      file.size >= 84 &&
+      triangleCount > 0 &&
+      file.size >= 84 + triangleCount * 50;
+    // Many binary STLs begin their 80-byte ASCII header with "solid " — only treat the
+    // file as ASCII STL when binary detection has already ruled it out.
+    const isAsciiStl = !isBinaryStl && /^solid\s/i.test(header.toString('ascii', 0, 80));
     // OBJ: ASCII lines starting with v, vt, vn, f, #, mtllib, o, g, usemtl
     const isObj = /^(#|v |vt |vn |f |o |g |mtllib|usemtl)/m.test(
       header.toString('ascii', 0, 256),

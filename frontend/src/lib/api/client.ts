@@ -99,20 +99,46 @@ export const api = {
 };
 
 /**
- * Ensure the XSRF-TOKEN cookie is set before a mutating request.
- * A GET to /api/health prompts the CSRF middleware to set the cookie when absent.
- * Without this, the first upload after a cold page load sends no CSRF header,
- * the backend returns 403 while the browser is still streaming the large body,
- * and HTTP/2 resets the stream — Safari reports this as "Load failed".
+ * Ensure the XSRF-TOKEN cookie is present before sending a large mutating body.
+ *
+ * Strategy:
+ *  1. Return immediately if the cookie is already set (hot path — no network round-trip).
+ *  2. Otherwise ping GET /api/auth/session (no-store so CDNs don't cache it).
+ *     The CSRF middleware runs on every route and sets the cookie + X-CSRF-Token
+ *     response header regardless of whether the session is authenticated (401 is fine).
+ *  3. Read the token from document.cookie first, then fall back to the response header.
+ *  4. Throw ApiError(0) when neither source provides a token so the caller gets a
+ *     clear error rather than a silent CSRF-403 mid-upload.
+ *
+ * Why /api/auth/session and not /api/health:
+ *   The NestJS health controller is registered at @Controller('health') which means
+ *   its route is /health on the backend. Through Nginx's /api/ → backend /api/ proxy
+ *   a GET /api/health resolves to 404 on the NestJS router. /api/auth/session is
+ *   explicitly registered at that path and is always reachable (returns 401 when
+ *   unauthenticated, which is fine — the CSRF cookie is still set by middleware).
  */
 async function ensureCsrfToken(): Promise<string | undefined> {
-  if (typeof document === 'undefined') return undefined;
+  if (typeof document === 'undefined') return undefined; // SSR — CSRF not applicable
+
   const existing = getCsrfToken();
   if (existing) return existing;
+
+  let headerToken: string | null = null;
   try {
-    await fetch(`${BASE}/api/health`, { credentials: 'include' });
-  } catch { /* proceed; server will re-seed the cookie on the next response */ }
-  return getCsrfToken();
+    const res = await fetch(`${BASE}/api/auth/session`, {
+      credentials: 'include',
+      cache: 'no-store',
+    });
+    headerToken = res.headers.get('X-CSRF-Token');
+  } catch {
+    // Network error — check whether the cookie arrived before the failure
+  }
+
+  const token = getCsrfToken() ?? headerToken ?? undefined;
+  if (!token) {
+    throw new ApiError(0, 'Could not initialize session — please refresh the page and try again');
+  }
+  return token;
 }
 
 /** Multipart file upload — does NOT set Content-Type (browser sets boundary automatically). */

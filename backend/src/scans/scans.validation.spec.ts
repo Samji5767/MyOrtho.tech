@@ -7,6 +7,10 @@
  * validation logic.
  */
 
+// Must be set before ScansService is imported so the module-level UPLOAD_DIR
+// constant captures the temp directory instead of the default /app/uploads.
+process.env.UPLOADS_DIR = require('os').tmpdir();
+
 import { BadRequestException } from '@nestjs/common';
 import * as fs from 'fs';
 import * as os from 'os';
@@ -77,7 +81,6 @@ describe('ScansService — binary STL validation', () => {
 
   beforeEach(() => {
     service = makeService();
-    process.env.UPLOADS_DIR = os.tmpdir();
   });
 
   it('accepts a valid binary STL with 4 triangles', async () => {
@@ -158,7 +161,6 @@ describe('ScansService — ASCII STL validation', () => {
 
   beforeEach(() => {
     service = makeService();
-    process.env.UPLOADS_DIR = os.tmpdir();
   });
 
   it('accepts a valid ASCII STL', async () => {
@@ -187,7 +189,6 @@ describe('ScansService — PLY validation', () => {
 
   beforeEach(() => {
     service = makeService();
-    process.env.UPLOADS_DIR = os.tmpdir();
   });
 
   it('accepts a valid PLY file (starts with "ply")', async () => {
@@ -217,7 +218,6 @@ describe('ScansService — OBJ validation', () => {
 
   beforeEach(() => {
     service = makeService();
-    process.env.UPLOADS_DIR = os.tmpdir();
   });
 
   it('accepts a valid OBJ file', async () => {
@@ -246,7 +246,6 @@ describe('ScansService — jaw_type validation', () => {
 
   beforeEach(() => {
     service = makeService();
-    process.env.UPLOADS_DIR = os.tmpdir();
   });
 
   it('rejects an invalid jaw_type before reading the file', async () => {

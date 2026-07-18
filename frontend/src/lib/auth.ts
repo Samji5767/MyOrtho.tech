@@ -8,6 +8,12 @@ const BASE =
     ? (process.env.NEXT_PUBLIC_API_URL ?? '')
     : '';
 
+function getCsrfToken(): string | undefined {
+  if (typeof document === 'undefined') return undefined;
+  const match = document.cookie.split('; ').find((c) => c.startsWith('XSRF-TOKEN='));
+  return match ? match.substring('XSRF-TOKEN='.length) : undefined;
+}
+
 export interface AuthUser {
   id: string;
   email: string;
@@ -33,10 +39,11 @@ export async function fetchSession(): Promise<AuthUser | null> {
 
 export async function login(email: string, password: string): Promise<{ user: AuthUser } | { error: string }> {
   try {
+    const csrf = getCsrfToken();
     const res = await fetch(`${BASE}/api/auth/login`, {
       method: 'POST',
       credentials: 'include',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...(csrf ? { 'X-CSRF-Token': csrf } : {}) },
       body: JSON.stringify({ email, password }),
     });
     const data = await res.json() as { user?: AuthUser; message?: string; error?: string };
@@ -54,10 +61,11 @@ export async function register(
   clinicName: string,
 ): Promise<{ user: AuthUser } | { error: string }> {
   try {
+    const csrf = getCsrfToken();
     const res = await fetch(`${BASE}/api/auth/register`, {
       method: 'POST',
       credentials: 'include',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...(csrf ? { 'X-CSRF-Token': csrf } : {}) },
       body: JSON.stringify({ email, password, fullName, clinicName }),
     });
     const data = await res.json() as { user?: AuthUser; message?: string; error?: string };
@@ -70,9 +78,11 @@ export async function register(
 
 export async function logout(): Promise<void> {
   try {
+    const csrf = getCsrfToken();
     await fetch(`${BASE}/api/auth/logout`, {
       method: 'POST',
       credentials: 'include',
+      headers: csrf ? { 'X-CSRF-Token': csrf } : {},
     });
   } catch {
     // ignore network errors on logout

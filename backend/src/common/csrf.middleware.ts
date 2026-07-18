@@ -31,6 +31,10 @@ export class CsrfMiddleware implements NestMiddleware {
         maxAge: 7 * 24 * 60 * 60 * 1000,
       });
     }
+    // Also expose the token as a response header so the frontend can read it
+    // even when the cookie is blocked (e.g. third-party cookie restrictions).
+    // ensureCsrfToken() in client.ts reads this as a fallback.
+    res.setHeader('X-CSRF-Token', token);
 
     // Only validate on state-mutating requests.
     if (!MUTATING_METHODS.has(req.method.toUpperCase())) {

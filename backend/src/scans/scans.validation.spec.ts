@@ -257,3 +257,62 @@ describe('ScansService — jaw_type validation', () => {
     ).rejects.toThrow(BadRequestException);
   });
 });
+
+// ─── Unsupported extension ────────────────────────────────────────────────────
+
+describe('ScansService — unsupported extension rejection', () => {
+  let service: ScansService;
+
+  beforeEach(() => {
+    service = makeService();
+  });
+
+  it('rejects a .png file with a clear 400 message (not 500)', async () => {
+    // PNG magic bytes: \x89PNG
+    const pngBuf = Buffer.from('\x89PNG\r\n\x1a\n', 'binary');
+    const file = writeTempFile(pngBuf, 'scan.png');
+
+    const err = await service
+      .create('case-1', 'org-1', 'user-1', file, 'maxillary', 'dr@test.com')
+      .catch((e: unknown) => e);
+
+    expect(err).toBeInstanceOf(BadRequestException);
+    expect((err as BadRequestException).message).toContain('stl');
+  });
+
+  it('rejects a .dcm (DICOM) file', async () => {
+    const buf = Buffer.alloc(256, 0);
+    const file = writeTempFile(buf, 'scan.dcm');
+
+    await expect(
+      service.create('case-1', 'org-1', 'user-1', file, 'maxillary', 'dr@test.com'),
+    ).rejects.toThrow(BadRequestException);
+  });
+
+  it('rejects a file with no extension', async () => {
+    const buf = makeBinaryStl(4);
+    const file = writeTempFile(buf, 'scanfile');
+
+    await expect(
+      service.create('case-1', 'org-1', 'user-1', file, 'maxillary', 'dr@test.com'),
+    ).rejects.toThrow(BadRequestException);
+  });
+});
+
+// ─── Cross-org isolation ──────────────────────────────────────────────────────
+
+describe('ScansService — cross-org case isolation', () => {
+  it('rejects upload when case belongs to a different org', async () => {
+    const mockPool = {
+      query: jest.fn().mockResolvedValue({ rows: [] }), // case not found for this org
+    };
+    const service = new (ScansService as any)(mockPool);
+
+    const buf = makeBinaryStl(4);
+    const file = writeTempFile(buf, 'scan.stl');
+
+    await expect(
+      service.create('case-other-org', 'org-attacker', 'user-1', file, 'maxillary', 'dr@test.com'),
+    ).rejects.toThrow();
+  });
+});

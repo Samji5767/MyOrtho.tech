@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { BadRequestException } from '@nestjs/common';
 import { MulterModule } from '@nestjs/platform-express';
 import { diskStorage } from 'multer';
 import * as path from 'path';
@@ -30,7 +31,7 @@ const UPLOAD_DIR = process.env.UPLOADS_DIR ?? '/app/uploads';
         if (['.stl', '.obj', '.ply'].includes(ext)) {
           cb(null, true);
         } else {
-          cb(new Error('Only .stl, .obj, and .ply files are accepted'), false);
+          cb(new BadRequestException('Only .stl, .obj, and .ply files are accepted'), false);
         }
       },
     }),

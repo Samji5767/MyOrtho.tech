@@ -192,7 +192,7 @@ export class CasesService {
     orgId: string,
     createdBy: string,
     dto: CreateCaseDto,
-    opts: { actorEmail?: string; ipAddress?: string } = {},
+    opts: { actorEmail?: string; ipAddress?: string; workspaceId?: string | null } = {},
   ) {
     const client: PoolClient = await this.pool.connect();
     let newId: string;
@@ -208,15 +208,26 @@ export class CasesService {
         throw new ForbiddenException('Patient not found in this organization');
       }
 
+      // Resolve workspace_id: use provided opt, or look up patient's workspace
+      let workspaceId = opts.workspaceId ?? null;
+      if (!workspaceId) {
+        const wsRow = await client.query<{ workspace_id: string | null }>(
+          'SELECT workspace_id FROM patients WHERE id = $1 LIMIT 1',
+          [dto.patientId],
+        );
+        workspaceId = wsRow.rows[0]?.workspace_id ?? null;
+      }
+
       const { rows } = await client.query(
         `INSERT INTO cases
-           (patient_id, assigned_to, organization_id, status, chief_complaint, malocclusion_class, notes)
-         VALUES ($1, $2, $3, 'draft', $4, $5, $6)
+           (patient_id, assigned_to, organization_id, workspace_id, status, chief_complaint, malocclusion_class, notes)
+         VALUES ($1, $2, $3, $4, 'draft', $5, $6, $7)
          RETURNING id`,
         [
           dto.patientId,
           createdBy,
           orgId,
+          workspaceId,
           dto.chiefComplaint ?? null,
           dto.malocclusionClass ?? null,
           dto.notes ?? null,
@@ -265,7 +276,7 @@ export class CasesService {
     orgId: string,
     actorId: string,
     dto: CreateCaseWithPatientDto,
-    opts: { actorEmail?: string; ipAddress?: string } = {},
+    opts: { actorEmail?: string; ipAddress?: string; workspaceId?: string | null } = {},
   ) {
     this.assertValidDob(dto.patient.dateOfBirth);
 
@@ -279,11 +290,12 @@ export class CasesService {
 
       const { rows: patRows } = await client.query<{ id: string }>(
         `INSERT INTO patients
-           (organization_id, first_name, last_name, dob_encrypted, gender, clinical_notes, created_by)
-         VALUES ($1, $2, $3, $4, $5, $6, $7)
+           (organization_id, workspace_id, first_name, last_name, dob_encrypted, gender, clinical_notes, created_by)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
          RETURNING id`,
         [
           orgId,
+          opts.workspaceId ?? null,
           this.cryptoService.encrypt(dto.patient.firstName),
           this.cryptoService.encrypt(dto.patient.lastName),
           this.cryptoService.encrypt(dto.patient.dateOfBirth ?? null),
@@ -296,13 +308,14 @@ export class CasesService {
 
       const { rows: caseRows } = await client.query<{ id: string }>(
         `INSERT INTO cases
-           (patient_id, assigned_to, organization_id, status, chief_complaint, malocclusion_class, notes)
-         VALUES ($1, $2, $3, 'draft', $4, $5, $6)
+           (patient_id, assigned_to, organization_id, workspace_id, status, chief_complaint, malocclusion_class, notes)
+         VALUES ($1, $2, $3, $4, 'draft', $5, $6, $7)
          RETURNING id`,
         [
           patientId,
           actorId,
           orgId,
+          opts.workspaceId ?? null,
           dto.chiefComplaint ?? null,
           dto.malocclusionClass ?? null,
           dto.notes ?? null,

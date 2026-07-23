@@ -55,6 +55,8 @@ export interface SessionPayload {
   role: string;
   name: string;
   orgId: string | null;
+  /** Default workspace for the session — resolved from workspace_memberships at login time */
+  workspaceId: string | null;
   isOnboarded: boolean;
   isEmailVerified: boolean;
   /** JWT ID — unique per token; used for revocation via Redis blacklist */
@@ -263,7 +265,7 @@ export class AuthService implements OnModuleInit {
     );
     const user = rows[0];
     if (!user) return null;
-    return this.toPayload(user);
+    return await this.toPayload(user);
   }
 
   // ─── Self-service registration ────────────────────────────────────────────
@@ -758,13 +760,37 @@ export class AuthService implements OnModuleInit {
 
   // ─── Helpers ──────────────────────────────────────────────────────────────
 
-  private toPayload(user: AuthUserRow): SessionPayload {
+  private async toPayload(user: AuthUserRow): Promise<SessionPayload> {
+    // Resolve authoritative org from organization_memberships (Phase 4 model).
+    // Falls back to auth_users.organization_id for users pre-dating the membership table.
+    const memberResult = await this.pool.query<{ organization_id: string }>(
+      `SELECT organization_id FROM organization_memberships
+       WHERE user_id = $1 ORDER BY created_at ASC LIMIT 1`,
+      [user.id],
+    );
+    const resolvedOrgId = memberResult.rows[0]?.organization_id ?? user.organization_id ?? null;
+
+    // Resolve default workspace from workspace_memberships
+    let workspaceId: string | null = null;
+    if (resolvedOrgId) {
+      const wsResult = await this.pool.query<{ id: string }>(
+        `SELECT wm.workspace_id AS id
+         FROM workspace_memberships wm
+         JOIN workspaces w ON w.id = wm.workspace_id
+         WHERE wm.user_id = $1 AND w.organization_id = $2 AND w.is_default = true
+         LIMIT 1`,
+        [user.id, resolvedOrgId],
+      );
+      workspaceId = wsResult.rows[0]?.id ?? null;
+    }
+
     return {
       sub: user.id,
       email: user.email,
       role: user.role,
       name: user.full_name ?? user.email.split('@')[0],
-      orgId: user.organization_id,
+      orgId: resolvedOrgId,
+      workspaceId,
       isOnboarded: user.is_onboarded,
       isEmailVerified: user.email_verified_at !== null,
       jti: crypto.randomUUID(),

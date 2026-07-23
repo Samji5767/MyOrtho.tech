@@ -169,10 +169,10 @@ describe('CasesService.update', () => {
 describe('CasesService.create', () => {
   it('INSERT includes organization_id as the 3rd bound parameter', async () => {
     const PAT_ID2 = 'pat-33333333';
-    // client.query sequence: BEGIN, patient ownership SELECT, INSERT cases, COMMIT
+    // client.query sequence: BEGIN, patient ownership SELECT, workspace lookup, INSERT cases, COMMIT
     // pool.query sequence: findOne JOIN, linked resources
     const pool = makeTransactionPool(
-      [[], [{ id: PAT_ID2 }], [{ id: CASE_ID }], []],
+      [[], [{ id: PAT_ID2 }], [{ workspace_id: null }], [{ id: CASE_ID }], []],
       [[], [], [makeRow(ORG_A)], [{}]],
     );
     const svc = makeTransactionService(pool);
@@ -194,7 +194,7 @@ describe('CasesService.create', () => {
     const PAT_ID2 = 'pat-33333333';
     const COMPLAINT = 'Test complaint';
     const pool = makeTransactionPool(
-      [[], [{ id: PAT_ID2 }], [{ id: CASE_ID }], []],
+      [[], [{ id: PAT_ID2 }], [{ workspace_id: null }], [{ id: CASE_ID }], []],
       [[], [], [makeRow(ORG_A)], [{}]],
     );
     const svc = makeTransactionService(pool);

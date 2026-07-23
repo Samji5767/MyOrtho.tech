@@ -36,7 +36,10 @@ class AddTimelineNoteDto {
   eventAt?: string;
 }
 
-interface AuthUser { id: string; email: string; role: string; name: string; orgId: string | null }
+interface AuthUser {
+  id: string; email: string; role: string; name: string;
+  orgId: string | null; workspaceId?: string | null;
+}
 
 function getUser(req: Request): AuthUser {
   const user = (req as Request & { user?: AuthUser }).user;
@@ -59,12 +62,20 @@ export class PatientsController {
     @Req() req: Request,
     @Query('limit') limit?: string,
     @Query('offset') offset?: string,
+    @Query('includeArchived') includeArchived?: string,
   ) {
     const user = getUser(req);
-    if (!user.orgId) return [];
     const l = limit ? Math.min(500, Math.max(1, parseInt(limit, 10))) : 100;
     const o = offset ? Math.max(0, parseInt(offset, 10)) : 0;
-    return this.patientsService.findAllByOrg(user.orgId, l, o);
+    const archived = includeArchived === 'true';
+
+    if (user.workspaceId) {
+      return this.patientsService.findAllByWorkspace(user.workspaceId, l, o, archived);
+    }
+    if (user.orgId) {
+      return this.patientsService.findAllByOrg(user.orgId, l, o);
+    }
+    return [];
   }
 
   @Post()
@@ -76,6 +87,7 @@ export class PatientsController {
     return this.patientsService.create(user.orgId, user.id, dto, {
       actorEmail: user.email,
       ipAddress: getIp(req),
+      workspaceId: user.workspaceId,
     });
   }
 
@@ -83,6 +95,9 @@ export class PatientsController {
   @RequirePermission('patients:read')
   async getPatientById(@Req() req: Request, @Param('id') id: string) {
     const user = getUser(req);
+    if (user.workspaceId) {
+      return this.patientsService.findOneByWorkspace(id, user.workspaceId);
+    }
     if (!user.orgId) throw new UnauthorizedException('No organization assigned');
     return this.patientsService.findOne(id, user.orgId);
   }
@@ -97,6 +112,30 @@ export class PatientsController {
     const user = getUser(req);
     if (!user.orgId) throw new UnauthorizedException('No organization assigned');
     return this.patientsService.update(id, user.orgId, user.id, dto, {
+      actorEmail: user.email,
+      ipAddress: getIp(req),
+    });
+  }
+
+  @Post(':id/archive')
+  @HttpCode(HttpStatus.OK)
+  @RequirePermission('patients:write')
+  async archivePatient(@Req() req: Request, @Param('id') id: string) {
+    const user = getUser(req);
+    if (!user.workspaceId) throw new UnauthorizedException('No workspace assigned');
+    return this.patientsService.archive(id, user.workspaceId, user.id, {
+      actorEmail: user.email,
+      ipAddress: getIp(req),
+    });
+  }
+
+  @Post(':id/restore')
+  @HttpCode(HttpStatus.OK)
+  @RequirePermission('patients:write')
+  async restorePatient(@Req() req: Request, @Param('id') id: string) {
+    const user = getUser(req);
+    if (!user.workspaceId) throw new UnauthorizedException('No workspace assigned');
+    return this.patientsService.restore(id, user.workspaceId, user.id, {
       actorEmail: user.email,
       ipAddress: getIp(req),
     });

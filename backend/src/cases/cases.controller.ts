@@ -27,6 +27,7 @@ interface AuthUser {
   role: string;
   name: string;
   orgId: string | null;
+  workspaceId?: string | null;
 }
 
 function getUser(req: Request): AuthUser {
@@ -72,6 +73,7 @@ export class CasesController {
     return this.casesService.create(user.orgId, user.id, dto, {
       actorEmail: user.email,
       ipAddress: getIp(req),
+      workspaceId: user.workspaceId,
     });
   }
 
@@ -84,6 +86,7 @@ export class CasesController {
     return this.casesService.createWithNewPatient(user.orgId, user.id, dto, {
       actorEmail: user.email,
       ipAddress: getIp(req),
+      workspaceId: user.workspaceId,
     });
   }
 

@@ -8,6 +8,8 @@ export interface AuthUser {
   role: string;
   name: string;
   orgId: string | null;
+  /** Default workspace resolved from workspace_memberships at login time */
+  workspaceId: string | null;
   jti: string;
 }
 
@@ -39,6 +41,7 @@ export class AuthGuard implements CanActivate {
       role: payload.role,
       name: payload.name,
       orgId: payload.orgId,
+      workspaceId: payload.workspaceId ?? null,
       jti: payload.jti,
     };
 

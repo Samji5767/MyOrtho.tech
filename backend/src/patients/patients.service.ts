@@ -128,20 +128,122 @@ export class PatientsService {
     }
   }
 
+  // ─── Workspace-scoped list (preferred over org-scoped for new code) ──────────
+
+  async findAllByWorkspace(workspaceId: string, limit = 100, offset = 0, includeArchived = false) {
+    const archiveFilter = includeArchived ? '' : `AND p.status != 'archived'`;
+    const { rows } = await this.pool.query(
+      `SELECT
+         p.id, p.first_name, p.last_name, p.dob_encrypted, p.gender,
+         p.status, p.archived_at, p.created_at, p.updated_at,
+         COUNT(c.id)::int AS case_count
+       FROM patients p
+       LEFT JOIN cases c ON c.patient_id = p.id
+       WHERE p.workspace_id = $1 ${archiveFilter}
+       GROUP BY p.id
+       ORDER BY p.updated_at DESC
+       LIMIT $2 OFFSET $3`,
+      [workspaceId, limit, offset],
+    );
+    return rows.map(row => this.formatPatient(row, true));
+  }
+
+  async findOneByWorkspace(id: string, workspaceId: string) {
+    const { rows } = await this.pool.query(
+      `SELECT p.id, p.first_name, p.last_name, p.dob_encrypted, p.gender,
+              p.clinical_notes, p.organization_id, p.workspace_id,
+              p.status, p.archived_at, p.created_at, p.updated_at,
+              COUNT(c.id)::int AS case_count
+       FROM patients p
+       LEFT JOIN cases c ON c.patient_id = p.id
+       WHERE p.id = $1 AND p.workspace_id = $2
+       GROUP BY p.id`,
+      [id, workspaceId],
+    );
+    const row = rows[0];
+    if (!row) throw new NotFoundException(`Patient not found`);
+    return this.formatPatient(row, true);
+  }
+
+  // ─── Archive / restore ────────────────────────────────────────────────────
+
+  async archive(
+    patientId: string,
+    workspaceId: string,
+    actorId: string,
+    opts: { actorEmail?: string; ipAddress?: string } = {},
+  ) {
+    await this.findOneByWorkspace(patientId, workspaceId); // IDOR + existence check
+
+    await this.pool.query(
+      `UPDATE patients SET status = 'archived', archived_at = now(), updated_at = now()
+       WHERE id = $1 AND workspace_id = $2`,
+      [patientId, workspaceId],
+    );
+
+    const patient = await this.findOneByWorkspace(patientId, workspaceId);
+
+    await this.auditService.log({
+      organizationId: patient.organizationId as string,
+      actorId,
+      actorEmail: opts.actorEmail,
+      resourceType: 'patient',
+      resourceId: patientId,
+      action: 'patient.archived',
+      details: { patientId },
+      ipAddress: opts.ipAddress,
+    });
+
+    return patient;
+  }
+
+  async restore(
+    patientId: string,
+    workspaceId: string,
+    actorId: string,
+    opts: { actorEmail?: string; ipAddress?: string } = {},
+  ) {
+    const { rows } = await this.pool.query(
+      `SELECT id, organization_id FROM patients WHERE id = $1 AND workspace_id = $2 LIMIT 1`,
+      [patientId, workspaceId],
+    );
+    if (!rows[0]) throw new NotFoundException(`Patient not found`);
+
+    await this.pool.query(
+      `UPDATE patients SET status = 'active', archived_at = NULL, updated_at = now()
+       WHERE id = $1 AND workspace_id = $2`,
+      [patientId, workspaceId],
+    );
+
+    await this.auditService.log({
+      organizationId: rows[0].organization_id as string,
+      actorId,
+      actorEmail: opts.actorEmail,
+      resourceType: 'patient',
+      resourceId: patientId,
+      action: 'patient.restored',
+      details: { patientId },
+      ipAddress: opts.ipAddress,
+    });
+
+    return this.findOneByWorkspace(patientId, workspaceId);
+  }
+
   async create(
     orgId: string,
     createdBy: string,
     dto: CreatePatientDto,
-    opts: { actorEmail?: string; ipAddress?: string } = {},
+    opts: { actorEmail?: string; ipAddress?: string; workspaceId?: string | null } = {},
   ) {
     this.assertValidDob(dto.dateOfBirth);
     const { rows } = await this.pool.query(
       `INSERT INTO patients
-         (organization_id, first_name, last_name, dob_encrypted, gender, clinical_notes, created_by)
-       VALUES ($1, $2, $3, $4, $5, $6, $7)
+         (organization_id, workspace_id, first_name, last_name, dob_encrypted, gender, clinical_notes, created_by)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
        RETURNING id`,
       [
         orgId,
+        opts.workspaceId ?? null,
         this.cryptoService.encrypt(dto.firstName),
         this.cryptoService.encrypt(dto.lastName),
         this.cryptoService.encrypt(dto.dateOfBirth ?? null),
@@ -223,16 +325,16 @@ export class PatientsService {
     await this.findOne(patientId, orgId); // ownership + existence check
 
     const [casesRes, scansRes, appointmentsRes, notesRes] = await Promise.all([
-      // Cases with workflow history
+      // Cases with workflow event history (workflow_events is the actual table name)
       this.pool.query(
         `SELECT c.id, c.status, c.created_at, c.updated_at,
-                wh.from_status, wh.to_status, wh.actor_name, wh.notes, wh.created_at AS wh_at
+                we.from_status, we.to_status, we.notes, we.created_at AS wh_at
          FROM cases c
-         LEFT JOIN workflow_history wh ON wh.case_id = c.id
+         LEFT JOIN workflow_events we ON we.case_id = c.id
          WHERE c.patient_id = $1 AND c.patient_id IN (
            SELECT id FROM patients WHERE organization_id = $2
          )
-         ORDER BY COALESCE(wh.created_at, c.created_at) DESC
+         ORDER BY COALESCE(we.created_at, c.created_at) DESC
          LIMIT 200`,
         [patientId, orgId],
       ),
@@ -382,8 +484,11 @@ export class PatientsService {
       dateOfBirth,
       gender,
       clinicalNotes,
+      status: (row['status'] as string | null) ?? 'active',
+      archivedAt: row['archived_at'] ?? null,
       caseCount: row['case_count'] ?? 0,
       organizationId: row['organization_id'],
+      workspaceId: row['workspace_id'] ?? null,
       createdAt: row['created_at'],
       updatedAt: row['updated_at'],
     };

@@ -14,8 +14,9 @@ const PUBLIC_PATHS = [
   "/forgot-password",
   "/reset-password",
 ];
-// These paths require a session but not necessarily email verification
-const UNVERIFIED_ALLOWED = ["/verify-email", "/onboarding"];
+// Authenticated paths reachable before email verification is confirmed.
+// Deliberately excludes /onboarding — email must be verified before onboarding.
+const UNVERIFIED_ALLOWED = ["/verify-email"];
 
 function isPublicPath(pathname: string): boolean {
   return PUBLIC_PATHS.some(

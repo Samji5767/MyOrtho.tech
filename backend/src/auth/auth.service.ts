@@ -25,10 +25,13 @@ export interface AuthUserRow {
   is_onboarded: boolean;
   is_active: boolean;
   email_verified_at: Date | null;
-  verification_token: string | null;
+  // Stored as SHA-256(raw_token) — plaintext never written to DB
+  verification_token_hash: string | null;
   verification_token_expires_at: Date | null;
   reset_token_hash: string | null;
   reset_token_expires_at: Date | null;
+  // Set to now() on password reset; JWTs issued before this timestamp are rejected
+  sessions_invalidated_at: Date | null;
 }
 
 export interface SessionPayload {
@@ -106,14 +109,38 @@ export class AuthService implements OnModuleInit {
       }
     }
 
-    // Verify account is still active — catches deactivated accounts even within a valid token window
-    const { rows } = await this.pool.query<{ is_active: boolean }>(
-      'SELECT is_active FROM auth_users WHERE id = $1 LIMIT 1',
+    // Re-query mutable account state every request.
+    // This is the authoritative source of truth for:
+    //   • is_active            — catches deactivated accounts
+    //   • sessions_invalidated_at — rejects tokens issued before a password reset
+    //   • email_verified_at    — overrides stale JWT claim after email verification
+    //   • is_onboarded         — overrides stale JWT claim after onboarding completion
+    const { rows } = await this.pool.query<{
+      is_active: boolean;
+      email_verified_at: Date | null;
+      is_onboarded: boolean;
+      sessions_invalidated_at: Date | null;
+    }>(
+      `SELECT is_active, email_verified_at, is_onboarded, sessions_invalidated_at
+       FROM auth_users WHERE id = $1 LIMIT 1`,
       [decoded.sub],
     );
-    if (!rows[0] || rows[0].is_active === false) {
+    const dbRow = rows[0];
+    if (!dbRow || dbRow.is_active === false) {
       throw new UnauthorizedException('Account is disabled');
     }
+
+    // Reject tokens issued before the last password reset
+    if (dbRow.sessions_invalidated_at) {
+      const iat = (decoded as any).iat as number | undefined;
+      if (iat && iat * 1000 < new Date(dbRow.sessions_invalidated_at).getTime()) {
+        throw new UnauthorizedException('Session has been revoked');
+      }
+    }
+
+    // Override stale JWT claims with authoritative DB values
+    decoded.isEmailVerified = dbRow.email_verified_at !== null;
+    decoded.isOnboarded = dbRow.is_onboarded;
 
     return decoded;
   }
@@ -262,7 +289,7 @@ export class AuthService implements OnModuleInit {
     }
 
     const user = await this.pool.query<AuthUserRow>('SELECT * FROM auth_users WHERE id = $1', [userId]);
-    // Fire-and-forget verification email — registration still succeeds even if SMTP is unconfigured
+    // Fire-and-forget verification email — registration succeeds even if SMTP is unconfigured
     this.sendVerificationEmail(userId).catch((err) =>
       this.logger.warn(`Could not send verification email to ${normalizedEmail}: ${err}`),
     );
@@ -272,21 +299,32 @@ export class AuthService implements OnModuleInit {
   // ─── Email verification ────────────────────────────────────────────────────
 
   async sendVerificationEmail(userId: string): Promise<void> {
-    const token = crypto.randomBytes(32).toString('hex');
+    // Do not issue a new token if the account is already verified
+    const checkResult = await this.pool.query<{ email_verified_at: Date | null }>(
+      'SELECT email_verified_at FROM auth_users WHERE id = $1 LIMIT 1',
+      [userId],
+    );
+    if (checkResult.rows[0]?.email_verified_at) {
+      return; // Already verified — nothing to do
+    }
+
+    const rawToken = crypto.randomBytes(32).toString('hex');
+    const tokenHash = crypto.createHash('sha256').update(rawToken).digest('hex');
     const expiresAt = new Date(Date.now() + VERIFICATION_TOKEN_TTL_HOURS * 60 * 60 * 1000);
 
     const { rows } = await this.pool.query<{ email: string; full_name: string | null }>(
       `UPDATE auth_users
-       SET verification_token = $1, verification_token_expires_at = $2, updated_at = now()
-       WHERE id = $3
+       SET verification_token_hash = $1, verification_token_expires_at = $2, updated_at = now()
+       WHERE id = $3 AND email_verified_at IS NULL
        RETURNING email, full_name`,
-      [token, expiresAt, userId],
+      [tokenHash, expiresAt, userId],
     );
-    if (!rows[0]) throw new BadRequestException('User not found');
+    if (!rows[0]) throw new BadRequestException('User not found or already verified');
 
     const { email, full_name } = rows[0];
     const appUrl = process.env.APP_URL ?? 'http://localhost:3000';
-    const link = `${appUrl}/verify-email?token=${token}`;
+    // Raw token goes into the email link only — never stored
+    const link = `${appUrl}/verify-email?token=${rawToken}`;
     const name = full_name ?? email.split('@')[0];
 
     await this.emailService?.send({
@@ -302,16 +340,21 @@ export class AuthService implements OnModuleInit {
       text: `Verify your email: ${link}\n\nThis link expires in ${VERIFICATION_TOKEN_TTL_HOURS} hours.`,
     });
 
-    this.logger.log(`Verification email queued for ${email} (token expires ${expiresAt.toISOString()})`);
+    this.logger.log(`Verification email queued for ${email} (expires ${expiresAt.toISOString()})`);
   }
 
-  async verifyEmail(token: string): Promise<void> {
-    const { rows } = await this.pool.query<{ id: string; verification_token_expires_at: Date }>(
+  async verifyEmail(rawToken: string): Promise<void> {
+    const tokenHash = crypto.createHash('sha256').update(rawToken).digest('hex');
+
+    const { rows } = await this.pool.query<{
+      id: string;
+      verification_token_expires_at: Date;
+    }>(
       `SELECT id, verification_token_expires_at
        FROM auth_users
-       WHERE verification_token = $1 AND email_verified_at IS NULL
+       WHERE verification_token_hash = $1 AND email_verified_at IS NULL
        LIMIT 1`,
-      [token],
+      [tokenHash],
     );
     const row = rows[0];
     if (!row) throw new BadRequestException('Invalid or already-used verification link');
@@ -322,7 +365,7 @@ export class AuthService implements OnModuleInit {
     await this.pool.query(
       `UPDATE auth_users
        SET email_verified_at = now(),
-           verification_token = NULL,
+           verification_token_hash = NULL,
            verification_token_expires_at = NULL,
            updated_at = now()
        WHERE id = $1`,
@@ -337,8 +380,8 @@ export class AuthService implements OnModuleInit {
     // Always respond the same way regardless of whether the email exists (prevents enumeration)
     if (!user || !user.is_active) return;
 
-    const token = crypto.randomBytes(32).toString('hex');
-    const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
+    const rawToken = crypto.randomBytes(32).toString('hex');
+    const tokenHash = crypto.createHash('sha256').update(rawToken).digest('hex');
     const expiresAt = new Date(Date.now() + RESET_TOKEN_TTL_MINUTES * 60 * 1000);
 
     await this.pool.query(
@@ -349,7 +392,7 @@ export class AuthService implements OnModuleInit {
     );
 
     const appUrl = process.env.APP_URL ?? 'http://localhost:3000';
-    const link = `${appUrl}/reset-password?token=${token}`;
+    const link = `${appUrl}/reset-password?token=${rawToken}`;
     const name = user.full_name ?? user.email.split('@')[0];
 
     await this.emailService?.send({
@@ -366,12 +409,12 @@ export class AuthService implements OnModuleInit {
     });
   }
 
-  async resetPassword(token: string, newPassword: string): Promise<void> {
+  async resetPassword(rawToken: string, newPassword: string): Promise<void> {
     if (newPassword.length < 8) {
       throw new BadRequestException('Password must be at least 8 characters');
     }
 
-    const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
+    const tokenHash = crypto.createHash('sha256').update(rawToken).digest('hex');
     const { rows } = await this.pool.query<{ id: string; reset_token_expires_at: Date }>(
       `SELECT id, reset_token_expires_at
        FROM auth_users
@@ -386,11 +429,13 @@ export class AuthService implements OnModuleInit {
     }
 
     const hash = await bcrypt.hash(newPassword, BCRYPT_ROUNDS);
+    // sessions_invalidated_at causes all JWTs issued before this moment to be rejected
     await this.pool.query(
       `UPDATE auth_users
        SET password_hash = $1,
            reset_token_hash = NULL,
            reset_token_expires_at = NULL,
+           sessions_invalidated_at = now(),
            updated_at = now()
        WHERE id = $2`,
       [hash, row.id],
@@ -430,34 +475,41 @@ export class AuthService implements OnModuleInit {
           is_onboarded                    boolean     NOT NULL DEFAULT false,
           is_active                       boolean     NOT NULL DEFAULT true,
           email_verified_at               timestamptz DEFAULT NULL,
-          verification_token              text        DEFAULT NULL,
+          verification_token_hash         text        DEFAULT NULL,
           verification_token_expires_at   timestamptz DEFAULT NULL,
           reset_token_hash                text        DEFAULT NULL,
           reset_token_expires_at          timestamptz DEFAULT NULL,
+          sessions_invalidated_at         timestamptz DEFAULT NULL,
           created_at                      timestamptz DEFAULT now(),
           updated_at                      timestamptz DEFAULT now(),
           last_login_at                   timestamptz
         );
         CREATE INDEX IF NOT EXISTS idx_auth_users_email ON auth_users(email);
-        CREATE INDEX IF NOT EXISTS idx_auth_users_verification_token
-          ON auth_users (verification_token) WHERE verification_token IS NOT NULL;
+        CREATE INDEX IF NOT EXISTS idx_auth_users_verification_token_hash
+          ON auth_users (verification_token_hash) WHERE verification_token_hash IS NOT NULL;
         CREATE INDEX IF NOT EXISTS idx_auth_users_reset_token_hash
           ON auth_users (reset_token_hash) WHERE reset_token_hash IS NOT NULL;
       `);
-      // Idempotently add new columns when table already exists (migration path)
+      // Idempotently add/rename columns when the table already exists (migration path)
       await this.pool.query(`
         DO $$
         BEGIN
           IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='auth_users' AND column_name='email_verified_at')
             THEN ALTER TABLE auth_users ADD COLUMN email_verified_at timestamptz DEFAULT NULL; END IF;
-          IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='auth_users' AND column_name='verification_token')
-            THEN ALTER TABLE auth_users ADD COLUMN verification_token text DEFAULT NULL; END IF;
+          -- Handle rename: verification_token → verification_token_hash
+          IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='auth_users' AND column_name='verification_token')
+            AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='auth_users' AND column_name='verification_token_hash')
+            THEN ALTER TABLE auth_users RENAME COLUMN verification_token TO verification_token_hash; END IF;
+          IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='auth_users' AND column_name='verification_token_hash')
+            THEN ALTER TABLE auth_users ADD COLUMN verification_token_hash text DEFAULT NULL; END IF;
           IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='auth_users' AND column_name='verification_token_expires_at')
             THEN ALTER TABLE auth_users ADD COLUMN verification_token_expires_at timestamptz DEFAULT NULL; END IF;
           IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='auth_users' AND column_name='reset_token_hash')
             THEN ALTER TABLE auth_users ADD COLUMN reset_token_hash text DEFAULT NULL; END IF;
           IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='auth_users' AND column_name='reset_token_expires_at')
             THEN ALTER TABLE auth_users ADD COLUMN reset_token_expires_at timestamptz DEFAULT NULL; END IF;
+          IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='auth_users' AND column_name='sessions_invalidated_at')
+            THEN ALTER TABLE auth_users ADD COLUMN sessions_invalidated_at timestamptz DEFAULT NULL; END IF;
         END
         $$;
       `);

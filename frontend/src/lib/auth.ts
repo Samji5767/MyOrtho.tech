@@ -79,11 +79,13 @@ export async function register(
 
 export async function verifyEmail(token: string): Promise<{ ok: true } | { error: string }> {
   try {
-    const csrf = getCsrfToken();
-    const res = await fetch(`${BASE}/api/auth/verify-email?token=${encodeURIComponent(token)}`, {
+    // Token is sent in the POST body, not the URL, so it stays out of server access logs.
+    // CSRF is exempt for this endpoint (the token itself is the authorization proof).
+    const res = await fetch(`${BASE}/api/auth/verify-email`, {
       method: 'POST',
       credentials: 'include',
-      headers: csrf ? { 'X-CSRF-Token': csrf } : {},
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token }),
     });
     const data = await res.json() as { ok?: boolean; message?: string; error?: string };
     if (!res.ok) return { error: data.message ?? data.error ?? 'Verification failed' };

@@ -1,13 +1,13 @@
 import {
   Body,
   Controller,
+  ForbiddenException,
   Get,
   HttpCode,
   HttpException,
   HttpStatus,
   Patch,
   Post,
-  Query,
   Req,
   Res,
   UnauthorizedException,
@@ -260,6 +260,9 @@ export class AuthController {
     const token = (req.cookies as Record<string, string>)[COOKIE_NAME];
     if (!token) throw new UnauthorizedException('No session');
     const payload = await this.authService.verifyToken(token);
+    if (!payload.isEmailVerified) {
+      throw new ForbiddenException('Email must be verified before completing onboarding');
+    }
     await this.authService.markOnboarded(payload.sub);
     return { ok: true, role: payload.role };
   }
@@ -281,7 +284,7 @@ export class AuthController {
   @Throttle({ default: { limit: 3, ttl: 60000 } })
   @Post('verify-email')
   @HttpCode(HttpStatus.OK)
-  async verifyEmail(@Query('token') token: string) {
+  async verifyEmail(@Body('token') token: string) {
     if (!token) throw new HttpException('token is required', HttpStatus.BAD_REQUEST);
     await this.authService.verifyEmail(token);
     return { ok: true, message: 'Email verified successfully' };

@@ -7,6 +7,7 @@ import {
   HttpStatus,
   Patch,
   Post,
+  Query,
   Req,
   Res,
   UnauthorizedException,
@@ -130,6 +131,7 @@ export class AuthController {
         role: payload.role,
         orgId: payload.orgId,
         isOnboarded: payload.isOnboarded,
+        isEmailVerified: payload.isEmailVerified,
       },
     };
   }
@@ -189,6 +191,7 @@ export class AuthController {
         role: payload.role,
         orgId: payload.orgId,
         isOnboarded: payload.isOnboarded,
+        isEmailVerified: payload.isEmailVerified,
       },
     };
   }
@@ -243,6 +246,7 @@ export class AuthController {
         role: payload.role,
         orgId: payload.orgId,
         isOnboarded: payload.isOnboarded,
+        isEmailVerified: payload.isEmailVerified,
       },
     };
   }
@@ -273,6 +277,49 @@ export class AuthController {
     await this.authService.updateProfile(payload.sub, name);
     return { ok: true };
   }
+
+  @Throttle({ default: { limit: 3, ttl: 60000 } })
+  @Post('verify-email')
+  @HttpCode(HttpStatus.OK)
+  async verifyEmail(@Query('token') token: string) {
+    if (!token) throw new HttpException('token is required', HttpStatus.BAD_REQUEST);
+    await this.authService.verifyEmail(token);
+    return { ok: true, message: 'Email verified successfully' };
+  }
+
+  @Throttle({ default: { limit: 3, ttl: 300000 } })
+  @Post('resend-verification')
+  @HttpCode(HttpStatus.OK)
+  async resendVerification(@Req() req: Request) {
+    const cookieToken = (req.cookies as Record<string, string>)[COOKIE_NAME];
+    if (!cookieToken) throw new UnauthorizedException('No session');
+    const payload = await this.authService.verifyToken(cookieToken);
+    await this.authService.sendVerificationEmail(payload.sub);
+    return { ok: true, message: 'Verification email sent' };
+  }
+
+  @Throttle({ default: { limit: 5, ttl: 300000 } })
+  @Post('forgot-password')
+  @HttpCode(HttpStatus.OK)
+  async forgotPassword(@Body('email') email: string) {
+    if (!email) throw new HttpException('email is required', HttpStatus.BAD_REQUEST);
+    await this.authService.forgotPassword(email);
+    // Always return OK to prevent email enumeration
+    return { ok: true, message: 'If that email exists, a reset link has been sent' };
+  }
+
+  @Throttle({ default: { limit: 5, ttl: 300000 } })
+  @Post('reset-password')
+  @HttpCode(HttpStatus.OK)
+  async resetPassword(
+    @Body('token') token: string,
+    @Body('password') password: string,
+  ) {
+    if (!token) throw new HttpException('token is required', HttpStatus.BAD_REQUEST);
+    if (!password) throw new HttpException('password is required', HttpStatus.BAD_REQUEST);
+    await this.authService.resetPassword(token, password);
+    return { ok: true, message: 'Password reset successfully' };
+  }
 }
 
 // GET /api/me — convenience alias for session (used by frontend app shell)
@@ -296,6 +343,7 @@ export class MeController {
         role: payload.role,
         orgId: payload.orgId,
         isOnboarded: payload.isOnboarded,
+        isEmailVerified: payload.isEmailVerified,
       },
     };
   }

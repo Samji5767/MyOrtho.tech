@@ -31,6 +31,7 @@ describe('AuthService', () => {
       name: 'Dr Smith',
       orgId: 'org-1',
       isOnboarded: true,
+      isEmailVerified: true,
       jti: 'test-jti-12345',
     };
 

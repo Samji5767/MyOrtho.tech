@@ -1,4 +1,4 @@
-import { Injectable, OnModuleInit, Logger, UnauthorizedException, Optional, Inject } from '@nestjs/common';
+import { Injectable, OnModuleInit, Logger, UnauthorizedException, BadRequestException, Optional, Inject } from '@nestjs/common';
 import type { Pool } from 'pg';
 import Redis from 'ioredis';
 import * as bcrypt from 'bcrypt';
@@ -6,10 +6,14 @@ import * as jwt from 'jsonwebtoken';
 import * as crypto from 'crypto';
 import { REDIS_CLIENT } from '../redis/redis.module';
 import { PG_POOL } from '../database/database.module';
+import { EmailService } from '../notifications/email.service';
 
 const BCRYPT_ROUNDS = 12;
 const COOKIE_MAX_AGE_MS = 24 * 60 * 60 * 1000; // 24 h
 const JWT_ALGORITHM: jwt.Algorithm = 'HS256';
+
+const VERIFICATION_TOKEN_TTL_HOURS = 24;
+const RESET_TOKEN_TTL_MINUTES = 15;
 
 export interface AuthUserRow {
   id: string;
@@ -20,6 +24,11 @@ export interface AuthUserRow {
   organization_id: string | null;
   is_onboarded: boolean;
   is_active: boolean;
+  email_verified_at: Date | null;
+  verification_token: string | null;
+  verification_token_expires_at: Date | null;
+  reset_token_hash: string | null;
+  reset_token_expires_at: Date | null;
 }
 
 export interface SessionPayload {
@@ -29,6 +38,7 @@ export interface SessionPayload {
   name: string;
   orgId: string | null;
   isOnboarded: boolean;
+  isEmailVerified: boolean;
   /** JWT ID — unique per token; used for revocation via Redis blacklist */
   jti: string;
 }
@@ -46,6 +56,7 @@ export class AuthService implements OnModuleInit {
   constructor(
     @Inject(PG_POOL) private readonly pool: Pool,
     @Optional() @Inject(REDIS_CLIENT) private readonly redis: Redis | null,
+    @Optional() private readonly emailService: EmailService | null,
   ) {
     const secret = process.env.JWT_SECRET;
     if (!secret || secret.length < 32) {
@@ -251,7 +262,139 @@ export class AuthService implements OnModuleInit {
     }
 
     const user = await this.pool.query<AuthUserRow>('SELECT * FROM auth_users WHERE id = $1', [userId]);
+    // Fire-and-forget verification email — registration still succeeds even if SMTP is unconfigured
+    this.sendVerificationEmail(userId).catch((err) =>
+      this.logger.warn(`Could not send verification email to ${normalizedEmail}: ${err}`),
+    );
     return this.toPayload(user.rows[0]);
+  }
+
+  // ─── Email verification ────────────────────────────────────────────────────
+
+  async sendVerificationEmail(userId: string): Promise<void> {
+    const token = crypto.randomBytes(32).toString('hex');
+    const expiresAt = new Date(Date.now() + VERIFICATION_TOKEN_TTL_HOURS * 60 * 60 * 1000);
+
+    const { rows } = await this.pool.query<{ email: string; full_name: string | null }>(
+      `UPDATE auth_users
+       SET verification_token = $1, verification_token_expires_at = $2, updated_at = now()
+       WHERE id = $3
+       RETURNING email, full_name`,
+      [token, expiresAt, userId],
+    );
+    if (!rows[0]) throw new BadRequestException('User not found');
+
+    const { email, full_name } = rows[0];
+    const appUrl = process.env.APP_URL ?? 'http://localhost:3000';
+    const link = `${appUrl}/verify-email?token=${token}`;
+    const name = full_name ?? email.split('@')[0];
+
+    await this.emailService?.send({
+      to: email,
+      subject: 'Verify your MyOrtho.tech email address',
+      html: `
+        <p>Hi ${name},</p>
+        <p>Welcome to MyOrtho.tech. Please verify your email address by clicking the link below:</p>
+        <p><a href="${link}">Verify Email Address</a></p>
+        <p>This link expires in ${VERIFICATION_TOKEN_TTL_HOURS} hours.</p>
+        <p>If you did not create an account, you can safely ignore this email.</p>
+      `,
+      text: `Verify your email: ${link}\n\nThis link expires in ${VERIFICATION_TOKEN_TTL_HOURS} hours.`,
+    });
+
+    this.logger.log(`Verification email queued for ${email} (token expires ${expiresAt.toISOString()})`);
+  }
+
+  async verifyEmail(token: string): Promise<void> {
+    const { rows } = await this.pool.query<{ id: string; verification_token_expires_at: Date }>(
+      `SELECT id, verification_token_expires_at
+       FROM auth_users
+       WHERE verification_token = $1 AND email_verified_at IS NULL
+       LIMIT 1`,
+      [token],
+    );
+    const row = rows[0];
+    if (!row) throw new BadRequestException('Invalid or already-used verification link');
+    if (new Date(row.verification_token_expires_at) < new Date()) {
+      throw new BadRequestException('Verification link has expired. Please request a new one.');
+    }
+
+    await this.pool.query(
+      `UPDATE auth_users
+       SET email_verified_at = now(),
+           verification_token = NULL,
+           verification_token_expires_at = NULL,
+           updated_at = now()
+       WHERE id = $1`,
+      [row.id],
+    );
+  }
+
+  // ─── Password reset ────────────────────────────────────────────────────────
+
+  async forgotPassword(email: string): Promise<void> {
+    const user = await this.findByEmail(email);
+    // Always respond the same way regardless of whether the email exists (prevents enumeration)
+    if (!user || !user.is_active) return;
+
+    const token = crypto.randomBytes(32).toString('hex');
+    const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
+    const expiresAt = new Date(Date.now() + RESET_TOKEN_TTL_MINUTES * 60 * 1000);
+
+    await this.pool.query(
+      `UPDATE auth_users
+       SET reset_token_hash = $1, reset_token_expires_at = $2, updated_at = now()
+       WHERE id = $3`,
+      [tokenHash, expiresAt, user.id],
+    );
+
+    const appUrl = process.env.APP_URL ?? 'http://localhost:3000';
+    const link = `${appUrl}/reset-password?token=${token}`;
+    const name = user.full_name ?? user.email.split('@')[0];
+
+    await this.emailService?.send({
+      to: user.email,
+      subject: 'Reset your MyOrtho.tech password',
+      html: `
+        <p>Hi ${name},</p>
+        <p>We received a request to reset your MyOrtho.tech password.</p>
+        <p><a href="${link}">Reset Password</a></p>
+        <p>This link expires in ${RESET_TOKEN_TTL_MINUTES} minutes and can only be used once.</p>
+        <p>If you did not request a password reset, please ignore this email — your password will not change.</p>
+      `,
+      text: `Reset your password: ${link}\n\nThis link expires in ${RESET_TOKEN_TTL_MINUTES} minutes.`,
+    });
+  }
+
+  async resetPassword(token: string, newPassword: string): Promise<void> {
+    if (newPassword.length < 8) {
+      throw new BadRequestException('Password must be at least 8 characters');
+    }
+
+    const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
+    const { rows } = await this.pool.query<{ id: string; reset_token_expires_at: Date }>(
+      `SELECT id, reset_token_expires_at
+       FROM auth_users
+       WHERE reset_token_hash = $1
+       LIMIT 1`,
+      [tokenHash],
+    );
+    const row = rows[0];
+    if (!row) throw new BadRequestException('Invalid or already-used reset link');
+    if (new Date(row.reset_token_expires_at) < new Date()) {
+      throw new BadRequestException('Reset link has expired. Please request a new one.');
+    }
+
+    const hash = await bcrypt.hash(newPassword, BCRYPT_ROUNDS);
+    await this.pool.query(
+      `UPDATE auth_users
+       SET password_hash = $1,
+           reset_token_hash = NULL,
+           reset_token_expires_at = NULL,
+           updated_at = now()
+       WHERE id = $2`,
+      [hash, row.id],
+    );
   }
 
   // ─── Mark onboarded ───────────────────────────────────────────────────────
@@ -278,19 +421,45 @@ export class AuthService implements OnModuleInit {
     try {
       await this.pool.query(`
         CREATE TABLE IF NOT EXISTS auth_users (
-          id              uuid        PRIMARY KEY DEFAULT uuid_generate_v4(),
-          email           text        UNIQUE NOT NULL,
-          password_hash   text        NOT NULL,
-          full_name       text,
-          role            text        NOT NULL DEFAULT 'orthodontist',
-          organization_id uuid        REFERENCES organizations(id) ON DELETE SET NULL,
-          is_onboarded    boolean     NOT NULL DEFAULT false,
-          is_active       boolean     NOT NULL DEFAULT true,
-          created_at      timestamptz DEFAULT now(),
-          updated_at      timestamptz DEFAULT now(),
-          last_login_at   timestamptz
+          id                              uuid        PRIMARY KEY DEFAULT uuid_generate_v4(),
+          email                           text        UNIQUE NOT NULL,
+          password_hash                   text        NOT NULL,
+          full_name                       text,
+          role                            text        NOT NULL DEFAULT 'orthodontist',
+          organization_id                 uuid        REFERENCES organizations(id) ON DELETE SET NULL,
+          is_onboarded                    boolean     NOT NULL DEFAULT false,
+          is_active                       boolean     NOT NULL DEFAULT true,
+          email_verified_at               timestamptz DEFAULT NULL,
+          verification_token              text        DEFAULT NULL,
+          verification_token_expires_at   timestamptz DEFAULT NULL,
+          reset_token_hash                text        DEFAULT NULL,
+          reset_token_expires_at          timestamptz DEFAULT NULL,
+          created_at                      timestamptz DEFAULT now(),
+          updated_at                      timestamptz DEFAULT now(),
+          last_login_at                   timestamptz
         );
         CREATE INDEX IF NOT EXISTS idx_auth_users_email ON auth_users(email);
+        CREATE INDEX IF NOT EXISTS idx_auth_users_verification_token
+          ON auth_users (verification_token) WHERE verification_token IS NOT NULL;
+        CREATE INDEX IF NOT EXISTS idx_auth_users_reset_token_hash
+          ON auth_users (reset_token_hash) WHERE reset_token_hash IS NOT NULL;
+      `);
+      // Idempotently add new columns when table already exists (migration path)
+      await this.pool.query(`
+        DO $$
+        BEGIN
+          IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='auth_users' AND column_name='email_verified_at')
+            THEN ALTER TABLE auth_users ADD COLUMN email_verified_at timestamptz DEFAULT NULL; END IF;
+          IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='auth_users' AND column_name='verification_token')
+            THEN ALTER TABLE auth_users ADD COLUMN verification_token text DEFAULT NULL; END IF;
+          IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='auth_users' AND column_name='verification_token_expires_at')
+            THEN ALTER TABLE auth_users ADD COLUMN verification_token_expires_at timestamptz DEFAULT NULL; END IF;
+          IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='auth_users' AND column_name='reset_token_hash')
+            THEN ALTER TABLE auth_users ADD COLUMN reset_token_hash text DEFAULT NULL; END IF;
+          IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='auth_users' AND column_name='reset_token_expires_at')
+            THEN ALTER TABLE auth_users ADD COLUMN reset_token_expires_at timestamptz DEFAULT NULL; END IF;
+        END
+        $$;
       `);
     } catch (err) {
       this.logger.warn('Schema ensure skipped (may already exist):', String(err));
@@ -334,8 +503,8 @@ export class AuthService implements OnModuleInit {
       const hash = await bcrypt.hash(password, BCRYPT_ROUNDS);
       await this.pool.query(
         `INSERT INTO auth_users
-           (email, password_hash, full_name, role, organization_id, is_onboarded)
-         VALUES ($1, $2, $3, 'super_admin', $4, true)`,
+           (email, password_hash, full_name, role, organization_id, is_onboarded, email_verified_at)
+         VALUES ($1, $2, $3, 'super_admin', $4, true, now())`,
         [email, hash, fullName, orgId],
       );
       this.logger.log(`Bootstrap: admin created — ${email} (role: super_admin)`);
@@ -354,6 +523,7 @@ export class AuthService implements OnModuleInit {
       name: user.full_name ?? user.email.split('@')[0],
       orgId: user.organization_id,
       isOnboarded: user.is_onboarded,
+      isEmailVerified: user.email_verified_at !== null,
       jti: crypto.randomUUID(),
     };
   }

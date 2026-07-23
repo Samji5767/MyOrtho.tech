@@ -77,6 +77,7 @@ describe('Auth — /api/me and /api/auth/session (e2e)', () => {
       name: 'Dr. Smith',
       orgId: 'org-001',
       isOnboarded: true,
+      isEmailVerified: true,
       jti: 'test-e2e-jti-001',
     });
   }

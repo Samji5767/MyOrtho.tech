@@ -15,7 +15,7 @@ import {
 import type { Request, Response } from 'express';
 import { Throttle } from '@nestjs/throttler';
 import { IsEmail, IsNotEmpty, IsString, MinLength } from 'class-validator';
-import { AuthService } from './auth.service';
+import { AuthService, type OnboardingPrefs } from './auth.service';
 import { AuditService } from '../audit/audit.service';
 
 class LoginDto {
@@ -263,8 +263,24 @@ export class AuthController {
     if (!payload.isEmailVerified) {
       throw new ForbiddenException('Email must be verified before completing onboarding');
     }
-    await this.authService.markOnboarded(payload.sub);
-    return { ok: true, role: payload.role };
+
+    const prefs: OnboardingPrefs = {
+      role:             typeof body.role === 'string'             ? body.role             : undefined,
+      displayRole:      typeof body.displayRole === 'string'      ? body.displayRole      : undefined,
+      orgName:          typeof body.orgName === 'string'          ? body.orgName          : undefined,
+      orgType:          typeof body.orgType === 'string'          ? body.orgType          : undefined,
+      numDoctors:       typeof body.numDoctors === 'string'       ? body.numDoctors       : undefined,
+      numClinics:       typeof body.numClinics === 'string'       ? body.numClinics       : undefined,
+      caseVolume:       typeof body.caseVolume === 'string'       ? body.caseVolume       : undefined,
+      primaryFlow:      typeof body.primaryFlow === 'string'      ? body.primaryFlow      : undefined,
+      cadLevel:         typeof body.cadLevel === 'string'         ? body.cadLevel         : undefined,
+      aiReadiness:      typeof body.aiReadiness === 'string'      ? body.aiReadiness      : undefined,
+      enableDemo:       typeof body.enableDemo === 'boolean'      ? body.enableDemo       : false,
+      primaryObjective: typeof body.primaryObjective === 'string' ? body.primaryObjective : undefined,
+    };
+
+    await this.authService.markOnboarded(payload.sub, prefs);
+    return { ok: true, role: prefs.role ?? payload.role };
   }
 
   @Patch('profile')

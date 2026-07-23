@@ -78,6 +78,7 @@ import { PlatformHealthModule } from './platform-health/platform-health.module';
 import { SystemStatusModule } from './system-status/system-status.module';
 import { NotificationsModule } from './notifications/notifications.module';
 import { AdminModule } from './admin/admin.module';
+import { OrganizationsModule } from './organizations/organizations.module';
 import { OrgLocationsModule } from './org-locations/org-locations.module';
 import { WebhooksModule } from './webhooks/webhooks.module';
 import { EventsModule } from './events/events.module';
@@ -200,6 +201,7 @@ import { AiGovernanceModule } from './ai-governance/ai-governance.module';
     SystemStatusModule,
     NotificationsModule,
     AdminModule,
+    OrganizationsModule,
     OrgLocationsModule,
     WebhooksModule,
     EventsModule,

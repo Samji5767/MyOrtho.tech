@@ -34,6 +34,21 @@ export interface AuthUserRow {
   sessions_invalidated_at: Date | null;
 }
 
+export interface OnboardingPrefs {
+  role?: string;
+  displayRole?: string;
+  orgName?: string;
+  orgType?: string;
+  numDoctors?: string;
+  numClinics?: string;
+  caseVolume?: string;
+  primaryFlow?: string;
+  cadLevel?: string;
+  aiReadiness?: string;
+  enableDemo?: boolean;
+  primaryObjective?: string;
+}
+
 export interface SessionPayload {
   sub: string;
   email: string;
@@ -260,13 +275,14 @@ export class AuthService implements OnModuleInit {
       throw new UnauthorizedException('An account with this email already exists');
     }
 
-    // Wrap org + user creation in a single transaction so neither is orphaned on failure
+    // Wrap org + user + membership + workspace creation in one transaction
     const hash = await bcrypt.hash(password, BCRYPT_ROUNDS);
     const client = await this.pool.connect();
     let userId: string;
     let orgId: string | null;
     try {
       await client.query('BEGIN');
+
       const orgResult = await client.query<{ id: string }>(
         `INSERT INTO organizations (name, type, settings)
          VALUES ($1, 'clinic', '{}') RETURNING id`,
@@ -280,6 +296,36 @@ export class AuthService implements OnModuleInit {
         [normalizedEmail, hash, fullName.trim(), orgId],
       );
       userId = rows[0].id;
+
+      if (orgId) {
+        // Owner membership
+        await client.query(
+          `INSERT INTO organization_memberships (user_id, organization_id, role, is_owner)
+           VALUES ($1, $2, 'orthodontist', true)
+           ON CONFLICT (user_id, organization_id) DO NOTHING`,
+          [userId, orgId],
+        );
+
+        // Default workspace
+        const wsResult = await client.query<{ id: string }>(
+          `INSERT INTO workspaces (organization_id, name, type, is_default, created_by)
+           VALUES ($1, $2, 'default', true, $3)
+           ON CONFLICT DO NOTHING RETURNING id`,
+          [orgId, `${clinicName.trim()} Workspace`, userId],
+        );
+        const wsId = wsResult.rows[0]?.id;
+
+        // Workspace membership
+        if (wsId) {
+          await client.query(
+            `INSERT INTO workspace_memberships (user_id, workspace_id, role)
+             VALUES ($1, $2, 'orthodontist')
+             ON CONFLICT (user_id, workspace_id) DO NOTHING`,
+            [userId, wsId],
+          );
+        }
+      }
+
       await client.query('COMMIT');
     } catch (err) {
       await client.query('ROLLBACK');
@@ -444,11 +490,91 @@ export class AuthService implements OnModuleInit {
 
   // ─── Mark onboarded ───────────────────────────────────────────────────────
 
-  async markOnboarded(userId: string): Promise<void> {
-    await this.pool.query(
-      'UPDATE auth_users SET is_onboarded = true, updated_at = now() WHERE id = $1',
+  async markOnboarded(userId: string, prefs?: OnboardingPrefs): Promise<void> {
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+
+      // Update user role if the onboarding step selected a different one
+      if (prefs?.role) {
+        await client.query(
+          'UPDATE auth_users SET role = $1, is_onboarded = true, updated_at = now() WHERE id = $2',
+          [prefs.role, userId],
+        );
+      } else {
+        await client.query(
+          'UPDATE auth_users SET is_onboarded = true, updated_at = now() WHERE id = $1',
+          [userId],
+        );
+      }
+
+      // Update organization name/type from onboarding if provided
+      if (prefs?.orgName || prefs?.orgType) {
+        await client.query(
+          `UPDATE organizations SET
+             name       = COALESCE(NULLIF($1, ''), name),
+             type       = COALESCE(NULLIF($2, ''), type),
+             updated_at = now()
+           WHERE id = (SELECT organization_id FROM auth_users WHERE id = $3)`,
+          [prefs.orgName ?? '', prefs.orgType ?? '', userId],
+        );
+      }
+
+      // Upsert onboarding profile preferences
+      await client.query(
+        `INSERT INTO user_onboarding_profiles
+           (user_id, display_role, org_type, org_name, num_doctors, num_clinics,
+            case_volume, primary_flow, cad_level, ai_readiness, enable_demo,
+            primary_objective, completed_at, updated_at)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,now(),now())
+         ON CONFLICT (user_id) DO UPDATE SET
+           display_role      = EXCLUDED.display_role,
+           org_type          = EXCLUDED.org_type,
+           org_name          = EXCLUDED.org_name,
+           num_doctors       = EXCLUDED.num_doctors,
+           num_clinics       = EXCLUDED.num_clinics,
+           case_volume       = EXCLUDED.case_volume,
+           primary_flow      = EXCLUDED.primary_flow,
+           cad_level         = EXCLUDED.cad_level,
+           ai_readiness      = EXCLUDED.ai_readiness,
+           enable_demo       = EXCLUDED.enable_demo,
+           primary_objective = EXCLUDED.primary_objective,
+           completed_at      = EXCLUDED.completed_at,
+           updated_at        = now()`,
+        [
+          userId,
+          prefs?.displayRole ?? null,
+          prefs?.orgType ?? null,
+          prefs?.orgName ?? null,
+          prefs?.numDoctors ?? null,
+          prefs?.numClinics ?? null,
+          prefs?.caseVolume ?? null,
+          prefs?.primaryFlow ?? null,
+          prefs?.cadLevel ?? null,
+          prefs?.aiReadiness ?? null,
+          prefs?.enableDemo ?? false,
+          prefs?.primaryObjective ?? null,
+        ],
+      );
+
+      await client.query('COMMIT');
+    } catch (err) {
+      await client.query('ROLLBACK');
+      throw err;
+    } finally {
+      client.release();
+    }
+  }
+
+  async getOnboardingProfile(userId: string): Promise<OnboardingPrefs | null> {
+    const { rows } = await this.pool.query<OnboardingPrefs & { completed_at: Date | null }>(
+      `SELECT display_role, org_type, org_name, num_doctors, num_clinics,
+              case_volume, primary_flow, cad_level, ai_readiness, enable_demo,
+              primary_objective, completed_at
+       FROM user_onboarding_profiles WHERE user_id = $1 LIMIT 1`,
       [userId],
     );
+    return rows[0] ?? null;
   }
 
   // ─── Update profile ────────────────────────────────────────────────────────
@@ -512,6 +638,71 @@ export class AuthService implements OnModuleInit {
             THEN ALTER TABLE auth_users ADD COLUMN sessions_invalidated_at timestamptz DEFAULT NULL; END IF;
         END
         $$;
+      `);
+      // Ensure membership + workspace tables exist (migration 070)
+      await this.pool.query(`
+        CREATE TABLE IF NOT EXISTS organization_memberships (
+          id                uuid        PRIMARY KEY DEFAULT uuid_generate_v4(),
+          user_id           uuid        NOT NULL REFERENCES auth_users(id) ON DELETE CASCADE,
+          organization_id   uuid        NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+          role              text        NOT NULL DEFAULT 'member',
+          is_owner          boolean     NOT NULL DEFAULT false,
+          invited_by        uuid        REFERENCES auth_users(id) ON DELETE SET NULL,
+          created_at        timestamptz DEFAULT now(),
+          updated_at        timestamptz DEFAULT now(),
+          CONSTRAINT uq_org_membership UNIQUE (user_id, organization_id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_org_memberships_user ON organization_memberships(user_id);
+        CREATE INDEX IF NOT EXISTS idx_org_memberships_org  ON organization_memberships(organization_id);
+
+        CREATE TABLE IF NOT EXISTS workspaces (
+          id                uuid        PRIMARY KEY DEFAULT uuid_generate_v4(),
+          organization_id   uuid        NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+          name              text        NOT NULL,
+          type              text        NOT NULL DEFAULT 'default'
+                                        CHECK (type IN ('default','clinical','lab','research')),
+          is_default        boolean     NOT NULL DEFAULT false,
+          settings          jsonb       DEFAULT '{}'::jsonb,
+          created_by        uuid        REFERENCES auth_users(id) ON DELETE SET NULL,
+          created_at        timestamptz DEFAULT now(),
+          updated_at        timestamptz DEFAULT now()
+        );
+        CREATE INDEX IF NOT EXISTS idx_workspaces_org ON workspaces(organization_id);
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_workspaces_default
+          ON workspaces(organization_id) WHERE is_default = true;
+
+        CREATE TABLE IF NOT EXISTS workspace_memberships (
+          id              uuid        PRIMARY KEY DEFAULT uuid_generate_v4(),
+          user_id         uuid        NOT NULL REFERENCES auth_users(id) ON DELETE CASCADE,
+          workspace_id    uuid        NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+          role            text        NOT NULL DEFAULT 'member',
+          created_at      timestamptz DEFAULT now(),
+          CONSTRAINT uq_workspace_membership UNIQUE (user_id, workspace_id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_workspace_memberships_user
+          ON workspace_memberships(user_id);
+        CREATE INDEX IF NOT EXISTS idx_workspace_memberships_workspace
+          ON workspace_memberships(workspace_id);
+
+        CREATE TABLE IF NOT EXISTS user_onboarding_profiles (
+          id                uuid        PRIMARY KEY DEFAULT uuid_generate_v4(),
+          user_id           uuid        NOT NULL UNIQUE REFERENCES auth_users(id) ON DELETE CASCADE,
+          display_role      text,
+          org_type          text,
+          org_name          text,
+          num_doctors       text,
+          num_clinics       text,
+          case_volume       text,
+          primary_flow      text,
+          cad_level         text,
+          ai_readiness      text,
+          enable_demo       boolean     DEFAULT false,
+          primary_objective text,
+          extra             jsonb       DEFAULT '{}'::jsonb,
+          completed_at      timestamptz,
+          created_at        timestamptz DEFAULT now(),
+          updated_at        timestamptz DEFAULT now()
+        );
       `);
     } catch (err) {
       this.logger.warn('Schema ensure skipped (may already exist):', String(err));

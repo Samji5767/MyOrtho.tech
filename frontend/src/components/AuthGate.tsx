@@ -5,7 +5,18 @@ import { useRouter, usePathname } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 
 // These paths are accessible without authentication
-const PUBLIC_PATHS = ["/login", "/onboarding", "/signup", "/trust", "/download"];
+const PUBLIC_PATHS = [
+  "/login",
+  "/signup",
+  "/trust",
+  "/download",
+  "/verify-email",
+  "/forgot-password",
+  "/reset-password",
+];
+// Authenticated paths reachable before email verification is confirmed.
+// Deliberately excludes /onboarding — email must be verified before onboarding.
+const UNVERIFIED_ALLOWED = ["/verify-email"];
 
 function isPublicPath(pathname: string): boolean {
   return PUBLIC_PATHS.some(
@@ -18,7 +29,7 @@ interface AuthGateProps {
 }
 
 export function AuthGate({ children }: AuthGateProps) {
-  const { status } = useAuth();
+  const { status, user } = useAuth();
   const router = useRouter();
   const pathname = usePathname() ?? "/";
 
@@ -32,8 +43,22 @@ export function AuthGate({ children }: AuthGateProps) {
         sessionStorage.setItem("mo_redirect", pathname);
       } catch {}
       router.replace("/login");
+      return;
     }
-  }, [status, pathname, router]);
+
+    if (status === "authenticated" && user) {
+      // Email not verified — send to verify-email page (except onboarding)
+      if (!user.isEmailVerified && !UNVERIFIED_ALLOWED.some((p) => pathname.startsWith(p))) {
+        router.replace("/verify-email");
+        return;
+      }
+      // Onboarding not complete — send to onboarding (email must be verified first)
+      if (user.isEmailVerified && !user.isOnboarded && pathname !== "/onboarding") {
+        router.replace("/onboarding");
+        return;
+      }
+    }
+  }, [status, user, pathname, router]);
 
   // On public paths: always render
   if (isPublicPath(pathname)) return <>{children}</>;

@@ -15,9 +15,10 @@ import {
 import { IsString, IsOptional } from 'class-validator';
 import type { Request } from 'express';
 import { PatientsService, CreatePatientDto, type UpdatePatientDto } from './patients.service';
-import { AuthGuard } from '../auth/auth.guard';
+import { AuthGuard, type AuthUser } from '../auth/auth.guard';
 import { PermissionsGuard } from '../auth/permissions.guard';
 import { RequirePermission } from '../auth/require-permission.decorator';
+import { buildScope } from '../common/access-scope';
 
 class AddTimelineNoteDto {
   @IsString()
@@ -35,8 +36,6 @@ class AddTimelineNoteDto {
   @IsOptional()
   eventAt?: string;
 }
-
-interface AuthUser { id: string; email: string; role: string; name: string; orgId: string | null }
 
 function getUser(req: Request): AuthUser {
   const user = (req as Request & { user?: AuthUser }).user;
@@ -59,12 +58,14 @@ export class PatientsController {
     @Req() req: Request,
     @Query('limit') limit?: string,
     @Query('offset') offset?: string,
+    @Query('includeArchived') includeArchived?: string,
   ) {
     const user = getUser(req);
-    if (!user.orgId) return [];
+    const scope = buildScope(user);
     const l = limit ? Math.min(500, Math.max(1, parseInt(limit, 10))) : 100;
     const o = offset ? Math.max(0, parseInt(offset, 10)) : 0;
-    return this.patientsService.findAllByOrg(user.orgId, l, o);
+    const archived = includeArchived === 'true';
+    return this.patientsService.findAllByScope(scope, l, o, archived);
   }
 
   @Post()
@@ -76,6 +77,7 @@ export class PatientsController {
     return this.patientsService.create(user.orgId, user.id, dto, {
       actorEmail: user.email,
       ipAddress: getIp(req),
+      workspaceId: user.workspaceId,
     });
   }
 
@@ -83,8 +85,8 @@ export class PatientsController {
   @RequirePermission('patients:read')
   async getPatientById(@Req() req: Request, @Param('id') id: string) {
     const user = getUser(req);
-    if (!user.orgId) throw new UnauthorizedException('No organization assigned');
-    return this.patientsService.findOne(id, user.orgId);
+    const scope = buildScope(user);
+    return this.patientsService.findOneByScope(id, scope);
   }
 
   @Patch(':id')
@@ -95,8 +97,38 @@ export class PatientsController {
     @Body() dto: UpdatePatientDto,
   ) {
     const user = getUser(req);
-    if (!user.orgId) throw new UnauthorizedException('No organization assigned');
-    return this.patientsService.update(id, user.orgId, user.id, dto, {
+    const scope = buildScope(user);
+    return this.patientsService.updateByScope(id, scope, user.id, dto, {
+      actorEmail: user.email,
+      ipAddress: getIp(req),
+    });
+  }
+
+  @Post(':id/archive')
+  @HttpCode(HttpStatus.OK)
+  @RequirePermission('patients:write')
+  async archivePatient(@Req() req: Request, @Param('id') id: string) {
+    const user = getUser(req);
+    const scope = buildScope(user);
+    if (scope.kind !== 'workspace') {
+      throw new UnauthorizedException('Workspace assignment required for patient archive');
+    }
+    return this.patientsService.archive(id, scope.workspaceId, user.id, {
+      actorEmail: user.email,
+      ipAddress: getIp(req),
+    });
+  }
+
+  @Post(':id/restore')
+  @HttpCode(HttpStatus.OK)
+  @RequirePermission('patients:write')
+  async restorePatient(@Req() req: Request, @Param('id') id: string) {
+    const user = getUser(req);
+    const scope = buildScope(user);
+    if (scope.kind !== 'workspace') {
+      throw new UnauthorizedException('Workspace assignment required for patient restore');
+    }
+    return this.patientsService.restore(id, scope.workspaceId, user.id, {
       actorEmail: user.email,
       ipAddress: getIp(req),
     });
@@ -106,8 +138,8 @@ export class PatientsController {
   @RequirePermission('patients:read')
   async getTimeline(@Req() req: Request, @Param('id') id: string) {
     const user = getUser(req);
-    if (!user.orgId) throw new UnauthorizedException('No organization assigned');
-    return this.patientsService.getTimeline(id, user.orgId);
+    const scope = buildScope(user);
+    return this.patientsService.getTimelineByScope(id, scope);
   }
 
   @Post(':id/timeline/notes')
@@ -119,7 +151,7 @@ export class PatientsController {
     @Body() dto: AddTimelineNoteDto,
   ) {
     const user = getUser(req);
-    if (!user.orgId) throw new UnauthorizedException('No organization assigned');
-    return this.patientsService.addTimelineNote(id, user.orgId, user.id, dto);
+    const scope = buildScope(user);
+    return this.patientsService.addTimelineNoteByScope(id, scope, user.id, dto);
   }
 }

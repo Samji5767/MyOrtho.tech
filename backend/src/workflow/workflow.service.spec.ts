@@ -107,4 +107,86 @@ describe('WorkflowService.transition', () => {
     );
     expect(updateCall).toBeDefined();
   });
+
+  // ─── Tenant predicate tests ────────────────────────────────────────────────
+
+  it('FOR UPDATE SELECT binds orgId as the 2nd parameter', async () => {
+    const pool = makePool([[], [{ status: 'draft' }], [], [], []]);
+    const svc = makeService(pool);
+
+    await svc.transition({
+      caseId: CASE_ID, toStatus: 'archived',
+      actorId: ACTOR, actorRole: 'doctor',
+      orgId: ORG_ID,
+    });
+
+    const lockCall = (pool._client.query as jest.Mock).mock.calls.find(
+      ([sql]: [string]) => sql.includes('FOR UPDATE'),
+    );
+    expect(lockCall).toBeDefined();
+    const [lockSql, lockParams] = lockCall!;
+    expect(lockSql).toMatch(/AND organization_id = \$2/);
+    expect(lockParams[1]).toBe(ORG_ID);
+  });
+
+  it('FOR UPDATE SELECT includes workspace_id predicate when workspaceId provided', async () => {
+    const WS_ID = 'ws-test-001';
+    const pool = makePool([[], [{ status: 'draft' }], [], [], []]);
+    const svc = makeService(pool);
+
+    await svc.transition({
+      caseId: CASE_ID, toStatus: 'archived',
+      actorId: ACTOR, actorRole: 'doctor',
+      orgId: ORG_ID,
+      workspaceId: WS_ID,
+    });
+
+    const lockCall = (pool._client.query as jest.Mock).mock.calls.find(
+      ([sql]: [string]) => sql.includes('FOR UPDATE'),
+    );
+    const [lockSql, lockParams] = lockCall!;
+    expect(lockSql).toMatch(/AND workspace_id = \$3/);
+    expect(lockParams[2]).toBe(WS_ID);
+  });
+
+  it('UPDATE binds orgId and workspace_id when workspaceId provided', async () => {
+    const WS_ID = 'ws-test-002';
+    const pool = makePool([[], [{ status: 'draft' }], [], [], []]);
+    const svc = makeService(pool);
+
+    await svc.transition({
+      caseId: CASE_ID, toStatus: 'archived',
+      actorId: ACTOR, actorRole: 'doctor',
+      orgId: ORG_ID,
+      workspaceId: WS_ID,
+    });
+
+    const updateCall = (pool._client.query as jest.Mock).mock.calls.find(
+      ([sql]: [string]) => sql.includes('UPDATE cases SET status'),
+    );
+    expect(updateCall).toBeDefined();
+    const [updateSql, updateParams] = updateCall!;
+    expect(updateSql).toMatch(/AND organization_id = \$3/);
+    expect(updateSql).toMatch(/AND workspace_id = \$4/);
+    expect(updateParams).toContain(ORG_ID);
+    expect(updateParams).toContain(WS_ID);
+  });
+
+  it('UPDATE omits workspace_id predicate when workspaceId not provided', async () => {
+    const pool = makePool([[], [{ status: 'draft' }], [], [], []]);
+    const svc = makeService(pool);
+
+    await svc.transition({
+      caseId: CASE_ID, toStatus: 'archived',
+      actorId: ACTOR, actorRole: 'doctor',
+      orgId: ORG_ID,
+      // no workspaceId
+    });
+
+    const updateCall = (pool._client.query as jest.Mock).mock.calls.find(
+      ([sql]: [string]) => sql.includes('UPDATE cases SET status'),
+    );
+    const [updateSql] = updateCall!;
+    expect(updateSql).not.toMatch(/workspace_id/);
+  });
 });

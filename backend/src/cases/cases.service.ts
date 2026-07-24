@@ -13,6 +13,7 @@ import { AuditService } from '../audit/audit.service';
 import { CryptoService } from '../common/crypto.service';
 import { WorkflowService, type CaseStatus } from '../workflow/workflow.service';
 import { NotificationsService, type NotificationType } from '../notifications/notifications.service';
+import { type AccessScope } from '../common/access-scope';
 
 export class CreateCaseDto {
   @IsUUID()
@@ -192,7 +193,7 @@ export class CasesService {
     orgId: string,
     createdBy: string,
     dto: CreateCaseDto,
-    opts: { actorEmail?: string; ipAddress?: string } = {},
+    opts: { actorEmail?: string; ipAddress?: string; workspaceId?: string | null } = {},
   ) {
     const client: PoolClient = await this.pool.connect();
     let newId: string;
@@ -208,15 +209,26 @@ export class CasesService {
         throw new ForbiddenException('Patient not found in this organization');
       }
 
+      // Resolve workspace_id: use provided opt, or look up patient's workspace
+      let workspaceId = opts.workspaceId ?? null;
+      if (!workspaceId) {
+        const wsRow = await client.query<{ workspace_id: string | null }>(
+          'SELECT workspace_id FROM patients WHERE id = $1 LIMIT 1',
+          [dto.patientId],
+        );
+        workspaceId = wsRow.rows[0]?.workspace_id ?? null;
+      }
+
       const { rows } = await client.query(
         `INSERT INTO cases
-           (patient_id, assigned_to, organization_id, status, chief_complaint, malocclusion_class, notes)
-         VALUES ($1, $2, $3, 'draft', $4, $5, $6)
+           (patient_id, assigned_to, organization_id, workspace_id, status, chief_complaint, malocclusion_class, notes)
+         VALUES ($1, $2, $3, $4, 'draft', $5, $6, $7)
          RETURNING id`,
         [
           dto.patientId,
           createdBy,
           orgId,
+          workspaceId,
           dto.chiefComplaint ?? null,
           dto.malocclusionClass ?? null,
           dto.notes ?? null,
@@ -265,7 +277,7 @@ export class CasesService {
     orgId: string,
     actorId: string,
     dto: CreateCaseWithPatientDto,
-    opts: { actorEmail?: string; ipAddress?: string } = {},
+    opts: { actorEmail?: string; ipAddress?: string; workspaceId?: string | null } = {},
   ) {
     this.assertValidDob(dto.patient.dateOfBirth);
 
@@ -279,11 +291,12 @@ export class CasesService {
 
       const { rows: patRows } = await client.query<{ id: string }>(
         `INSERT INTO patients
-           (organization_id, first_name, last_name, dob_encrypted, gender, clinical_notes, created_by)
-         VALUES ($1, $2, $3, $4, $5, $6, $7)
+           (organization_id, workspace_id, first_name, last_name, dob_encrypted, gender, clinical_notes, created_by)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
          RETURNING id`,
         [
           orgId,
+          opts.workspaceId ?? null,
           this.cryptoService.encrypt(dto.patient.firstName),
           this.cryptoService.encrypt(dto.patient.lastName),
           this.cryptoService.encrypt(dto.patient.dateOfBirth ?? null),
@@ -296,13 +309,14 @@ export class CasesService {
 
       const { rows: caseRows } = await client.query<{ id: string }>(
         `INSERT INTO cases
-           (patient_id, assigned_to, organization_id, status, chief_complaint, malocclusion_class, notes)
-         VALUES ($1, $2, $3, 'draft', $4, $5, $6)
+           (patient_id, assigned_to, organization_id, workspace_id, status, chief_complaint, malocclusion_class, notes)
+         VALUES ($1, $2, $3, $4, 'draft', $5, $6, $7)
          RETURNING id`,
         [
           patientId,
           actorId,
           orgId,
+          opts.workspaceId ?? null,
           dto.chiefComplaint ?? null,
           dto.malocclusionClass ?? null,
           dto.notes ?? null,
@@ -457,6 +471,376 @@ export class CasesService {
        FROM cases
        WHERE organization_id = $1`,
       [orgId],
+    );
+    const row = rows[0];
+    return {
+      totalCases:         Number(row?.total_cases          ?? 0),
+      activeCases:        Number(row?.active_cases         ?? 0),
+      pendingReview:      Number(row?.pending_review       ?? 0),
+      completedThisMonth: Number(row?.completed_this_month ?? 0),
+      manufacturingQueue: Number(row?.manufacturing_queue  ?? 0),
+      archivedCases:      Number(row?.archived_cases       ?? 0),
+      draftCases:         Number(row?.draft_cases          ?? 0),
+    };
+  }
+
+  // ─── Scope-based methods (enforce AccessScope boundary) ──────────────────
+
+  async findAll(scope: AccessScope, limit = 100, offset = 0, patientId?: string) {
+    const scopeCol = scope.kind === 'workspace' ? 'c.workspace_id' : 'p.organization_id';
+    const scopeVal = scope.kind === 'workspace' ? scope.workspaceId : scope.orgId;
+    const params: (string | number)[] = [scopeVal];
+    let patientFilter = '';
+    if (patientId) {
+      params.push(patientId);
+      patientFilter = `AND c.patient_id = $${params.length}`;
+    }
+    params.push(limit, offset);
+    const limitIdx = params.length - 1;
+    const offsetIdx = params.length;
+
+    const { rows } = await this.pool.query(
+      `SELECT
+         c.id, c.status, c.notes, c.chief_complaint, c.malocclusion_class,
+         c.created_at, c.updated_at,
+         p.id AS patient_id, p.first_name, p.last_name,
+         au.full_name AS assigned_to_name, au.email AS assigned_to_email,
+         au.id AS assigned_to_id
+       FROM cases c
+       JOIN patients p ON p.id = c.patient_id
+       LEFT JOIN auth_users au ON au.id = c.assigned_to
+       WHERE ${scopeCol} = $1 ${patientFilter}
+       ORDER BY c.updated_at DESC
+       LIMIT $${limitIdx} OFFSET $${offsetIdx}`,
+      params,
+    );
+    return rows.map(this.formatCase);
+  }
+
+  async findOneByScope(id: string, scope: AccessScope) {
+    const scopeCol = scope.kind === 'workspace' ? 'c.workspace_id' : 'p.organization_id';
+    const scopeVal = scope.kind === 'workspace' ? scope.workspaceId : scope.orgId;
+
+    const { rows } = await this.pool.query(
+      `SELECT
+         c.id, c.status, c.notes, c.chief_complaint, c.malocclusion_class,
+         c.created_at, c.updated_at,
+         p.id AS patient_id, p.first_name, p.last_name,
+         p.dob AS date_of_birth, p.gender, p.clinical_notes AS patient_notes,
+         p.organization_id,
+         au.full_name AS assigned_to_name, au.id AS assigned_to_id
+       FROM cases c
+       JOIN patients p ON p.id = c.patient_id
+       LEFT JOIN auth_users au ON au.id = c.assigned_to
+       WHERE c.id = $1 AND ${scopeCol} = $2`,
+      [id, scopeVal],
+    );
+
+    const row = rows[0];
+    if (!row) throw new NotFoundException(`Case ${id} not found`);
+
+    const allowedTransitions = this.workflowService.allowedTransitions(row.status as CaseStatus);
+
+    const [history, linked] = await Promise.all([
+      this.workflowService.getHistory(id),
+      (async (): Promise<Record<string, unknown>> => {
+        try {
+          const { rows: lr } = await this.pool.query(
+            `SELECT
+               (SELECT id FROM scans              WHERE case_id = $1 ORDER BY created_at DESC LIMIT 1) AS latest_scan_id,
+               (SELECT id FROM digital_setups     WHERE case_id = $1 ORDER BY created_at DESC LIMIT 1) AS setup_id,
+               (SELECT id FROM treatment_plans    WHERE case_id = $1 ORDER BY created_at DESC LIMIT 1) AS plan_id,
+               (SELECT id FROM clinical_analyses  WHERE case_id = $1 ORDER BY created_at DESC LIMIT 1) AS analysis_id,
+               (SELECT id FROM treatment_goals    WHERE case_id = $1 ORDER BY created_at DESC LIMIT 1) AS goals_id`,
+            [id],
+          );
+          return lr[0] ?? {};
+        } catch (e) {
+          this.logger.warn(`Could not fetch linked resources for case ${id}: ${String(e)}`);
+          return {};
+        }
+      })(),
+    ]);
+
+    return {
+      ...this.formatCase(row),
+      patient: {
+        id: row.patient_id,
+        firstName: this.cryptoService.decrypt(row.first_name as string | null),
+        lastName:  this.cryptoService.decrypt(row.last_name  as string | null),
+        dateOfBirth: row.date_of_birth,
+        gender:      this.cryptoService.decrypt(row.gender as string | null),
+        clinicalNotes: this.cryptoService.decrypt(row.patient_notes as string | null),
+      },
+      linkedResources: {
+        latestScanId: (linked.latest_scan_id as string | null) ?? null,
+        setupId:      (linked.setup_id      as string | null) ?? null,
+        planId:       (linked.plan_id       as string | null) ?? null,
+        analysisId:   (linked.analysis_id   as string | null) ?? null,
+        goalsId:      (linked.goals_id      as string | null) ?? null,
+      },
+      workflowHistory: history,
+      allowedTransitions,
+    };
+  }
+
+  async updateByScope(
+    id: string,
+    scope: AccessScope,
+    actorId: string,
+    dto: UpdateCaseDto,
+    opts: { actorEmail?: string; ipAddress?: string } = {},
+  ) {
+    await this.findOneByScope(id, scope); // ownership check
+
+    const fields: string[] = [];
+    const values: unknown[] = [];
+    let i = 1;
+
+    if (dto.chiefComplaint !== undefined)   { fields.push(`chief_complaint = $${i++}`);   values.push(dto.chiefComplaint); }
+    if (dto.malocclusionClass !== undefined) { fields.push(`malocclusion_class = $${i++}`); values.push(dto.malocclusionClass); }
+    if (dto.notes !== undefined)             { fields.push(`notes = $${i++}`);             values.push(dto.notes); }
+
+    if (fields.length === 0) return this.findOneByScope(id, scope);
+
+    fields.push(`updated_at = now()`);
+    const scopeCol = scope.kind === 'workspace' ? 'workspace_id' : 'organization_id';
+    const scopeVal = scope.kind === 'workspace' ? scope.workspaceId : scope.orgId;
+    values.push(id);
+    values.push(scopeVal);
+
+    await this.pool.query(
+      `UPDATE cases SET ${fields.join(', ')} WHERE id = $${i} AND ${scopeCol} = $${i + 1}`,
+      values,
+    );
+
+    await this.auditService.log({
+      organizationId: scope.orgId,
+      actorId,
+      actorEmail: opts.actorEmail,
+      resourceType: 'case',
+      resourceId: id,
+      action: 'case.updated',
+      details: dto,
+      ipAddress: opts.ipAddress,
+    });
+
+    return this.findOneByScope(id, scope);
+  }
+
+  async transitionByScope(
+    id: string,
+    scope: AccessScope,
+    actorId: string,
+    actorRole: string,
+    toStatus: CaseStatus,
+    notes?: string,
+    opts: { actorEmail?: string; ipAddress?: string } = {},
+  ) {
+    await this.findOneByScope(id, scope); // ownership check
+    const result = await this.workflowService.transition({
+      caseId: id,
+      toStatus,
+      actorId,
+      actorRole,
+      orgId: scope.orgId,
+      workspaceId: scope.kind === 'workspace' ? scope.workspaceId : null,
+      actorEmail: opts.actorEmail,
+      notes,
+      ipAddress: opts.ipAddress,
+    });
+
+    const notifyStatuses: CaseStatus[] = ['approved', 'clinical_review', 'active_treatment'];
+    if (notifyStatuses.includes(toStatus)) {
+      void this.fireTransitionNotification(id, scope.orgId, toStatus).catch((err) => {
+        this.logger.warn(`Notification dispatch failed for case ${id} → ${toStatus}: ${String(err)}`);
+      });
+    }
+
+    return result;
+  }
+
+  async createByScope(
+    scope: AccessScope,
+    createdBy: string,
+    dto: CreateCaseDto,
+    opts: { actorEmail?: string; ipAddress?: string } = {},
+  ) {
+    const workspaceId = scope.kind === 'workspace' ? scope.workspaceId : null;
+    const client: PoolClient = await this.pool.connect();
+    let newId: string;
+    try {
+      await client.query('BEGIN');
+
+      // Patient must belong to the same scope — never allow cross-workspace case creation.
+      const scopeCol = scope.kind === 'workspace' ? 'workspace_id' : 'organization_id';
+      const scopeVal = scope.kind === 'workspace' ? scope.workspaceId : scope.orgId;
+      const { rows: patRows } = await client.query(
+        `SELECT id FROM patients WHERE id = $1 AND ${scopeCol} = $2`,
+        [dto.patientId, scopeVal],
+      );
+      if (!patRows[0]) {
+        throw new NotFoundException('Patient not found');
+      }
+
+      const { rows } = await client.query(
+        `INSERT INTO cases
+           (patient_id, assigned_to, organization_id, workspace_id, status, chief_complaint, malocclusion_class, notes)
+         VALUES ($1, $2, $3, $4, 'draft', $5, $6, $7)
+         RETURNING id`,
+        [dto.patientId, createdBy, scope.orgId, workspaceId,
+         dto.chiefComplaint ?? null, dto.malocclusionClass ?? null, dto.notes ?? null],
+      );
+
+      newId = rows[0].id as string;
+      await client.query('COMMIT');
+    } catch (err) {
+      await client.query('ROLLBACK');
+      throw err;
+    } finally {
+      client.release();
+    }
+
+    await Promise.allSettled([
+      this.pool.query(
+        `INSERT INTO treatment_plans (case_id, created_by) VALUES ($1, NULL) ON CONFLICT DO NOTHING`,
+        [newId],
+      ),
+      this.pool.query(
+        `INSERT INTO workflow_events (case_id, from_status, to_status, actor_id, actor_role, notes)
+         VALUES ($1, NULL, 'draft', $2, 'system', 'Case created')`,
+        [newId, createdBy],
+      ),
+      this.auditService.log({
+        organizationId: scope.orgId,
+        actorId: createdBy,
+        actorEmail: opts.actorEmail,
+        resourceType: 'case',
+        resourceId: newId,
+        action: 'case.created',
+        details: dto,
+        ipAddress: opts.ipAddress,
+      }),
+    ]);
+
+    return this.findOneByScope(newId, scope);
+  }
+
+  async createWithNewPatientByScope(
+    scope: AccessScope,
+    actorId: string,
+    dto: CreateCaseWithPatientDto,
+    opts: { actorEmail?: string; ipAddress?: string } = {},
+  ) {
+    this.assertValidDob(dto.patient.dateOfBirth);
+    const workspaceId = scope.kind === 'workspace' ? scope.workspaceId : null;
+
+    const client: PoolClient = await this.pool.connect();
+    let committed = false;
+    let patientId: string;
+    let caseId: string;
+
+    try {
+      await client.query('BEGIN');
+
+      const { rows: patRows } = await client.query<{ id: string }>(
+        `INSERT INTO patients
+           (organization_id, workspace_id, first_name, last_name, dob_encrypted, gender, clinical_notes, created_by)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+         RETURNING id`,
+        [
+          scope.orgId, workspaceId,
+          this.cryptoService.encrypt(dto.patient.firstName),
+          this.cryptoService.encrypt(dto.patient.lastName),
+          this.cryptoService.encrypt(dto.patient.dateOfBirth ?? null),
+          this.cryptoService.encrypt(dto.patient.gender ?? null),
+          this.cryptoService.encrypt(dto.patient.clinicalNotes ?? null),
+          actorId,
+        ],
+      );
+      patientId = patRows[0].id;
+
+      const { rows: caseRows } = await client.query<{ id: string }>(
+        `INSERT INTO cases
+           (patient_id, assigned_to, organization_id, workspace_id, status, chief_complaint, malocclusion_class, notes)
+         VALUES ($1, $2, $3, $4, 'draft', $5, $6, $7)
+         RETURNING id`,
+        [patientId, actorId, scope.orgId, workspaceId,
+         dto.chiefComplaint ?? null, dto.malocclusionClass ?? null, dto.notes ?? null],
+      );
+      caseId = caseRows[0].id;
+
+      await client.query('COMMIT');
+      committed = true;
+    } catch (err) {
+      if (!committed) {
+        try { await client.query('ROLLBACK'); } catch { /* ignore */ }
+      }
+      throw err;
+    } finally {
+      client.release();
+    }
+
+    await Promise.allSettled([
+      this.pool.query(
+        `INSERT INTO treatment_plans (case_id, created_by) VALUES ($1, NULL) ON CONFLICT DO NOTHING`,
+        [caseId!],
+      ),
+      this.pool.query(
+        `INSERT INTO workflow_events (case_id, from_status, to_status, actor_id, actor_role, notes)
+         VALUES ($1, NULL, 'draft', $2, 'system', 'Case created')`,
+        [caseId!, actorId],
+      ),
+      this.auditService.log({
+        organizationId: scope.orgId, actorId, actorEmail: opts.actorEmail,
+        resourceType: 'patient', resourceId: patientId!,
+        action: 'patient.created',
+        details: { firstName: dto.patient.firstName, lastName: dto.patient.lastName },
+        ipAddress: opts.ipAddress,
+      }),
+      this.auditService.log({
+        organizationId: scope.orgId, actorId, actorEmail: opts.actorEmail,
+        resourceType: 'case', resourceId: caseId!,
+        action: 'case.created',
+        details: { patientId, chiefComplaint: dto.chiefComplaint },
+        ipAddress: opts.ipAddress,
+      }),
+    ]);
+
+    return this.findOneByScope(caseId!, scope);
+  }
+
+  async getAnalyticsSummaryByScope(scope: AccessScope): Promise<PracticeAnalyticsSummary> {
+    const scopeCol = scope.kind === 'workspace' ? 'workspace_id' : 'organization_id';
+    const scopeVal = scope.kind === 'workspace' ? scope.workspaceId : scope.orgId;
+
+    const { rows } = await this.pool.query<{
+      total_cases: string;
+      active_cases: string;
+      pending_review: string;
+      completed_this_month: string;
+      manufacturing_queue: string;
+      archived_cases: string;
+      draft_cases: string;
+    }>(
+      `SELECT
+         COUNT(*)                                                          AS total_cases,
+         COUNT(*) FILTER (WHERE status IN (
+           'scan_review','segmentation','planning',
+           'clinical_review','approved','active_treatment','monitoring'
+         ))                                                                AS active_cases,
+         COUNT(*) FILTER (WHERE status IN ('clinical_review','scan_review'))
+                                                                          AS pending_review,
+         COUNT(*) FILTER (WHERE status = 'completed'
+           AND DATE_TRUNC('month', updated_at) = DATE_TRUNC('month', NOW()))
+                                                                          AS completed_this_month,
+         COUNT(*) FILTER (WHERE status IN ('approved','active_treatment'))
+                                                                          AS manufacturing_queue,
+         COUNT(*) FILTER (WHERE status = 'archived')                      AS archived_cases,
+         COUNT(*) FILTER (WHERE status = 'draft')                         AS draft_cases
+       FROM cases
+       WHERE ${scopeCol} = $1`,
+      [scopeVal],
     );
     const row = rows[0];
     return {

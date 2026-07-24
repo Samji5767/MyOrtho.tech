@@ -2,11 +2,14 @@
 
 import { useState, useEffect, useCallback, useMemo } from "react";
 import Link from "next/link";
+import { useAuth } from "@/context/AuthContext";
+import { safeStorage } from "@/lib/safeStorage";
 import BrandMark from "@/components/BrandMark";
 import {
   AlertTriangle,
   Box,
   Brain,
+  CheckCircle2,
   ChevronRight,
   Clock,
   Download,
@@ -19,6 +22,7 @@ import {
   TrendingUp,
   Users,
   Wand2,
+  X,
   Zap,
   type LucideIcon,
 } from "lucide-react";
@@ -256,12 +260,21 @@ function CaseRow({ c }: { c: CaseListItem }) {
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function OverviewPage() {
+  const { user } = useAuth();
   const [modalOpen, setModalOpen] = useState(false);
   const [allCases, setAllCases] = useState<CaseListItem[]>([]);
   const [casesLoading, setCasesLoading] = useState(true);
   const [casesError, setCasesError] = useState<string | null>(null);
   const [analytics, setAnalytics] = useState<PracticeAnalyticsSummary | null>(null);
   const [analyticsLoading, setAnalyticsLoading] = useState(true);
+  const [showFirstRun, setShowFirstRun] = useState(false);
+
+  useEffect(() => {
+    if (safeStorage.get("mo_onboarding_done") === "1") {
+      setShowFirstRun(true);
+      safeStorage.remove("mo_onboarding_done");
+    }
+  }, []);
 
   const loadCases = useCallback(() => {
     setCasesError(null);
@@ -355,6 +368,48 @@ export default function OverviewPage() {
             New Case
           </button>
         </div>
+
+        {/* ── First-run welcome banner ── */}
+        {showFirstRun && (
+          <div className="relative rounded-2xl border border-[color:var(--primary)]/30 bg-[color:var(--primary-glow)] px-5 py-4">
+            <button
+              type="button"
+              aria-label="Dismiss"
+              onClick={() => setShowFirstRun(false)}
+              className="absolute right-3 top-3 rounded-lg p-1 text-[color:var(--muted-foreground)] hover:bg-[color:var(--border)] hover:text-[color:var(--foreground)]"
+            >
+              <X size={14} />
+            </button>
+            <div className="flex items-start gap-3 pr-6">
+              <div className="mt-0.5 grid h-8 w-8 shrink-0 place-items-center rounded-full bg-[color:var(--primary)]/15">
+                <CheckCircle2 size={16} className="text-[color:var(--primary)]" />
+              </div>
+              <div>
+                <p className="text-sm font-semibold text-[color:var(--foreground)]">
+                  Welcome{user?.name ? `, ${user.name.split(" ")[0]}` : ""}! Your workspace is ready.
+                </p>
+                <p className="mt-0.5 text-xs text-[color:var(--muted-foreground)]">
+                  Start by creating your first patient case, uploading a 3D scan, or exploring the treatment planning studio.
+                </p>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {[
+                    { label: "New Case",       href: "/cases/new"    },
+                    { label: "Upload Scan",    href: "/studio"       },
+                    { label: "View Patients",  href: "/patients"     },
+                  ].map(a => (
+                    <Link
+                      key={a.label}
+                      href={a.href}
+                      className="inline-flex h-8 items-center rounded-lg border border-[color:var(--primary)]/40 bg-[color:var(--background)] px-3 text-xs font-semibold text-[color:var(--primary)] transition-colors hover:bg-[color:var(--primary)] hover:text-[color:var(--primary-foreground)]"
+                    >
+                      {a.label}
+                    </Link>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* ── Cases load error ── */}
         {casesError && (

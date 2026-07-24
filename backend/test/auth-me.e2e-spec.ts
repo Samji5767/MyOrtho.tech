@@ -76,7 +76,9 @@ describe('Auth — /api/me and /api/auth/session (e2e)', () => {
       role: 'orthodontist',
       name: 'Dr. Smith',
       orgId: 'org-001',
+      workspaceId: null,
       isOnboarded: true,
+      isEmailVerified: true,
       jti: 'test-e2e-jti-001',
     });
   }

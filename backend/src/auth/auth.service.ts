@@ -159,6 +159,19 @@ export class AuthService implements OnModuleInit {
     decoded.isEmailVerified = dbRow.email_verified_at !== null;
     decoded.isOnboarded = dbRow.is_onboarded;
 
+    // Re-validate workspace membership on every request so revocation takes
+    // effect immediately without waiting for the JWT to expire.
+    if (decoded.workspaceId) {
+      const { rows: wsRows } = await this.pool.query(
+        `SELECT 1 FROM workspace_memberships
+         WHERE user_id = $1 AND workspace_id = $2 LIMIT 1`,
+        [decoded.sub, decoded.workspaceId],
+      );
+      if (!wsRows[0]) {
+        decoded.workspaceId = null; // membership revoked — downgrade to org-only scope
+      }
+    }
+
     return decoded;
   }
 

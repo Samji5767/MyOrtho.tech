@@ -1,5 +1,6 @@
 import { BadRequestException, ForbiddenException, NotFoundException } from '@nestjs/common';
 import { PatientsService } from './patients.service';
+import { type AccessScope } from '../common/access-scope';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -612,5 +613,202 @@ describe('PatientsService.restore', () => {
 
     await expect(svc.restore(PAT_ID, WS_B, ACTOR_ID)).rejects.toThrow(NotFoundException);
     expect((pool.query as jest.Mock)).toHaveBeenCalledTimes(1);
+  });
+});
+
+// ─── Scope-based methods — cross-workspace isolation (Phase 5 remediation) ────
+
+describe('PatientsService.findOneByScope', () => {
+  it('dispatches to findOneByWorkspace with workspace_id predicate', async () => {
+    const scope: AccessScope = { kind: 'workspace', orgId: ORG_A, workspaceId: WS_A };
+    const pool = makePool([[makeWsRow()]]);
+    const svc = makeService(pool);
+
+    await svc.findOneByScope(PAT_ID, scope);
+
+    const [sql, params] = (pool.query as jest.Mock).mock.calls[0];
+    expect(sql).toMatch(/WHERE p\.id = \$1 AND p\.workspace_id = \$2/);
+    expect(params[1]).toBe(WS_A);
+  });
+
+  it('dispatches to findOne with organization_id predicate for org scope', async () => {
+    const scope: AccessScope = { kind: 'org', orgId: ORG_A };
+    const pool = makePool([[makeRow()]]);
+    const svc = makeService(pool);
+
+    await svc.findOneByScope(PAT_ID, scope);
+
+    const [sql, params] = (pool.query as jest.Mock).mock.calls[0];
+    expect(sql).toMatch(/WHERE p\.id = \$1 AND p\.organization_id = \$2/);
+    expect(params[1]).toBe(ORG_A);
+  });
+
+  it('throws NotFoundException for cross-workspace access (no ID enumeration)', async () => {
+    const scope: AccessScope = { kind: 'workspace', orgId: ORG_A, workspaceId: WS_B };
+    const pool = makePool([[]]); // workspace mismatch → no rows
+    const svc = makeService(pool);
+
+    await expect(svc.findOneByScope(PAT_ID, scope)).rejects.toThrow(NotFoundException);
+  });
+});
+
+describe('PatientsService.updateByScope', () => {
+  it('UPDATE uses workspace_id predicate for workspace scope', async () => {
+    const scope: AccessScope = { kind: 'workspace', orgId: ORG_A, workspaceId: WS_A };
+    const pool = makePool([
+      [makeWsRow()],  // findOneByScope → ownership check
+      [],              // UPDATE
+      [makeWsRow()],  // findOneByScope → return value
+    ]);
+    const svc = makeService(pool);
+
+    await svc.updateByScope(PAT_ID, scope, ACTOR_ID, { firstName: 'Updated' });
+
+    const updateCall = (pool.query as jest.Mock).mock.calls[1];
+    const [sql, params] = updateCall;
+    expect(sql).toMatch(/WHERE id = \$\d+ AND workspace_id = \$\d+/);
+    expect(params).toContain(WS_A);
+    expect(params).toContain(PAT_ID);
+  });
+
+  it('UPDATE uses organization_id predicate for org scope', async () => {
+    const scope: AccessScope = { kind: 'org', orgId: ORG_A };
+    const pool = makePool([
+      [makeRow()],
+      [],
+      [makeRow()],
+    ]);
+    const svc = makeService(pool);
+
+    await svc.updateByScope(PAT_ID, scope, ACTOR_ID, { firstName: 'Updated' });
+
+    const [sql, params] = (pool.query as jest.Mock).mock.calls[1];
+    expect(sql).toMatch(/WHERE id = \$\d+ AND organization_id = \$\d+/);
+    expect(params).toContain(ORG_A);
+  });
+
+  it('throws NotFoundException for cross-workspace update attempt', async () => {
+    const scope: AccessScope = { kind: 'workspace', orgId: ORG_A, workspaceId: WS_B };
+    const pool = makePool([[]]); // findOneByScope returns no rows
+    const svc = makeService(pool);
+
+    await expect(svc.updateByScope(PAT_ID, scope, ACTOR_ID, { firstName: 'Hack' }))
+      .rejects.toThrow(NotFoundException);
+  });
+});
+
+describe('PatientsService.getTimelineByScope', () => {
+  it('cases query uses c.workspace_id for workspace scope', async () => {
+    const scope: AccessScope = { kind: 'workspace', orgId: ORG_A, workspaceId: WS_A };
+    const pool = makePool([
+      [makeWsRow()],  // findOneByScope
+      [],              // cases query (index 1)
+      [],              // scans
+      [],              // appointments
+      [],              // notes
+    ]);
+    const svc = makeService(pool);
+
+    await svc.getTimelineByScope(PAT_ID, scope);
+
+    const [casesSql, casesParams] = (pool.query as jest.Mock).mock.calls[1];
+    expect(casesSql).toMatch(/c\.workspace_id = \$2/);
+    expect(casesParams[1]).toBe(WS_A);
+  });
+
+  it('notes query uses organization_id (no workspace_id column in notes table)', async () => {
+    const scope: AccessScope = { kind: 'workspace', orgId: ORG_A, workspaceId: WS_A };
+    const pool = makePool([
+      [makeWsRow()], [], [], [], [],
+    ]);
+    const svc = makeService(pool);
+
+    await svc.getTimelineByScope(PAT_ID, scope);
+
+    const [notesSql, notesParams] = (pool.query as jest.Mock).mock.calls[4];
+    expect(notesSql).toMatch(/patient_timeline_notes/);
+    expect(notesSql).toMatch(/organization_id = \$2/);
+    expect(notesParams[1]).toBe(ORG_A);
+  });
+
+  it('throws NotFoundException for cross-workspace timeline access', async () => {
+    const scope: AccessScope = { kind: 'workspace', orgId: ORG_A, workspaceId: WS_B };
+    const pool = makePool([[]]); // findOneByScope returns no rows
+    const svc = makeService(pool);
+
+    await expect(svc.getTimelineByScope(PAT_ID, scope)).rejects.toThrow(NotFoundException);
+  });
+});
+
+describe('PatientsService.addTimelineNoteByScope', () => {
+  const noteRow = {
+    id: 'note-001',
+    event_type: 'note',
+    note: 'Clinical observation',
+    case_id: null,
+    event_at: new Date().toISOString(),
+  };
+
+  it('inserts note after verifying patient is in scope', async () => {
+    const scope: AccessScope = { kind: 'workspace', orgId: ORG_A, workspaceId: WS_A };
+    const pool = makePool([
+      [makeWsRow()],  // findOneByScope
+      [noteRow],       // INSERT
+    ]);
+    const svc = makeService(pool);
+
+    const result = await svc.addTimelineNoteByScope(PAT_ID, scope, ACTOR_ID, { note: 'Test note' });
+
+    expect(result.type).toBe('note');
+    const [insertSql] = (pool.query as jest.Mock).mock.calls[1];
+    expect(insertSql).toMatch(/INSERT INTO patient_timeline_notes/);
+  });
+
+  it('validates caseId belongs to same patient and workspace', async () => {
+    const LINKED_CASE = 'case-linked-001';
+    const scope: AccessScope = { kind: 'workspace', orgId: ORG_A, workspaceId: WS_A };
+    const pool = makePool([
+      [makeWsRow()],       // findOneByScope
+      [{ '?column?': 1 }], // case ownership check → found
+      [noteRow],            // INSERT
+    ]);
+    const svc = makeService(pool);
+
+    await svc.addTimelineNoteByScope(PAT_ID, scope, ACTOR_ID, {
+      note: 'Linked note',
+      caseId: LINKED_CASE,
+    });
+
+    const [caseCheckSql, caseCheckParams] = (pool.query as jest.Mock).mock.calls[1];
+    expect(caseCheckSql).toMatch(/FROM cases WHERE id = \$1 AND patient_id = \$2 AND workspace_id = \$3/);
+    expect(caseCheckParams[0]).toBe(LINKED_CASE);
+    expect(caseCheckParams[1]).toBe(PAT_ID);
+    expect(caseCheckParams[2]).toBe(WS_A);
+  });
+
+  it('throws NotFoundException when caseId belongs to a different workspace', async () => {
+    const scope: AccessScope = { kind: 'workspace', orgId: ORG_A, workspaceId: WS_A };
+    const pool = makePool([
+      [makeWsRow()],  // patient found in WS_A
+      [],              // case check → 0 rows (case is in WS_B)
+    ]);
+    const svc = makeService(pool);
+
+    await expect(
+      svc.addTimelineNoteByScope(PAT_ID, scope, ACTOR_ID, {
+        note: 'Cross-workspace note attempt',
+        caseId: 'case-in-ws-b',
+      }),
+    ).rejects.toThrow(NotFoundException);
+  });
+
+  it('throws NotFoundException for cross-workspace patient access', async () => {
+    const scope: AccessScope = { kind: 'workspace', orgId: ORG_A, workspaceId: WS_B };
+    const pool = makePool([[]]); // patient not in WS_B
+    const svc = makeService(pool);
+
+    await expect(
+      svc.addTimelineNoteByScope(PAT_ID, scope, ACTOR_ID, { note: 'Hack' }),
+    ).rejects.toThrow(NotFoundException);
   });
 });

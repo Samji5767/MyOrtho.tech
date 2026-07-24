@@ -11,6 +11,7 @@ import { IsDateString, IsNotEmpty, IsOptional, IsString, MaxLength } from 'class
 import { PG_POOL } from '../database/database.module';
 import { AuditService } from '../audit/audit.service';
 import { CryptoService } from '../common/crypto.service';
+import { type AccessScope } from '../common/access-scope';
 
 export class CreatePatientDto {
   @IsString()
@@ -445,6 +446,237 @@ export class PatientsService {
        VALUES ($1, $2, $3, $4, $5, $6, COALESCE($7::timestamptz, NOW()))
        RETURNING *`,
       [orgId, patientId, dto.caseId ?? null, authorId, dto.note, dto.eventType ?? 'note', dto.eventAt ?? null],
+    );
+    const r = rows[0];
+    return {
+      id: `note-${r['id']}`,
+      type: r['event_type'] as string,
+      label: 'Clinical note',
+      detail: r['note'] as string,
+      caseId: (r['case_id'] as string | null) ?? undefined,
+      occurredAt: String(r['event_at']),
+    };
+  }
+
+  // ─── Scope-based methods (enforce AccessScope boundary) ──────────────────
+
+  async findAllByScope(scope: AccessScope, limit = 100, offset = 0, includeArchived = false) {
+    if (scope.kind === 'workspace') {
+      return this.findAllByWorkspace(scope.workspaceId, limit, offset, includeArchived);
+    }
+    const archiveFilter = includeArchived ? '' : `AND p.status != 'archived'`;
+    const { rows } = await this.pool.query(
+      `SELECT
+         p.id, p.first_name, p.last_name, p.dob_encrypted, p.gender,
+         p.status, p.archived_at, p.created_at, p.updated_at,
+         COUNT(c.id)::int AS case_count
+       FROM patients p
+       LEFT JOIN cases c ON c.patient_id = p.id
+       WHERE p.organization_id = $1 ${archiveFilter}
+       GROUP BY p.id
+       ORDER BY p.updated_at DESC
+       LIMIT $2 OFFSET $3`,
+      [scope.orgId, limit, offset],
+    );
+    return rows.map(row => this.formatPatient(row, true));
+  }
+
+  async findOneByScope(id: string, scope: AccessScope) {
+    if (scope.kind === 'workspace') {
+      return this.findOneByWorkspace(id, scope.workspaceId);
+    }
+    return this.findOne(id, scope.orgId);
+  }
+
+  async updateByScope(
+    id: string,
+    scope: AccessScope,
+    actorId: string,
+    dto: UpdatePatientDto,
+    opts: { actorEmail?: string; ipAddress?: string } = {},
+  ) {
+    this.assertValidDob(dto.dateOfBirth);
+    await this.findOneByScope(id, scope); // ownership check
+
+    const fields: string[] = [];
+    const values: unknown[] = [];
+    let i = 1;
+
+    if (dto.firstName !== undefined)    { fields.push(`first_name = $${i++}`);     values.push(this.cryptoService.encrypt(dto.firstName)); }
+    if (dto.lastName !== undefined)     { fields.push(`last_name = $${i++}`);      values.push(this.cryptoService.encrypt(dto.lastName)); }
+    if (dto.dateOfBirth !== undefined)  { fields.push(`dob_encrypted = $${i++}`);  values.push(this.cryptoService.encrypt(dto.dateOfBirth ?? null)); }
+    if (dto.gender !== undefined)       { fields.push(`gender = $${i++}`);         values.push(this.cryptoService.encrypt(dto.gender)); }
+    if (dto.clinicalNotes !== undefined){ fields.push(`clinical_notes = $${i++}`); values.push(this.cryptoService.encrypt(dto.clinicalNotes)); }
+
+    if (fields.length === 0) return this.findOneByScope(id, scope);
+
+    fields.push(`updated_at = now()`);
+    const scopeCol = scope.kind === 'workspace' ? 'workspace_id' : 'organization_id';
+    const scopeVal = scope.kind === 'workspace' ? scope.workspaceId : scope.orgId;
+    values.push(id);
+    values.push(scopeVal);
+
+    await this.pool.query(
+      `UPDATE patients SET ${fields.join(', ')} WHERE id = $${i} AND ${scopeCol} = $${i + 1}`,
+      values,
+    );
+
+    await this.auditService.log({
+      organizationId: scope.orgId,
+      actorId,
+      actorEmail: opts.actorEmail,
+      resourceType: 'patient',
+      resourceId: id,
+      action: 'patient.updated',
+      details: { fields: Object.keys(dto) },
+      ipAddress: opts.ipAddress,
+    });
+
+    return this.findOneByScope(id, scope);
+  }
+
+  async getTimelineByScope(patientId: string, scope: AccessScope): Promise<TimelineEvent[]> {
+    await this.findOneByScope(patientId, scope); // ownership check
+
+    // patient_timeline_notes has organization_id but not workspace_id,
+    // so note queries always use the org anchor regardless of scope kind.
+    let caseScopeWhere: string;
+    let caseScopeParam: string;
+    if (scope.kind === 'workspace') {
+      caseScopeWhere = 'c.workspace_id = $2';
+      caseScopeParam = scope.workspaceId;
+    } else {
+      caseScopeWhere = 'c.patient_id IN (SELECT id FROM patients WHERE organization_id = $2)';
+      caseScopeParam = scope.orgId;
+    }
+
+    const [casesRes, scansRes, appointmentsRes, notesRes] = await Promise.all([
+      this.pool.query(
+        `SELECT c.id, c.status, c.created_at, c.updated_at,
+                we.from_status, we.to_status, we.notes, we.created_at AS wh_at
+         FROM cases c
+         LEFT JOIN workflow_events we ON we.case_id = c.id
+         WHERE c.patient_id = $1 AND ${caseScopeWhere}
+         ORDER BY COALESCE(we.created_at, c.created_at) DESC
+         LIMIT 200`,
+        [patientId, caseScopeParam],
+      ),
+      this.pool.query(
+        `SELECT s.id, s.jaw_type, s.file_format, s.created_at, s.case_id
+         FROM scans s
+         JOIN cases c ON c.id = s.case_id
+         WHERE c.patient_id = $1 AND ${caseScopeWhere}
+         ORDER BY s.created_at DESC LIMIT 100`,
+        [patientId, caseScopeParam],
+      ),
+      this.pool.query(
+        `SELECT id, visit_reason, scheduled_at, status
+         FROM appointments
+         WHERE patient_id = $1
+         ORDER BY scheduled_at DESC LIMIT 50`,
+        [patientId],
+      ),
+      this.pool.query(
+        `SELECT id, note, event_type, event_at, case_id, author_id
+         FROM patient_timeline_notes
+         WHERE patient_id = $1 AND organization_id = $2
+         ORDER BY event_at DESC LIMIT 50`,
+        [patientId, scope.orgId],
+      ),
+    ]);
+
+    const events: TimelineEvent[] = [];
+
+    for (const row of casesRes.rows) {
+      const caseId = row['id'] as string;
+      if (row['wh_at']) {
+        events.push({
+          id: `wh-${caseId}-${String(row['wh_at'])}`,
+          type: 'case_transition',
+          label: row['from_status']
+            ? `Case moved: ${row['from_status']} → ${row['to_status']}`
+            : `Case created: ${row['to_status']}`,
+          detail: (row['notes'] as string | null) ?? undefined,
+          actor: (row['actor_name'] as string | null) ?? undefined,
+          caseId,
+          occurredAt: String(row['wh_at']),
+        });
+      } else if (!row['wh_at'] && row['created_at']) {
+        events.push({
+          id: `case-${caseId}`,
+          type: 'case_created',
+          label: 'Case opened',
+          detail: `Status: ${row['status']}`,
+          caseId,
+          occurredAt: String(row['created_at']),
+        });
+      }
+    }
+
+    for (const row of scansRes.rows) {
+      events.push({
+        id: `scan-${row['id']}`,
+        type: 'scan_uploaded',
+        label: `${String(row['jaw_type']).charAt(0).toUpperCase() + String(row['jaw_type']).slice(1)} scan uploaded`,
+        detail: `Format: ${row['file_format']}`,
+        caseId: row['case_id'] as string,
+        occurredAt: String(row['created_at']),
+      });
+    }
+
+    for (const row of appointmentsRes.rows) {
+      events.push({
+        id: `appt-${row['id']}`,
+        type: row['status'] === 'completed' ? 'appointment_completed'
+          : row['status'] === 'canceled' ? 'appointment_cancelled'
+          : 'appointment_scheduled',
+        label: String(row['visit_reason']),
+        detail: `Status: ${row['status']}`,
+        occurredAt: String(row['scheduled_at']),
+      });
+    }
+
+    for (const row of notesRes.rows) {
+      events.push({
+        id: `note-${row['id']}`,
+        type: (row['event_type'] as string) || 'note',
+        label: 'Clinical note',
+        detail: row['note'] as string,
+        caseId: (row['case_id'] as string | null) ?? undefined,
+        occurredAt: String(row['event_at']),
+      });
+    }
+
+    return events.sort((a, b) => new Date(b.occurredAt).getTime() - new Date(a.occurredAt).getTime());
+  }
+
+  async addTimelineNoteByScope(
+    patientId: string,
+    scope: AccessScope,
+    authorId: string,
+    dto: { note: string; caseId?: string; eventType?: string; eventAt?: string },
+  ): Promise<TimelineEvent> {
+    await this.findOneByScope(patientId, scope); // ownership check
+
+    // Validate that the caseId (if provided) belongs to this patient and scope.
+    if (dto.caseId) {
+      const caseParams: unknown[] = [dto.caseId, patientId];
+      const scopeCol = scope.kind === 'workspace' ? 'workspace_id' : 'organization_id';
+      const scopeVal = scope.kind === 'workspace' ? scope.workspaceId : scope.orgId;
+      caseParams.push(scopeVal);
+      const { rows: caseRows } = await this.pool.query(
+        `SELECT 1 FROM cases WHERE id = $1 AND patient_id = $2 AND ${scopeCol} = $3 LIMIT 1`,
+        caseParams,
+      );
+      if (!caseRows[0]) throw new NotFoundException(`Case ${dto.caseId} not found`);
+    }
+
+    const { rows } = await this.pool.query(
+      `INSERT INTO patient_timeline_notes
+         (organization_id, patient_id, case_id, author_id, note, event_type, event_at)
+       VALUES ($1, $2, $3, $4, $5, $6, COALESCE($7::timestamptz, NOW()))
+       RETURNING *`,
+      [scope.orgId, patientId, dto.caseId ?? null, authorId, dto.note, dto.eventType ?? 'note', dto.eventAt ?? null],
     );
     const r = rows[0];
     return {

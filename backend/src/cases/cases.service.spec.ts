@@ -1,5 +1,6 @@
 import { NotFoundException } from '@nestjs/common';
 import { CasesService } from './cases.service';
+import { type AccessScope } from '../common/access-scope';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -259,5 +260,266 @@ describe('CasesService.createWithNewPatient', () => {
     );
     expect((patInsert![1] as unknown[]).includes(ORG_A)).toBe(true);
     expect((caseInsert![1] as unknown[]).includes(ORG_A)).toBe(true);
+  });
+});
+
+// ─── Scope-based methods — cross-workspace isolation ──────────────────────────
+
+const WS_A = 'ws-aaaaaaaa';
+const WS_B = 'ws-bbbbbbbb';
+
+const SCOPE_WS_A: AccessScope = { kind: 'workspace', orgId: ORG_A, workspaceId: WS_A };
+const SCOPE_ORG_A: AccessScope = { kind: 'org', orgId: ORG_A };
+
+function makeWsRow(workspaceId: string) {
+  return { ...makeRow(ORG_A), workspace_id: workspaceId };
+}
+
+describe('CasesService.findOneByScope', () => {
+  it('SELECT uses c.workspace_id predicate for workspace scope', async () => {
+    const pool = makePool([[makeWsRow(WS_A)], [{}]]);
+    const svc = makeService(pool);
+
+    await svc.findOneByScope(CASE_ID, SCOPE_WS_A);
+
+    const selectCall = (pool.query as jest.Mock).mock.calls[0];
+    const [sql, params] = selectCall;
+    expect(sql).toMatch(/c\.workspace_id = \$2/);
+    expect(params[1]).toBe(WS_A);
+  });
+
+  it('SELECT uses p.organization_id predicate for org scope', async () => {
+    const pool = makePool([[makeRow(ORG_A)], [{}]]);
+    const svc = makeService(pool);
+
+    await svc.findOneByScope(CASE_ID, SCOPE_ORG_A);
+
+    const selectCall = (pool.query as jest.Mock).mock.calls[0];
+    const [sql, params] = selectCall;
+    expect(sql).toMatch(/p\.organization_id = \$2/);
+    expect(params[1]).toBe(ORG_A);
+  });
+
+  it('throws NotFoundException for cross-workspace access', async () => {
+    const pool = makePool([[]]); // no rows returned
+    const svc = makeService(pool);
+
+    await expect(svc.findOneByScope(CASE_ID, SCOPE_WS_A)).rejects.toThrow(NotFoundException);
+  });
+});
+
+describe('CasesService.findAll (scope-based)', () => {
+  it('SELECT uses c.workspace_id = $1 for workspace scope', async () => {
+    const pool = makePool([[]]);
+    const svc = makeService(pool);
+
+    await svc.findAll(SCOPE_WS_A, 10, 0);
+
+    const [sql, params] = (pool.query as jest.Mock).mock.calls[0];
+    expect(sql).toMatch(/c\.workspace_id = \$1/);
+    expect(params[0]).toBe(WS_A);
+  });
+
+  it('SELECT uses p.organization_id = $1 for org scope', async () => {
+    const pool = makePool([[]]);
+    const svc = makeService(pool);
+
+    await svc.findAll(SCOPE_ORG_A, 10, 0);
+
+    const [sql, params] = (pool.query as jest.Mock).mock.calls[0];
+    expect(sql).toMatch(/p\.organization_id = \$1/);
+    expect(params[0]).toBe(ORG_A);
+  });
+});
+
+describe('CasesService.updateByScope', () => {
+  it('UPDATE uses workspace_id predicate for workspace scope', async () => {
+    const pool = makePool([
+      [makeWsRow(WS_A)], [{}],  // findOneByScope
+      [],                         // UPDATE
+      [makeWsRow(WS_A)], [{}],  // findOneByScope post-update
+    ]);
+    const svc = makeService(pool);
+
+    await svc.updateByScope(CASE_ID, SCOPE_WS_A, 'actor-1', { notes: 'updated' });
+
+    const updateCall = (pool.query as jest.Mock).mock.calls.find(
+      ([sql]: [string]) => sql.includes('UPDATE cases SET'),
+    );
+    expect(updateCall).toBeDefined();
+    const [sql, params] = updateCall!;
+    expect(sql).toMatch(/WHERE id = \$\d+ AND workspace_id = \$\d+/);
+    expect(params).toContain(WS_A);
+  });
+
+  it('throws NotFoundException on cross-workspace update attempt', async () => {
+    const pool = makePool([[]]); // findOneByScope returns no rows
+    const svc = makeService(pool);
+
+    await expect(
+      svc.updateByScope(CASE_ID, SCOPE_WS_A, 'actor-1', { notes: 'hack' }),
+    ).rejects.toThrow(NotFoundException);
+  });
+});
+
+describe('CasesService.transitionByScope', () => {
+  it('passes workspaceId to workflowService.transition', async () => {
+    const pool = makePool([[makeWsRow(WS_A)], [{}]]); // findOneByScope
+    const workflow = makeWorkflow();
+    const svc = new CasesService(
+      pool as any, makeAudit() as any, workflow as any,
+      { encrypt: (v: unknown) => v, decrypt: (v: unknown) => v } as any,
+      makeNotifications() as any,
+    );
+
+    await svc.transitionByScope(CASE_ID, SCOPE_WS_A, 'actor-1', 'orthodontist', 'archived');
+
+    expect(workflow.transition).toHaveBeenCalledWith(
+      expect.objectContaining({ workspaceId: WS_A, orgId: ORG_A }),
+    );
+  });
+
+  it('passes null workspaceId for org scope', async () => {
+    const pool = makePool([[makeRow(ORG_A)], [{}]]);
+    const workflow = makeWorkflow();
+    const svc = new CasesService(
+      pool as any, makeAudit() as any, workflow as any,
+      { encrypt: (v: unknown) => v, decrypt: (v: unknown) => v } as any,
+      makeNotifications() as any,
+    );
+
+    await svc.transitionByScope(CASE_ID, SCOPE_ORG_A, 'actor-1', 'admin', 'archived');
+
+    expect(workflow.transition).toHaveBeenCalledWith(
+      expect.objectContaining({ workspaceId: null, orgId: ORG_A }),
+    );
+  });
+});
+
+describe('CasesService.createByScope', () => {
+  it('patient ownership check uses workspace_id for workspace scope', async () => {
+    const PAT_ID2 = 'pat-55555555';
+    const pool = makeTransactionPool(
+      [[], [{ id: PAT_ID2 }], [{ id: CASE_ID }], []],
+      [[], [], [makeWsRow(WS_A)], [{}]],
+    );
+    const svc = makeTransactionService(pool);
+
+    await svc.createByScope(SCOPE_WS_A, 'actor-1', { patientId: PAT_ID2 });
+
+    const patientCheck = (pool._client.query as jest.Mock).mock.calls.find(
+      ([sql]: [string]) => sql.includes('SELECT id FROM patients'),
+    );
+    expect(patientCheck).toBeDefined();
+    const [checkSql, checkParams] = patientCheck!;
+    expect(checkSql).toMatch(/workspace_id = \$2/);
+    expect(checkParams[1]).toBe(WS_A);
+  });
+
+  it('throws NotFoundException when patient is in a different workspace', async () => {
+    const pool = makeTransactionPool(
+      [[], [], []],  // BEGIN, patient check → no rows, ROLLBACK
+      [],
+    );
+    const svc = makeTransactionService(pool);
+
+    await expect(
+      svc.createByScope(SCOPE_WS_A, 'actor-1', { patientId: PAT_ID }),
+    ).rejects.toThrow(NotFoundException);
+  });
+
+  it('INSERT INTO cases includes workspace_id from scope', async () => {
+    const PAT_ID2 = 'pat-55555555';
+    const pool = makeTransactionPool(
+      [[], [{ id: PAT_ID2 }], [{ id: CASE_ID }], []],
+      [[], [], [makeWsRow(WS_A)], [{}]],
+    );
+    const svc = makeTransactionService(pool);
+
+    await svc.createByScope(SCOPE_WS_A, 'actor-1', { patientId: PAT_ID2 });
+
+    const insertCall = (pool._client.query as jest.Mock).mock.calls.find(
+      ([sql]: [string]) => sql.includes('INSERT INTO cases'),
+    );
+    expect(insertCall).toBeDefined();
+    const [, params] = insertCall!;
+    expect(params).toContain(WS_A);
+    expect(params).toContain(ORG_A);
+  });
+});
+
+describe('CasesService.createWithNewPatientByScope', () => {
+  it('both patient and case INSERT use workspace_id from scope', async () => {
+    const NEW_PAT = 'pat-66666666';
+    const pool = makeTransactionPool(
+      [[], [{ id: NEW_PAT }], [{ id: CASE_ID }], []],
+      [[], [], [makeWsRow(WS_A)], [{}]],
+    );
+    const svc = makeTransactionService(pool);
+
+    await svc.createWithNewPatientByScope(SCOPE_WS_A, 'actor-1', {
+      patient: { firstName: 'Test', lastName: 'User' },
+    });
+
+    const patInsert = (pool._client.query as jest.Mock).mock.calls.find(
+      ([sql]: [string]) => sql.includes('INSERT INTO patients'),
+    );
+    const caseInsert = (pool._client.query as jest.Mock).mock.calls.find(
+      ([sql]: [string]) => sql.includes('INSERT INTO cases'),
+    );
+    expect((patInsert![1] as unknown[]).includes(WS_A)).toBe(true);
+    expect((caseInsert![1] as unknown[]).includes(WS_A)).toBe(true);
+    // Both also carry the org
+    expect((patInsert![1] as unknown[]).includes(ORG_A)).toBe(true);
+    expect((caseInsert![1] as unknown[]).includes(ORG_A)).toBe(true);
+  });
+
+  it('org scope sets null workspace_id on both patient and case', async () => {
+    const NEW_PAT = 'pat-77777777';
+    const pool = makeTransactionPool(
+      [[], [{ id: NEW_PAT }], [{ id: CASE_ID }], []],
+      [[], [], [makeRow(ORG_A)], [{}]],
+    );
+    const svc = makeTransactionService(pool);
+
+    await svc.createWithNewPatientByScope(SCOPE_ORG_A, 'actor-1', {
+      patient: { firstName: 'Admin', lastName: 'User' },
+    });
+
+    const patInsert = (pool._client.query as jest.Mock).mock.calls.find(
+      ([sql]: [string]) => sql.includes('INSERT INTO patients'),
+    );
+    const caseInsert = (pool._client.query as jest.Mock).mock.calls.find(
+      ([sql]: [string]) => sql.includes('INSERT INTO cases'),
+    );
+    // workspaceId param should be null at index 1
+    expect((patInsert![1] as unknown[])[1]).toBeNull();
+    expect((caseInsert![1] as unknown[])[3]).toBeNull();
+  });
+});
+
+describe('CasesService.getAnalyticsSummaryByScope', () => {
+  it('uses workspace_id = $1 for workspace scope', async () => {
+    const pool = makePool([[{ total_cases: '0', active_cases: '0', pending_review: '0',
+      completed_this_month: '0', manufacturing_queue: '0', archived_cases: '0', draft_cases: '0' }]]);
+    const svc = makeService(pool);
+
+    await svc.getAnalyticsSummaryByScope(SCOPE_WS_A);
+
+    const [sql, params] = (pool.query as jest.Mock).mock.calls[0];
+    expect(sql).toMatch(/WHERE workspace_id = \$1/);
+    expect(params[0]).toBe(WS_A);
+  });
+
+  it('uses organization_id = $1 for org scope', async () => {
+    const pool = makePool([[{ total_cases: '0', active_cases: '0', pending_review: '0',
+      completed_this_month: '0', manufacturing_queue: '0', archived_cases: '0', draft_cases: '0' }]]);
+    const svc = makeService(pool);
+
+    await svc.getAnalyticsSummaryByScope(SCOPE_ORG_A);
+
+    const [sql, params] = (pool.query as jest.Mock).mock.calls[0];
+    expect(sql).toMatch(/WHERE organization_id = \$1/);
+    expect(params[0]).toBe(ORG_A);
   });
 });

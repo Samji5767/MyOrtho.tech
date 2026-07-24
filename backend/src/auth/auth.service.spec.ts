@@ -330,4 +330,87 @@ describe('AuthService', () => {
       expect(invalidatedAtSet).toBe(true);
     });
   });
+
+  // ─── workspace membership re-validation ───────────────────────────────────
+
+  describe('workspace membership re-validation', () => {
+    const wsPayload: SessionPayload = {
+      sub: 'user-ws-1',
+      email: 'ws@clinic.com',
+      role: 'orthodontist',
+      name: 'Dr Workspace',
+      orgId: 'org-ws-1',
+      workspaceId: 'ws-001',
+      isOnboarded: true,
+      isEmailVerified: true,
+      jti: 'ws-jti-001',
+    };
+
+    it('nullifies workspaceId in payload when membership is revoked', async () => {
+      const pool = {
+        query: jest.fn().mockImplementation((sql: string) => {
+          if (sql.includes('workspace_memberships')) {
+            return Promise.resolve({ rows: [] }); // membership removed
+          }
+          return Promise.resolve({ rows: [DEFAULT_ACTIVE_ROW] });
+        }),
+      };
+      const svc = makeService(pool);
+      const token = svc.signToken(wsPayload);
+      const verified = await svc.verifyToken(token);
+      expect(verified.workspaceId).toBeNull();
+    });
+
+    it('preserves workspaceId when membership is still valid', async () => {
+      const pool = {
+        query: jest.fn().mockImplementation((sql: string) => {
+          if (sql.includes('workspace_memberships')) {
+            return Promise.resolve({ rows: [{ '?column?': 1 }] }); // membership active
+          }
+          return Promise.resolve({ rows: [DEFAULT_ACTIVE_ROW] });
+        }),
+      };
+      const svc = makeService(pool);
+      const token = svc.signToken(wsPayload);
+      const verified = await svc.verifyToken(token);
+      expect(verified.workspaceId).toBe('ws-001');
+    });
+
+    it('skips workspace membership check when token carries no workspaceId', async () => {
+      let wsQueryCalled = false;
+      const pool = {
+        query: jest.fn().mockImplementation((sql: string) => {
+          if (sql.includes('workspace_memberships')) wsQueryCalled = true;
+          return Promise.resolve({ rows: [DEFAULT_ACTIVE_ROW] });
+        }),
+      };
+      const svc = makeService(pool);
+      const noWsPayload: SessionPayload = { ...wsPayload, workspaceId: null, jti: 'no-ws-jti' };
+      const token = svc.signToken(noWsPayload);
+      await svc.verifyToken(token);
+      expect(wsQueryCalled).toBe(false);
+    });
+
+    it('workspace membership query binds user sub and workspaceId', async () => {
+      const queryCalls: Array<[string, unknown[]]> = [];
+      const pool = {
+        query: jest.fn().mockImplementation((sql: string, params: unknown[]) => {
+          queryCalls.push([sql, params]);
+          if (sql.includes('workspace_memberships')) {
+            return Promise.resolve({ rows: [{ '?column?': 1 }] });
+          }
+          return Promise.resolve({ rows: [DEFAULT_ACTIVE_ROW] });
+        }),
+      };
+      const svc = makeService(pool);
+      const token = svc.signToken(wsPayload);
+      await svc.verifyToken(token);
+
+      const wsCall = queryCalls.find(([sql]) => sql.includes('workspace_memberships'));
+      expect(wsCall).toBeDefined();
+      const [, wsParams] = wsCall!;
+      expect(wsParams[0]).toBe('user-ws-1');   // user sub
+      expect(wsParams[1]).toBe('ws-001');        // workspaceId
+    });
+  });
 });

@@ -456,6 +456,8 @@ export class AuthService implements OnModuleInit {
     const link = `${appUrl}/reset-password?token=${rawToken}`;
     const name = user.full_name ?? user.email.split('@')[0];
 
+    // Swallow SMTP errors — the token is stored; delivery failures must not
+    // reveal whether the email exists (enumeration prevention).
     await this.emailService?.send({
       to: user.email,
       subject: 'Reset your MyOrtho.tech password',
@@ -467,6 +469,8 @@ export class AuthService implements OnModuleInit {
         <p>If you did not request a password reset, please ignore this email — your password will not change.</p>
       `,
       text: `Reset your password: ${link}\n\nThis link expires in ${RESET_TOKEN_TTL_MINUTES} minutes.`,
+    }).catch((err: unknown) => {
+      this.logger.error(`[Auth] Failed to deliver password-reset email to ${user.email}:`, err);
     });
   }
 

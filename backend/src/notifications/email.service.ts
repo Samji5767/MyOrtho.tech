@@ -26,32 +26,29 @@ export class EmailService {
       );
       return;
     }
-    try {
-      // Dynamic import avoids hard dependency on nodemailer at build time
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const mod = 'nodemailer';
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const nodemailer: any = await import(/* webpackIgnore: true */ mod as string).catch(() => null);
-      if (!nodemailer) {
-        this.logger.warn('[EmailService] nodemailer not installed — email suppressed');
-        return;
-      }
-      const transporter = nodemailer.createTransport({
-        host: process.env.SMTP_HOST,
-        port: parseInt(process.env.SMTP_PORT ?? '587', 10),
-        secure: process.env.SMTP_SECURE === 'true',
-        auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
-      });
-      await transporter.sendMail({
-        from: this.fromAddress,
-        to: opts.to,
-        subject: opts.subject,
-        html: opts.html,
-        text: opts.text,
-      });
-      this.logger.log(`[EmailService] Email sent to ${opts.to}: ${opts.subject}`);
-    } catch (err) {
-      this.logger.error(`[EmailService] Failed to send email to ${opts.to}:`, err);
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const nodemailer: any = await import('nodemailer').catch(() => null);
+    if (!nodemailer) {
+      const msg = '[EmailService] nodemailer package not found. Run: npm install nodemailer';
+      this.logger.error(msg);
+      throw new Error(msg);
     }
+
+    const transporter = nodemailer.createTransport({
+      host: process.env.SMTP_HOST,
+      port: parseInt(process.env.SMTP_PORT ?? '587', 10),
+      secure: process.env.SMTP_SECURE === 'true',
+      auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
+    });
+    // Throws on delivery failure — callers that need fire-and-forget must .catch()
+    await transporter.sendMail({
+      from: this.fromAddress,
+      to: opts.to,
+      subject: opts.subject,
+      html: opts.html,
+      text: opts.text,
+    });
+    this.logger.log(`[EmailService] Email sent to ${opts.to}: ${opts.subject}`);
   }
 }

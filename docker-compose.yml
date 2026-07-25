@@ -77,6 +77,16 @@ services:
       - AI_ENGINE_URL=http://ai-engine:8000
       - OTEL_EXPORTER_OTLP_ENDPOINT=${OTEL_EXPORTER_OTLP_ENDPOINT:-}
       - OTEL_SERVICE_NAME=${OTEL_SERVICE_NAME:-myortho-backend}
+      # Email delivery — required for verification / password-reset emails.
+      # Leave SMTP_HOST blank to suppress email in dev (all emails logged to console).
+      - SMTP_HOST=${SMTP_HOST:-}
+      - SMTP_PORT=${SMTP_PORT:-587}
+      - SMTP_SECURE=${SMTP_SECURE:-false}
+      - SMTP_USER=${SMTP_USER:-}
+      - SMTP_PASS=${SMTP_PASS:-}
+      - SMTP_FROM=${SMTP_FROM:-noreply@myortho.tech}
+      # Production URL used in email links. Must match the public domain.
+      - APP_URL=${APP_URL:-https://myortho.tech}
     volumes:
       - uploads_data:/app/uploads
     depends_on:

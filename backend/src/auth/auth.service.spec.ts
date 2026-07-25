@@ -1,6 +1,7 @@
 import { UnauthorizedException, BadRequestException } from '@nestjs/common';
 import * as jwt from 'jsonwebtoken';
 import * as crypto from 'crypto';
+import * as bcrypt from 'bcrypt';
 import { AuthService, SessionPayload } from './auth.service';
 
 const SECRET = 'testsecret-32-chars-min-for-tests!!';
@@ -411,6 +412,170 @@ describe('AuthService', () => {
       const [, wsParams] = wsCall!;
       expect(wsParams[0]).toBe('user-ws-1');   // user sub
       expect(wsParams[1]).toBe('ws-001');        // workspaceId
+    });
+  });
+
+  // ─── login() ──────────────────────────────────────────────────────────────
+
+  describe('login()', () => {
+    const DUMMY_HASH = '$2b$12$AAAAAAAAAAAAAAAAAAAAAA.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+    const userRow = {
+      id: 'login-user-1',
+      email: 'dr@clinic.com',
+      password_hash: DUMMY_HASH,
+      full_name: 'Dr Login',
+      role: 'orthodontist',
+      organization_id: 'org-login-1',
+      is_onboarded: true,
+      is_active: true,
+      email_verified_at: new Date(),
+      verification_token_hash: null,
+      verification_token_expires_at: null,
+      reset_token_hash: null,
+      reset_token_expires_at: null,
+      sessions_invalidated_at: null,
+    };
+
+    it('throws UnauthorizedException for an unrecognised email', async () => {
+      const pool = { query: jest.fn().mockResolvedValue({ rows: [] }) };
+      const svc = makeService(pool);
+      await expect(svc.login('ghost@nowhere.com', 'anypassword')).rejects.toThrow(UnauthorizedException);
+    }, 10_000);
+
+    it('throws UnauthorizedException for a wrong password', async () => {
+      const pool = { query: jest.fn().mockResolvedValue({ rows: [userRow] }) };
+      const svc = makeService(pool);
+      await expect(svc.login('dr@clinic.com', 'wrong-password')).rejects.toThrow(UnauthorizedException);
+    }, 10_000);
+
+    it('throws UnauthorizedException for an inactive account', async () => {
+      const inactiveRow = { ...userRow, is_active: false };
+      const pool = { query: jest.fn().mockResolvedValue({ rows: [inactiveRow] }) };
+      const compareSpy = jest.spyOn(bcrypt, 'compare').mockResolvedValue(true as never);
+      try {
+        const svc = makeService(pool);
+        await expect(svc.login('dr@clinic.com', 'password123')).rejects.toThrow(UnauthorizedException);
+      } finally {
+        compareSpy.mockRestore();
+      }
+    });
+
+    it('returns a SessionPayload on valid credentials', async () => {
+      const compareSpy = jest.spyOn(bcrypt, 'compare').mockResolvedValue(true as never);
+      try {
+        const pool = {
+          query: jest.fn()
+            .mockResolvedValueOnce({ rows: [userRow] })                          // findByEmail
+            .mockResolvedValueOnce({ rows: [] })                                  // UPDATE last_login_at
+            .mockResolvedValueOnce({ rows: [{ organization_id: 'org-login-1' }] }) // toPayload: org
+            .mockResolvedValueOnce({ rows: [] }),                                 // toPayload: workspace
+        };
+        const svc = makeService(pool);
+        const result = await svc.login('dr@clinic.com', 'password123');
+        expect(result.sub).toBe('login-user-1');
+        expect(result.email).toBe('dr@clinic.com');
+        expect(result.orgId).toBe('org-login-1');
+        expect(result.isEmailVerified).toBe(true);
+      } finally {
+        compareSpy.mockRestore();
+      }
+    });
+  });
+
+  // ─── register() ───────────────────────────────────────────────────────────
+
+  describe('register() - duplicate email rejection', () => {
+    it('throws UnauthorizedException when the email is already taken', async () => {
+      const existingRow = {
+        id: 'existing-user', email: 'taken@clinic.com',
+        password_hash: '$2b$12$xxx', full_name: null, role: 'orthodontist',
+        organization_id: null, is_onboarded: false, is_active: true,
+        email_verified_at: null, verification_token_hash: null,
+        verification_token_expires_at: null, reset_token_hash: null,
+        reset_token_expires_at: null, sessions_invalidated_at: null,
+      };
+      const pool = { query: jest.fn().mockResolvedValue({ rows: [existingRow] }) };
+      const svc = makeService(pool);
+      await expect(
+        svc.register('taken@clinic.com', 'password123', 'Dr Test', 'Test Clinic'),
+      ).rejects.toThrow(UnauthorizedException);
+    });
+  });
+
+  // ─── forgotPassword() ─────────────────────────────────────────────────────
+
+  describe('forgotPassword() - enumeration prevention', () => {
+    it('returns undefined when the email does not exist', async () => {
+      const pool = { query: jest.fn().mockResolvedValue({ rows: [] }) };
+      const svc = makeService(pool);
+      await expect(svc.forgotPassword('nobody@example.com')).resolves.toBeUndefined();
+    });
+
+    it('returns undefined when the account is inactive', async () => {
+      const pool = {
+        query: jest.fn().mockResolvedValue({
+          rows: [{ id: 'u1', email: 'inactive@clinic.com', is_active: false, full_name: null, organization_id: null }],
+        }),
+      };
+      const svc = makeService(pool);
+      await expect(svc.forgotPassword('inactive@clinic.com')).resolves.toBeUndefined();
+    });
+
+    it('swallows SMTP delivery failures so callers get no enumeration signal', async () => {
+      const throwingEmailService = {
+        send: jest.fn().mockRejectedValue(new Error('SMTP connection refused')),
+      };
+      const pool = {
+        query: jest.fn()
+          .mockResolvedValueOnce({ rows: [{ id: 'u1', email: 'real@clinic.com', is_active: true, full_name: 'Dr Real', organization_id: null }] })
+          .mockResolvedValueOnce({ rows: [] }), // UPDATE reset_token_hash
+      };
+      process.env.JWT_SECRET = SECRET;
+      const svc = new (AuthService as any)(pool, null, throwingEmailService);
+      await expect(svc.forgotPassword('real@clinic.com')).resolves.toBeUndefined();
+    });
+  });
+
+  // ─── sendVerificationEmail() ──────────────────────────────────────────────
+
+  describe('sendVerificationEmail() - email delivery failure propagates', () => {
+    it('rejects when emailService.send() throws (allows resend endpoint to return 500)', async () => {
+      const throwingEmailService = {
+        send: jest.fn().mockRejectedValue(new Error('SMTP unavailable')),
+      };
+      const pool = {
+        query: jest.fn()
+          .mockResolvedValueOnce({ rows: [{ email_verified_at: null }] }) // check verified
+          .mockResolvedValueOnce({ rows: [{ email: 'dr@clinic.com', full_name: 'Dr Test' }] }), // UPDATE token
+      };
+      process.env.JWT_SECRET = SECRET;
+      const svc = new (AuthService as any)(pool, null, throwingEmailService);
+      await expect(svc.sendVerificationEmail('user-id-abc')).rejects.toThrow('SMTP unavailable');
+    });
+  });
+
+  // ─── verifyEmail() - single-use ───────────────────────────────────────────
+
+  describe('verifyEmail() - single-use token enforcement', () => {
+    it('rejects the same token on second use (token nullified after first verification)', async () => {
+      const rawToken = crypto.randomBytes(32).toString('hex');
+      let remainingUses = 1;
+      const pool = {
+        query: jest.fn().mockImplementation((sql: string) => {
+          if (sql.includes('email_verified_at IS NULL') && sql.includes('verification_token_hash')) {
+            if (remainingUses-- > 0) {
+              return Promise.resolve({
+                rows: [{ id: 'user-1', verification_token_expires_at: new Date(Date.now() + 60_000) }],
+              });
+            }
+            return Promise.resolve({ rows: [] }); // second call: already cleared
+          }
+          return Promise.resolve({ rows: [] }); // UPDATE SET email_verified_at
+        }),
+      };
+      const svc = makeService(pool);
+      await expect(svc.verifyEmail(rawToken)).resolves.toBeUndefined();
+      await expect(svc.verifyEmail(rawToken)).rejects.toThrow(BadRequestException);
     });
   });
 });

@@ -51,7 +51,9 @@ export default function SignupPage() {
     }
 
     await refresh();
-    router.replace("/onboarding");
+    // Email verification is required before onboarding; the verify-email page
+    // will redirect to /onboarding automatically once verification succeeds.
+    router.replace("/verify-email");
   }
 
   const inputClass =

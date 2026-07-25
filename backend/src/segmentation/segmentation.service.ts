@@ -1,6 +1,7 @@
 import { Injectable, Inject, Optional, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
 import { AiAuditService } from '../mlops/ai-audit.service';
 import * as fs from 'fs';
+import * as path from 'path';
 import type { Pool } from 'pg';
 import { PG_POOL } from '../database/database.module';
 
@@ -1126,6 +1127,63 @@ export class SegmentationService {
         'Confidence scores are computed heuristically from mesh quality and AI pipeline metadata. ' +
         'Clinical decisions must be validated by a licensed orthodontic professional.',
     };
+  }
+
+  // ── Tooth mesh file access ────────────────────────────────────────────────────
+
+  async getToothMeshPath(caseId: string, orgId: string, jobId: string, toothNumber: number): Promise<string | null> {
+    await this.verifyCase(caseId, orgId);
+    const { rows: jobRows } = await this.pool.query(
+      `SELECT scan_id FROM segmentation_jobs WHERE id = $1 AND case_id = $2`,
+      [jobId, caseId],
+    );
+    if (!jobRows.length) throw new NotFoundException('Segmentation job not found');
+
+    // Prefer the direct per-tooth path stored in tooth_segments
+    const { rows: segRows } = await this.pool.query(
+      `SELECT mesh_path FROM tooth_segments WHERE job_id = $1 AND tooth_number = $2`,
+      [jobId, toothNumber],
+    );
+    if (segRows.length && segRows[0].mesh_path) {
+      return segRows[0].mesh_path as string;
+    }
+
+    // Fall back to the AI output directory in segmentation_results
+    const scanId = jobRows[0].scan_id as string | null;
+    if (!scanId) return null;
+    const { rows: resultRows } = await this.pool.query(
+      `SELECT segmented_mesh_path FROM segmentation_results
+         WHERE case_id = $1 AND scan_id = $2
+         ORDER BY created_at DESC LIMIT 1`,
+      [caseId, scanId],
+    );
+    if (!resultRows.length || !resultRows[0].segmented_mesh_path) return null;
+    return path.join(resultRows[0].segmented_mesh_path as string, `tooth_fdi_${toothNumber}.stl`);
+  }
+
+  async getGingivaMeshPath(caseId: string, orgId: string, jobId: string): Promise<string | null> {
+    await this.verifyCase(caseId, orgId);
+    const { rows: jobRows } = await this.pool.query(
+      `SELECT scan_id FROM segmentation_jobs WHERE id = $1 AND case_id = $2`,
+      [jobId, caseId],
+    );
+    if (!jobRows.length) throw new NotFoundException('Segmentation job not found');
+
+    const scanId = jobRows[0].scan_id as string | null;
+    if (!scanId) return null;
+
+    const { rows: resultRows } = await this.pool.query(
+      `SELECT gingiva_mesh_path, segmented_mesh_path FROM segmentation_results
+         WHERE case_id = $1 AND scan_id = $2
+         ORDER BY created_at DESC LIMIT 1`,
+      [caseId, scanId],
+    );
+    if (!resultRows.length) return null;
+    if (resultRows[0].gingiva_mesh_path) return resultRows[0].gingiva_mesh_path as string;
+    if (resultRows[0].segmented_mesh_path) {
+      return path.join(resultRows[0].segmented_mesh_path as string, 'gingiva.stl');
+    }
+    return null;
   }
 
   // ── Formatters ────────────────────────────────────────────────────────────────

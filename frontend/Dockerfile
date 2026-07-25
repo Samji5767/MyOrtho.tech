@@ -27,4 +27,4 @@ RUN chown -R app:app /app
 USER app
 
 EXPOSE 3000
-CMD ["serve", "next-build", "-p", "3000", "--no-clipboard"]
+CMD ["serve", "next-build", "-p", "3000", "--no-clipboard", "--single"]

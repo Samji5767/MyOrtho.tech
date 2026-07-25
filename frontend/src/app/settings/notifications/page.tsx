@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { ArrowLeft, Bell, BellOff, CheckCircle2 } from "lucide-react";
+import { ArrowLeft, Bell, BellOff, CheckCircle2, Loader2 } from "lucide-react";
 import { safeStorage } from "@/lib/safeStorage";
+import { api } from "@/lib/api/client";
 
 // ─── Notification preference definitions ──────────────────────────────────────
 
@@ -45,14 +46,24 @@ type PrefKey = typeof PREF_GROUPS[number]["items"][number]["key"];
 
 const ALL_KEYS = PREF_GROUPS.flatMap(g => g.items.map(i => i.key)) as PrefKey[];
 
-function loadPrefs(): Record<PrefKey, boolean> {
-  const defaults: Record<string, boolean> = {};
-  ALL_KEYS.forEach(k => { defaults[k] = true; });
+function defaultPrefs(): Record<PrefKey, boolean> {
+  const d: Record<string, boolean> = {};
+  ALL_KEYS.forEach(k => { d[k] = true; });
+  return d as Record<PrefKey, boolean>;
+}
+
+function mergeWithLocalFallback(serverPrefs: Record<string, boolean>): Record<PrefKey, boolean> {
+  const base = defaultPrefs();
   ALL_KEYS.forEach(k => {
-    const stored = safeStorage.get(k);
-    if (stored !== null) defaults[k] = stored !== "0";
+    if (k in serverPrefs) {
+      base[k] = Boolean(serverPrefs[k]);
+    } else {
+      // Fall back to localStorage for keys not yet saved server-side
+      const stored = safeStorage.get(k);
+      if (stored !== null) base[k] = stored !== "0";
+    }
   });
-  return defaults as Record<PrefKey, boolean>;
+  return base;
 }
 
 function Toggle({ checked, onChange, label }: { checked: boolean; onChange: () => void; label: string }) {
@@ -79,17 +90,55 @@ function Toggle({ checked, onChange, label }: { checked: boolean; onChange: () =
 }
 
 export default function NotificationsPage() {
-  const [prefs, setPrefs] = useState<Record<PrefKey, boolean>>(loadPrefs);
+  const [prefs, setPrefs] = useState<Record<PrefKey, boolean>>(defaultPrefs);
+  const [loading, setLoading] = useState(true);
   const [saved, setSaved] = useState(false);
+  const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const savedTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pendingPrefs = useRef<Record<PrefKey, boolean> | null>(null);
+
+  // Load preferences from backend on mount; fall back to localStorage
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const data = await api.get<{ prefs: Record<string, boolean> }>("/api/notifications/preferences");
+        if (!cancelled) setPrefs(mergeWithLocalFallback(data?.prefs ?? {}));
+      } catch {
+        if (!cancelled) setPrefs(mergeWithLocalFallback({}));
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  const persistPrefs = useCallback((next: Record<PrefKey, boolean>) => {
+    pendingPrefs.current = next;
+    if (saveTimer.current) clearTimeout(saveTimer.current);
+    saveTimer.current = setTimeout(async () => {
+      const toSave = pendingPrefs.current;
+      if (!toSave) return;
+      pendingPrefs.current = null;
+      try {
+        await api.put("/api/notifications/preferences", { prefs: toSave });
+      } catch {
+        // Network error — localStorage already holds the update as fallback
+      }
+    }, 600);
+  }, []);
 
   function toggle(key: PrefKey) {
     setPrefs(prev => {
       const next = { ...prev, [key]: !prev[key] };
+      // Write to localStorage as an instant offline fallback
       safeStorage.set(key, next[key] ? "1" : "0");
+      persistPrefs(next);
       return next;
     });
     setSaved(true);
-    setTimeout(() => setSaved(false), 1800);
+    if (savedTimer.current) clearTimeout(savedTimer.current);
+    savedTimer.current = setTimeout(() => setSaved(false), 1800);
   }
 
   const enabledCount = ALL_KEYS.filter(k => prefs[k]).length;
@@ -112,12 +161,14 @@ export default function NotificationsPage() {
             Choose which events send you alerts.
           </p>
         </div>
-        {saved && (
+        {loading ? (
+          <Loader2 size={16} className="animate-spin text-[color:var(--muted-foreground)]" />
+        ) : saved ? (
           <span className="flex items-center gap-1.5 text-sm font-medium text-emerald-600 dark:text-emerald-400">
             <CheckCircle2 size={14} />
             Saved
           </span>
-        )}
+        ) : null}
       </div>
 
       {/* Summary */}
@@ -159,7 +210,7 @@ export default function NotificationsPage() {
       </div>
 
       <p className="mt-6 text-xs text-[color:var(--muted-foreground)]">
-        Preferences are stored locally on this device. In-app alerts are always active for critical clinical events.
+        Preferences are synced to your account and apply on all devices.
       </p>
     </div>
   );

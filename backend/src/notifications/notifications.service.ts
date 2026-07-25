@@ -84,4 +84,21 @@ export class NotificationsService {
       [id, userId],
     );
   }
+
+  async getPrefs(userId: string): Promise<Record<string, boolean>> {
+    const { rows } = await this.pool.query(
+      `SELECT prefs FROM notification_preferences WHERE user_id = $1`,
+      [userId],
+    );
+    return (rows[0]?.prefs as Record<string, boolean>) ?? {};
+  }
+
+  async setPrefs(userId: string, orgId: string, prefs: Record<string, boolean>): Promise<void> {
+    await this.pool.query(
+      `INSERT INTO notification_preferences (user_id, organization_id, prefs, updated_at)
+       VALUES ($1, $2, $3, now())
+       ON CONFLICT (user_id) DO UPDATE SET prefs = $3, updated_at = now()`,
+      [userId, orgId, JSON.stringify(prefs)],
+    );
+  }
 }

@@ -215,3 +215,32 @@ export const getConfidenceHeatmap = (caseId: string, jobId: string) =>
   api.get<{ jobId: string; heatmapByTooth: Record<number, { confidence: number | null; regionHeatmaps: Record<string, unknown> }> }>(
     `/api/cases/${caseId}/segmentation/jobs/${jobId}/heatmap`,
   );
+
+// ─── Binary STL mesh streaming ────────────────────────────────────────────────
+
+export const fetchGingivaMeshBuffer = async (
+  caseId: string,
+  jobId: string,
+  signal?: AbortSignal,
+): Promise<ArrayBuffer | null> => {
+  const res = await fetch(
+    `/api/cases/${caseId}/segmentation/jobs/${jobId}/gingiva/mesh`,
+    { credentials: 'include', signal },
+  );
+  if (!res.ok) return null;
+  return res.arrayBuffer();
+};
+
+export const fetchToothMeshBuffer = async (
+  caseId: string,
+  jobId: string,
+  toothNumber: number,
+  signal?: AbortSignal,
+): Promise<ArrayBuffer | null> => {
+  const res = await fetch(
+    `/api/cases/${caseId}/segmentation/jobs/${jobId}/segments/${toothNumber}/mesh`,
+    { credentials: 'include', signal },
+  );
+  if (!res.ok) return null;
+  return res.arrayBuffer();
+};

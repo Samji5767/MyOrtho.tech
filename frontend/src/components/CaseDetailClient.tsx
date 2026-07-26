@@ -83,6 +83,7 @@ const PrinterDownloadPanel = dynamic(() => import("@/components/PrinterDownloadP
 const AlignerStaging = dynamic(() => import("@/components/AlignerStaging"), { ssr: false });
 const PatientCommunicationPanel = dynamic(() => import("@/components/PatientCommunicationPanel"), { ssr: false });
 const CaseDiscussionsPanel = dynamic(() => import("@/components/CaseDiscussionsPanel"), { ssr: false });
+const DentalAnatomyViewer = dynamic(() => import("@/components/DentalAnatomyViewer"), { ssr: false });
 
 // ─── Representative data keyed to case ID ─────────────────────────────────────
 
@@ -236,6 +237,8 @@ type Tab =
   | "scans" | "scan-validation" | "processing"
   // AI Segmentation
   | "segment" | "segmentation" | "pipeline"
+  // 3D Anatomy
+  | "3d-anatomy"
   // Treatment Planning
   | "plans" | "tx-goals" | "proposal" | "ai-assistant"
   // CAD
@@ -271,6 +274,9 @@ const TABS: TabItem[] = [
   { type: "tab", key: "segment",        label: "AI Segment",      icon: <ScanLine size={13} /> },
   { type: "tab", key: "segmentation",   label: "Segmentation",    icon: <Grid3X3 size={13} /> },
   { type: "tab", key: "pipeline",       label: "AI Pipeline",     icon: <Cpu size={13} /> },
+  // 3D Anatomy
+  { type: "separator", label: "Records" },
+  { type: "tab", key: "3d-anatomy",     label: "3D Anatomy",      icon: <Layers size={13} /> },
   // Treatment Planning
   { type: "separator", label: "Planning" },
   { type: "tab", key: "plans",          label: "Plans",           icon: <ClipboardCheck size={13} /> },
@@ -758,6 +764,9 @@ export default function CaseDetailClient({ id }: { id: string }) {
         {tab === "segment"        && <AISegmentationCenter caseId={id} />}
         {tab === "segmentation"   && <ToothSegmentationPanel uploadId={scanId ?? ""} />}
         {tab === "pipeline"       && <TreatmentPipelinePanel caseId={id} />}
+
+        {/* 3D Anatomy */}
+        {tab === "3d-anatomy"     && <DentalAnatomyViewer caseId={id} />}
 
         {/* Treatment Planning */}
         {tab === "plans"          && <TreatmentPlansPanel caseId={id} />}

@@ -1,5 +1,6 @@
 import {
   Controller,
+  Delete,
   Get,
   Patch,
   Post,
@@ -165,6 +166,19 @@ export class TreatmentPlansController {
   ) {
     const user = auth(req);
     return this.service.listStages(planId, caseId, user.orgId!);
+  }
+
+  @Delete(':planId/stages/:stageId')
+  @HttpCode(HttpStatus.OK)
+  @RequirePermission('cases:write')
+  deleteStage(
+    @Req() req: Request,
+    @Param('caseId') caseId: string,
+    @Param('planId') planId: string,
+    @Param('stageId') stageId: string,
+  ) {
+    const user = auth(req);
+    return this.service.deleteStage(planId, stageId, caseId, user.orgId!);
   }
 
   @Post(':planId/stages')

@@ -226,6 +226,22 @@ export class TreatmentPlansService {
     return { id: rows[0].id as string, updated: true };
   }
 
+  async deleteStage(planId: string, stageId: string, caseId: string, orgId: string) {
+    await this.verifyCaseOwnership(caseId, orgId);
+    const { rows: planCheck } = await this.pool.query(
+      `SELECT id FROM treatment_plans WHERE id = $1 AND case_id = $2 AND doctor_approval = false`,
+      [planId, caseId],
+    );
+    if (!planCheck[0]) throw new ForbiddenException('Plan not found or already approved');
+    const { rowCount } = await this.pool.query(
+      `DELETE FROM aligner_stages WHERE id = $1 AND treatment_plan_id = $2`,
+      [stageId, planId],
+    );
+    if (!rowCount) throw new NotFoundException('Stage not found');
+    this.logger.log(`Stage ${stageId} deleted from plan ${planId} (case ${caseId})`);
+    return { deleted: true };
+  }
+
   async bulkUpsertStages(planId: string, caseId: string, orgId: string, stages: CreateStageDto[]) {
     await this.verifyCaseOwnership(caseId, orgId);
     const { rows: planRows } = await this.pool.query(

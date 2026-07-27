@@ -67,3 +67,35 @@ export function updatePlan(
 ): Promise<TreatmentPlanSummary> {
   return api.patch<TreatmentPlanSummary>(`/api/cases/${caseId}/plans/${planId}`, dto);
 }
+
+export function deleteStage(caseId: string, planId: string, stageId: string): Promise<{ deleted: boolean }> {
+  return api.delete(`/api/cases/${caseId}/plans/${planId}/stages/${stageId}`);
+}
+
+export interface ToothMovement {
+  id: string;
+  stageId: string;
+  fdiNumber: number;
+  translateX: number;
+  translateY: number;
+  translateZ: number;
+  rotateX: number;
+  rotateY: number;
+  rotateZ: number;
+  tip: number;
+  torque: number;
+  intrusion: number;
+  extrusion: number;
+  isLocked: boolean;
+  notes: string | null;
+}
+
+export function getStageMovements(
+  caseId: string,
+  planId: string,
+  stageId: string,
+): Promise<ToothMovement[]> {
+  return api.get<ToothMovement[]>(
+    `/api/cases/${caseId}/plans/${planId}/stages/${stageId}/tooth-movements`,
+  );
+}

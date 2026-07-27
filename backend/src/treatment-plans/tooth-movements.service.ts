@@ -221,7 +221,7 @@ export class ToothMovementsService {
     const { rows } = await this.pool.query(
       `SELECT ast.id
        FROM aligner_stages ast
-       JOIN treatment_plans tp ON tp.id = ast.plan_id
+       JOIN treatment_plans tp ON tp.id = ast.treatment_plan_id
        JOIN cases c ON c.id = tp.case_id
        JOIN patients p ON p.id = c.patient_id
        WHERE ast.id = $1 AND tp.id = $2 AND c.id = $3 AND p.organization_id = $4`,

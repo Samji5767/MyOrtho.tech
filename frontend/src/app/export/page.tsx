@@ -30,10 +30,6 @@ import {
 import { fetchCases, fetchCase, type CaseListItem } from "@/lib/api/cases";
 import dynamic from "next/dynamic";
 
-const ExportPackagePanel = dynamic(
-  () => import("@/components/ExportPackagePanel"),
-  { ssr: false, loading: () => <SkeletonBlock className="h-64 w-full" /> },
-);
 
 // ─── Export format catalogue ─────────────────────────────────────────────────
 
@@ -438,7 +434,12 @@ function ExportPanelWrapper({ caseId }: { caseId: string }) {
     );
   }
 
-  return <ExportPackagePanel caseId={caseId} planId={planId} />;
+  return (
+    <div className="rounded-xl border border-[color:var(--border)] bg-[color:var(--card)] p-6 text-center text-sm text-[color:var(--muted-foreground)]">
+      <p>Case <span className="font-mono font-semibold">{caseId}</span> is approved and ready for manufacturing export.</p>
+      <p className="mt-2">Use the case detail page to download the STL package.</p>
+    </div>
+  );
 }
 
 // ─── Printer compatibility ────────────────────────────────────────────────────

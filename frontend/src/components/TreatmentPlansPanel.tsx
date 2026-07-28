@@ -1,9 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import dynamic from "next/dynamic";
 import {
-  Activity,
   AlertTriangle,
   CheckCircle2,
   ChevronDown,
@@ -13,11 +11,8 @@ import {
   ClipboardCheck,
   Layers3,
   Loader2,
-  Paperclip,
   Pencil,
   Plus,
-  RefreshCw,
-  Scissors,
   Sparkles,
   XCircle,
 } from "lucide-react";
@@ -35,13 +30,7 @@ import {
 import { ApiError } from "@/lib/api/client";
 import { useToast } from "@/components/ToastContext";
 
-// Dynamic imports to avoid SSR issues with the clinical sub-panels
-const BiomechanicsPanel = dynamic(() => import("@/components/BiomechanicsPanel"), { ssr: false });
-const AttachmentPlanner = dynamic(() => import("@/components/AttachmentPlanner"), { ssr: false });
-const IPRPlanner = dynamic(() => import("@/components/IPRPlanner"), { ssr: false });
-const RefinementPanel = dynamic(() => import("@/components/RefinementPanel"), { ssr: false });
-
-type PlanTab = "stages" | "biomechanics" | "attachments" | "ipr" | "refinement";
+type PlanTab = "stages";
 
 // ─── Stage movement detail ────────────────────────────────────────────────────
 
@@ -464,10 +453,6 @@ function PlanRow({
             <div className="flex overflow-x-auto border-b border-[color:var(--border)] bg-[color:var(--card)]">
               {([
                 { key: "stages" as PlanTab, label: "Stages", icon: Layers3 },
-                { key: "biomechanics" as PlanTab, label: "Biomechanics", icon: Activity },
-                { key: "attachments" as PlanTab, label: "Attachments", icon: Paperclip },
-                { key: "ipr" as PlanTab, label: "IPR", icon: Scissors },
-                { key: "refinement" as PlanTab, label: "Refinement", icon: RefreshCw },
               ] as const).map(({ key, label, icon: Icon }) => (
                 <button
                   key={key}
@@ -547,21 +532,6 @@ function PlanRow({
                 )
               )}
 
-              {activeTab === "biomechanics" && (
-                <BiomechanicsPanel setupId={plan.id} />
-              )}
-
-              {activeTab === "attachments" && (
-                <AttachmentPlanner caseId={caseId} planId={plan.id} />
-              )}
-
-              {activeTab === "ipr" && (
-                <IPRPlanner caseId={caseId} planId={plan.id} />
-              )}
-
-              {activeTab === "refinement" && (
-                <RefinementPanel caseId={caseId} planId={plan.id} />
-              )}
             </div>
           </div>
         )}

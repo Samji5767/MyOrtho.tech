@@ -6,9 +6,9 @@ import { usePathname, useRouter } from "next/navigation";
 import { TopBar } from "./TopBar";
 import { TabBar, SidebarNav } from "./TabBar";
 import { AuthGate } from "@/components/AuthGate";
-import { CommandPalette } from "@/components/CommandPalette";
-import { isIOS, isNative } from "@/lib/capacitor/platform";
-import { hapticLight } from "@/lib/capacitor/haptics";
+const isNative = () => false;
+const isIOS = () => false;
+const hapticLight = () => Promise.resolve();
 
 // ─── Keyboard navigation shortcuts (H/P/W/S/C) ───────────────────────────────
 // Only fire when no input, textarea, or select element has focus.
@@ -212,7 +212,6 @@ export function AppShell({ children }: { children: ReactNode }) {
             <main id="main-content">{children}</main>
           </AuthGate>
         </div>
-        <CommandPalette />
       </div>
     );
   }
@@ -230,7 +229,6 @@ export function AppShell({ children }: { children: ReactNode }) {
         <main id="main-content" className="app-shell-content">{children}</main>
       </AuthGate>
       <TabBar />
-      <CommandPalette />
     </div>
   );
 }

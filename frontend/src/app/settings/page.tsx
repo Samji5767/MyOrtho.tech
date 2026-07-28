@@ -5,8 +5,6 @@ import { useState, Suspense, useEffect, useCallback } from "react";
 import BrandMark from "@/components/BrandMark";
 import dynamic from "next/dynamic";
 
-const FeatureFlagsPanel = dynamic(() => import("@/components/FeatureFlagsPanel"), { ssr: false });
-const PlatformHealthPanel = dynamic(() => import("@/components/PlatformHealthPanel"), { ssr: false });
 import {
   BarChart3,
   Bell,
@@ -672,25 +670,6 @@ export default function SettingsPage() {
             <ChevronRight size={15} className="ml-auto shrink-0 text-[color:var(--muted-foreground)]" />
           </Link>
         </div>
-      </Card>
-
-      {/* FEATURE FLAGS */}
-      <Card className="ios-card p-5 sm:p-6">
-        <p className="text-xs font-bold uppercase tracking-[0.18em] text-[color:var(--primary)] mb-4">Administration</p>
-        <Suspense fallback={<div className="text-sm text-gray-500">Loading feature flags…</div>}>
-          <FeatureFlagsPanel />
-        </Suspense>
-      </Card>
-
-      {/* PLATFORM HEALTH */}
-      <Card className="ios-card p-5 sm:p-6">
-        <div className="flex items-center justify-between mb-4">
-          <p className="text-xs font-bold uppercase tracking-[0.18em] text-[color:var(--primary)]">Platform</p>
-          <Link href="/platform-health" className="text-xs text-indigo-600 hover:underline">Full report →</Link>
-        </div>
-        <Suspense fallback={<div className="text-sm text-gray-500">Loading platform health…</div>}>
-          <PlatformHealthPanel />
-        </Suspense>
       </Card>
 
       {/* CLINICAL FEATURE FLAGS */}

@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import BrandMark from "@/components/BrandMark";
 import NotificationBell from "@/components/NotificationBell";
-import { APP_VERSION } from "@/lib/version";
+import { APP_VERSION } from "@/lib/constants";
 import { useAuth } from "@/context/AuthContext";
 import { roleLabel } from "@/lib/auth";
 import {

@@ -1,117 +1,237 @@
 # MyOrtho.tech
 
-An end-to-end digital orthodontics & restorative dentistry platform: 3D intraoral
-scan processing, AI-assisted treatment planning, aligner generation, and in-house
-manufacturing — built for clinics that want to design and produce appliances under
-one roof.
+An orthodontic digital treatment planning platform: 3D intraoral scan upload, AI-assisted tooth segmentation, treatment plan authoring, clinician approval, and manufacturing export — built for clinics running their own aligner workflow.
 
-> **Status:** Pre-production. This repository contains the full multi-service
-> stack. See [Deployment](#deployment) and [`SECURITY.md`](SECURITY.md) before
-> handling real patient data.
+> **Status:** Pre-production. Review [Security & compliance](#security--compliance) before handling real patient data.
 
 ---
 
 ## Architecture
 
-The platform is composed of four independently deployable services plus a shared
-database.
+Four Docker services share a single host:
 
 ```
-                         ┌──────────────────────────┐
-                         │   frontend (Next.js 14)   │  :3000
-                         │  3D STL viewer · clinic UI │
-                         │  Capacitor → iOS app       │
-                         └────────────┬───────────────┘
-                                      │ REST / WebSocket
-                         ┌────────────▼───────────────┐
-                         │    backend (NestJS 10)      │  :4000
-                         │  cases · printers · billing │
-                         │  manufacturing · scanner    │
-                         │  collaboration · webhooks   │
-                         └──────┬───────────────┬──────┘
-                                │               │
-              ┌─────────────────▼──┐      ┌─────▼────────────────┐
-              │ ai-engine (FastAPI)│:8000 │ PostgreSQL 15        │:5432
-              │ PyTorch · MONAI     │      │ + Redis 7 cache      │:6379
-              │ segmentation ·      │      └──────────────────────┘
-              │ landmarks · aligner │
-              │ implant planning    │
-              └─────────────────────┘
+Browser
+  │ HTTPS
+  ▼
+Frontend (Next.js 14)          :3005 → :3000
+  │ REST API
+  ▼
+Backend (NestJS 10)            :4000
+  │ HTTP (internal)       │ pg + ioredis
+  ▼                       ▼
+AI Engine (FastAPI)      PostgreSQL 15   Redis 7
+  :8000                  :5432           :6379
 ```
 
-| Service     | Stack                        | Port | Folder        |
-|-------------|------------------------------|------|---------------|
-| Frontend    | Next.js 14, React 18, R3F, Tailwind, Supabase | 3000 | `frontend/`   |
-| Backend     | NestJS 10, Socket.IO, OpenTelemetry           | 4000 | `backend/`    |
-| AI Engine   | FastAPI, PyTorch, MONAI, trimesh               | 8000 | `ai-engine/`  |
-| Database    | PostgreSQL 15 + Redis 7                        | 5432 | `database/`   |
-| Deployment  | Docker Compose, Kubernetes                     | —    | `deployment/` |
+| Service    | Stack                                  | Internal port |
+|------------|----------------------------------------|---------------|
+| `frontend` | Next.js 14, React 18, Three.js/R3F, Tailwind | 3000 |
+| `backend`  | NestJS 10, pg (raw Pool), jsonwebtoken | 4000 |
+| `ai-engine`| FastAPI, PyTorch, MONAI, trimesh       | 8000 |
+| `database` | PostgreSQL 15-alpine + Redis 7-alpine  | 5432 / 6379 |
+
+---
+
+## Core workflows
+
+1. **Authentication** — JWT login, email verification, password reset
+2. **Organisation** — multi-tenant isolation; admin bootstrap on first start
+3. **Users & profiles** — roles: `super_admin`, `admin`, `doctor`, `staff`
+4. **Patients** — registration, demographics, case assignment
+5. **Cases** — full lifecycle from `intake` → `scan_ready` → `treatment_planning` → `doctor_approved` → `manufacturing` → `delivered` → `archived`
+6. **STL Upload** — STL / OBJ / PLY intraoral scan upload (≤250 MB per file)
+7. **AI Segmentation** — per-scan tooth-segmentation job queue; polled via REST
+8. **3D Viewer** — React Three Fiber STL viewer with FDI tooth labelling
+9. **Treatment Planning** — aligner stage authoring, per-tooth movement records
+10. **Approval** — doctor approval gate before any export is possible
+11. **Manufacturing Export** — G-code / zip export with aligner-stage metadata
+12. **Settings** — profile management, theme, keyboard shortcuts, feature flags
 
 ---
 
 ## Quick start
 
-**Prerequisites:** Docker + Docker Compose, and (optionally) Node 20+ and Python
-3.11+ for running services natively. A CUDA-capable GPU is recommended for the AI
-engine but not required for the rest of the stack.
+**Prerequisites:** Docker ≥ 24, Docker Compose V2.
 
 ```bash
-# 1. Create your environment file from the template
-cp .env.example .env        # then edit secrets
+# 1. Copy the environment template and fill in secrets
+cp .env.example .env
 
-# 2. Bring the whole stack up
-make up                     # or: docker compose up -d --build
+# 2. Required secrets — edit these in .env before continuing:
+#   JWT_SECRET              (openssl rand -hex 32)
+#   ENCRYPTION_KEY          (openssl rand -hex 32)
+#   INTERNAL_API_SECRET     (openssl rand -hex 32)
+#   POSTGRES_PASSWORD
+#   MYORTHO_ADMIN_EMAIL / MYORTHO_ADMIN_PASSWORD
 
-# 3. Verify everything is healthy
-make health
+# 3. Bring the full stack up (builds images + runs migrations)
+docker compose up -d --build
+
+# 4. Verify all services are healthy
+docker compose ps
+docker compose logs backend --tail 20
+
+# 5. Open the app
+open http://localhost:3005
 ```
 
-Once up:
-
-- Frontend → http://localhost:3005
-- Backend API → http://localhost:4000
-- AI Engine docs → http://localhost:8000/docs
-
-Run `make help` to see every available command.
+Health endpoints:
+- Frontend: `http://localhost:3005/`
+- Backend: `http://localhost:4000/health`
+- AI Engine: `http://localhost:8000/health`
 
 ---
 
 ## Local development (without Docker)
 
+### Database
+
 ```bash
-# Frontend
-cd frontend && npm install && npm run dev
+# Start PostgreSQL 15 locally (or use a Docker container)
+pg_ctlcluster 16 main start
 
-# Backend
-cd backend && npm install && npm run start:dev
+# Create database and apply schema + migrations
+createdb -U postgres myortho_dev
+psql -U postgres myortho_dev -f database/schema.sql
+for f in database/migrations/*.sql; do
+  psql -U postgres myortho_dev -f "$f" 2>&1 | grep -v 'already exists'
+done
+```
 
-# AI engine
-cd ai-engine && pip install -r requirements.txt && uvicorn src.main:app --reload
+### Backend
+
+```bash
+cd backend
+npm install
+DATABASE_URL="postgresql://postgres@localhost:5432/myortho_dev" \
+JWT_SECRET=dev-secret \
+PORT=4001 \
+npm run start:dev
+```
+
+### Frontend
+
+```bash
+cd frontend
+npm install
+NEXT_PUBLIC_API_URL=http://localhost:4001 \
+npm run dev        # listens on http://localhost:3000
+```
+
+### AI Engine
+
+```bash
+cd ai-engine
+pip install -r requirements.txt
+uvicorn src.main:app --reload --port 8000
 ```
 
 ---
 
-## Deployment
+## Database migrations
 
-- **Docker Compose** — the root [`docker-compose.yml`](docker-compose.yml) runs the
-  full stack on a single host. Override secrets via `.env` (never commit it).
-- **Kubernetes** — manifests live in [`deployment/k8s/`](deployment/k8s). See
-  [`deployment/deployment_guide.md`](deployment/deployment_guide.md) and
-  [`deployment/disaster_recovery.md`](deployment/disaster_recovery.md).
+Migrations live in `database/migrations/` (numbered `000` to `074`). The `migrate` Docker service applies them in order on every `docker compose up`. Every migration uses `IF NOT EXISTS` / `DO $$` guards and is safe to re-run.
+
+To apply migrations manually:
+
+```bash
+for f in database/migrations/*.sql; do
+  psql "$DATABASE_URL" -f "$f" 2>&1 | grep -v 'already exists'
+done
+```
 
 ---
 
-## For clinicians
+## Production deployment (VPS)
 
-If you're a doctor or clinic staff member onboarding to the platform, start with
-[`docs/CLINICIAN_ONBOARDING.md`](docs/CLINICIAN_ONBOARDING.md).
+### Recommended specs
+- 4 vCPU, 8 GB RAM minimum
+- 50 GB SSD (database + upload storage)
+- Ubuntu 22.04 LTS
+
+### Steps
+
+```bash
+# 1. Install Docker + Compose on the VPS
+curl -fsSL https://get.docker.com | sh
+
+# 2. Clone the repo and configure environment
+git clone https://github.com/samji5767/myortho.tech.git
+cd myortho.tech
+cp .env.example .env
+# --- edit .env: set all secrets, NODE_ENV=production, real SMTP, real APP_URL ---
+
+# 3. Build and start
+docker compose up -d --build
+
+# 4. Verify health
+curl -sf http://localhost:4000/health
+curl -sf http://localhost:8000/health
+
+# 5. Serve with a reverse proxy (nginx / Caddy) on port 80/443
+# Point port 3005 → public HTTPS for the frontend
+# Point port 4000 → public HTTPS for the backend API (or proxy via frontend)
+```
+
+### SMTP (required for email verification)
+
+Set `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `SMTP_FROM`, and `APP_URL` in `.env`.
+Standard providers: AWS SES, Mailgun, Postmark, Brevo. Leave `SMTP_HOST` blank in dev to
+log emails to the console.
+
+### Backup
+
+```bash
+# Database backup
+docker exec myortho-db pg_dump -U myortho_admin myortho_tech | gzip > backup-$(date +%Y%m%d).sql.gz
+
+# Restore
+gunzip -c backup-YYYYMMDD.sql.gz | docker exec -i myortho-db psql -U myortho_admin myortho_tech
+
+# Upload volume backup (STL files)
+docker run --rm -v myortho.tech_uploads_data:/data -v $(pwd):/backup \
+  alpine tar czf /backup/uploads-$(date +%Y%m%d).tar.gz /data
+```
+
+---
+
+## AI Segmentation
+
+The AI engine runs a FastAPI server. Tooth segmentation is a real pipeline:
+STL upload → segmentation job queued → MONAI UNet inference → FDI tooth IDs returned.
+
+**External AI providers are currently blocked:**
+- **TGN (ToothGroupNetwork):** CC BY-NC-ND 4.0 training data prohibits commercial use. Keep `TGN_ENABLED=false` until a commercial license is obtained.
+- **MeshSegNet:** Pretrained checkpoint not obtained; redistribution rights unconfirmed. Keep `MESHSEGNET_ENABLED=false` until checkpoint is obtained in writing.
+
+Set `SEGMENTATION_PROVIDER=MANUAL` (the default) to route all segmentation jobs to manual clinical review. This is the correct production setting until a licensed AI engine is available.
+
+---
+
+## TypeScript & build checks
+
+```bash
+# Backend
+cd backend && npx tsc --noEmit
+
+# Frontend
+cd frontend && npx tsc --noEmit && npm run build
+```
 
 ---
 
 ## Security & compliance
 
-This platform processes Protected Health Information (PHI). **Read
-[`SECURITY.md`](SECURITY.md) before deploying or handling patient data.**
+This platform processes Protected Health Information (PHI). Before deploying:
+
+- All secrets must be strong random values (`openssl rand -hex 32`) — never the defaults from `.env.example`
+- Use HTTPS in production — never serve the app over plain HTTP
+- Database and Redis are not exposed to the host by default — keep `expose` (not `ports`) in docker-compose.yml
+- The AI engine is only reachable from the backend (internal network); the frontend never calls it directly
+- Row-level security policies are applied via migrations — verify with `psql` after deployment
+- `SEGMENTATION_FALLBACK_ENABLED` and `TREATMENT_PLAN_STAGE_FALLBACK_ENABLED` must both be `false` in production
+- All AI segmentation output requires clinician review before any clinical decision
 
 ---
 
@@ -119,14 +239,16 @@ This platform processes Protected Health Information (PHI). **Read
 
 ```
 .
-├── frontend/      Next.js web + iOS (Capacitor) client
-├── backend/       NestJS API & orchestration
-├── ai-engine/     FastAPI AI/ML services
-├── database/      SQL schema & migrations
-├── deployment/    Docker / Kubernetes manifests
-├── docs/          Clinician & operator documentation
-├── scripts/       setup & health-check automation
-├── docker-compose.yml
-├── Makefile
-└── .env.example
+├── frontend/          Next.js 14 web client
+├── backend/           NestJS 10 API
+├── ai-engine/         FastAPI ML service
+├── database/
+│   ├── schema.sql     Foundation tables
+│   ├── migrations/    Numbered SQL migrations (000–074)
+│   ├── migrate.sh     Applies migrations in order
+│   └── seed-demo.sql  Optional demo data
+├── deployment/        Nginx / reverse-proxy config
+├── docker-compose.yml Full-stack orchestration
+├── Makefile           Common dev commands
+└── .env.example       Environment template
 ```

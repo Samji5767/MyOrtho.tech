@@ -11,13 +11,8 @@
     "test:coverage": "vitest run --coverage"
   },
   "dependencies": {
-    "@capacitor/cli": "^8.4.1",
-    "@capacitor/core": "^8.4.1",
-    "@capacitor/ios": "^8.4.1",
     "@react-three/drei": "^9.105.11",
     "@react-three/fiber": "^8.16.6",
-    "@supabase/supabase-js": "^2.108.2",
-    "canvas-confetti": "^1.9.3",
     "clsx": "^2.1.1",
     "framer-motion": "^12.42.2",
     "lucide-react": "^0.379.0",
@@ -31,7 +26,6 @@
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.2",
     "@testing-library/user-event": "^14.6.1",
-    "@types/canvas-confetti": "^1.6.4",
     "@types/node": "25.9.3",
     "@types/react": "^18.3.3",
     "@types/react-dom": "^18.3.0",

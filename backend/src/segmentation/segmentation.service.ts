@@ -1,5 +1,4 @@
-import { Injectable, Inject, Optional, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
-import { AiAuditService } from '../mlops/ai-audit.service';
+import { Injectable, Inject, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
 import * as fs from 'fs';
 import * as path from 'path';
 import type { Pool } from 'pg';
@@ -143,7 +142,6 @@ export class SegmentationService {
 
   constructor(
     @Inject(PG_POOL) private readonly pool: Pool,
-    @Optional() private readonly aiAudit: AiAuditService,
   ) {}
 
   // ── Verify case belongs to org ──────────────────────────────────────────────
@@ -244,26 +242,7 @@ export class SegmentationService {
       [jobId],
     );
 
-    const startMs = Date.now();
-    let auditId: string | null = null;
     const aiUrl = process.env.AI_SEGMENTATION_URL;
-    const modelName = aiUrl ? 'segmentation-external' : 'segmentation-algorithmic';
-
-    // Begin audit record
-    if (this.aiAudit) {
-      const audit = await this.aiAudit.beginAudit({
-        organizationId: orgId,
-        invokedBy: userId,
-        modelName,
-        modelVersion: '1.0',
-        inferenceType: 'segmentation',
-        correlationId: jobId,
-        caseId,
-        disclaimerShown: true,
-        inputMetadata: { arch, modelType, jobId },
-      }).catch(err => { this.logger.warn(`Audit begin error: ${(err as Error).message}`); return null; });
-      auditId = audit?.id ?? null;
-    }
 
     try {
       if (aiUrl) {
@@ -278,25 +257,12 @@ export class SegmentationService {
         );
         await this.runAlgorithmicSegmentation(jobId, caseId, arch, modelType);
       }
-
-      if (this.aiAudit && auditId) {
-        this.aiAudit.finalizeAudit(auditId, {
-          outcome: 'accepted',
-          latencyMs: Date.now() - startMs,
-          fallbackUsed: !aiUrl,
-          outputMetadata: { jobId },
-        }).catch(err => this.logger.warn(`Audit finalize error: ${(err as Error).message}`));
-      }
     } catch (err: any) {
       this.logger.error(`Processing error for job ${jobId}: ${err.message}`);
       await this.pool.query(
         `UPDATE segmentation_jobs SET status = 'failed', error_message = $2, progress = 0 WHERE id = $1`,
         [jobId, err.message],
       );
-      if (this.aiAudit && auditId) {
-        this.aiAudit.failAudit(auditId, 'PROCESSING_ERROR', err.message)
-          .catch(e => this.logger.warn(`Audit fail error: ${(e as Error).message}`));
-      }
     }
   }
 

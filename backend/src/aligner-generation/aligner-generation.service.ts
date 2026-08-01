@@ -1,4 +1,4 @@
-import { Injectable, Inject, NotFoundException, ServiceUnavailableException, InternalServerErrorException, Logger } from '@nestjs/common';
+import { Injectable, Inject, BadRequestException, NotFoundException, ServiceUnavailableException, InternalServerErrorException, Logger } from '@nestjs/common';
 import * as fs from 'fs';
 import type { Pool } from 'pg';
 import { PG_POOL } from '../database/database.module';
@@ -355,6 +355,23 @@ export class AlignerGenerationService {
     notes?: string,
   ): Promise<AlignerGenerationPlan> {
     await this.verifyPlan(planId, caseId, orgId);
+
+    // Simulated scaffold stages must never reach approved/manufacturing status.
+    // Same rule TreatmentPlansService.approvePlan applies to doctor approval.
+    const simRes = await this.db.query(
+      `SELECT id FROM aligner_stages
+       WHERE treatment_plan_id = $1
+         AND (movement_data::jsonb ->> '_is_simulated')::boolean = true
+       LIMIT 1`,
+      [planId],
+    );
+    if ((simRes.rowCount ?? 0) > 0) {
+      throw new BadRequestException(
+        'This plan contains simulated scaffold stages and cannot be approved for ' +
+        'manufacturing. Replace scaffold stages with real treatment data first.',
+      );
+    }
+
     const res = await this.db.query(
       `UPDATE aligner_generation_plans
        SET status='approved', approved_by=$1, approved_at=now(), notes=COALESCE($2, notes)

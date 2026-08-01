@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { Canvas, ThreeEvent } from "@react-three/fiber";
 import { OrbitControls } from "@react-three/drei";
 import * as THREE from "three";
@@ -13,8 +13,22 @@ import {
   type ToothSegment,
 } from "@/lib/api/segmentation";
 import { listPlans, listStages, type AlignStage } from "@/lib/api/treatmentPlans";
+import {
+  upsertToothMovement,
+  deleteToothMovement,
+  type ToothMovementValues,
+} from "@/lib/api/toothMovements";
 import { MM_TO_SCENE } from "@/lib/meshAnalysis";
-import { ChevronLeft, ChevronRight, Eye, EyeOff, Loader2 } from "lucide-react";
+import {
+  AlertTriangle,
+  ChevronLeft,
+  ChevronRight,
+  Eye,
+  EyeOff,
+  Loader2,
+  Lock,
+  Pencil,
+} from "lucide-react";
 
 const MAX_CONCURRENT = 4;
 
@@ -53,20 +67,66 @@ function createSemaphore(limit: number) {
 
 type StageMvtMap = Record<string, Record<string, number>>;
 
-function toothPosition(mvts: StageMvtMap | null, fdi: number): [number, number, number] {
-  if (!mvts) return [0, 0, 0];
+/**
+ * Read a per-tooth movement record supporting both shapes stored in
+ * aligner_stages.movement_data:
+ *  - canonical signed components (mesiodistalMm, …) written by the editor
+ *  - legacy unsigned directional pairs (mesialMm/distalMm, …) written by the
+ *    stage scaffold
+ */
+function readMovement(m: Record<string, number> | undefined): ToothMovementValues {
+  if (!m) {
+    return { mesiodistalMm: 0, buccolingualMm: 0, occlusogingivalMm: 0, rotationDeg: 0, tipDeg: 0, torqueDeg: 0 };
+  }
+  return {
+    mesiodistalMm: m.mesiodistalMm ?? ((m.mesialMm ?? 0) - (m.distalMm ?? 0)),
+    buccolingualMm: m.buccolingualMm ?? ((m.buccalMm ?? 0) - (m.lingualMm ?? 0)),
+    occlusogingivalMm: m.occlusogingivalMm ?? ((m.extrusionMm ?? 0) - (m.intrusionMm ?? 0)),
+    rotationDeg: m.rotationDeg ?? 0,
+    tipDeg: m.tipDeg ?? 0,
+    torqueDeg: m.torqueDeg ?? 0,
+  };
+}
+
+const DEG = Math.PI / 180;
+
+/**
+ * Map anatomical movement components onto scene axes.
+ *
+ * Arch-frame approximation (same convention as the AI engine's stage builder):
+ * scene X ≈ mesiodistal axis, scene Y ≈ occlusal axis, scene Z ≈ buccolingual
+ * axis, with quadrant/arch sign flips. A future per-tooth local frame derived
+ * from segmentation geometry will replace this mapping.
+ */
+function toothTransform(
+  mvts: StageMvtMap | null,
+  fdi: number,
+): { position: [number, number, number]; rotation: [number, number, number] } {
+  const zero: { position: [number, number, number]; rotation: [number, number, number] } =
+    { position: [0, 0, 0], rotation: [0, 0, 0] };
+  if (!mvts) return zero;
   const m = mvts[String(fdi)];
-  if (!m) return [0, 0, 0];
+  if (!m || typeof m !== "object") return zero;
+  const v = readMovement(m);
   const isRight = (fdi >= 11 && fdi <= 18) || (fdi >= 41 && fdi <= 48);
   const mesialSign = isRight ? 1 : -1;
   const isUpper = fdi < 30;
-  const dx = ((m.mesialMm ?? 0) - (m.distalMm ?? 0)) * mesialSign * MM_TO_SCENE;
-  const dy = -((m.extrusionMm ?? 0) - (m.intrusionMm ?? 0)) * (isUpper ? 1 : -1) * MM_TO_SCENE;
-  const dz = ((m.buccalMm ?? 0) - (m.lingualMm ?? 0)) * MM_TO_SCENE;
-  return [dx, dy, dz];
+  const dx = v.mesiodistalMm * mesialSign * MM_TO_SCENE;
+  const dy = -v.occlusogingivalMm * (isUpper ? 1 : -1) * MM_TO_SCENE;
+  const dz = v.buccolingualMm * MM_TO_SCENE;
+  const rx = v.torqueDeg * (isUpper ? 1 : -1) * DEG; // torque about mesiodistal axis
+  const ry = v.rotationDeg * mesialSign * DEG;       // rotation about long (occlusal) axis
+  const rz = v.tipDeg * mesialSign * DEG;            // tip about buccolingual axis
+  return { position: [dx, dy, dz], rotation: [rx, ry, rz] };
 }
 
-interface ToothMesh { fdi: number; geometry: THREE.BufferGeometry; }
+interface ToothMesh {
+  fdi: number;
+  /** Geometry re-centred on the tooth centroid so rotations pivot correctly. */
+  geometry: THREE.BufferGeometry;
+  /** Tooth centroid in scene units, relative to the arch centre. */
+  centroid: [number, number, number];
+}
 
 interface SceneProps {
   teeth: ToothMesh[];
@@ -90,19 +150,30 @@ function Scene({ teeth, gingivaGeom, showGingiva, showTeeth, selectedFdi, stageM
           <meshStandardMaterial color="#e09090" roughness={0.65} side={THREE.DoubleSide} />
         </mesh>
       )}
-      {showTeeth && teeth.map(tooth => (
-        <group key={tooth.fdi} position={toothPosition(stageMvts, tooth.fdi)}>
-          <mesh
-            geometry={tooth.geometry}
-            onClick={(e: ThreeEvent<MouseEvent>) => { e.stopPropagation(); onSelect(tooth.fdi); }}
+      {showTeeth && teeth.map(tooth => {
+        const t = toothTransform(stageMvts, tooth.fdi);
+        return (
+          <group
+            key={tooth.fdi}
+            position={[
+              tooth.centroid[0] + t.position[0],
+              tooth.centroid[1] + t.position[1],
+              tooth.centroid[2] + t.position[2],
+            ]}
+            rotation={t.rotation}
           >
-            <meshStandardMaterial
-              color={selectedFdi === tooth.fdi ? "#4a9eff" : "#f5efe7"}
-              roughness={0.3} metalness={0.04} side={THREE.DoubleSide}
-            />
-          </mesh>
-        </group>
-      ))}
+            <mesh
+              geometry={tooth.geometry}
+              onClick={(e: ThreeEvent<MouseEvent>) => { e.stopPropagation(); onSelect(tooth.fdi); }}
+            >
+              <meshStandardMaterial
+                color={selectedFdi === tooth.fdi ? "#4a9eff" : "#f5efe7"}
+                roughness={0.3} metalness={0.04} side={THREE.DoubleSide}
+              />
+            </mesh>
+          </group>
+        );
+      })}
     </>
   );
 }
@@ -113,7 +184,7 @@ function ToothInfoCard({ fdi, segment, stageMvts }: {
   const name = FDI_NAMES[fdi] ?? `FDI ${fdi}`;
   const m = stageMvts?.[String(fdi)] ?? null;
   const mvtEntries = m
-    ? Object.entries(m).filter(([k, v]) => k !== "_is_simulated" && typeof v === "number" && (v as number) !== 0)
+    ? Object.entries(m).filter(([, v]) => typeof v === "number" && v !== 0)
     : [];
   const fmt = (v: number) => (v > 0 ? "+" : "") + v.toFixed(2);
   return (
@@ -165,8 +236,117 @@ function ToothInfoCard({ fdi, segment, stageMvts }: {
   );
 }
 
-function StageSelector({ stages, activeIdx, onPrev, onNext }: {
+// ─── Movement editor ──────────────────────────────────────────────────────────
+
+const EDITOR_FIELDS: Array<{
+  key: keyof ToothMovementValues;
+  label: string;
+  unit: "mm" | "°";
+  max: number;
+  hint: string;
+}> = [
+  { key: "mesiodistalMm",     label: "Mesiodistal",     unit: "mm", max: 20, hint: "mesial + / distal −" },
+  { key: "buccolingualMm",    label: "Buccolingual",    unit: "mm", max: 20, hint: "buccal + / lingual −" },
+  { key: "occlusogingivalMm", label: "Occlusogingival", unit: "mm", max: 20, hint: "extrusion + / intrusion −" },
+  { key: "rotationDeg",       label: "Rotation",        unit: "°",  max: 90, hint: "about long axis" },
+  { key: "tipDeg",            label: "Tip",             unit: "°",  max: 90, hint: "mesial + / distal −" },
+  { key: "torqueDeg",         label: "Torque",          unit: "°",  max: 90, hint: "buccal + / lingual −" },
+];
+
+function MovementEditor({ fdi, current, locked, onSave, onReset, saving, error }: {
+  fdi: number;
+  current: ToothMovementValues;
+  locked: boolean;
+  onSave: (values: ToothMovementValues) => void;
+  onReset: () => void;
+  saving: boolean;
+  error: string | null;
+}) {
+  const [draft, setDraft] = useState<Record<string, string>>({});
+
+  // Re-seed the draft when the tooth or the persisted values change
+  useEffect(() => {
+    setDraft(Object.fromEntries(
+      EDITOR_FIELDS.map(f => [f.key, current[f.key] === 0 ? "" : String(current[f.key])]),
+    ));
+  }, [fdi, current]);
+
+  const parsed: ToothMovementValues = {
+    mesiodistalMm: 0, buccolingualMm: 0, occlusogingivalMm: 0,
+    rotationDeg: 0, tipDeg: 0, torqueDeg: 0,
+  };
+  let invalid = false;
+  for (const f of EDITOR_FIELDS) {
+    const raw = (draft[f.key] ?? "").trim();
+    if (raw === "") continue;
+    const v = Number(raw);
+    if (!Number.isFinite(v) || Math.abs(v) > f.max) { invalid = true; continue; }
+    parsed[f.key] = v;
+  }
+
+  const dirty = EDITOR_FIELDS.some(f => parsed[f.key] !== current[f.key]);
+
+  return (
+    <div className="rounded-xl border border-[color:var(--border)] bg-[color:var(--card)] px-3 py-2.5 text-xs">
+      <div className="mb-2 flex items-center justify-between">
+        <span className="flex items-center gap-1.5 text-sm font-semibold text-[color:var(--foreground)]">
+          <Pencil size={12} /> Movement — Tooth {fdi}
+        </span>
+        {locked && (
+          <span className="flex items-center gap-1 text-[10px] text-[color:var(--muted-foreground)]">
+            <Lock size={10} /> Plan approved — locked
+          </span>
+        )}
+      </div>
+      <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 sm:grid-cols-3">
+        {EDITOR_FIELDS.map(f => (
+          <label key={f.key} className="block">
+            <span className="mb-0.5 block text-[10px] text-[color:var(--muted-foreground)]">
+              {f.label} ({f.unit}) <span className="opacity-70">· {f.hint}</span>
+            </span>
+            <input
+              type="number"
+              step={f.unit === "mm" ? 0.1 : 1}
+              min={-f.max}
+              max={f.max}
+              value={draft[f.key] ?? ""}
+              placeholder="0"
+              disabled={locked || saving}
+              onChange={e => setDraft(d => ({ ...d, [f.key]: e.target.value }))}
+              className="w-full rounded-md border border-[color:var(--border)] bg-[color:var(--background)] px-2 py-1 text-xs tabular-nums text-[color:var(--foreground)] focus:outline-none focus:ring-1 focus:ring-[color:var(--primary)] disabled:opacity-50"
+            />
+          </label>
+        ))}
+      </div>
+      {error && <p className="mt-2 text-[11px] text-rose-500">{error}</p>}
+      <div className="mt-2.5 flex items-center gap-2">
+        <button
+          type="button"
+          disabled={locked || saving || invalid || !dirty}
+          onClick={() => onSave(parsed)}
+          className="rounded-md bg-[color:var(--primary)] px-3 py-1 text-xs font-medium text-[color:var(--primary-foreground)] disabled:opacity-40"
+        >
+          {saving ? "Saving…" : "Save movement"}
+        </button>
+        <button
+          type="button"
+          disabled={locked || saving}
+          onClick={onReset}
+          className="rounded-md border border-[color:var(--border)] px-3 py-1 text-xs text-[color:var(--muted-foreground)] hover:text-[color:var(--foreground)] disabled:opacity-40"
+        >
+          Reset tooth
+        </button>
+        <span className="ml-auto text-[10px] text-[color:var(--muted-foreground)]">
+          Cumulative at this stage
+        </span>
+      </div>
+    </div>
+  );
+}
+
+function StageSelector({ stages, activeIdx, onPrev, onNext, simulated }: {
   stages: AlignStage[]; activeIdx: number; onPrev: () => void; onNext: () => void;
+  simulated: boolean;
 }) {
   if (stages.length === 0) return null;
   const stage = stages[activeIdx];
@@ -181,6 +361,11 @@ function StageSelector({ stages, activeIdx, onPrev, onNext }: {
       <button type="button" onClick={onNext} disabled={activeIdx >= stages.length - 1}
         className="rounded-md border border-[color:var(--border)] p-1 text-[color:var(--muted-foreground)] hover:text-[color:var(--foreground)] disabled:opacity-30"
         aria-label="Next stage"><ChevronRight size={12} /></button>
+      {simulated && (
+        <span className="flex items-center gap-1 rounded-full bg-amber-500/15 px-2 py-0.5 text-[10px] font-medium text-amber-600 dark:text-amber-400">
+          <AlertTriangle size={10} /> Scaffold preview — not clinical data
+        </span>
+      )}
       <div className="ml-2 h-1 w-24 overflow-hidden rounded-full bg-[color:var(--border)]">
         <div className="h-full rounded-full bg-[color:var(--primary)] transition-all duration-200"
           style={{ width: `${stages.length > 1 ? (activeIdx / (stages.length - 1)) * 100 : 100}%` }} />
@@ -198,17 +383,29 @@ export default function DentalAnatomyViewer({ caseId }: { caseId: string }) {
   const [showGingiva, setShowGingiva] = useState(true);
   const [showTeeth, setShowTeeth] = useState(true);
   const [selectedFdi, setSelectedFdi] = useState<number | null>(null);
+  const [planId, setPlanId] = useState<string | null>(null);
+  const [planApproved, setPlanApproved] = useState(false);
   const [stages, setStages] = useState<AlignStage[]>([]);
   const [stageIdx, setStageIdx] = useState(0);
+  const [saving, setSaving] = useState(false);
+  const [editError, setEditError] = useState<string | null>(null);
   const geometriesRef = useRef<THREE.BufferGeometry[]>([]);
 
-  const stageMvts: StageMvtMap | null = stages.length > 0
-    ? (stages[stageIdx]?.movements as StageMvtMap ?? null)
+  const activeStage = stages[stageIdx] ?? null;
+  const stageMvts: StageMvtMap | null = activeStage
+    ? (activeStage.movements as StageMvtMap ?? null)
     : null;
+  const stageSimulated =
+    (activeStage?.movements as Record<string, unknown> | undefined)?.["_is_simulated"] === true;
 
   const selectedSegment = selectedFdi !== null
     ? segments.find(s => s.toothNumber === selectedFdi) ?? null
     : null;
+
+  const selectedMovement = useMemo(
+    () => readMovement(selectedFdi !== null ? stageMvts?.[String(selectedFdi)] : undefined),
+    [selectedFdi, stageMvts],
+  );
 
   useEffect(() => {
     if (!caseId) return;
@@ -219,6 +416,8 @@ export default function DentalAnatomyViewer({ caseId }: { caseId: string }) {
     setSegments([]);
     setGingivaGeom(null);
     setSelectedFdi(null);
+    setPlanId(null);
+    setPlanApproved(false);
     setStages([]);
     setStageIdx(0);
     setStatus("loading");
@@ -271,10 +470,20 @@ export default function DentalAnatomyViewer({ caseId }: { caseId: string }) {
               const geom = new STLLoader().parse(buf);
               geom.computeVertexNormals();
               geom.scale(MM_TO_SCENE, MM_TO_SCENE, MM_TO_SCENE);
-              geom.translate(-centerOffset.x, -centerOffset.y, -centerOffset.z);
+              // Re-centre the geometry on the tooth centroid so stage
+              // rotations pivot around the tooth, not the arch origin.
+              geom.computeBoundingBox();
+              const c = new THREE.Vector3();
+              geom.boundingBox!.getCenter(c);
+              geom.translate(-c.x, -c.y, -c.z);
+              const centroid: [number, number, number] = [
+                c.x - centerOffset.x,
+                c.y - centerOffset.y,
+                c.z - centerOffset.z,
+              ];
               if (signal.aborted) { geom.dispose(); return; }
               geometriesRef.current.push(geom);
-              setTeeth(prev => [...prev, { fdi: seg.toothNumber, geometry: geom }]);
+              setTeeth(prev => [...prev, { fdi: seg.toothNumber, geometry: geom, centroid }]);
             } catch (err) {
               if (err instanceof Error && err.name === "AbortError") return;
             } finally { sem.release(); }
@@ -289,7 +498,12 @@ export default function DentalAnatomyViewer({ caseId }: { caseId: string }) {
           if (signal.aborted || plans.length === 0) return;
           const latest = plans.find(p => !p.doctorApproval) ?? plans[0];
           const loaded = await listStages(caseId, latest.id);
-          if (!signal.aborted && loaded.length > 0) { setStages(loaded); setStageIdx(0); }
+          if (!signal.aborted && loaded.length > 0) {
+            setPlanId(latest.id);
+            setPlanApproved(latest.doctorApproval);
+            setStages(loaded);
+            setStageIdx(0);
+          }
         } catch { /* Treatment plans unavailable */ }
       } catch (err) {
         if (err instanceof Error && err.name === "AbortError") return;
@@ -306,6 +520,51 @@ export default function DentalAnatomyViewer({ caseId }: { caseId: string }) {
       geometriesRef.current = [];
     };
   }, [caseId]);
+
+  // Patch one tooth's movement in the locally-held stage list so the 3D scene
+  // reflects a save/reset immediately without a refetch.
+  function patchLocalStage(fdi: number, values: ToothMovementValues | null) {
+    setStages(prev => prev.map((s, i) => {
+      if (i !== stageIdx) return s;
+      const movements = { ...(s.movements as Record<string, unknown>) };
+      if (values === null) delete movements[String(fdi)];
+      else movements[String(fdi)] = values;
+      return { ...s, movements };
+    }));
+  }
+
+  async function handleSave(values: ToothMovementValues) {
+    if (!planId || !activeStage || selectedFdi === null) return;
+    setSaving(true);
+    setEditError(null);
+    try {
+      await upsertToothMovement(caseId, planId, activeStage.id, {
+        fdiNumber: selectedFdi,
+        ...values,
+      });
+      patchLocalStage(selectedFdi, values);
+    } catch (err) {
+      setEditError(err instanceof Error ? err.message : "Save failed");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleReset() {
+    if (!planId || !activeStage || selectedFdi === null) return;
+    setSaving(true);
+    setEditError(null);
+    try {
+      await deleteToothMovement(caseId, planId, activeStage.id, selectedFdi);
+      patchLocalStage(selectedFdi, null);
+    } catch (err) {
+      const notFound = err instanceof Error && /not found/i.test(err.message);
+      if (notFound) patchLocalStage(selectedFdi, null);
+      else setEditError(err instanceof Error ? err.message : "Reset failed");
+    } finally {
+      setSaving(false);
+    }
+  }
 
   const isLoading = status === "loading"
     || (status === "loading-meshes" && teeth.length === 0 && !gingivaGeom);
@@ -361,7 +620,20 @@ export default function DentalAnatomyViewer({ caseId }: { caseId: string }) {
       {stages.length > 0 && (
         <StageSelector stages={stages} activeIdx={stageIdx}
           onPrev={() => setStageIdx(i => Math.max(0, i - 1))}
-          onNext={() => setStageIdx(i => Math.min(stages.length - 1, i + 1))} />
+          onNext={() => setStageIdx(i => Math.min(stages.length - 1, i + 1))}
+          simulated={stageSimulated} />
+      )}
+
+      {selectedFdi !== null && planId && activeStage && (
+        <MovementEditor
+          fdi={selectedFdi}
+          current={selectedMovement}
+          locked={planApproved}
+          onSave={handleSave}
+          onReset={handleReset}
+          saving={saving}
+          error={editError}
+        />
       )}
 
       {selectedFdi !== null && (

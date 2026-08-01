@@ -42,7 +42,7 @@ export function approvePlan(
   doctorSignature: string,
 ): Promise<TreatmentPlanSummary> {
   return api.post<TreatmentPlanSummary>(`/api/cases/${caseId}/plans/${planId}/approve`, {
-    doctorSignature,
+    signature: doctorSignature,
   });
 }
 
@@ -50,11 +50,20 @@ export function listStages(caseId: string, planId: string): Promise<AlignStage[]
   return api.get<AlignStage[]>(`/api/cases/${caseId}/plans/${planId}/stages`);
 }
 
+export interface GenerateStagesResult {
+  generated: number;
+  planId: string;
+  caseId: string;
+  /** True when stages came from the rule-based scaffold, not clinical data. */
+  is_simulated?: boolean;
+  warning?: string;
+}
+
 export function generateStages(
   caseId: string,
   planId: string,
   stageCount?: number,
-): Promise<{ generated: number; planId: string; caseId: string }> {
+): Promise<GenerateStagesResult> {
   return api.post(`/api/cases/${caseId}/plans/${planId}/stages/generate`, {
     ...(stageCount !== undefined ? { stageCount } : {}),
   });
@@ -68,34 +77,3 @@ export function updatePlan(
   return api.patch<TreatmentPlanSummary>(`/api/cases/${caseId}/plans/${planId}`, dto);
 }
 
-export function deleteStage(caseId: string, planId: string, stageId: string): Promise<{ deleted: boolean }> {
-  return api.delete(`/api/cases/${caseId}/plans/${planId}/stages/${stageId}`);
-}
-
-export interface ToothMovement {
-  id: string;
-  stageId: string;
-  fdiNumber: number;
-  translateX: number;
-  translateY: number;
-  translateZ: number;
-  rotateX: number;
-  rotateY: number;
-  rotateZ: number;
-  tip: number;
-  torque: number;
-  intrusion: number;
-  extrusion: number;
-  isLocked: boolean;
-  notes: string | null;
-}
-
-export function getStageMovements(
-  caseId: string,
-  planId: string,
-  stageId: string,
-): Promise<ToothMovement[]> {
-  return api.get<ToothMovement[]>(
-    `/api/cases/${caseId}/plans/${planId}/stages/${stageId}/tooth-movements`,
-  );
-}

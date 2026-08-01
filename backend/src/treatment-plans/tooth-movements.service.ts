@@ -8,22 +8,29 @@ import {
 import type { Pool } from 'pg';
 import { PG_POOL } from '../database/database.module';
 
-// FDI notation: upper right 11-18, upper left 21-28, lower left 31-38, lower right 41-48
-const FDI_MIN = 11;
-const FDI_MAX = 48;
+// FDI notation: quadrant digit 1-4 (UR, UL, LL, LR), position digit 1-8.
+function isValidFdi(fdi: number): boolean {
+  if (!Number.isInteger(fdi)) return false;
+  const quadrant = Math.floor(fdi / 10);
+  const position = fdi % 10;
+  return quadrant >= 1 && quadrant <= 4 && position >= 1 && position <= 8;
+}
 
-export interface UpsertToothMovementDto {
+/**
+ * Canonical per-tooth movement: signed anatomical components (migration 075).
+ * Values are cumulative at the stage they are attached to.
+ */
+export interface ToothMovementValues {
+  mesiodistalMm: number; //  mesial + / distal −
+  buccolingualMm: number; //  buccal + / lingual −
+  occlusogingivalMm: number; //  extrusion + / intrusion −
+  rotationDeg: number; //  about tooth long axis, mesial-in +
+  tipDeg: number; //  crown angulation, mesial tip +
+  torqueDeg: number; //  root torque, buccal +
+}
+
+export interface UpsertToothMovementDto extends Partial<ToothMovementValues> {
   fdiNumber: number;
-  translateX?: number;
-  translateY?: number;
-  translateZ?: number;
-  rotateX?: number;
-  rotateY?: number;
-  rotateZ?: number;
-  tip?: number;
-  torque?: number;
-  intrusion?: number;
-  extrusion?: number;
   isLocked?: boolean;
   notes?: string;
 }
@@ -31,7 +38,7 @@ export interface UpsertToothMovementDto {
 export interface CreateMeasurementDto {
   measurementLabel?: string;
   overjetMm?: number;
-  overbitemm?: number;
+  overbiteMm?: number;
   angleClass?: string;
   distanceMm?: number;
   notes?: string;
@@ -49,9 +56,8 @@ export class ToothMovementsService {
     await this.verifyStageOwnership(stageId, planId, caseId, orgId);
     const { rows } = await this.pool.query(
       `SELECT id, stage_id, fdi_number,
-              translate_x, translate_y, translate_z,
-              rotate_x, rotate_y, rotate_z,
-              tip, torque, intrusion, extrusion,
+              mesiodistal_mm, buccolingual_mm, occlusogingival_mm,
+              rotation_deg, tip_deg, torque_deg,
               is_locked, notes, created_at, updated_at
        FROM tooth_movements WHERE stage_id = $1 ORDER BY fdi_number`,
       [stageId],
@@ -59,6 +65,12 @@ export class ToothMovementsService {
     return rows.map((r) => this.formatMovement(r));
   }
 
+  /**
+   * Upsert a movement and mirror it into aligner_stages.movement_data so the
+   * 3D viewer (which renders from stage JSON) reflects the stored row. The
+   * tooth_movements row is the source of truth; the JSON is a render cache.
+   * Both writes share one transaction.
+   */
   async upsert(
     caseId: string,
     planId: string,
@@ -67,54 +79,77 @@ export class ToothMovementsService {
     dto: UpsertToothMovementDto,
     actorEmail: string,
   ) {
-    await this.verifyStageOwnership(stageId, planId, caseId, orgId);
+    const stage = await this.verifyStageOwnership(stageId, planId, caseId, orgId);
+    this.assertPlanEditable(stage);
 
-    if (!Number.isInteger(dto.fdiNumber) || dto.fdiNumber < FDI_MIN || dto.fdiNumber > FDI_MAX) {
-      throw new BadRequestException(`fdiNumber must be an integer between ${FDI_MIN} and ${FDI_MAX}`);
+    if (!isValidFdi(dto.fdiNumber)) {
+      throw new BadRequestException(
+        'fdiNumber must use FDI notation: quadrant 1-4, position 1-8 (e.g. 11-18, 21-28, 31-38, 41-48)',
+      );
     }
 
-    const { rows } = await this.pool.query(
-      `INSERT INTO tooth_movements
-         (stage_id, fdi_number,
-          translate_x, translate_y, translate_z,
-          rotate_x, rotate_y, rotate_z,
-          tip, torque, intrusion, extrusion,
-          is_locked, notes)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
-       ON CONFLICT (stage_id, fdi_number) DO UPDATE
-         SET translate_x  = EXCLUDED.translate_x,
-             translate_y  = EXCLUDED.translate_y,
-             translate_z  = EXCLUDED.translate_z,
-             rotate_x     = EXCLUDED.rotate_x,
-             rotate_y     = EXCLUDED.rotate_y,
-             rotate_z     = EXCLUDED.rotate_z,
-             tip          = EXCLUDED.tip,
-             torque       = EXCLUDED.torque,
-             intrusion    = EXCLUDED.intrusion,
-             extrusion    = EXCLUDED.extrusion,
-             is_locked    = EXCLUDED.is_locked,
-             notes        = EXCLUDED.notes,
-             updated_at   = now()
-       RETURNING *`,
-      [
-        stageId,
-        dto.fdiNumber,
-        dto.translateX ?? 0,
-        dto.translateY ?? 0,
-        dto.translateZ ?? 0,
-        dto.rotateX ?? 0,
-        dto.rotateY ?? 0,
-        dto.rotateZ ?? 0,
-        dto.tip ?? 0,
-        dto.torque ?? 0,
-        dto.intrusion ?? 0,
-        dto.extrusion ?? 0,
-        dto.isLocked ?? false,
-        dto.notes ?? null,
-      ],
-    );
-    this.logger.log(`Tooth movement FDI ${dto.fdiNumber} upserted in stage ${stageId} by ${actorEmail}`);
-    return this.formatMovement(rows[0]);
+    const values: ToothMovementValues = {
+      mesiodistalMm: dto.mesiodistalMm ?? 0,
+      buccolingualMm: dto.buccolingualMm ?? 0,
+      occlusogingivalMm: dto.occlusogingivalMm ?? 0,
+      rotationDeg: dto.rotationDeg ?? 0,
+      tipDeg: dto.tipDeg ?? 0,
+      torqueDeg: dto.torqueDeg ?? 0,
+    };
+
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+      const { rows } = await client.query(
+        `INSERT INTO tooth_movements
+           (stage_id, fdi_number,
+            mesiodistal_mm, buccolingual_mm, occlusogingival_mm,
+            rotation_deg, tip_deg, torque_deg,
+            is_locked, notes)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+         ON CONFLICT (stage_id, fdi_number) DO UPDATE
+           SET mesiodistal_mm     = EXCLUDED.mesiodistal_mm,
+               buccolingual_mm    = EXCLUDED.buccolingual_mm,
+               occlusogingival_mm = EXCLUDED.occlusogingival_mm,
+               rotation_deg       = EXCLUDED.rotation_deg,
+               tip_deg            = EXCLUDED.tip_deg,
+               torque_deg         = EXCLUDED.torque_deg,
+               is_locked          = EXCLUDED.is_locked,
+               notes              = EXCLUDED.notes,
+               updated_at         = now()
+         RETURNING *`,
+        [
+          stageId,
+          dto.fdiNumber,
+          values.mesiodistalMm,
+          values.buccolingualMm,
+          values.occlusogingivalMm,
+          values.rotationDeg,
+          values.tipDeg,
+          values.torqueDeg,
+          dto.isLocked ?? false,
+          dto.notes ?? null,
+        ],
+      );
+      await client.query(
+        `UPDATE aligner_stages
+         SET movement_data = jsonb_set(
+               COALESCE(movement_data::jsonb, '{}'::jsonb),
+               ARRAY[$2::text], $3::jsonb)
+         WHERE id = $1`,
+        [stageId, String(dto.fdiNumber), JSON.stringify(values)],
+      );
+      await client.query('COMMIT');
+      this.logger.log(
+        `Tooth movement FDI ${dto.fdiNumber} upserted in stage ${stageId} by ${actorEmail}`,
+      );
+      return this.formatMovement(rows[0]);
+    } catch (err) {
+      await client.query('ROLLBACK');
+      throw err;
+    } finally {
+      client.release();
+    }
   }
 
   async delete(
@@ -125,14 +160,34 @@ export class ToothMovementsService {
     orgId: string,
     actorEmail: string,
   ) {
-    await this.verifyStageOwnership(stageId, planId, caseId, orgId);
-    const { rowCount } = await this.pool.query(
-      `DELETE FROM tooth_movements WHERE stage_id = $1 AND fdi_number = $2`,
-      [stageId, fdiNumber],
-    );
-    if (!rowCount) throw new NotFoundException(`No movement found for FDI ${fdiNumber} in this stage`);
-    this.logger.log(`Tooth movement FDI ${fdiNumber} deleted from stage ${stageId} by ${actorEmail}`);
-    return { deleted: true, fdiNumber };
+    const stage = await this.verifyStageOwnership(stageId, planId, caseId, orgId);
+    this.assertPlanEditable(stage);
+
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+      const { rowCount } = await client.query(
+        `DELETE FROM tooth_movements WHERE stage_id = $1 AND fdi_number = $2`,
+        [stageId, fdiNumber],
+      );
+      if (!rowCount) {
+        throw new NotFoundException(`No movement found for FDI ${fdiNumber} in this stage`);
+      }
+      await client.query(
+        `UPDATE aligner_stages
+         SET movement_data = COALESCE(movement_data::jsonb, '{}'::jsonb) - $2::text
+         WHERE id = $1`,
+        [stageId, String(fdiNumber)],
+      );
+      await client.query('COMMIT');
+      this.logger.log(`Tooth movement FDI ${fdiNumber} deleted from stage ${stageId} by ${actorEmail}`);
+      return { deleted: true, fdiNumber };
+    } catch (err) {
+      await client.query('ROLLBACK');
+      throw err;
+    } finally {
+      client.release();
+    }
   }
 
   // ── Clinical Measurements ────────────────────────────────────────────────────
@@ -156,7 +211,7 @@ export class ToothMovementsService {
       measuredByEmail: r['measured_by_email'] as string | null,
       measurementLabel: r['measurement_label'] as string | null,
       overjetMm: r['overjet_mm'] as number | null,
-      overbitemm: r['overbite_mm'] as number | null,
+      overbiteMm: r['overbite_mm'] as number | null,
       angleClass: r['angle_class'] as string | null,
       distanceMm: r['distance_mm'] as number | null,
       notes: r['notes'] as string | null,
@@ -183,7 +238,7 @@ export class ToothMovementsService {
         userId,
         dto.measurementLabel ?? null,
         dto.overjetMm ?? null,
-        dto.overbitemm ?? null,
+        dto.overbiteMm ?? null,
         dto.angleClass ?? null,
         dto.distanceMm ?? null,
         dto.notes ?? null,
@@ -200,16 +255,12 @@ export class ToothMovementsService {
       id: r['id'] as string,
       stageId: r['stage_id'] as string,
       fdiNumber: r['fdi_number'] as number,
-      translateX: r['translate_x'] as number,
-      translateY: r['translate_y'] as number,
-      translateZ: r['translate_z'] as number,
-      rotateX: r['rotate_x'] as number,
-      rotateY: r['rotate_y'] as number,
-      rotateZ: r['rotate_z'] as number,
-      tip: r['tip'] as number,
-      torque: r['torque'] as number,
-      intrusion: r['intrusion'] as number,
-      extrusion: r['extrusion'] as number,
+      mesiodistalMm: Number(r['mesiodistal_mm']),
+      buccolingualMm: Number(r['buccolingual_mm']),
+      occlusogingivalMm: Number(r['occlusogingival_mm']),
+      rotationDeg: Number(r['rotation_deg']),
+      tipDeg: Number(r['tip_deg']),
+      torqueDeg: Number(r['torque_deg']),
       isLocked: r['is_locked'] as boolean,
       notes: r['notes'] as string | null,
       createdAt: r['created_at'] as Date,
@@ -217,9 +268,22 @@ export class ToothMovementsService {
     };
   }
 
-  private async verifyStageOwnership(stageId: string, planId: string, caseId: string, orgId: string) {
+  private assertPlanEditable(stage: { doctorApproval: boolean }) {
+    if (stage.doctorApproval) {
+      throw new BadRequestException(
+        'Treatment plan is approved; tooth movements are locked. Create a new plan to make changes.',
+      );
+    }
+  }
+
+  private async verifyStageOwnership(
+    stageId: string,
+    planId: string,
+    caseId: string,
+    orgId: string,
+  ): Promise<{ id: string; doctorApproval: boolean }> {
     const { rows } = await this.pool.query(
-      `SELECT ast.id
+      `SELECT ast.id, tp.doctor_approval
        FROM aligner_stages ast
        JOIN treatment_plans tp ON tp.id = ast.treatment_plan_id
        JOIN cases c ON c.id = tp.case_id
@@ -228,6 +292,10 @@ export class ToothMovementsService {
       [stageId, planId, caseId, orgId],
     );
     if (!rows[0]) throw new NotFoundException('Stage not found');
+    return {
+      id: rows[0]['id'] as string,
+      doctorApproval: rows[0]['doctor_approval'] as boolean,
+    };
   }
 
   private async verifyCaseOwnership(caseId: string, orgId: string) {

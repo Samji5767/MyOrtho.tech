@@ -69,8 +69,8 @@ describe("getDemoToothDimensions", () => {
     expect(dims.depthMm).toBeCloseTo(dims.widthMm * 0.85, 5);
   });
 
-  it("confidence is demo_only", () => {
-    expect(getDemoToothDimensions(21).confidence).toBe("demo_only");
+  it("confidence is estimated", () => {
+    expect(getDemoToothDimensions(21).confidence).toBe("estimated");
   });
 
   it("falls back gracefully for unknown FDI", () => {
@@ -103,8 +103,8 @@ describe("computeArchMetrics", () => {
     expect(metrics.lowerArchLengthMm).toBeGreaterThan(45);
   });
 
-  it("confidence is demo_only", () =>
-    expect(metrics.confidence).toBe("demo_only"));
+  it("confidence is estimated", () =>
+    expect(metrics.confidence).toBe("estimated"));
 
   it("returns zeros when positions array is empty", () => {
     const empty = computeArchMetrics([]);
@@ -153,8 +153,8 @@ describe("computeOcclusionContacts", () => {
     expect(looseActive).toBeGreaterThanOrEqual(tightActive);
   });
 
-  it("confidence is demo_only", () =>
-    expect(contacts[0]?.confidence).toBe("demo_only"));
+  it("confidence is estimated", () =>
+    expect(contacts[0]?.confidence).toBe("estimated"));
 });
 
 // ─── computeCrowding ────────────────────────────────────────────────────────
@@ -184,8 +184,8 @@ describe("computeCrowding", () => {
     expect(isNaN(r.crowdingMm)).toBe(false);
   });
 
-  it("confidence is demo_only", () =>
-    expect(computeCrowding(positions, "lower").confidence).toBe("demo_only"));
+  it("confidence is estimated", () =>
+    expect(computeCrowding(positions, "lower").confidence).toBe("estimated"));
 });
 
 // ─── buildToothPositions ────────────────────────────────────────────────────

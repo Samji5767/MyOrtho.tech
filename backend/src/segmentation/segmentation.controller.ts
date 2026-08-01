@@ -1,5 +1,5 @@
 import {
-  Body, Controller, Delete, Get, HttpCode, Param, Patch, Post, Query, Req, Res, StreamableFile, UnauthorizedException, UseGuards,
+  BadRequestException, Body, Controller, Delete, Get, HttpCode, NotFoundException, Param, Patch, Post, Query, Req, Res, StreamableFile, UnauthorizedException, UseGuards,
 } from '@nestjs/common';
 import type { Request, Response } from 'express';
 import * as fs from 'fs';
@@ -208,11 +208,11 @@ export class SegmentationController {
     const { orgId } = getUser(req);
     const toothNumber = parseInt(toothNumberStr, 10);
     if (!Number.isFinite(toothNumber)) {
-      throw new UnauthorizedException('Invalid tooth number');
+      throw new BadRequestException('Invalid tooth number');
     }
     const meshPath = await this.svc.getToothMeshPath(caseId, orgId, jobId, toothNumber);
     if (!meshPath || !fs.existsSync(meshPath)) {
-      throw new UnauthorizedException('Tooth mesh not found');
+      throw new NotFoundException('Tooth mesh not found');
     }
     res.setHeader('Content-Type', 'model/stl');
     res.setHeader('Content-Disposition', `inline; filename="tooth_fdi_${toothNumber}.stl"`);
@@ -234,7 +234,7 @@ export class SegmentationController {
     const { orgId } = getUser(req);
     const meshPath = await this.svc.getGingivaMeshPath(caseId, orgId, jobId);
     if (!meshPath || !fs.existsSync(meshPath)) {
-      throw new UnauthorizedException('Gingiva mesh not found');
+      throw new NotFoundException('Gingiva mesh not found');
     }
     res.setHeader('Content-Type', 'model/stl');
     res.setHeader('Content-Disposition', `inline; filename="gingiva.stl"`);

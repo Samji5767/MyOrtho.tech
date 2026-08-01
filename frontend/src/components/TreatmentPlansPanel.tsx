@@ -47,24 +47,46 @@ function mvClass(value: number, isAngle: boolean): string {
   return value !== 0 ? "text-[color:var(--foreground)]" : "text-[color:var(--muted-foreground)]";
 }
 
+/**
+ * Normalise a per-tooth record to the signed canonical components. Supports
+ * both stored shapes: canonical signed keys (movement editor) and legacy
+ * unsigned directional pairs (stage scaffold).
+ */
+function toSignedMovement(m: Record<string, number>): Record<string, number> {
+  return {
+    mesiodistalMm: m.mesiodistalMm ?? ((m.mesialMm ?? 0) - (m.distalMm ?? 0)),
+    buccolingualMm: m.buccolingualMm ?? ((m.buccalMm ?? 0) - (m.lingualMm ?? 0)),
+    occlusogingivalMm: m.occlusogingivalMm ?? ((m.extrusionMm ?? 0) - (m.intrusionMm ?? 0)),
+    rotationDeg: m.rotationDeg ?? 0,
+    tipDeg: m.tipDeg ?? 0,
+    torqueDeg: m.torqueDeg ?? 0,
+  };
+}
+
 function MovementTable({ movements }: { movements: Record<string, Record<string, number>> }) {
-  const teeth = Object.keys(movements).map(Number).sort((a, b) => a - b);
+  // Root-level metadata keys (e.g. _is_simulated) sit alongside FDI keys.
+  const teeth = Object.keys(movements)
+    .filter((k) => /^\d+$/.test(k))
+    .map(Number)
+    .sort((a, b) => a - b);
   if (teeth.length === 0) return null;
 
-  const significant = teeth.filter((fdi) => {
-    const m = movements[String(fdi)];
-    return Object.values(m).some((v) => Math.abs(v) > 0.05);
-  });
+  const signed = new Map(teeth.map((fdi) => [fdi, toSignedMovement(movements[String(fdi)] ?? {})]));
+
+  const significant = teeth.filter((fdi) =>
+    Object.values(signed.get(fdi)!).some((v) => Math.abs(v) > 0.05),
+  );
 
   if (significant.length === 0) {
     return <p className="text-xs text-[color:var(--muted-foreground)]">No significant movements at this stage</p>;
   }
 
   const COLS: { key: string; label: string; angle: boolean }[] = [
-    { key: "mesialMm", label: "M (mm)", angle: false },
-    { key: "distalMm", label: "D (mm)", angle: false },
-    { key: "buccalMm", label: "B (mm)", angle: false },
-    { key: "lingualMm", label: "L (mm)", angle: false },
+    { key: "mesiodistalMm", label: "MD (mm)", angle: false },
+    { key: "buccolingualMm", label: "BL (mm)", angle: false },
+    { key: "occlusogingivalMm", label: "OG (mm)", angle: false },
+    { key: "rotationDeg", label: "Rot (°)", angle: true },
+    { key: "tipDeg", label: "Tip (°)", angle: true },
     { key: "torqueDeg", label: "Torq (°)", angle: true },
   ];
 
@@ -81,7 +103,7 @@ function MovementTable({ movements }: { movements: Record<string, Record<string,
         </thead>
         <tbody>
           {significant.map((fdi) => {
-            const m = movements[String(fdi)] ?? {};
+            const m = signed.get(fdi)!;
             const fmt = (v: number) => v === 0 ? "—" : (v > 0 ? "+" : "") + v.toFixed(2);
             return (
               <tr key={fdi} className="border-b border-[color:var(--border)]/40 last:border-0">
@@ -100,7 +122,7 @@ function MovementTable({ movements }: { movements: Record<string, Record<string,
         </tbody>
       </table>
       <div className="mt-1.5 flex items-center gap-3 text-[9px] text-[color:var(--muted-foreground)]">
-        <span>M=Mesial · D=Distal · B=Buccal · L=Lingual · Cumulative at this stage</span>
+        <span>MD mesial+ · BL buccal+ · OG extrusion+ · Cumulative at this stage</span>
         <span className="ml-auto flex items-center gap-2">
           <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-amber-500" />Moderate (&gt;0.5mm)</span>
           <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-rose-500" />High (&gt;1.0mm)</span>
@@ -264,9 +286,17 @@ function PlanRow({
     setGenerating(true);
     setGenerateError(null);
     try {
-      await generateStages(caseId, plan.id, plan.estimatedStages);
+      const result = await generateStages(caseId, plan.id, plan.estimatedStages);
       await loadStages();
-      toast({ title: "Stages generated", description: `${plan.estimatedStages} stages created. Review required before clinical use.`, type: "info" });
+      if (result.is_simulated) {
+        toast({
+          title: "Scaffold stages generated",
+          description: result.warning ?? "Stages are simulated scaffold data and cannot be approved.",
+          type: "warning",
+        });
+      } else {
+        toast({ title: "Stages generated", description: `${result.generated} stages created. Review required before clinical use.`, type: "info" });
+      }
     } catch (e) {
       setGenerateError(e instanceof ApiError ? e.message : "Stage generation failed");
     } finally {
@@ -520,9 +550,16 @@ function PlanRow({
                     <StageStrip stages={stages} activeStage={activeStage} onSelect={setActiveStage} />
                     {activeStageData && (
                       <div className="mt-3 rounded-lg border border-[color:var(--border)] bg-[color:var(--card)] p-3">
-                        <p className="mb-2 text-xs font-semibold text-[color:var(--foreground)]">
-                          Stage {activeStageData.stageNumber} — cumulative tooth positions
-                        </p>
+                        <div className="mb-2 flex items-center gap-2">
+                          <p className="text-xs font-semibold text-[color:var(--foreground)]">
+                            Stage {activeStageData.stageNumber} — cumulative tooth positions
+                          </p>
+                          {(activeStageData.movements as Record<string, unknown>)?.["_is_simulated"] === true && (
+                            <span className="flex items-center gap-1 rounded-full bg-amber-500/15 px-2 py-0.5 text-[10px] font-medium text-amber-600 dark:text-amber-400">
+                              <AlertTriangle size={10} /> Scaffold data — cannot be approved
+                            </span>
+                          )}
+                        </div>
                         <MovementTable
                           movements={activeStageData.movements as Record<string, Record<string, number>>}
                         />

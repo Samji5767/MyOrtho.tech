@@ -20,8 +20,8 @@ BEGIN
     SELECT 1 FROM information_schema.columns
     WHERE table_name = 'aligner_stages' AND column_name = 'attachment_data'
   ) THEN
-    EXECUTE $$ALTER TABLE aligner_stages
-      ADD COLUMN attachment_data jsonb NOT NULL DEFAULT '[]'$$;
+    EXECUTE $q$ALTER TABLE aligner_stages
+      ADD COLUMN attachment_data jsonb NOT NULL DEFAULT '[]'$q$;
   END IF;
 
   -- ── ipr_data ─────────────────────────────────────────────────────────────
@@ -29,8 +29,8 @@ BEGIN
     SELECT 1 FROM information_schema.columns
     WHERE table_name = 'aligner_stages' AND column_name = 'ipr_data'
   ) THEN
-    EXECUTE $$ALTER TABLE aligner_stages
-      ADD COLUMN ipr_data jsonb NOT NULL DEFAULT '[]'$$;
+    EXECUTE $q$ALTER TABLE aligner_stages
+      ADD COLUMN ipr_data jsonb NOT NULL DEFAULT '[]'$q$;
   END IF;
 
   -- ── velocity_mm_per_week ─────────────────────────────────────────────────
@@ -38,8 +38,8 @@ BEGIN
     SELECT 1 FROM information_schema.columns
     WHERE table_name = 'aligner_stages' AND column_name = 'velocity_mm_per_week'
   ) THEN
-    EXECUTE $$ALTER TABLE aligner_stages
-      ADD COLUMN velocity_mm_per_week double precision$$;
+    EXECUTE $q$ALTER TABLE aligner_stages
+      ADD COLUMN velocity_mm_per_week double precision$q$;
   END IF;
 
   -- ── is_approved ───────────────────────────────────────────────────────────
@@ -47,8 +47,8 @@ BEGIN
     SELECT 1 FROM information_schema.columns
     WHERE table_name = 'aligner_stages' AND column_name = 'is_approved'
   ) THEN
-    EXECUTE $$ALTER TABLE aligner_stages
-      ADD COLUMN is_approved boolean NOT NULL DEFAULT false$$;
+    EXECUTE $q$ALTER TABLE aligner_stages
+      ADD COLUMN is_approved boolean NOT NULL DEFAULT false$q$;
   END IF;
 
   -- ── approved_by ───────────────────────────────────────────────────────────
@@ -56,8 +56,8 @@ BEGIN
     SELECT 1 FROM information_schema.columns
     WHERE table_name = 'aligner_stages' AND column_name = 'approved_by'
   ) THEN
-    EXECUTE $$ALTER TABLE aligner_stages
-      ADD COLUMN approved_by uuid REFERENCES auth_users(id) ON DELETE SET NULL$$;
+    EXECUTE $q$ALTER TABLE aligner_stages
+      ADD COLUMN approved_by uuid REFERENCES auth_users(id) ON DELETE SET NULL$q$;
   END IF;
 
   -- ── approved_at ───────────────────────────────────────────────────────────
@@ -65,8 +65,8 @@ BEGIN
     SELECT 1 FROM information_schema.columns
     WHERE table_name = 'aligner_stages' AND column_name = 'approved_at'
   ) THEN
-    EXECUTE $$ALTER TABLE aligner_stages
-      ADD COLUMN approved_at timestamptz$$;
+    EXECUTE $q$ALTER TABLE aligner_stages
+      ADD COLUMN approved_at timestamptz$q$;
   END IF;
 
   -- ── unique constraint required by ON CONFLICT (treatment_plan_id, stage_number)
@@ -78,14 +78,14 @@ BEGIN
     SELECT 1 FROM pg_constraint
     WHERE conname = 'uq_aligner_stages_plan_stage'
   ) THEN
-    EXECUTE $$ALTER TABLE aligner_stages
+    EXECUTE $q$ALTER TABLE aligner_stages
       ADD CONSTRAINT uq_aligner_stages_plan_stage
-      UNIQUE (treatment_plan_id, stage_number)$$;
+      UNIQUE (treatment_plan_id, stage_number)$q$;
   END IF;
 
   -- ── index on approved_by for audit queries ────────────────────────────────
-  EXECUTE $$CREATE INDEX IF NOT EXISTS idx_aligner_stages_approved_by
+  EXECUTE $q$CREATE INDEX IF NOT EXISTS idx_aligner_stages_approved_by
     ON aligner_stages(approved_by)
-    WHERE approved_by IS NOT NULL$$;
+    WHERE approved_by IS NOT NULL$q$;
 
 END $$;

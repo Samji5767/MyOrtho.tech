@@ -100,22 +100,6 @@ export interface CorrectionDto {
 
 // ── STL validation types ─────────────────────────────────────────────────────
 
-export interface StlValidationFinding {
-  type: 'corrupt' | 'empty' | 'inverted_normals' | 'non_manifold' | 'excessive_triangles' | 'open_mesh' | 'self_intersection' | 'disconnected_components';
-  severity: 'info' | 'warning' | 'error';
-  description: string;
-  affectedTriangleCount?: number;
-}
-
-export interface StlValidationResult {
-  isValid: boolean;
-  classification: 'PASS' | 'WARNING' | 'FAIL';
-  findings: StlValidationFinding[];
-  triangleCount: number;
-  estimatedFileIntegrityPercent: number;
-  humanReadableSummary: string;
-}
-
 // ── Confidence scoring types ──────────────────────────────────────────────────
 
 export interface SegmentationResult {
@@ -266,37 +250,132 @@ export class SegmentationService {
     }
   }
 
+  /**
+   * Drive the real AI-engine contract: submit the scan file for segmentation
+   * (async — the engine returns a job id), poll until it finishes, then
+   * persist per-tooth confidences. A manual-review result (no automated
+   * provider available) is recorded as review_required, never as completed.
+   */
   private async callExternalAIService(jobId: string, aiUrl: string, arch: string, provider?: string) {
-    const res = await fetch(`${aiUrl}/ai/segment`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ jobId, arch, ...(provider ? { provider } : {}) }),
-    });
-    if (!res.ok) throw new Error(`AI service returned ${res.status}`);
-    const data = await res.json() as { segments: Array<{ toothNumber: number; confidence: number; label: string }> };
+    const internalSecret = process.env.INTERNAL_API_SECRET ?? '';
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+      ...(internalSecret ? { 'X-Internal-Token': internalSecret } : {}),
+    };
 
-    const caseRow = await this.pool.query<{ case_id: string }>(
-      `SELECT case_id FROM segmentation_jobs WHERE id = $1`,
+    // Resolve the scan file to segment: the job's scan, else the latest scan
+    // for the case. Segmentation without a scan is impossible.
+    const { rows: jobRows } = await this.pool.query(
+      `SELECT j.case_id, j.scan_id,
+              COALESCE(s.file_path, latest.file_path) AS file_path,
+              COALESCE(s.jaw_type, latest.jaw_type) AS jaw_type
+       FROM segmentation_jobs j
+       LEFT JOIN scans s ON s.id = j.scan_id
+       LEFT JOIN LATERAL (
+         SELECT file_path, jaw_type FROM scans
+         WHERE case_id = j.case_id ORDER BY created_at DESC LIMIT 1
+       ) latest ON true
+       WHERE j.id = $1`,
       [jobId],
     );
-    const caseId = caseRow.rows[0]?.case_id;
+    const jobRow = jobRows[0] as
+      | { case_id: string; scan_id: string | null; file_path: string | null; jaw_type: string | null }
+      | undefined;
+    if (!jobRow?.file_path) {
+      throw new Error('No scan uploaded for this case — upload a scan before requesting segmentation');
+    }
+    const caseId = jobRow.case_id;
+    const jawType =
+      arch === 'both' || jobRow.jaw_type === 'both'
+        ? 'combined'
+        : (jobRow.jaw_type ?? 'auto');
 
-    for (const seg of data.segments) {
-      const tooth = FDI_CHART.find(t => t.fdi === seg.toothNumber);
-      if (!tooth) continue;
+    const res = await fetch(`${aiUrl}/ai/segment`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({
+        case_id: caseId,
+        scan_id: jobRow.scan_id,
+        file_path: jobRow.file_path,
+        jaw_type: jawType,
+        ...(provider ? { provider } : {}),
+      }),
+      signal: AbortSignal.timeout(12_000),
+    });
+    if (!res.ok) {
+      const body = await res.text().catch(() => '');
+      throw new Error(`AI service returned ${res.status}${body ? `: ${body.slice(0, 200)}` : ''}`);
+    }
+    const submitted = (await res.json()) as { job_id: string };
+
+    // Poll the engine until the job resolves (bounded).
+    const POLL_INTERVAL_MS = 3_000;
+    const POLL_LIMIT = 100; // 5 minutes
+    let aiJob: Record<string, unknown> | null = null;
+    for (let i = 0; i < POLL_LIMIT; i++) {
+      await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS));
+      const poll = await fetch(`${aiUrl}/ai/jobs/${submitted.job_id}`, {
+        headers,
+        signal: AbortSignal.timeout(5_000),
+      });
+      if (!poll.ok) continue;
+      const body = (await poll.json()) as Record<string, unknown>;
+      const s = body['status'] as string | undefined;
+      if (s === 'completed' || s === 'failed') { aiJob = body; break; }
+      await this.pool.query(
+        `UPDATE segmentation_jobs SET progress = LEAST(90, progress + 5) WHERE id = $1`,
+        [jobId],
+      );
+    }
+    if (!aiJob) throw new Error('AI segmentation timed out while polling for a result');
+    if (aiJob['status'] === 'failed') {
+      throw new Error((aiJob['error'] as string | undefined) ?? 'AI engine reported failure');
+    }
+
+    const requiresManualReview = aiJob['requires_manual_review'] === true;
+    const confidences = (aiJob['teeth_confidence'] ?? {}) as Record<string, number>;
+    const toothIds = (aiJob['tooth_ids'] ?? []) as number[];
+    const summary = JSON.stringify({
+      engine: aiJob['engine'] ?? null,
+      requires_manual_review: requiresManualReview,
+      warning: aiJob['warning'] ?? null,
+      segmented_mesh_path: aiJob['segmented_mesh_path'] ?? null,
+      ...(provider ? { provider } : {}),
+    });
+
+    if (requiresManualReview && toothIds.length === 0) {
+      // No automated provider produced segmentation — needs a human.
+      await this.pool.query(
+        `UPDATE segmentation_jobs
+         SET status = 'review_required', completed_at = NOW(), progress = 100,
+             tooth_count = 0, result_summary = $2
+         WHERE id = $1`,
+        [jobId, summary],
+      );
+      return;
+    }
+
+    for (const fdi of toothIds) {
+      const tooth = FDI_CHART.find(t => t.fdi === fdi);
+      if (!tooth) {
+        this.logger.warn(`AI returned unrecognized FDI ${fdi} for job ${jobId} — skipped`);
+        continue;
+      }
       await this.pool.query(
         `INSERT INTO tooth_segments
            (job_id, case_id, tooth_number, universal_number, label, arch, confidence)
            VALUES ($1, $2, $3, $4, $5, $6, $7)
            ON CONFLICT (job_id, tooth_number) DO UPDATE SET confidence = EXCLUDED.confidence`,
-        [jobId, caseId, seg.toothNumber, tooth.universal, seg.label, tooth.arch, seg.confidence],
+        [jobId, caseId, fdi, tooth.universal, tooth.label, tooth.arch,
+         confidences[String(fdi)] ?? null],
       );
     }
     await this.pool.query(
       `UPDATE segmentation_jobs SET status = 'completed', completed_at = NOW(), progress = 100,
-         tooth_count = (SELECT COUNT(*) FROM tooth_segments WHERE job_id = $1)
+         tooth_count = (SELECT COUNT(*) FROM tooth_segments WHERE job_id = $1),
+         result_summary = $2
        WHERE id = $1`,
-      [jobId],
+      [jobId, summary],
     );
   }
 
@@ -773,180 +852,6 @@ export class SegmentationService {
     return { vertices: [...vertexSet].sort((a, b) => a - b), normals: currentMask.normals ?? [] };
   }
 
-  // ── STL Validation ────────────────────────────────────────────────────────────
-  // Best-effort structural check. Full geometric validation (manifold, self-intersection)
-  // requires specialized geometry processing outside of Node.js.
-
-  async validateStlMesh(filePath: string): Promise<StlValidationResult> {
-    const findings: StlValidationFinding[] = [];
-    let triangleCount = 0;
-    let estimatedFileIntegrityPercent = 100;
-
-    // Step 1: File accessibility and size check
-    let fileSizeBytes: number;
-    try {
-      const stat = fs.statSync(filePath);
-      fileSizeBytes = stat.size;
-    } catch {
-      return {
-        isValid: false,
-        classification: 'FAIL',
-        findings: [{ type: 'corrupt', severity: 'error', description: 'File not found or cannot be accessed' }],
-        triangleCount: 0,
-        estimatedFileIntegrityPercent: 0,
-        humanReadableSummary: 'FAIL: File not found or cannot be accessed. Full geometric validation requires specialized geometry processing.',
-      };
-    }
-
-    if (fileSizeBytes === 0) {
-      return {
-        isValid: false,
-        classification: 'FAIL',
-        findings: [{ type: 'empty', severity: 'error', description: 'File is empty (0 bytes)' }],
-        triangleCount: 0,
-        estimatedFileIntegrityPercent: 0,
-        humanReadableSummary: 'FAIL: STL file is empty. Full geometric validation requires specialized geometry processing.',
-      };
-    }
-
-    const MAX_SIZE_BYTES = 500 * 1024 * 1024;
-    if (fileSizeBytes > MAX_SIZE_BYTES) {
-      findings.push({
-        type: 'excessive_triangles',
-        severity: 'warning',
-        description: `File size ${(fileSizeBytes / (1024 * 1024)).toFixed(1)} MB exceeds recommended 500 MB limit`,
-      });
-      estimatedFileIntegrityPercent -= 10;
-    }
-
-    // Step 2: Binary STL header parse (80-byte header + 4-byte triangle count)
-    const BINARY_HEADER_SIZE = 84;
-    if (fileSizeBytes < BINARY_HEADER_SIZE) {
-      return {
-        isValid: false,
-        classification: 'FAIL',
-        findings: [{ type: 'corrupt', severity: 'error', description: `File too small (${fileSizeBytes} bytes) to contain a valid binary STL header` }],
-        triangleCount: 0,
-        estimatedFileIntegrityPercent: 0,
-        humanReadableSummary: 'FAIL: File is too small to be a valid binary STL. Full geometric validation requires specialized geometry processing.',
-      };
-    }
-
-    let fd = -1;
-    try {
-      fd = fs.openSync(filePath, 'r');
-      const headerBuf = Buffer.alloc(84);
-      fs.readSync(fd, headerBuf, 0, 84, 0);
-
-      // Triangle count is stored as little-endian uint32 at bytes 80-83
-      triangleCount = headerBuf.readUInt32LE(80);
-
-      // Binary STL: each triangle is exactly 50 bytes (12-byte normal + 36-byte vertices + 2-byte attr)
-      const expectedFileSize = 84 + triangleCount * 50;
-      const sizeDelta = Math.abs(fileSizeBytes - expectedFileSize);
-      const isBinarySizeValid = sizeDelta <= Math.max(100, expectedFileSize * 0.01);
-
-      if (!isBinarySizeValid) {
-        // May be ASCII STL — estimate triangle count heuristically
-        const ASCII_BYTES_PER_TRI = 200;
-        triangleCount = Math.round(fileSizeBytes / ASCII_BYTES_PER_TRI);
-        findings.push({
-          type: 'corrupt',
-          severity: 'warning',
-          description: 'File does not match expected binary STL byte layout — may be ASCII format. Triangle count is estimated.',
-        });
-        estimatedFileIntegrityPercent -= 15;
-      }
-
-      // Step 3: Triangle count sanity
-      if (triangleCount < 100) {
-        findings.push({
-          type: 'empty',
-          severity: 'warning',
-          description: `Very low triangle count (${triangleCount}) — mesh may be empty or nearly empty`,
-          affectedTriangleCount: triangleCount,
-        });
-        estimatedFileIntegrityPercent -= 20;
-      }
-
-      const MAX_TRIANGLES = 10_000_000;
-      if (triangleCount > MAX_TRIANGLES) {
-        findings.push({
-          type: 'excessive_triangles',
-          severity: 'warning',
-          description: `Triangle count (${triangleCount.toLocaleString()}) exceeds recommended maximum of ${MAX_TRIANGLES.toLocaleString()}`,
-          affectedTriangleCount: triangleCount,
-        });
-        estimatedFileIntegrityPercent -= 10;
-      }
-
-      // Step 4: Normal vector heuristic — sample 100 triangles from binary STL
-      // Check whether normals are consistently oriented (positive dot with centroid→vertex vector)
-      if (isBinarySizeValid && triangleCount >= 100) {
-        const SAMPLE_COUNT = 100;
-        const TRI_SIZE = 50;
-        let invertedCount = 0;
-
-        for (let i = 0; i < SAMPLE_COUNT; i++) {
-          const triIndex = Math.floor((i / SAMPLE_COUNT) * triangleCount);
-          const offset = 84 + triIndex * TRI_SIZE;
-          const triBuf = Buffer.alloc(TRI_SIZE);
-          fs.readSync(fd, triBuf, 0, TRI_SIZE, offset);
-
-          const nx = triBuf.readFloatLE(0);
-          const ny = triBuf.readFloatLE(4);
-          const nz = triBuf.readFloatLE(8);
-
-          const v0x = triBuf.readFloatLE(12); const v0y = triBuf.readFloatLE(16); const v0z = triBuf.readFloatLE(20);
-          const v1x = triBuf.readFloatLE(24); const v1y = triBuf.readFloatLE(28); const v1z = triBuf.readFloatLE(32);
-          const v2x = triBuf.readFloatLE(36); const v2y = triBuf.readFloatLE(40); const v2z = triBuf.readFloatLE(44);
-
-          // Triangle centroid
-          const cx = (v0x + v1x + v2x) / 3;
-          const cy = (v0y + v1y + v2y) / 3;
-          const cz = (v0z + v1z + v2z) / 3;
-
-          // Centroid → vertex 0 direction
-          const dx = v0x - cx; const dy = v0y - cy; const dz = v0z - cz;
-
-          // Negative dot product means normal points opposite to outward direction (inverted)
-          if (nx * dx + ny * dy + nz * dz < 0) invertedCount++;
-        }
-
-        const invertedPct = (invertedCount / SAMPLE_COUNT) * 100;
-        if (invertedPct > 30) {
-          findings.push({
-            type: 'inverted_normals',
-            severity: 'warning',
-            description: `${invertedPct.toFixed(0)}% of sampled triangles have potentially inverted normals`,
-            affectedTriangleCount: Math.round((invertedPct / 100) * triangleCount),
-          });
-          estimatedFileIntegrityPercent -= 15;
-        }
-      }
-    } finally {
-      if (fd >= 0) fs.closeSync(fd);
-    }
-
-    const hasErrors   = findings.some(f => f.severity === 'error');
-    const hasWarnings = findings.some(f => f.severity === 'warning');
-    const classification: 'PASS' | 'WARNING' | 'FAIL' = hasErrors ? 'FAIL' : hasWarnings ? 'WARNING' : 'PASS';
-    estimatedFileIntegrityPercent = Math.max(0, Math.min(100, estimatedFileIntegrityPercent));
-
-    const findingSummary = findings.map(f => `[${f.severity.toUpperCase()}] ${f.description}`).join('; ');
-    const humanReadableSummary = findings.length === 0
-      ? `PASS: STL mesh appears structurally sound (${triangleCount.toLocaleString()} triangles). Note: full geometric validation requires specialized geometry processing.`
-      : `${classification}: ${findingSummary}. Note: this is a best-effort structural check — full validation requires specialized geometry processing.`;
-
-    return {
-      isValid: !hasErrors,
-      classification,
-      findings,
-      triangleCount,
-      estimatedFileIntegrityPercent,
-      humanReadableSummary,
-    };
-  }
 
   // ── Retry failed job with exponential backoff ────────────────────────────────
 

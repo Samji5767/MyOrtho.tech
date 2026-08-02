@@ -87,20 +87,35 @@ def test_autostage_handles_zero_movement():
     assert res.json()["total_stages"] == 1
 
 
-def test_segment_endpoint_queues_background_task():
+def test_segment_endpoint_queues_background_task(tmp_path):
+    scan = tmp_path / "test.stl"
+    scan.write_bytes(b"solid t\nendsolid t\n")
     res = client.post(
         "/ai/segment",
         json={
             "case_id": "c1",
             "scan_id": "s1",
-            "file_path": "/tmp/test.stl",
+            "file_path": str(scan),
             "jaw_type": "maxillary",
         },
     )
-    # Endpoint accepts and queues regardless of file existence
     assert res.status_code == 200
     assert res.json()["status"] == "queued"
     assert "job_id" in res.json()
+
+
+def test_segment_endpoint_rejects_missing_file():
+    res = client.post(
+        "/ai/segment",
+        json={
+            "case_id": "c1",
+            "scan_id": "s1",
+            "file_path": "/tmp/does-not-exist-anywhere.stl",
+            "jaw_type": "maxillary",
+        },
+    )
+    assert res.status_code == 400
+    assert "not found" in res.json()["detail"].lower()
 
 
 def test_auth_required_without_override():

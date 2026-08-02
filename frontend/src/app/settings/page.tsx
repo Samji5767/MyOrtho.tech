@@ -42,73 +42,6 @@ import { useToast } from "@/components/ToastContext";
 import { roleLabel, roleTone } from "@/lib/auth";
 import { APP_VERSION, APP_BUILD, RELEASE_TITLE, RELEASE_SUBTITLE, RELEASE_HIGHLIGHTS } from "@/lib/constants";
 
-// ─── Clinical Feature Flags (localStorage-based) ──────────────────────────────
-
-const CLINICAL_FLAGS = [
-  { key: "mo_flag_demo_occlusion",          label: "Demo occlusion analysis",      desc: "Show estimated contact points and bite indicators in the Plan tab." },
-  { key: "mo_flag_estimated_measurements",  label: "Estimated measurements",        desc: "Display pre-filled demo measurement values in Measurements tab." },
-  { key: "mo_flag_experimental_movement",   label: "Experimental tooth movement",   desc: "Enable 6-DOF per-tooth movement sliders in the Movements tab." },
-  { key: "mo_flag_experimental_staging",    label: "Experimental staging",          desc: "Show aligner timeline player in the Staging tab." },
-  { key: "mo_flag_advanced_cad",            label: "Advanced CAD tools",            desc: "Expose enterprise hide/lock/isolate and attachment controls in CAD Studio." },
-  { key: "mo_flag_keyboard_shortcuts",      label: "Extended keyboard shortcuts",   desc: "Enable camera preset shortcuts (B/N/[/]/U/I) in CAD Studio." },
-] as const;
-
-function ClinicalFlagsCard() {
-  const [flags, setFlags] = useState<Record<string, boolean>>({});
-
-  useEffect(() => {
-    const loaded: Record<string, boolean> = {};
-    CLINICAL_FLAGS.forEach(({ key }) => {
-      loaded[key] = (safeStorage.get(key) ?? "1") === "1";
-    });
-    setFlags(loaded);
-  }, []);
-
-  function toggle(key: string) {
-    setFlags((prev) => {
-      const next = { ...prev, [key]: !prev[key] };
-      safeStorage.set(key, next[key] ? "1" : "0");
-      return next;
-    });
-  }
-
-  return (
-    <Card className="ios-card p-5 sm:p-6">
-      <p className="text-xs font-bold uppercase tracking-[0.18em] text-[color:var(--primary)] mb-1">Clinical Features</p>
-      <p className="text-xs text-[color:var(--muted-foreground)] mb-4">
-        Toggle experimental and demo clinical planning features. Changes take effect immediately.
-      </p>
-      <div className="space-y-2">
-        {CLINICAL_FLAGS.map(({ key, label, desc }) => (
-          <div key={key} className="flex items-start justify-between gap-4 rounded-2xl border border-[color:var(--border)] bg-[color:var(--background)] px-4 py-3">
-            <div className="min-w-0">
-              <p className="text-sm font-semibold text-[color:var(--foreground)]">{label}</p>
-              <p className="mt-0.5 text-xs text-[color:var(--muted-foreground)]">{desc}</p>
-            </div>
-            <button
-              type="button"
-              role="switch"
-              aria-checked={!!flags[key]}
-              aria-label={label}
-              onClick={() => toggle(key)}
-              className={[
-                "relative mt-0.5 h-6 w-11 shrink-0 rounded-full transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--primary)] focus-visible:ring-offset-2",
-                flags[key]
-                  ? "bg-[color:var(--primary)]"
-                  : "bg-[color-mix(in_srgb,var(--border)_80%,transparent)]",
-              ].join(" ")}
-            >
-              <span className={[
-                "absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-transform",
-                flags[key] ? "translate-x-5" : "translate-x-0.5",
-              ].join(" ")} />
-            </button>
-          </div>
-        ))}
-      </div>
-    </Card>
-  );
-}
 
 type Mode = "doctor" | "lab";
 
@@ -673,7 +606,6 @@ export default function SettingsPage() {
       </Card>
 
       {/* CLINICAL FEATURE FLAGS */}
-      <ClinicalFlagsCard />
 
       {/* WORKSPACE SETUP */}
       <Card className="ios-card p-5 sm:p-6">
@@ -692,21 +624,6 @@ export default function SettingsPage() {
             >
               <RotateCcw size={13} /> Restart
             </Link>
-          </div>
-          <div className="flex items-center justify-between rounded-2xl border border-[color:var(--border)] bg-[color:var(--background)] px-4 py-3">
-            <div>
-              <p className="text-sm font-semibold text-[color:var(--foreground)]">Reset demo data</p>
-              <p className="mt-0.5 text-xs text-[color:var(--muted-foreground)]">
-                Clear all representative sample cases and events. Your real patient data is unaffected.
-              </p>
-            </div>
-            <button
-              type="button"
-              className="ml-4 shrink-0 inline-flex h-9 items-center gap-1.5 rounded-xl border border-[color:var(--border)] px-3 text-xs font-semibold text-[color:var(--muted-foreground)] transition-colors hover:border-red-400 hover:text-red-500 active:scale-95"
-              onClick={() => { safeStorage.remove("mo_demo_loaded"); window.location.reload(); }}
-            >
-              Clear demo
-            </button>
           </div>
         </div>
       </Card>

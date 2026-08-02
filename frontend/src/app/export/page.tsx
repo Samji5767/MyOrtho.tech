@@ -33,110 +33,7 @@ import dynamic from "next/dynamic";
 
 // ─── Export format catalogue ─────────────────────────────────────────────────
 
-const FORMATS = [
-  {
-    id: "stl_binary",
-    label: "STL Binary",
-    ext: ".stl",
-    desc: "Standard binary mesh for printing",
-    icon: Layers,
-    tone: "primary" as const,
-    requiresApproval: false,
-    category: "3D Mesh",
-  },
-  {
-    id: "stl_ascii",
-    label: "STL ASCII",
-    ext: ".stl",
-    desc: "ASCII mesh for broad compatibility",
-    icon: Layers,
-    tone: "info" as const,
-    requiresApproval: false,
-    category: "3D Mesh",
-  },
-  {
-    id: "ply",
-    label: "PLY",
-    ext: ".ply",
-    desc: "Polygon mesh with color and normals",
-    icon: Layers,
-    tone: "info" as const,
-    requiresApproval: false,
-    category: "3D Mesh",
-  },
-  {
-    id: "obj",
-    label: "OBJ",
-    ext: ".obj",
-    desc: "Wavefront OBJ with material data",
-    icon: Layers,
-    tone: "info" as const,
-    requiresApproval: false,
-    category: "3D Mesh",
-  },
-  {
-    id: "off",
-    label: "OFF",
-    ext: ".off",
-    desc: "Object File Format for mesh interchange",
-    icon: Layers,
-    tone: "neutral" as const,
-    requiresApproval: false,
-    category: "3D Mesh",
-  },
-  {
-    id: "3mf",
-    label: "3MF",
-    ext: ".3mf",
-    desc: "3D Manufacturing Format",
-    icon: Package,
-    tone: "primary" as const,
-    requiresApproval: false,
-    category: "3D Mesh",
-  },
-  {
-    id: "zip",
-    label: "Full Package",
-    ext: ".zip",
-    desc: "All arches + treatment plan + reports",
-    icon: Package,
-    tone: "success" as const,
-    requiresApproval: true,
-    category: "Package",
-  },
-  {
-    id: "pdf_report",
-    label: "Clinical Report",
-    ext: ".pdf",
-    desc: "PDF with measurements, notes & images",
-    icon: FileText,
-    tone: "warning" as const,
-    requiresApproval: true,
-    category: "Report",
-  },
-  {
-    id: "csv",
-    label: "CSV Measurements",
-    ext: ".csv",
-    desc: "Tooth movements & IPR data table",
-    icon: FileText,
-    tone: "neutral" as const,
-    requiresApproval: false,
-    category: "Data",
-  },
-  {
-    id: "json",
-    label: "Plan JSON",
-    ext: ".json",
-    desc: "Machine-readable treatment plan data",
-    icon: FileText,
-    tone: "neutral" as const,
-    requiresApproval: false,
-    category: "Data",
-  },
-];
-
-// ─── Case selector ────────────────────────────────────────────────────────────
+// ─── Case selector ──────────────────────────────────────────────────────────
 
 function CaseSelector({
   onSelect,
@@ -272,101 +169,6 @@ function CaseSelector({
   );
 }
 
-// ─── Format grid ──────────────────────────────────────────────────────────────
-
-function FormatGrid({
-  selectedId,
-  onSelect,
-}: {
-  selectedId: string | null;
-  onSelect: (id: string) => void;
-}) {
-  const byCategory = FORMATS.reduce<Record<string, typeof FORMATS>>((acc, f) => {
-    (acc[f.category] ??= []).push(f);
-    return acc;
-  }, {});
-
-  return (
-    <div className="space-y-5">
-      <div className="flex items-center justify-between gap-3">
-        <div>
-          <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-[color:var(--primary)]">
-            Available Formats
-          </p>
-          <h2 className="mt-0.5 text-lg font-semibold text-[color:var(--foreground)]">
-            Export Options
-          </h2>
-        </div>
-        <div className="flex items-center gap-2 rounded-full border border-amber-200/70 bg-amber-50/70 px-3 py-1.5 text-[10px] font-semibold text-amber-700 dark:border-amber-800/60 dark:bg-amber-950/30 dark:text-amber-400">
-          <Shield size={11} />
-          PHI requires approval
-        </div>
-      </div>
-
-      {Object.entries(byCategory).map(([cat, fmts]) => (
-        <div key={cat}>
-          <p className="mb-2 text-[10px] font-bold uppercase tracking-[0.14em] text-[color:var(--muted-foreground)]">
-            {cat}
-          </p>
-          <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-4">
-            {fmts.map((fmt) => {
-              const Icon = fmt.icon;
-              const selected = selectedId === fmt.id;
-              return (
-                <button
-                  key={fmt.id}
-                  type="button"
-                  onClick={() => onSelect(fmt.id)}
-                  aria-pressed={selected}
-                  className={[
-                    "flex flex-col gap-2 rounded-[inherit] border p-3 text-left transition-all duration-150 active:scale-[0.97] focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--primary)] focus-visible:ring-offset-1",
-                    selected
-                      ? "border-[color:var(--primary)] bg-[color:var(--primary-glow)] shadow-[0_0_0_2px_color-mix(in_srgb,var(--primary)_25%,transparent)]"
-                      : "border-[color:var(--border)] bg-[color:var(--card)] hover:border-[color:var(--primary)]/50",
-                  ].join(" ")}
-                >
-                  <div className="flex items-start justify-between gap-1">
-                    <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-[color:var(--primary-glow)]">
-                      <Icon size={13} className="text-[color:var(--primary)]" aria-hidden />
-                    </span>
-                    <div className="flex items-center gap-1">
-                      {selected && <CheckCircle2 size={12} className="text-[color:var(--primary)]" />}
-                      {fmt.requiresApproval && (
-                        <span className="rounded-full bg-amber-100 px-1.5 py-0.5 text-[9px] font-semibold text-amber-700 dark:bg-amber-900/40 dark:text-amber-400">
-                          PHI
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                  <div>
-                    <p className={`text-xs font-bold ${selected ? "text-[color:var(--primary)]" : "text-[color:var(--foreground)]"}`}>
-                      {fmt.label}
-                    </p>
-                    <p className="mt-0.5 text-[10px] leading-snug text-[color:var(--muted-foreground)]">
-                      {fmt.desc}
-                    </p>
-                  </div>
-                  <span className="mt-auto font-mono text-[10px] text-[color:var(--muted-foreground)]">
-                    {fmt.ext}
-                  </span>
-                </button>
-              );
-            })}
-          </div>
-        </div>
-      ))}
-      {selectedId && (
-        <p className="text-xs text-[color:var(--muted-foreground)]">
-          Selected: <span className="font-semibold text-[color:var(--foreground)]">
-            {FORMATS.find(f => f.id === selectedId)?.label ?? selectedId}
-          </span>
-          {" "}&mdash; select a case above to generate this export.
-        </p>
-      )}
-    </div>
-  );
-}
-
 // ─── Compliance notice ────────────────────────────────────────────────────────
 
 function ComplianceNotice() {
@@ -374,9 +176,9 @@ function ComplianceNotice() {
     <div className="flex items-start gap-3 rounded-xl border border-blue-200/60 bg-blue-50/60 px-4 py-3 text-xs text-blue-800 dark:border-blue-500/20 dark:bg-blue-500/10 dark:text-blue-300">
       <Shield size={14} className="mt-0.5 shrink-0" aria-hidden />
       <span>
-        <strong>HIPAA / clinical compliance:</strong> All export packages are
-        SHA-256 checksummed and logged to the audit trail. Exports containing
-        PHI require doctor approval before download.
+        <strong>Clinical compliance:</strong> exports containing PHI require
+        doctor approval before download. Download files only onto managed,
+        encrypted devices.
       </span>
     </div>
   );
@@ -532,7 +334,6 @@ function ExportPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const caseId = searchParams.get("caseId");
-  const [selectedFormatId, setSelectedFormatId] = useState<string | null>(null);
 
   const handleSelect = useCallback(
     (id: string) => {
@@ -560,7 +361,6 @@ function ExportPageContent() {
       {!caseId ? (
         <>
           <CaseSelector onSelect={handleSelect} />
-          <FormatGrid selectedId={selectedFormatId} onSelect={setSelectedFormatId} />
           <PrinterCompatibility />
           <ComplianceNotice />
         </>

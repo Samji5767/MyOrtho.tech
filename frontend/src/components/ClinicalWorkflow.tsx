@@ -181,7 +181,7 @@ function WorkflowEventRow({ event }: { event: WorkflowEvent }) {
 }
 
 interface ClinicalWorkflowProps {
-  caseId?: string;
+  caseId: string;
   caseName?: string;
   initialStatus?: CaseStatus;
   initialHistory?: WorkflowEvent[];
@@ -190,7 +190,7 @@ interface ClinicalWorkflowProps {
 }
 
 export default function ClinicalWorkflow({
-  caseId = "DEMO-001",
+  caseId,
   caseName = "Sample Case",
   initialStatus = "clinical_review",
   initialHistory,
@@ -335,13 +335,6 @@ export default function ClinicalWorkflow({
           ))}
         </ul>
       </Card>
-
-      {caseId === "DEMO-001" && (
-        <p className="text-center text-[10px] text-secondary">
-          Representative workflow demo · Status transitions will persist to the backend when connected via{" "}
-          <code className="font-mono">PATCH /api/cases/:id/status</code>
-        </p>
-      )}
     </div>
   );
 }

@@ -14,7 +14,7 @@ import {
   UploadCloud,
   XCircle,
 } from "lucide-react";
-import { Button, Card, ProgressBar, StatusBadge } from "@/components/DesignSystem";
+import { Button, Card, StatusBadge } from "@/components/DesignSystem";
 import {
   listScans,
   listSegmentationJobs,
@@ -31,7 +31,7 @@ import { ApiError } from "@/lib/api/client";
 
 
 const ACCEPTED_EXTS = ".stl,.obj,.ply";
-const MAX_MB = 250;
+const MAX_MB = 500; // matches backend multer limit
 const POLL_MS = 3_000;
 
 type JawType = "auto" | "maxillary" | "mandibular" | "both";
@@ -53,11 +53,23 @@ function JobChip({ result }: { result: SegmentJobResult }) {
     return <StatusBadge tone="neutral"><Clock size={10} className="mr-1 inline" />Queued</StatusBadge>;
   if (result.status === "processing")
     return <StatusBadge tone="info"><Loader2 size={10} className="mr-1 inline animate-spin" />Running</StatusBadge>;
+  if (result.status === "review_required")
+    return (
+      <div className="flex flex-col gap-0.5">
+        <StatusBadge tone="warning">
+          <AlertTriangle size={10} className="mr-1 inline" />Manual review required
+        </StatusBadge>
+        <span className="text-[10px] text-[color:var(--muted-foreground)]">
+          {result.warning ?? "No automated segmentation provider is available."}
+        </span>
+      </div>
+    );
   if (result.status === "completed")
     return (
       <div className="flex flex-col gap-0.5">
         <StatusBadge tone="success">
           <CheckCircle2 size={10} className="mr-1 inline" />Completed
+          {result.engine ? ` · ${result.engine}` : ""}
         </StatusBadge>
         {result.teethDetected !== undefined && (
           <span className="text-[10px] text-[color:var(--muted-foreground)]">
@@ -66,7 +78,9 @@ function JobChip({ result }: { result: SegmentJobResult }) {
         )}
       </div>
     );
-  return <StatusBadge tone="danger"><XCircle size={10} className="mr-1 inline" />Failed</StatusBadge>;
+  if (result.status === "failed")
+    return <StatusBadge tone="danger"><XCircle size={10} className="mr-1 inline" />Failed</StatusBadge>;
+  return <StatusBadge tone="neutral">{result.status}</StatusBadge>;
 }
 
 export default function ScanPanel({ caseId }: { caseId: string }) {
@@ -76,7 +90,6 @@ export default function ScanPanel({ caseId }: { caseId: string }) {
 
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
-  const [uploadPercent, setUploadPercent] = useState<number | null>(null);
   const [jawType, setJawType] = useState<JawType>("auto");
   const fileRef = useRef<HTMLInputElement>(null);
 
@@ -141,27 +154,17 @@ export default function ScanPanel({ caseId }: { caseId: string }) {
     }
     setUploading(true);
     setUploadError(null);
-    setUploadPercent(5);
-
-    // Simulate upload progress — fetch does not expose byte-level events.
-    const interval = setInterval(() => {
-      setUploadPercent((prev) => (prev !== null && prev < 88 ? prev + 5 : prev));
-    }, 400);
 
     try {
       const scan = await uploadScan(caseId, file, jawType);
-      clearInterval(interval);
-      setUploadPercent(100);
       setScans((prev) => [scan, ...prev]);
       // Backend auto-triggers segmentation; reload jobs after a short delay
       // so the new queued job appears without a manual page refresh.
       setTimeout(() => { void loadScans(); }, 1_500);
     } catch (e) {
-      clearInterval(interval);
       setUploadError(e instanceof ApiError ? e.message : "Upload failed");
     } finally {
       setUploading(false);
-      setUploadPercent(null);
       if (fileRef.current) fileRef.current.value = "";
     }
   }
@@ -248,14 +251,10 @@ export default function ScanPanel({ caseId }: { caseId: string }) {
             />
           </label>
 
-          {uploading && uploadPercent !== null && (
-            <div className="space-y-1">
-              <div className="flex items-center justify-between text-xs text-[color:var(--muted-foreground)]">
-                <span>Uploading…</span>
-                <span className="tabular-nums">{uploadPercent}%</span>
-              </div>
-              <ProgressBar value={uploadPercent} tone="primary" />
-            </div>
+          {uploading && (
+            <p className="flex items-center gap-2 text-xs text-[color:var(--muted-foreground)]">
+              <Loader2 size={12} className="animate-spin" /> Uploading and validating mesh…
+            </p>
           )}
 
           {uploadError && (
@@ -317,7 +316,16 @@ export default function ScanPanel({ caseId }: { caseId: string }) {
                     </p>
                     <p className="text-xs text-[color:var(--muted-foreground)]">
                       {scan.jawType} · {scan.fileFormat.toUpperCase()} · {fmt(scan.fileSizeBytes)}
+                      {scan.validationMetrics?.triangleCount !== undefined &&
+                        ` · ${scan.validationMetrics.triangleCount.toLocaleString()} triangles`}
+                      {scan.validationMetrics?.boundingBoxMm?.size &&
+                        ` · ${scan.validationMetrics.boundingBoxMm.size.map(v => v.toFixed(0)).join("×")} mm`}
                     </p>
+                    {(scan.validationMetrics?.warnings?.length ?? 0) > 0 && (
+                      <p className="mt-0.5 text-[10px] text-amber-600 dark:text-amber-400">
+                        {scan.validationMetrics!.warnings!.join(" · ")}
+                      </p>
+                    )}
                     {job && <div className="mt-1.5"><JobChip result={job.result} /></div>}
                     {segErr && <p className="mt-1 text-xs text-red-500">{segErr}</p>}
                   </div>

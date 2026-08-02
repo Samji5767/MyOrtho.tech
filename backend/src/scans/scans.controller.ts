@@ -88,6 +88,18 @@ export class ScansController {
     return this.scansService.triggerSegmentation(caseId, scanId, user.orgId!, user.email);
   }
 
+  /**
+   * List all persisted segmentation jobs for a case (survives backend restart).
+   * Declared BEFORE the :scanId route — Nest matches in declaration order, so
+   * a later literal segment would be captured by the :scanId parameter.
+   */
+  @Get('segmentation-jobs')
+  @RequirePermission('cases:read')
+  listSegmentationJobs(@Req() req: Request, @Param('caseId') caseId: string) {
+    const user = getUser(req);
+    return this.scansService.listJobsForCase(caseId, user.orgId!);
+  }
+
   /** Fetch metadata for a single scan. */
   @Get(':scanId')
   @RequirePermission('cases:read')
@@ -122,13 +134,6 @@ export class ScansController {
     return new StreamableFile(fs.createReadStream(filePath));
   }
 
-  /** List all persisted segmentation jobs for a case (survives backend restart). */
-  @Get('segmentation-jobs')
-  @RequirePermission('cases:read')
-  listSegmentationJobs(@Req() req: Request, @Param('caseId') caseId: string) {
-    const user = getUser(req);
-    return this.scansService.listJobsForCase(caseId, user.orgId!);
-  }
 }
 
 /** Polls AI-engine segmentation job status (by job ID). */

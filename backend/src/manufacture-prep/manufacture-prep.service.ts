@@ -1,6 +1,17 @@
-import { Injectable, Inject, NotFoundException, ServiceUnavailableException } from '@nestjs/common';
+import { Injectable, Inject, BadRequestException, NotFoundException, ServiceUnavailableException } from '@nestjs/common';
+import * as fs from 'fs';
+import * as path from 'path';
 import type { Pool } from 'pg';
 import { PG_POOL } from '../database/database.module';
+
+const UPLOADS_ROOT = process.env.UPLOADS_DIR ?? '/app/uploads';
+
+/** Resolve a path and require it inside the uploads sandbox (download safety). */
+function resolveInUploads(p: string): string | null {
+  const resolved = path.resolve(p);
+  const root = path.resolve(UPLOADS_ROOT) + path.sep;
+  return resolved.startsWith(root) ? resolved : null;
+}
 
 const AI_ENGINE_URL = process.env.AI_ENGINE_URL ?? 'http://ai-engine:8000';
 const INTERNAL_API_SECRET = process.env.INTERNAL_API_SECRET ?? '';
@@ -21,88 +32,16 @@ export interface CreateExportDto {
 }
 
 function buildManifest(dto: CreateExportDto, stageCount: number) {
-  const format = dto.exportFormat;
-  const files: string[] = [];
-
-  switch (dto.exportType) {
-    case 'stage_models': {
-      const from = dto.stageRangeFrom ?? 1;
-      const to = Math.min(dto.stageRangeTo ?? stageCount, stageCount);
-      for (let i = from; i <= to; i++) {
-        files.push(`stage_${String(i).padStart(3, '0')}.${format}`);
-      }
-      break;
-    }
-    case 'aligner_models': {
-      const from = dto.stageRangeFrom ?? 1;
-      const to = Math.min(dto.stageRangeTo ?? stageCount, stageCount);
-      for (let i = from; i <= to; i++) {
-        files.push(`aligner_${String(i).padStart(3, '0')}_upper.${format}`);
-        files.push(`aligner_${String(i).padStart(3, '0')}_lower.${format}`);
-      }
-      break;
-    }
-    case 'attachment_models':
-      files.push(`attachment_template_upper.${format}`);
-      files.push(`attachment_template_lower.${format}`);
-      files.push(`attachment_tray_upper.${format}`);
-      files.push(`attachment_tray_lower.${format}`);
-      break;
-    case 'ibt':
-      files.push(`ibt_upper.${format}`);
-      files.push(`ibt_lower.${format}`);
-      files.push(`ibt_verification_upper.${format}`);
-      files.push(`ibt_verification_lower.${format}`);
-      break;
-    case 'surgical_guide':
-      files.push(`surgical_guide_upper.${format}`);
-      files.push(`surgical_guide_lower.${format}`);
-      files.push(`surgical_guide_bite_block.${format}`);
-      break;
-    case 'full_case':
-      files.push(`case_package.zip`);
-      // manufacturing_report and qa_report are generated server-side as HTML (not PDF);
-      // a PDF rendering library (Puppeteer / WeasyPrint) is not installed.
-      files.push(`manufacturing_report.html`);
-      files.push(`qa_report.html`);
-      for (let i = 1; i <= Math.min(stageCount, 30); i++) {
-        files.push(`stage_${String(i).padStart(3, '0')}.${format}`);
-      }
-      break;
-    case 'qa_report':
-      // HTML report (PDF generation not yet implemented — no PDF library installed)
-      files.push('qa_report.html');
-      files.push('qa_report_data.json');
-      break;
-  }
-
-  // Per-file size estimates (bytes) based on export type and format
-  const BASE_SIZE: Record<ExportFormat, number> = {
-    stl:  2_800_000,
-    obj:  3_500_000,
-    ply:  2_200_000,
-    '3mf': 1_800_000,
-    zip:  1_200_000,
-  };
-  const TYPE_MULTIPLIER: Record<ExportType, number> = {
-    stage_models:      1.0,   // arch models ~2.8 MB each
-    aligner_models:    0.6,   // shells are thinner meshes
-    attachment_models: 0.3,   // small geometry
-    ibt:               0.4,
-    surgical_guide:    0.8,
-    full_case:         0.5,   // compressed in zip
-    qa_report:         0.1,   // PDF + JSON
-  };
-  const perFileMb = (BASE_SIZE[format] ?? 2_500_000) * (TYPE_MULTIPLIER[dto.exportType] ?? 1.0);
-
+  // Describes the export REQUEST. Real file details are attached in
+  // createExport only after the file has been verified on disk — the
+  // manifest never lists files that were not produced.
   return {
-    fileCount: files.length,
-    files,
-    format,
+    format: dto.exportFormat,
     exportType: dto.exportType,
+    stageRangeFrom: dto.stageRangeFrom ?? 1,
+    stageRangeTo: Math.min(dto.stageRangeTo ?? stageCount, stageCount) || null,
+    planStageCount: stageCount,
     generatedAt: new Date().toISOString(),
-    estimatedSizeBytes: Math.round(files.length * perFileMb),
-    estimatedSizeMb: Math.round(files.length * perFileMb / 1_048_576 * 10) / 10,
   };
 }
 
@@ -142,7 +81,7 @@ interface PrintabilityParams {
   hasAttachments: boolean;
   hasBiocompatibleMaterial: boolean;
   meshWarnings: number;
-  shellThicknessMm: number;
+  shellThicknessMm: number | null;
 }
 
 interface StageAllocationEntry {
@@ -184,19 +123,33 @@ export class ManufacturePrepService {
   async createExport(caseId: string, orgId: string, userId: string, dto: CreateExportDto) {
     await this.verifyCase(caseId, orgId);
 
+    // No geometry pipeline exists for these appliance types. Refuse honestly
+    // instead of recording a "completed" export with no file.
+    if (
+      dto.exportType === 'attachment_models' ||
+      dto.exportType === 'ibt' ||
+      dto.exportType === 'surgical_guide'
+    ) {
+      throw new BadRequestException(
+        `Export type "${dto.exportType}" is not available: no geometry pipeline ` +
+        'is implemented for this appliance type yet.',
+      );
+    }
+
+
     // Locate the aligner generation plan for this treatment plan / case
     const planQuery = dto.treatmentPlanId
       ? `SELECT agp.id, agp.plan_id, agp.total_active_stages,
                 agp.stl_export_ready, agp.stl_export_path, agp.status AS gen_status
            FROM aligner_generation_plans agp
            WHERE agp.plan_id = $1 AND agp.organization_id = $2
-           ORDER BY agp.created_at DESC LIMIT 1`
+           ORDER BY agp.generated_at DESC LIMIT 1`
       : `SELECT agp.id, agp.plan_id, agp.total_active_stages,
                 agp.stl_export_ready, agp.stl_export_path, agp.status AS gen_status
            FROM aligner_generation_plans agp
            INNER JOIN treatment_plans tp ON tp.id = agp.plan_id
            WHERE tp.case_id = $1 AND agp.organization_id = $2
-           ORDER BY agp.created_at DESC LIMIT 1`;
+           ORDER BY agp.generated_at DESC LIMIT 1`;
     const planParam = dto.treatmentPlanId ?? caseId;
     const { rows: planRows } = await this.pool.query(planQuery, [planParam, orgId]);
 
@@ -222,8 +175,10 @@ export class ManufacturePrepService {
     let errorMsg: string | null = null;
 
     if (!needsStageStls) {
+      // qa_report: the deliverable is the QA data itself, assembled below
+      // from real database rows and returned inline in the manifest.
       status = 'completed';
-      // For QA reports, enhance the manifest with live case data
+      manifest['deliverable'] = 'inline_json';
       if (dto.exportType === 'qa_report' && genPlan) {
         const qaRows = await this.pool.query(
           `SELECT tqs.overall_score, tqs.grade, tqs.has_critical_issues, tqs.critical_issue_count,
@@ -314,6 +269,32 @@ export class ManufacturePrepService {
         'No aligner generation plan found for this case. ' +
         'Complete the aligner generation step (POST .../aligner-generation/generate) before exporting.';
       status = 'failed';
+    }
+
+    // A file-backed export is only "completed" when the file verifiably
+    // exists inside the uploads sandbox. Never record success for a path
+    // that is missing, empty, or outside storage.
+    if (status === 'completed' && filePath !== null) {
+      const safe = resolveInUploads(filePath);
+      let stat: fs.Stats | null = null;
+      if (safe) {
+        try { stat = fs.statSync(safe); } catch { stat = null; }
+      }
+      if (!safe || !stat || !stat.isFile() || stat.size === 0) {
+        status = 'failed';
+        errorMsg =
+          'Export blocked: the generated file could not be verified on disk. ' +
+          (safe ? 'File is missing or empty.' : 'File path is outside managed storage.');
+        filePath = null;
+      } else {
+        filePath = safe;
+        manifest['deliverable'] = 'file';
+        manifest['file'] = {
+          name: path.basename(safe),
+          sizeBytes: stat.size,
+          verifiedAt: new Date().toISOString(),
+        };
+      }
     }
 
     const { rows } = await this.pool.query(
@@ -434,7 +415,13 @@ export class ManufacturePrepService {
     }
 
     // Shell thickness
-    if (params.shellThicknessMm < 0.5) {
+    if (params.shellThicknessMm === null) {
+      factors.push({
+        label: 'Shell Thickness Unknown',
+        impact: 'neutral',
+        detail: 'No quality report has measured shell thickness for this plan.',
+      });
+    } else if (params.shellThicknessMm < 0.5) {
       score -= 20;
       printability -= 30;
       factors.push({
@@ -506,7 +493,7 @@ export class ManufacturePrepService {
        FROM aligner_generation_plans agp
        INNER JOIN treatment_plans tp ON tp.id = agp.plan_id
        WHERE tp.case_id = $1 AND agp.organization_id = $2
-       ORDER BY agp.created_at DESC LIMIT 1`,
+       ORDER BY agp.generated_at DESC LIMIT 1`,
       [caseId, orgId],
     );
     const planRow = planRows[0];
@@ -526,11 +513,12 @@ export class ManufacturePrepService {
     const hasAttachments =
       planRow?.attachment_start_stage != null && planRow.attachment_end_stage != null;
 
-    // Shell thickness from quality_report JSONB — neutral default (0.7) if not available
+    // Shell thickness from quality_report JSONB — null (unknown) when no
+    // quality report has measured it; never substitute an invented value.
     const shellThicknessMm =
       typeof planRow?.quality_report?.['min_thickness_mm'] === 'number'
         ? (planRow.quality_report['min_thickness_mm'] as number)
-        : 0.7;
+        : null;
 
     // 2. QA report — mesh warning proxy from warn + fail counts
     const { rows: qaRows } = await this.pool.query<{
@@ -586,7 +574,32 @@ export class ManufacturePrepService {
     };
   }
 
+  /** Resolve a completed export's verified file for streaming (org-checked). */
+  async getExportFile(
+    caseId: string,
+    orgId: string,
+    exportId: string,
+  ): Promise<{ filePath: string; fileName: string }> {
+    await this.verifyCase(caseId, orgId);
+    const { rows } = await this.pool.query(
+      `SELECT status, file_path FROM manufacture_exports
+       WHERE id = $1 AND case_id = $2 AND organization_id = $3`,
+      [exportId, caseId, orgId],
+    );
+    if (!rows[0]) throw new NotFoundException('Export not found');
+    if (rows[0].status !== 'completed' || !rows[0].file_path) {
+      throw new BadRequestException('Export has no downloadable file');
+    }
+    const safe = resolveInUploads(rows[0].file_path as string);
+    if (!safe || !fs.existsSync(safe)) {
+      throw new NotFoundException('Export file is no longer available on disk');
+    }
+    return { filePath: safe, fileName: path.basename(safe) };
+  }
+
   private format(r: Record<string, unknown>) {
+    const manifest = (r.manifest ?? {}) as Record<string, unknown>;
+    const fileMeta = (manifest['file'] ?? null) as { name?: string; sizeBytes?: number } | null;
     return {
       id:               r.id,
       caseId:           r.case_id,
@@ -596,9 +609,12 @@ export class ManufacturePrepService {
       stageRangeFrom:   r.stage_range_from,
       stageRangeTo:     r.stage_range_to,
       status:           r.status,
-      filePath:         r.file_path,
-      fileSizeBytes:    r.file_size_bytes,
-      manifest:         r.manifest,
+      // Internal storage paths stay server-side; clients get name + size and
+      // download via GET .../exports/:exportId/download.
+      fileName:         fileMeta?.name ?? null,
+      fileSizeBytes:    fileMeta?.sizeBytes ?? null,
+      hasFile:          Boolean(r.file_path),
+      manifest,
       errorMessage:     r.error_message,
       generatedByEmail: r.generated_by_email,
       generatedAt:      r.generated_at,

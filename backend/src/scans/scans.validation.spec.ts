@@ -64,7 +64,15 @@ function makeBinaryStl(triangleCount: number, headerPrefix = ''): Buffer {
   const countBuf = Buffer.alloc(4);
   countBuf.writeUInt32LE(triangleCount, 0);
 
+  // Each triangle carries real non-degenerate geometry: full mesh validation
+  // rejects zero-area triangles, so vertex data cannot be left zeroed.
   const triangleData = Buffer.alloc(triangleCount * 50, 0);
+  for (let t = 0; t < triangleCount; t++) {
+    const base = t * 50 + 12; // skip normal
+    const z = t * 0.5;
+    const verts = [0, 0, z, 10, 0, z, 0, 10, z];
+    for (let i = 0; i < 9; i++) triangleData.writeFloatLE(verts[i], base + i * 4);
+  }
   return Buffer.concat([header, countBuf, triangleData]);
 }
 

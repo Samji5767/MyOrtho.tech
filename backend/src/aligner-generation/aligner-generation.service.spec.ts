@@ -53,7 +53,7 @@ describe('AlignerGenerationService.getStlFile', () => {
     (svc as any).db = makePool([{
       plan_id: PLAN_ID,
       stl_export_ready: true,
-      stl_export_path: '/exports/plan-001.stl',
+      stl_export_path: '/app/uploads/exports/plan-001.stl',
     }]);
     (fs.existsSync as jest.Mock).mockReturnValue(false);
     await expect(svc.getStlFile(PLAN_ID, ORG_ID)).rejects.toThrow(ServiceUnavailableException);
@@ -63,11 +63,11 @@ describe('AlignerGenerationService.getStlFile', () => {
     (svc as any).db = makePool([{
       plan_id: PLAN_ID,
       stl_export_ready: true,
-      stl_export_path: '/exports/plan-001.stl',
+      stl_export_path: '/app/uploads/exports/plan-001.stl',
     }]);
     (fs.existsSync as jest.Mock).mockReturnValue(true);
     const result = await svc.getStlFile(PLAN_ID, ORG_ID);
-    expect(result.filePath).toBe('/exports/plan-001.stl');
+    expect(result.filePath).toBe('/app/uploads/exports/plan-001.stl');
     expect(result.planId).toBe(PLAN_ID);
   });
 });

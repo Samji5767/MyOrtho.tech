@@ -7,9 +7,11 @@ import {
   Logger,
 } from '@nestjs/common';
 import type { Pool } from 'pg';
+import * as crypto from 'crypto';
 import * as path from 'path';
 import * as fs from 'fs';
 import { PG_POOL } from '../database/database.module';
+import { validateStl, type StlMetadata } from './stl-metadata';
 
 const UPLOAD_DIR = process.env.UPLOADS_DIR ?? '/app/uploads';
 const AI_ENGINE_URL = process.env.AI_ENGINE_URL ?? 'http://ai-engine:8000';
@@ -154,18 +156,56 @@ export class ScansService {
     // Magic byte / file-content validation — reject files that don't match their declared extension
     this.validateScanMagicBytes(file, ext);
 
-    // Move from multer temp dir to organised storage
+    // Full mesh parse for STL uploads: reject malformed/empty meshes and
+    // compute real metadata (triangles, bounding box, degenerate faces).
+    // OBJ/PLY uploads pass through with format-only validation.
+    let meshMetrics: Record<string, unknown> = {};
+    if (ext === 'stl') {
+      let stlBuf: Buffer;
+      try {
+        stlBuf = fs.readFileSync(file.path);
+      } catch {
+        fs.unlink(file.path, () => undefined);
+        throw new BadRequestException('Could not read uploaded file');
+      }
+      const result = validateStl(stlBuf);
+      if (!result.valid) {
+        fs.unlink(file.path, () => undefined);
+        throw new BadRequestException(
+          `STL mesh validation failed: ${result.errors.join('; ')}`,
+        );
+      }
+      const m = result.metadata as StlMetadata;
+      meshMetrics = {
+        format: m.format,
+        triangleCount: m.triangleCount,
+        boundingBoxMm: m.boundingBox,
+        degenerateTriangleCount: m.degenerateTriangleCount,
+        warnings: result.warnings,
+        validatedAt: new Date().toISOString(),
+      };
+    }
+
+    // Move from multer temp dir to organised storage.
+    // Random suffix prevents same-millisecond uploads from overwriting each other.
     const destDir = path.join(UPLOAD_DIR, 'scans', orgId, caseId);
     fs.mkdirSync(destDir, { recursive: true });
-    const destPath = path.join(destDir, `${Date.now()}.${ext}`);
+    const destPath = path.join(
+      destDir,
+      `${Date.now()}-${crypto.randomBytes(4).toString('hex')}.${ext}`,
+    );
     fs.renameSync(file.path, destPath);
 
     const { rows } = await this.pool.query(
       `INSERT INTO scans
-         (case_id, uploaded_by, jaw_type, original_filename, file_path, file_format, file_size_bytes, organization_id)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+         (case_id, uploaded_by, jaw_type, original_filename, file_path, file_format,
+          file_size_bytes, mesh_validation_metrics, organization_id)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
        RETURNING id, created_at`,
-      [caseId, uploadedBy, jawType, file.originalname, destPath, ext, file.size, orgId],
+      [
+        caseId, uploadedBy, jawType, file.originalname, destPath, ext, file.size,
+        JSON.stringify(meshMetrics), orgId,
+      ],
     );
     const scan = rows[0];
 
@@ -186,6 +226,7 @@ export class ScansService {
       filePath: destPath,
       fileFormat: ext,
       fileSizeBytes: file.size,
+      validationMetrics: meshMetrics,
       createdAt: scan.created_at as Date,
     };
 
@@ -322,26 +363,51 @@ export class ScansService {
 
     // Update DB with AI engine result
     if (aiStatus) {
-      const aiStatusStr = aiStatus['status'] as string | undefined;
+      const rawAiStatus = aiStatus['status'] as string | undefined;
+      const requiresManualReview = aiStatus['requires_manual_review'] === true;
+      const teethDetectedRaw = (aiStatus['teeth_detected'] as number | undefined) ?? 0;
+
+      // Honest state mapping: an AI-engine "completed" that came from the
+      // manual-review fallback (no automated provider produced segmentation)
+      // is NOT a completed segmentation — it needs a human. Record it as
+      // review_required so the UI never shows it as AI success.
+      const aiStatusStr =
+        rawAiStatus === 'completed' && requiresManualReview && teethDetectedRaw === 0
+          ? 'review_required'
+          : rawAiStatus;
+
+      const providerMeta = {
+        engine: (aiStatus['engine'] as string | undefined) ?? null,
+        requiresManualReview,
+        warning: (aiStatus['warning'] as string | undefined) ?? null,
+      };
+
       const updates: unknown[] = [aiStatusStr ?? dbJob.status, jobId];
       let sql = `UPDATE segmentation_jobs SET status = $1, updated_at = now()`;
 
-      if (aiStatusStr === 'processing' && !dbJob.started_at) {
+      if (rawAiStatus === 'processing' && !dbJob.started_at) {
         sql += ', started_at = now()';
       }
-      if (aiStatusStr === 'completed' || aiStatusStr === 'failed') {
+      if (rawAiStatus === 'completed' || rawAiStatus === 'failed') {
         sql += ', completed_at = COALESCE(completed_at, now())';
       }
-      if (aiStatusStr === 'completed') {
-        const teethDetected = aiStatus['teeth_detected'] as number | undefined;
+      if (rawAiStatus === 'completed') {
         const confidenceScores = aiStatus['teeth_confidence'] ?? {};
         const missingTeeth = aiStatus['missing_teeth'] ?? [];
-        sql += `, teeth_detected = $3, confidence_scores = $4, missing_teeth = $5::int[]`;
-        updates.push(teethDetected ?? null, JSON.stringify(confidenceScores), missingTeeth);
+        sql += `, teeth_detected = $3, confidence_scores = $4, missing_teeth = $5::int[], output_metadata = $6`;
+        updates.push(
+          teethDetectedRaw,
+          JSON.stringify(confidenceScores),
+          missingTeeth,
+          JSON.stringify(providerMeta),
+        );
       }
-      if (aiStatusStr === 'failed') {
-        sql += `, failure_reason = $3`;
-        updates.push((aiStatus['error'] as string | undefined) ?? 'AI engine reported failure');
+      if (rawAiStatus === 'failed') {
+        sql += `, failure_reason = $3, output_metadata = $4`;
+        updates.push(
+          (aiStatus['error'] as string | undefined) ?? 'AI engine reported failure',
+          JSON.stringify(providerMeta),
+        );
       }
 
       sql += ` WHERE ai_job_id = $2`;
@@ -351,14 +417,18 @@ export class ScansService {
         this.logger.warn(`Failed to update segmentation job: ${String(e)}`);
       }
 
-      // Write final result to segmentation_results table
+      // Persist the final result only for genuine completions (not the
+      // manual-review fallback, which carries no segmentation output).
       if (aiStatusStr === 'completed') {
         await this.pool
           .query(
             `INSERT INTO segmentation_results
                (case_id, scan_id, teeth_confidence_scores, missing_teeth, segmented_mesh_path)
              VALUES ($1, $2, $3, $4::int[], $5)
-             ON CONFLICT DO NOTHING`,
+             ON CONFLICT (case_id, scan_id) DO UPDATE
+               SET teeth_confidence_scores = EXCLUDED.teeth_confidence_scores,
+                   missing_teeth = EXCLUDED.missing_teeth,
+                   segmented_mesh_path = EXCLUDED.segmented_mesh_path`,
             [
               dbJob.case_id as string,
               dbJob.scan_id as string,
@@ -461,7 +531,19 @@ export class ScansService {
     r: Record<string, unknown>,
     ai: Record<string, unknown> | null,
   ) {
-    const status = (ai?.['status'] as string | undefined) ?? (r['status'] as string);
+    const meta = (r['output_metadata'] ?? {}) as Record<string, unknown>;
+    const requiresManualReview =
+      ai?.['requires_manual_review'] === true || meta['requiresManualReview'] === true;
+    const teethDetected =
+      (ai?.['teeth_detected'] as number | undefined) ?? (r['teeth_detected'] as number | null);
+
+    // Same honest mapping as getJobStatus: a manual-review "completion" with
+    // no detected teeth is review_required, never a completed segmentation.
+    let status = (ai?.['status'] as string | undefined) ?? (r['status'] as string);
+    if (status === 'completed' && requiresManualReview && (teethDetected ?? 0) === 0) {
+      status = 'review_required';
+    }
+
     return {
       jobId: r['ai_job_id'] as string,
       caseId: r['case_id'] as string,
@@ -473,9 +555,12 @@ export class ScansService {
       modelName: r['model_name'] as string | null,
       modelVersion: r['model_version'] as string | null,
       validationStatus: r['validation_status'] as string,
-      teethDetected: (ai?.['teeth_detected'] as number | undefined) ?? (r['teeth_detected'] as number | null),
+      teethDetected,
       missingTeeth: (ai?.['missing_teeth'] as number[] | undefined) ?? (r['missing_teeth'] as number[] | null),
-      outputMetadata: r['output_metadata'] as Record<string, unknown>,
+      engine: (ai?.['engine'] as string | undefined) ?? ((meta['engine'] ?? null) as string | null),
+      requiresManualReview,
+      warning: (ai?.['warning'] as string | undefined) ?? ((meta['warning'] ?? null) as string | null),
+      outputMetadata: meta,
       queuedAt: r['queued_at'] as Date,
       startedAt: r['started_at'] as Date | null,
       completedAt: r['completed_at'] as Date | null,

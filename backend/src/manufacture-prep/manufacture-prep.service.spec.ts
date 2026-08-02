@@ -1,4 +1,6 @@
 import { Test } from '@nestjs/testing';
+import { BadRequestException } from '@nestjs/common';
+import * as fs from 'fs';
 import { ManufacturePrepService } from './manufacture-prep.service';
 import { PG_POOL } from '../database/database.module';
 
@@ -66,21 +68,23 @@ describe('ManufacturePrepService.createExport', () => {
     expect(hasFilePath).toBe(false);
   });
 
-  it('completes immediately when aligner generation plan has stl_export_path', async () => {
-    const ZIP_PATH = '/uploads/cases/case-111/aligner_plan_plan-xyz.zip';
+  it('completes only after the export file is verified on disk', async () => {
+    const ZIP_PATH = '/app/uploads/cases/case-111/aligner_plan_plan-xyz.zip';
+    const statSpy = jest.spyOn(fs, 'statSync').mockReturnValue({
+      isFile: () => true,
+      size: 12345,
+    } as unknown as fs.Stats);
+
     const pool = makePool([
-      // verifyCase
       [{ id: CASE_ID }],
-      // aligner_generation_plans lookup → plan with STLs ready
       [{
         id: 'agp-1', plan_id: 'plan-xyz', total_active_stages: 14,
         stl_export_ready: true, stl_export_path: ZIP_PATH, gen_status: 'approved',
       }],
-      // INSERT returning
       [{
         id: 'exp-1', case_id: CASE_ID, treatment_plan_id: 'plan-xyz', export_format: 'stl',
         export_type: 'stage_models', stage_range_from: null, stage_range_to: null,
-        status: 'completed', error_message: null, manifest: '{}',
+        status: 'completed', error_message: null, manifest: {},
         generated_by: USER_ID, generated_at: new Date(),
         completed_at: new Date(), created_at: new Date(),
         file_path: ZIP_PATH, file_size_bytes: null,
@@ -100,8 +104,71 @@ describe('ManufacturePrepService.createExport', () => {
       exportType: 'stage_models',
       treatmentPlanId: 'plan-xyz',
     });
+    statSpy.mockRestore();
 
     expect(result.status).toBe('completed');
-    expect(result.filePath).toBe(ZIP_PATH);
+    const insert = pool.query.mock.calls.find((c: unknown[]) =>
+      (c[0] as string).includes('INSERT INTO manufacture_exports'),
+    )!;
+    const params = insert[1] as unknown[];
+    expect(params[7]).toBe('completed');
+    expect(params[9]).toBe(ZIP_PATH);
+    const manifest = JSON.parse(params[10] as string) as { file?: { sizeBytes: number } };
+    expect(manifest.file?.sizeBytes).toBe(12345);
+  });
+
+  it('blocks completion when the export path is outside managed storage', async () => {
+    const pool = makePool([
+      [{ id: CASE_ID }],
+      [{
+        id: 'agp-1', plan_id: 'plan-xyz', total_active_stages: 14,
+        stl_export_ready: true, stl_export_path: '/etc/passwd', gen_status: 'approved',
+      }],
+      [{
+        id: 'exp-1', case_id: CASE_ID, status: 'failed', manifest: {},
+        error_message: 'Export blocked', file_path: null,
+        generated_at: new Date(), completed_at: null, created_at: new Date(),
+      }],
+    ]);
+
+    const module = await Test.createTestingModule({
+      providers: [
+        ManufacturePrepService,
+        { provide: PG_POOL, useValue: pool },
+      ],
+    }).compile();
+
+    const svc = module.get(ManufacturePrepService);
+    await svc.createExport(CASE_ID, ORG_ID, USER_ID, {
+      exportFormat: 'stl',
+      exportType: 'stage_models',
+      treatmentPlanId: 'plan-xyz',
+    });
+
+    const insert = pool.query.mock.calls.find((c: unknown[]) =>
+      (c[0] as string).includes('INSERT INTO manufacture_exports'),
+    )!;
+    const params = insert[1] as unknown[];
+    expect(params[7]).toBe('failed');
+    expect(params[9]).toBeNull();
+    expect(String(params[8])).toMatch(/outside managed storage/);
+  });
+
+  it('refuses appliance types with no geometry pipeline', async () => {
+    const pool = makePool([[{ id: CASE_ID }], []]);
+    const module = await Test.createTestingModule({
+      providers: [
+        ManufacturePrepService,
+        { provide: PG_POOL, useValue: pool },
+      ],
+    }).compile();
+
+    const svc = module.get(ManufacturePrepService);
+    await expect(
+      svc.createExport(CASE_ID, ORG_ID, USER_ID, {
+        exportFormat: 'stl',
+        exportType: 'surgical_guide',
+      }),
+    ).rejects.toThrow(BadRequestException);
   });
 });

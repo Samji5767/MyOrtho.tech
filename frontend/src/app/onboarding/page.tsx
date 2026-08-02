@@ -167,7 +167,6 @@ export default function OnboardingPage() {
   const [primaryFlow, setPrimaryFlow]     = useState("");
   const [cadLevel, setCadLevel]           = useState("");
   const [aiReadiness, setAiReadiness]     = useState("");
-  const [enableDemo, setEnableDemo]       = useState(false);
   const [saving, setSaving] = useState(false);
   const [finishError, setFinishError] = useState<string | null>(null);
   const redirecting = useRef(false);
@@ -189,7 +188,7 @@ export default function OnboardingPage() {
           displayRole: roleOption?.label,
           orgName, orgType,
           numDoctors, numClinics, caseVolume,
-          primaryFlow, cadLevel, aiReadiness, enableDemo,
+          primaryFlow, cadLevel, aiReadiness,
         }),
       });
       if (!res.ok) {
@@ -477,34 +476,6 @@ export default function OnboardingPage() {
                   ))}
                 </div>
               </div>
-              <div
-                role="checkbox"
-                aria-checked={enableDemo}
-                tabIndex={0}
-                onClick={() => setEnableDemo(v => !v)}
-                onKeyDown={e => e.key === " " && setEnableDemo(v => !v)}
-                className={[
-                  "flex cursor-pointer items-start gap-3 rounded-2xl border p-4 transition-all",
-                  enableDemo
-                    ? "border-[color:var(--primary)] bg-[color:var(--primary-glow)]"
-                    : "border-[color:var(--border)] bg-[color:var(--background)]",
-                ].join(" ")}
-              >
-                <div className={[
-                  "mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-md border-2 transition-all",
-                  enableDemo ? "border-[color:var(--primary)] bg-[color:var(--primary)]" : "border-[color:var(--border)]",
-                ].join(" ")}>
-                  {enableDemo && <CheckCircle2 size={12} className="text-white" />}
-                </div>
-                <div>
-                  <p className={`text-sm font-semibold ${enableDemo ? "text-[color:var(--primary)]" : "text-[color:var(--foreground)]"}`}>
-                    Load representative demo data
-                  </p>
-                  <p className="mt-0.5 text-xs text-[color:var(--muted-foreground)]">
-                    Sample cases, measurements, and audit events — clearly labelled as representative. No real patient data.
-                  </p>
-                </div>
-              </div>
               <div className="flex items-start gap-2 rounded-xl border border-amber-200/60 bg-amber-50/60 px-3 py-2.5 text-xs text-amber-800 dark:border-amber-500/20 dark:bg-amber-500/10 dark:text-amber-300">
                 <Database size={12} className="mt-0.5 shrink-0" />
                 All AI capabilities in MyOrtho are decision support tools. Every AI result requires clinician review before any clinical action.
@@ -534,7 +505,6 @@ export default function OnboardingPage() {
                   { label: "Organization",value: orgName || "Not specified" },
                   { label: "Workflow",    value: primaryFlow || "Not specified" },
                   { label: "CAD level",   value: CAD_LEVELS.find(l => l.value === cadLevel)?.label ?? "Not specified" },
-                  { label: "Demo data",   value: enableDemo ? "Enabled" : "Disabled" },
                 ].map(row => (
                   <div key={row.label} className="flex items-center justify-between px-4 py-2.5">
                     <span className="text-xs text-[color:var(--muted-foreground)]">{row.label}</span>

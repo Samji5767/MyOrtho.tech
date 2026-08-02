@@ -18,6 +18,7 @@ import {
   GitBranch,
   Info,
   Layers,
+  Loader2,
   Ruler,
   ScanLine,
   ShieldCheck,
@@ -60,128 +61,6 @@ interface CaseProfile {
   planId?: string;
 }
 
-const CASE_PROFILES: Record<string, CaseProfile> = {
-  "C-2883": {
-    patient: "Oliver T.", initials: "OT", accentClass: "bg-rose-500",
-    doctor: "Dr. Park", malocclusionClass: "Class II Div1",
-    crowding: "Severe (≥6 mm)", chiefComplaint: "Canine reposition & overjet reduction",
-    urgency: "critical", progress: 45, workflowStatus: "clinical_review",
-    goals: ["Reduce overjet to < 2 mm", "Canine retraction UL3/UR3", "Correct midline deviation", "Improve smile arc"],
-    measurements: [
-      { label: "Overjet",             value: "7.4 mm" },
-      { label: "Overbite",            value: "4.1 mm" },
-      { label: "Upper arch width",    value: "48.2 mm" },
-      { label: "Bolton ratio (6:6)",  value: "74.8% (upper excess)" },
-    ],
-    history: [
-      { id: "h3", timestamp: "2026-06-23 09:30", actor: "Dr. Park", actorRole: "Orthodontist", action: "Submitted for clinical review", fromStatus: "scan_review", toStatus: "clinical_review" },
-      { id: "h2", timestamp: "2026-06-23 08:15", actor: "T. Williams", actorRole: "Treatment Coordinator", action: "Case submitted", fromStatus: "draft", toStatus: "scan_review" },
-      { id: "h1", timestamp: "2026-06-22 16:40", actor: "T. Williams", actorRole: "Treatment Coordinator", action: "Case created", toStatus: "draft" },
-    ],
-  },
-  "C-2847": {
-    patient: "Sarah M.", initials: "SM", accentClass: "bg-amber-500",
-    doctor: "Dr. Chen", malocclusionClass: "Class I",
-    crowding: "Moderate (3–5 mm)", chiefComplaint: "Aligner treatment — Stage 14 approval",
-    urgency: "urgent", progress: 72, workflowStatus: "approved",
-    goals: ["Stage 14 of 22 alignment", "Continue upper anterior torque", "Maintain lower arch form"],
-    measurements: [
-      { label: "Overjet",            value: "2.8 mm" },
-      { label: "Overbite",           value: "2.4 mm" },
-      { label: "Upper arch width",   value: "51.6 mm" },
-      { label: "Bolton ratio (6:6)", value: "77.0% (within norm)" },
-    ],
-    history: [
-      { id: "h4", timestamp: "2026-06-23 10:05", actor: "Dr. Lee", actorRole: "Clinical Director", action: "Approved", fromStatus: "clinical_review", toStatus: "approved" },
-      { id: "h3", timestamp: "2026-06-23 08:45", actor: "Dr. Chen", actorRole: "Orthodontist", action: "Submitted for clinical review", fromStatus: "scan_review", toStatus: "clinical_review" },
-      { id: "h2", timestamp: "2026-06-22 14:30", actor: "T. Williams", actorRole: "Treatment Coordinator", action: "Case submitted", fromStatus: "draft", toStatus: "scan_review" },
-      { id: "h1", timestamp: "2026-06-20 09:00", actor: "T. Williams", actorRole: "Treatment Coordinator", action: "Case created", toStatus: "draft" },
-    ],
-  },
-  "C-2876": {
-    patient: "Emma K.", initials: "EK", accentClass: "bg-violet-500",
-    doctor: "Dr. Chen", malocclusionClass: "Class I",
-    crowding: "Mild (1–3 mm)", chiefComplaint: "Refinement — 8 upper aligners post-correction",
-    urgency: "urgent", progress: 85, workflowStatus: "active_treatment",
-    goals: ["Refine upper anterior positions", "Close residual spacing 11/21", "Final torque adjustment"],
-    measurements: [
-      { label: "Overjet",            value: "1.9 mm" },
-      { label: "Overbite",           value: "2.0 mm" },
-      { label: "Residual spacing",   value: "0.8 mm" },
-      { label: "Bolton ratio (6:6)", value: "78.1% (lower excess 0.9 mm)" },
-    ],
-    history: [
-      { id: "h4", timestamp: "2026-06-23 11:20", actor: "T. Williams", actorRole: "Treatment Coordinator", action: "Started active treatment", fromStatus: "approved", toStatus: "active_treatment" },
-      { id: "h3", timestamp: "2026-06-23 10:45", actor: "Dr. Lee", actorRole: "Clinical Director", action: "Approved", fromStatus: "clinical_review", toStatus: "approved" },
-      { id: "h2", timestamp: "2026-06-23 09:10", actor: "Dr. Chen", actorRole: "Orthodontist", action: "Submitted for review", fromStatus: "draft", toStatus: "scan_review" },
-    ],
-  },
-  "C-2901": {
-    patient: "James R.", initials: "JR", accentClass: "bg-teal-500",
-    doctor: "Dr. Lee", malocclusionClass: "Class I",
-    crowding: "Moderate (3–5 mm)", chiefComplaint: "Upper arch IPR 0.3 mm pre-authorization",
-    urgency: "routine", progress: 35, workflowStatus: "clinical_review",
-    goals: ["Authorize IPR 0.3 mm upper anteriors", "Maintain arch form", "Continue stage 7 of 18"],
-    measurements: [
-      { label: "Overjet",            value: "3.5 mm" },
-      { label: "Overbite",           value: "3.1 mm" },
-      { label: "Upper intercanine",  value: "34.2 mm" },
-      { label: "Bolton ratio (6:6)", value: "76.4% (lower excess 0.7 mm)" },
-    ],
-    history: [
-      { id: "h2", timestamp: "2026-06-23 10:30", actor: "Dr. Lee", actorRole: "Orthodontist", action: "Submitted for IPR review", fromStatus: "draft", toStatus: "scan_review" },
-      { id: "h1", timestamp: "2026-06-22 15:00", actor: "T. Williams", actorRole: "Treatment Coordinator", action: "Case created", toStatus: "draft" },
-    ],
-  },
-  "C-2859": {
-    patient: "Marcus D.", initials: "MD", accentClass: "bg-blue-500",
-    doctor: "Dr. Torres", malocclusionClass: "Class II",
-    crowding: "Moderate (3–5 mm)", chiefComplaint: "Full-arch correction — 7 attachments proposed",
-    urgency: "urgent", progress: 60, workflowStatus: "scan_review",
-    goals: ["Class II correction with elastics", "Place 7 attachments", "Reduce overjet to < 3 mm"],
-    measurements: [
-      { label: "Overjet",            value: "5.2 mm" },
-      { label: "Overbite",           value: "3.8 mm" },
-      { label: "Upper arch length",  value: "94.6 mm" },
-      { label: "Bolton ratio (6:6)", value: "75.1% (upper excess 1.6 mm)" },
-    ],
-    history: [
-      { id: "h2", timestamp: "2026-06-23 07:45", actor: "Dr. Torres", actorRole: "Orthodontist", action: "Case submitted", fromStatus: "draft", toStatus: "scan_review" },
-      { id: "h1", timestamp: "2026-06-22 10:00", actor: "T. Williams", actorRole: "Treatment Coordinator", action: "Case created", toStatus: "draft" },
-    ],
-  },
-  "C-2912": {
-    patient: "Ava N.", initials: "AN", accentClass: "bg-emerald-500",
-    doctor: "Dr. Lee", malocclusionClass: "Class I",
-    crowding: "Resolved", chiefComplaint: "Final retention phase — Hawley + Vivera",
-    urgency: "routine", progress: 100, workflowStatus: "completed",
-    goals: ["Deliver Hawley retainer upper", "Deliver Vivera retainer lower", "Schedule 6-month retention check"],
-    measurements: [
-      { label: "Final overjet",      value: "1.8 mm" },
-      { label: "Final overbite",     value: "2.1 mm" },
-      { label: "Bolton ratio (6:6)", value: "77.4% (within norm)" },
-    ],
-    history: [
-      { id: "h5", timestamp: "2026-06-23 09:00", actor: "T. Williams", actorRole: "Treatment Coordinator", action: "Treatment completed", fromStatus: "active_treatment", toStatus: "completed" },
-      { id: "h4", timestamp: "2026-06-22 14:00", actor: "T. Williams", actorRole: "Treatment Coordinator", action: "Started active treatment", fromStatus: "approved", toStatus: "active_treatment" },
-      { id: "h3", timestamp: "2026-06-22 10:00", actor: "Dr. Lee", actorRole: "Orthodontist", action: "Approved", fromStatus: "clinical_review", toStatus: "approved" },
-    ],
-  },
-  "C-2900": {
-    patient: "Lily S.", initials: "LS", accentClass: "bg-indigo-500",
-    doctor: "Dr. Nguyen", malocclusionClass: "Class I",
-    crowding: "Mild (1–3 mm)", chiefComplaint: "Initial consultation — Class I moderate crowding",
-    urgency: "routine", progress: 15, workflowStatus: "draft",
-    goals: ["Complete diagnostic records", "Develop treatment plan"],
-    measurements: [
-      { label: "Overjet",   value: "3.0 mm" },
-      { label: "Overbite",  value: "2.5 mm" },
-    ],
-    history: [
-      { id: "h1", timestamp: "2026-06-23 06:30", actor: "T. Williams", actorRole: "Treatment Coordinator", action: "Case created", toStatus: "draft" },
-    ],
-  },
-};
 
 // ─── Summary tab ──────────────────────────────────────────────────────────────
 
@@ -368,13 +247,8 @@ export default function CaseDetailClient({ id }: { id: string }) {
     setDataSource('loading');
     fetchCase(id)
       .then(({ data, source }) => {
-        if (source === 'demo') {
-          setDataSource('error');
-          setFetchError('Could not reach the backend — check your connection');
-        } else {
-          setLiveData(data);
-          setDataSource(source);
-        }
+        setLiveData(data);
+        setDataSource(source);
       })
       .catch((err) => {
         if (err instanceof ApiError && err.status === 404) {
@@ -386,7 +260,7 @@ export default function CaseDetailClient({ id }: { id: string }) {
       });
   }, [id, retryTick]);
 
-  const demoProfile = CASE_PROFILES[id] ?? {
+  const demoProfile: CaseProfile = {
     patient: "Unknown Patient", initials: "?", accentClass: "bg-slate-500",
     doctor: "—", malocclusionClass: "—", crowding: "—", chiefComplaint: "—",
     urgency: "routine" as const, progress: 50,
@@ -445,6 +319,15 @@ export default function CaseDetailClient({ id }: { id: string }) {
   const patientName = liveData
     ? `${liveData.patient.firstName} ${liveData.patient.lastName}`
     : profile.patient;
+
+  if (dataSource === 'loading') {
+    return (
+      <div className="flex flex-col items-center justify-center gap-3 px-6 py-24 text-center">
+        <Loader2 size={28} className="animate-spin text-[color:var(--primary)]" />
+        <p className="text-sm text-[color:var(--muted-foreground)]">Loading case…</p>
+      </div>
+    );
+  }
 
   if (dataSource === 'not_found') {
     return (
@@ -514,8 +397,7 @@ export default function CaseDetailClient({ id }: { id: string }) {
             <p className="truncate text-sm font-bold text-[color:var(--foreground)]">{patientName}</p>
             <div className="flex items-center gap-2">
               <span className="font-mono text-xs text-[color:var(--muted-foreground)]">{liveData?.id ?? id}</span>
-              {dataSource === 'loading' && <StatusBadge tone="neutral">Loading…</StatusBadge>}
-              {dataSource === 'api'     && <StatusBadge tone="success">Live</StatusBadge>}
+              <StatusBadge tone="success">Live</StatusBadge>
             </div>
           </div>
         </div>
@@ -546,22 +428,6 @@ export default function CaseDetailClient({ id }: { id: string }) {
       </div>
 
       <div className="px-4 pt-4 sm:px-5">
-        {/* API error banner */}
-        {fetchError && (
-          <div className="mb-4 flex items-center gap-2 rounded-xl border border-rose-300/50 bg-rose-50/60 px-3 py-2 text-xs text-rose-700 dark:border-rose-700/40 dark:bg-rose-900/10 dark:text-rose-400">
-            <AlertTriangle size={12} className="shrink-0" />
-            <span className="flex-1">
-              Could not load live data — showing representative data. ({fetchError})
-            </span>
-            <button
-              type="button"
-              onClick={() => setFetchError(null)}
-              className="shrink-0 font-semibold hover:underline"
-            >
-              Dismiss
-            </button>
-          </div>
-        )}
 
         {tab === "summary"    && <SummaryTab profile={profile} caseId={id} isLive={dataSource === 'api'} />}
         {tab === "workflow"   && (

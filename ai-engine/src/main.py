@@ -497,11 +497,17 @@ async def trigger_segmentation(
     background_tasks: BackgroundTasks,
 ):
     safe_path = _assert_safe_path(req.file_path)
+    if not os.path.isfile(safe_path):
+        raise HTTPException(
+            status_code=400,
+            detail="Scan file not found at the given path — nothing to segment.",
+        )
     req = SegmentationRequest(
         case_id=req.case_id,
         scan_id=req.scan_id,
         file_path=safe_path,
         jaw_type=req.jaw_type,
+        provider=req.provider,
     )
 
     job_id = str(uuid.uuid4())

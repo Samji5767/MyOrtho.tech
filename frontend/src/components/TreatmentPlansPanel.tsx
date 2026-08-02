@@ -271,7 +271,9 @@ function PlanRow({
       if (loaded.length > 0 && activeStage === null) {
         setActiveStage(loaded[0].stageNumber);
       }
-    } catch { /* swallow */ }
+    } catch (e) {
+      setGenerateError(e instanceof ApiError ? e.message : "Failed to load stages");
+    }
     setStagesLoading(false);
   }
 

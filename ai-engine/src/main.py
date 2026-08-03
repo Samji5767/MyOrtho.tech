@@ -29,6 +29,7 @@ from src.aligner_generator import AlignerGenerationEngine
 from src.auth import get_trace_id, require_auth, require_upload_size
 from src.benchmarking import BenchmarkEngine
 from src.landmark_detector import DentalLandmarkDetector
+from src.mesh_extraction import extract_labeled_meshes
 from src.meshsegnet_segmentation import MeshSegNetEngine, MeshSegNetUnavailableError
 from src.mesh_processing import MeshProcessor
 from src.metrics import get_metrics
@@ -328,7 +329,23 @@ async def run_segmentation_task(job_id: str, req: SegmentationRequest) -> None:
         if not seg_result.fdi_valid:
             _metrics.record_validation_failure(seg_result.engine_name)
 
-        warnings_list = seg_result.warnings or []
+        warnings_list = list(seg_result.warnings or [])
+
+        # Providers that return per-vertex labels but no mesh files: carve the
+        # scan into per-tooth STLs so the viewer/manufacturing steps have real
+        # geometry. Best-effort — failure is reported, never faked.
+        segmented_mesh_path = seg_result.segmented_mesh_path
+        if not segmented_mesh_path and seg_result.vertex_labels:
+            extraction = await loop.run_in_executor(
+                _executor,
+                lambda: extract_labeled_meshes(req.file_path, seg_result.vertex_labels),
+            )
+            if extraction:
+                segmented_mesh_path = extraction["output_dir"]
+            else:
+                warnings_list.append(
+                    "Per-tooth mesh extraction failed — 3D anatomy meshes unavailable for this job"
+                )
 
         _job_set(
             job_id,
@@ -348,7 +365,7 @@ async def run_segmentation_task(job_id: str, req: SegmentationRequest) -> None:
                 "requires_manual_review": seg_result.requires_manual_review,
                 "deciduous_detected": seg_result.deciduous_detected,
                 "warning": "; ".join(warnings_list) if warnings_list else None,
-                "segmented_mesh_path": seg_result.segmented_mesh_path,
+                "segmented_mesh_path": segmented_mesh_path,
                 "timing_ms": seg_result.timing_ms,
                 "completed_at": datetime.now(timezone.utc).isoformat(),
                 "research_use": True,

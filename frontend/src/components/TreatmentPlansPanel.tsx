@@ -29,6 +29,7 @@ import {
 } from "@/lib/api/treatmentPlans";
 import { ApiError } from "@/lib/api/client";
 import { useToast } from "@/components/ToastContext";
+import PlanFeaturesPanel from "@/components/PlanFeaturesPanel";
 
 type PlanTab = "stages";
 
@@ -571,6 +572,10 @@ function PlanRow({
                 )
               )}
 
+              {/* IPR + attachment planning — persisted per plan */}
+              <div className="mt-4 border-t border-[color:var(--border)] pt-3">
+                <PlanFeaturesPanel caseId={caseId} planId={plan.id} locked={plan.doctorApproval} />
+              </div>
             </div>
           </div>
         )}

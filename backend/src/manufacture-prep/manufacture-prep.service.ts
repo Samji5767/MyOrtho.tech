@@ -294,6 +294,37 @@ export class ManufacturePrepService {
           sizeBytes: stat.size,
           verifiedAt: new Date().toISOString(),
         };
+        // Geometric validation for STL deliverables via the AI engine
+        // (watertightness, non-manifold ratio, components). Archive files
+        // skip mesh-level checks; an unreachable validator is recorded as
+        // unavailable — never a fabricated pass.
+        if (safe.toLowerCase().endsWith('.stl')) {
+          try {
+            const res = await fetch(`${AI_ENGINE_URL}/mesh/validate`, {
+              method: 'POST',
+              headers: AI_ENGINE_HEADERS(),
+              body: JSON.stringify({ file_path: safe }),
+              signal: AbortSignal.timeout(60_000),
+            });
+            if (res.ok) {
+              const report = (await res.json()) as { valid?: boolean; issues?: string[] };
+              manifest['meshValidation'] = report;
+              if (report.valid === false) {
+                status = 'failed';
+                errorMsg =
+                  'Export blocked: mesh validation failed — ' +
+                  ((report.issues ?? []).join('; ') || 'geometry is not manufacturable');
+                filePath = null;
+              }
+            } else {
+              manifest['meshValidation'] = { status: 'unavailable', httpStatus: res.status };
+            }
+          } catch {
+            manifest['meshValidation'] = { status: 'unavailable' };
+          }
+        } else {
+          manifest['meshValidation'] = { status: 'not_applicable', reason: 'non-STL deliverable' };
+        }
       }
     }
 

@@ -1,7 +1,7 @@
 "use client";
 
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
-import { Canvas, ThreeEvent } from "@react-three/fiber";
+import { Canvas, ThreeEvent, useThree } from "@react-three/fiber";
 import { OrbitControls } from "@react-three/drei";
 import * as THREE from "three";
 import { STLLoader } from "three/examples/jsm/loaders/STLLoader.js";
@@ -18,7 +18,7 @@ import {
   deleteToothMovement,
   type ToothMovementValues,
 } from "@/lib/api/toothMovements";
-import { MM_TO_SCENE } from "@/lib/meshAnalysis";
+import { MM_TO_SCENE, SCENE_TO_MM } from "@/lib/meshAnalysis";
 import {
   AlertTriangle,
   ChevronLeft,
@@ -138,6 +138,31 @@ interface SceneProps {
   onSelect: (fdi: number) => void;
 }
 
+
+// ── Clinical camera presets ───────────────────────────────────────────────────
+// Positions are in scene units around the arch centre (origin after recentring).
+
+const CAMERA_VIEWS: Record<string, { pos: [number, number, number]; up: [number, number, number] }> = {
+  reset:    { pos: [0, 2, 6],    up: [0, 1, 0] },
+  occlusal: { pos: [0, 6, 0.01], up: [0, 0, -1] },
+  frontal:  { pos: [0, 0.5, 6],  up: [0, 1, 0] },
+  left:     { pos: [-6, 0.5, 0], up: [0, 1, 0] },
+  right:    { pos: [6, 0.5, 0],  up: [0, 1, 0] },
+};
+
+function CameraRig({ view, nonce }: { view: string; nonce: number }) {
+  const camera = useThree((s) => s.camera);
+  useEffect(() => {
+    if (nonce === 0) return;
+    const v = CAMERA_VIEWS[view] ?? CAMERA_VIEWS.reset;
+    camera.up.set(...v.up);
+    camera.position.set(...v.pos);
+    camera.lookAt(0, 0, 0);
+    camera.updateProjectionMatrix();
+  }, [camera, view, nonce]);
+  return null;
+}
+
 function Scene({ teeth, gingivaGeom, showGingiva, showTeeth, selectedFdi, stageMvts, onSelect }: SceneProps) {
   return (
     <>
@@ -175,6 +200,45 @@ function Scene({ teeth, gingivaGeom, showGingiva, showTeeth, selectedFdi, stageM
         );
       })}
     </>
+  );
+}
+
+
+// ── Arch measurements from loaded geometry ────────────────────────────────────
+// Distances between segmented tooth centroids (millimetres). Shown only when
+// both teeth of a pair are present — never estimated or substituted.
+
+const MEASUREMENT_PAIRS: Array<{ label: string; a: number; b: number }> = [
+  { label: "Upper intercanine width", a: 13, b: 23 },
+  { label: "Upper intermolar width",  a: 16, b: 26 },
+  { label: "Lower intercanine width", a: 33, b: 43 },
+  { label: "Lower intermolar width",  a: 36, b: 46 },
+];
+
+function MeasurementsCard({ teeth }: { teeth: ToothMesh[] }) {
+  const byFdi = new Map(teeth.map(t => [t.fdi, t.centroid]));
+  const rows = MEASUREMENT_PAIRS.flatMap(p => {
+    const a = byFdi.get(p.a), b = byFdi.get(p.b);
+    if (!a || !b) return [];
+    const mm = Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]) * SCENE_TO_MM;
+    return [{ ...p, mm }];
+  });
+  if (rows.length === 0) return null;
+  return (
+    <div className="rounded-xl border border-[color:var(--border)] bg-[color:var(--card)] px-3 py-2.5 text-xs">
+      <p className="mb-1.5 text-sm font-semibold text-[color:var(--foreground)]">Arch measurements</p>
+      <div className="grid grid-cols-2 gap-x-6 gap-y-0.5 tabular-nums">
+        {rows.map(r => (
+          <Fragment key={r.label}>
+            <span className="text-[color:var(--muted-foreground)]">{r.label} ({r.a}–{r.b})</span>
+            <span className="text-[color:var(--foreground)]">{r.mm.toFixed(1)} mm</span>
+          </Fragment>
+        ))}
+      </div>
+      <p className="mt-1.5 text-[10px] text-[color:var(--muted-foreground)]">
+        Centroid-to-centroid distances derived from the segmented tooth meshes
+      </p>
+    </div>
   );
 }
 
@@ -382,6 +446,7 @@ export default function DentalAnatomyViewer({ caseId }: { caseId: string }) {
   const [gingivaGeom, setGingivaGeom] = useState<THREE.BufferGeometry | null>(null);
   const [showGingiva, setShowGingiva] = useState(true);
   const [showTeeth, setShowTeeth] = useState(true);
+  const [cameraView, setCameraView] = useState<{ view: string; nonce: number }>({ view: "reset", nonce: 0 });
   const [selectedFdi, setSelectedFdi] = useState<number | null>(null);
   const [planId, setPlanId] = useState<string | null>(null);
   const [planApproved, setPlanApproved] = useState(false);
@@ -579,6 +644,14 @@ export default function DentalAnatomyViewer({ caseId }: { caseId: string }) {
           )}
         </div>
         <div className="flex items-center gap-1.5">
+          {(["occlusal", "frontal", "left", "right", "reset"] as const).map((v) => (
+            <button key={v} type="button"
+              onClick={() => setCameraView((c) => ({ view: v, nonce: c.nonce + 1 }))}
+              className="rounded-md border border-[color:var(--border)] px-2 py-1 text-xs capitalize text-[color:var(--muted-foreground)] hover:text-[color:var(--foreground)]">
+              {v}
+            </button>
+          ))}
+          <span className="mx-0.5 h-4 w-px bg-[color:var(--border)]" aria-hidden />
           <button type="button" onClick={() => setShowGingiva(v => !v)}
             className="flex items-center gap-1 rounded-md border border-[color:var(--border)] px-2 py-1 text-xs text-[color:var(--muted-foreground)] hover:text-[color:var(--foreground)]">
             {showGingiva ? <Eye size={11} /> : <EyeOff size={11} />} Gingiva
@@ -611,6 +684,7 @@ export default function DentalAnatomyViewer({ caseId }: { caseId: string }) {
         )}
         <Canvas camera={{ position: [0, 2, 6], fov: 45, near: 0.01, far: 100 }}
           gl={{ antialias: true }} style={{ background: "#0f0f1a" }}>
+          <CameraRig view={cameraView.view} nonce={cameraView.nonce} />
           <Scene teeth={teeth} gingivaGeom={gingivaGeom} showGingiva={showGingiva}
             showTeeth={showTeeth} selectedFdi={selectedFdi} stageMvts={stageMvts}
             onSelect={fdi => setSelectedFdi(prev => prev === fdi ? null : fdi)} />
@@ -623,6 +697,8 @@ export default function DentalAnatomyViewer({ caseId }: { caseId: string }) {
           onNext={() => setStageIdx(i => Math.min(stages.length - 1, i + 1))}
           simulated={stageSimulated} />
       )}
+
+      {teeth.length >= 2 && <MeasurementsCard teeth={teeth} />}
 
       {selectedFdi !== null && planId && activeStage && (
         <MovementEditor

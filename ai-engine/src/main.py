@@ -238,6 +238,10 @@ class SegmentationRequest(BaseModel):
     provider: Optional[str] = None  # "TGN" | "MESHSEGNET" | "AUTO" | "MANUAL" | None=env default
 
 
+class ValidateMeshRequest(BaseModel):
+    file_path: str
+
+
 class HollowRequest(BaseModel):
     input_mesh_path: str
     output_mesh_path: str
@@ -561,6 +565,24 @@ async def get_job_status(job_id: str):
             detail=f"Job '{job_id}' not found. Jobs expire after 7 days.",
         )
     return {"job_id": job_id, **job}
+
+
+@app.post(
+    "/mesh/validate",
+    dependencies=[Depends(require_auth)],
+)
+async def validate_mesh_endpoint(req: ValidateMeshRequest):
+    """Real geometric validation (trimesh): watertightness, non-manifold
+    ratio, components, bounding box, degenerate faces. Used as the
+    manufacturing pre-export gate."""
+    safe_path = _assert_safe_path(req.file_path)
+    if not os.path.isfile(safe_path):
+        raise HTTPException(status_code=400, detail="Mesh file not found")
+    loop = asyncio.get_running_loop()
+    report = await loop.run_in_executor(
+        _executor, lambda: mesh_processor.validate_mesh(safe_path)
+    )
+    return report
 
 
 @app.post(

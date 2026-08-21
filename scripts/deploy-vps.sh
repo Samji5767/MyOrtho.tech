@@ -115,10 +115,11 @@ docker compose up -d
 
 # ── Step 8: Wait for health checks ───────────────────────────────────────────
 echo "[deploy] Waiting for services to become healthy..."
-MAX_WAIT=120
-ELAPSED=0
+# The AI engine cold-starts slowly (torch import takes minutes on first boot).
+MAX_WAIT=300
 SERVICES=(backend frontend ai-engine)
 for svc in "${SERVICES[@]}"; do
+  ELAPSED=0
   echo -n "[deploy] Waiting for ${svc}..."
   while true; do
     STATUS=$(docker inspect --format='{{.State.Health.Status}}' "myortho-${svc}" 2>/dev/null || echo "missing")

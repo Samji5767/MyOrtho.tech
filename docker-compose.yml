@@ -135,7 +135,7 @@ services:
       - TGN_ENABLED=${TGN_ENABLED:-false}
       - TGN_API_URL=${TGN_API_URL:-}
       - MESHSEGNET_ENABLED=${MESHSEGNET_ENABLED:-false}
-      - MESHSEGNET_API_URL=${MESHSEGNET_API_URL:-}
+      - MESHSEGNET_API_URL=${MESHSEGNET_API_URL:-http://meshsegnet:8002}
       - SEGMENTATION_PROVIDER=${SEGMENTATION_PROVIDER:-MANUAL}
       - SEGMENTATION_PRIMARY=${SEGMENTATION_PRIMARY:-TGN}
     volumes:
@@ -148,7 +148,47 @@ services:
       retries: 3
       start_period: 30s
 
+  # MeshSegNet segmentation microservice. Behind a compose profile because it
+  # only earns its torch memory once trained weights exist — enable it by
+  # setting COMPOSE_PROFILES=meshsegnet in .env (or `docker compose --profile
+  # meshsegnet up -d`). Without a checkpoint it still starts and honestly
+  # reports state=disabled; the AI engine keeps routing to manual review.
+  # Weights are trained with meshsegnet-service/training/ (see its README),
+  # then placed in the meshsegnet_ckpts volume as /ckpts/meshsegnet.pth.
+  meshsegnet:
+    build:
+      context: ./meshsegnet-service
+      dockerfile: api/Dockerfile
+    container_name: myortho-meshsegnet
+    profiles: ["meshsegnet"]
+    # Internal-only: reached by ai-engine over the compose network.
+    expose:
+      - "8002"
+    environment:
+      - MESHSEGNET_ENABLED=${MESHSEGNET_ENABLED:-false}
+      - MESHSEGNET_MODEL_VERSION=${MESHSEGNET_MODEL_VERSION:-1.0.0}
+      - CHECKPOINT_PATH=${MESHSEGNET_CHECKPOINT_PATH:-/ckpts/meshsegnet.pth}
+      - CHECKPOINT_SHA256=${MESHSEGNET_CHECKPOINT_SHA256:-}
+      - INTERNAL_API_SECRET=${INTERNAL_API_SECRET:-}
+      - DEVICE=${MESHSEGNET_DEVICE:-cpu}
+      - CONFIDENCE_THRESHOLD=${MESHSEGNET_CONFIDENCE_THRESHOLD:-0.50}
+      # /segment/by-path may only read from the shared uploads volume.
+      - MESHSEGNET_ALLOWED_PATH_DIRS=/app/uploads
+    volumes:
+      - uploads_data:/app/uploads:ro
+      - meshsegnet_ckpts:/ckpts
+    healthcheck:
+      # /health always answers HTTP 200, so probe the state field: "ok" covers
+      # both ready and honestly-disabled; a failed checkpoint load ("error")
+      # must mark the container unhealthy so deploys notice.
+      test: ["CMD", "python3", "-c", "import urllib.request, json, sys; d = json.load(urllib.request.urlopen('http://127.0.0.1:8002/health', timeout=5)); sys.exit(0 if d.get('status') == 'ok' else 1)"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
 volumes:
   postgres_data:
   redis_data:
   uploads_data:
+  meshsegnet_ckpts:

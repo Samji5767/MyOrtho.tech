@@ -140,14 +140,22 @@ Writes `meshsegnet.pth` (bare state dict), `meshsegnet.pth.sha256`, and
 validates the state dict against the service's model class (strict load +
 forward pass) and refuses smoke-run checkpoints.
 
-On the VPS:
+On the VPS (the service is wired into docker-compose behind the
+`meshsegnet` profile; checkpoints live in the `meshsegnet_ckpts` volume):
 
 ```bash
-scp meshsegnet.pth root@<vps>:/opt/myortho/ckpts/meshsegnet.pth
-# set in the service environment (compose env or .env):
-#   CHECKPOINT_PATH=/ckpts/meshsegnet.pth
-#   CHECKPOINT_SHA256=<contents of meshsegnet.pth.sha256>
-docker compose up -d meshsegnet   # service verifies the hash at startup
+scp meshsegnet.pth root@<vps>:/opt/myortho/
+# in /opt/myortho/.env set:
+#   COMPOSE_PROFILES=meshsegnet
+#   MESHSEGNET_ENABLED=true
+#   MESHSEGNET_CHECKPOINT_SHA256=<contents of meshsegnet.pth.sha256>
+#   SEGMENTATION_PROVIDER=MESHSEGNET
+#   SEGMENTATION_PRIMARY=MESHSEGNET
+cd /opt/myortho
+docker compose up -d meshsegnet                       # create the container + volume
+docker cp meshsegnet.pth myortho-meshsegnet:/ckpts/meshsegnet.pth
+docker compose restart meshsegnet ai-engine           # hash is verified at startup
+docker inspect --format='{{.State.Health.Status}}' myortho-meshsegnet
 ```
 
 ## File map

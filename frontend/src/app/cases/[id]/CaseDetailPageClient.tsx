@@ -1,30 +1,14 @@
 "use client";
 
-import { useEffect } from "react";
-import { useRouter } from "next/navigation";
 import CaseDetailClient from "@/components/CaseDetailClient";
 
 interface Props {
   id: string;
-  isStatic: boolean;
 }
 
-export default function CaseDetailPageClient({ id, isStatic }: Props) {
-  const router = useRouter();
-
-  useEffect(() => {
-    if (!isStatic) {
-      router.replace(`/cases?id=${encodeURIComponent(id)}`);
-    }
-  }, [id, isStatic, router]);
-
-  if (!isStatic) {
-    return (
-      <div className="flex min-h-[40vh] items-center justify-center text-sm text-[color:var(--muted-foreground)]">
-        Redirecting to case…
-      </div>
-    );
-  }
-
+// Renders the case detail view for any case ID — pre-rendered demo IDs and
+// real UUIDs alike. CaseDetailClient calls the real API first; demo fallback
+// data is only used when the network is completely unreachable.
+export default function CaseDetailPageClient({ id }: Props) {
   return <CaseDetailClient id={id} />;
 }

@@ -4,16 +4,19 @@ import {
 } from '@nestjs/common';
 import type { Response } from 'express';
 import { AuthGuard } from '../auth/auth.guard';
+import { PermissionsGuard } from '../auth/permissions.guard';
+import { RequirePermission } from '../auth/require-permission.decorator';
 import { AlignerGenerationService, type GenerateDto } from './aligner-generation.service';
 import type { AuthenticatedRequest } from '../common/auth-request.type';
 
 
 @Controller()
-@UseGuards(AuthGuard)
+@UseGuards(AuthGuard, PermissionsGuard)
 export class AlignerGenerationController {
   constructor(private readonly svc: AlignerGenerationService) {}
 
   @Get('api/cases/:caseId/plans/:planId/aligner-generation/quality-report')
+  @RequirePermission('cases:read')
   getQualityReport(
     @Req() req: AuthenticatedRequest,
     @Param('caseId') _caseId: string,
@@ -23,6 +26,7 @@ export class AlignerGenerationController {
   }
 
   @Post('api/cases/:caseId/plans/:planId/aligner-generation/generate')
+  @RequirePermission('cases:write')
   generate(
     @Req() req: AuthenticatedRequest,
     @Param('caseId') caseId: string,
@@ -33,6 +37,7 @@ export class AlignerGenerationController {
   }
 
   @Get('api/cases/:caseId/plans/:planId/aligner-generation/plan')
+  @RequirePermission('cases:read')
   getPlan(
     @Req() req: AuthenticatedRequest,
     @Param('caseId') caseId: string,
@@ -42,6 +47,7 @@ export class AlignerGenerationController {
   }
 
   @Get('api/cases/:caseId/plans/:planId/aligner-generation/stages/:stageNum')
+  @RequirePermission('cases:read')
   getStageAllocations(
     @Req() req: AuthenticatedRequest,
     @Param('caseId') caseId: string,
@@ -52,6 +58,7 @@ export class AlignerGenerationController {
   }
 
   @Get('api/cases/:caseId/plans/:planId/aligner-generation/stl-export')
+  @RequirePermission('cases:read')
   async getStlExport(
     @Req() req: AuthenticatedRequest,
     @Param('caseId') _caseId: string,
@@ -66,6 +73,7 @@ export class AlignerGenerationController {
   }
 
   @Post('api/cases/:caseId/plans/:planId/aligner-generation/approve')
+  @RequirePermission('cases:approve')
   approve(
     @Req() req: AuthenticatedRequest,
     @Param('caseId') caseId: string,
@@ -76,6 +84,7 @@ export class AlignerGenerationController {
   }
 
   @Post('api/cases/:caseId/plans/:planId/aligner-generation/stl-ready')
+  @RequirePermission('cases:write')
   markStlReady(
     @Req() req: AuthenticatedRequest,
     @Param('caseId') caseId: string,
@@ -86,6 +95,7 @@ export class AlignerGenerationController {
   }
 
   @Post('api/cases/:caseId/plans/:planId/aligner-generation/generate-stl')
+  @RequirePermission('cases:write')
   generateStl(
     @Req() req: AuthenticatedRequest,
     @Param('caseId') caseId: string,

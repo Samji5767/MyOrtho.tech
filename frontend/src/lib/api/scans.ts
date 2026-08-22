@@ -1,5 +1,14 @@
 import { api, uploadFile } from './client';
 
+export interface ScanMeshMetrics {
+  format?: 'binary' | 'ascii';
+  triangleCount?: number;
+  boundingBoxMm?: { min: number[]; max: number[]; size: number[] };
+  degenerateTriangleCount?: number;
+  warnings?: string[];
+  validatedAt?: string;
+}
+
 export interface ScanRecord {
   id: string;
   caseId: string;
@@ -8,18 +17,25 @@ export interface ScanRecord {
   fileFormat: string;
   fileSizeBytes: number;
   filePath: string;
+  validationMetrics?: ScanMeshMetrics;
   createdAt: string;
 }
 
 export interface SegmentJobResult {
   jobId: string;
-  status: 'queued' | 'processing' | 'completed' | 'failed';
+  status: 'queued' | 'processing' | 'completed' | 'failed' | 'review_required' | 'cancelled';
   caseId?: string;
   scanId?: string;
   teethDetected?: number;
   missingTeeth?: number[];
+  /** Segmentation engine that produced the result (e.g. TGN, MANUAL). */
+  engine?: string | null;
+  /** True when no automated provider ran — a human must segment manually. */
+  requiresManualReview?: boolean;
+  warning?: string | null;
   completedAt?: string;
   error?: string;
+  failureReason?: string | null;
   disclaimer?: string;
 }
 

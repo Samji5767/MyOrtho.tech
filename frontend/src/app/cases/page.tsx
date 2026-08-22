@@ -622,14 +622,9 @@ function CasesPageInner() {
     setApiSource("loading");
     setApiError(null);
     fetchCases()
-      .then(({ cases, source }) => {
-        if (source === 'demo') {
-          setApiSource("error");
-          setApiError("Could not reach the backend — check your connection");
-        } else {
-          setApiCases(cases);
-          setApiSource("api");
-        }
+      .then(({ cases }) => {
+        setApiCases(cases);
+        setApiSource("api");
       })
       .catch((err) => {
         setApiSource("error");

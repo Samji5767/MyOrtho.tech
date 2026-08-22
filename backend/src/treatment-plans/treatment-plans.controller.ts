@@ -1,5 +1,6 @@
 import {
   Controller,
+  Delete,
   Get,
   Patch,
   Post,
@@ -104,6 +105,18 @@ export class TreatmentPlansController {
     return this.service.getPlan(planId, caseId, user.orgId!);
   }
 
+  /** Pre-approval validation — same persisted-data rules approvePlan enforces. */
+  @Get(':planId/validate-approval')
+  @RequirePermission('cases:read')
+  validateApproval(
+    @Req() req: Request,
+    @Param('caseId') caseId: string,
+    @Param('planId') planId: string,
+  ) {
+    const user = auth(req);
+    return this.service.validateApproval(planId, caseId, user.orgId!);
+  }
+
   /** Doctor approval — sets doctor_approval = true and advances case status. */
   @Post(':planId/approve')
   @HttpCode(HttpStatus.OK)
@@ -165,6 +178,19 @@ export class TreatmentPlansController {
   ) {
     const user = auth(req);
     return this.service.listStages(planId, caseId, user.orgId!);
+  }
+
+  @Delete(':planId/stages/:stageId')
+  @HttpCode(HttpStatus.OK)
+  @RequirePermission('cases:write')
+  deleteStage(
+    @Req() req: Request,
+    @Param('caseId') caseId: string,
+    @Param('planId') planId: string,
+    @Param('stageId') stageId: string,
+  ) {
+    const user = auth(req);
+    return this.service.deleteStage(planId, stageId, caseId, user.orgId!);
   }
 
   @Post(':planId/stages')

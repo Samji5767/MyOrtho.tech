@@ -1,7 +1,24 @@
-import { Injectable, Inject, NotFoundException, ServiceUnavailableException, InternalServerErrorException, Logger } from '@nestjs/common';
+import { Injectable, Inject, BadRequestException, NotFoundException, ServiceUnavailableException, InternalServerErrorException, Logger } from '@nestjs/common';
 import * as fs from 'fs';
+import * as path from 'path';
 import type { Pool } from 'pg';
 import { PG_POOL } from '../database/database.module';
+
+const UPLOADS_ROOT = process.env.UPLOADS_DIR ?? '/app/uploads';
+
+/**
+ * Resolve a file path and require it to live inside the uploads sandbox.
+ * Paths stored in the DB are streamed back to clients, so anything outside
+ * UPLOADS_DIR would be an arbitrary-file-read.
+ */
+function assertPathInUploads(p: string): string {
+  const resolved = path.resolve(p);
+  const root = path.resolve(UPLOADS_ROOT) + path.sep;
+  if (!resolved.startsWith(root)) {
+    throw new BadRequestException('File path must be inside the uploads directory');
+  }
+  return resolved;
+}
 
 const AI_ENGINE_URL = process.env.AI_ENGINE_URL ?? 'http://ai-engine:8000';
 const INTERNAL_API_SECRET = process.env.INTERNAL_API_SECRET ?? '';
@@ -355,6 +372,23 @@ export class AlignerGenerationService {
     notes?: string,
   ): Promise<AlignerGenerationPlan> {
     await this.verifyPlan(planId, caseId, orgId);
+
+    // Simulated scaffold stages must never reach approved/manufacturing status.
+    // Same rule TreatmentPlansService.approvePlan applies to doctor approval.
+    const simRes = await this.db.query(
+      `SELECT id FROM aligner_stages
+       WHERE treatment_plan_id = $1
+         AND (movement_data::jsonb ->> '_is_simulated')::boolean = true
+       LIMIT 1`,
+      [planId],
+    );
+    if ((simRes.rowCount ?? 0) > 0) {
+      throw new BadRequestException(
+        'This plan contains simulated scaffold stages and cannot be approved for ' +
+        'manufacturing. Replace scaffold stages with real treatment data first.',
+      );
+    }
+
     const res = await this.db.query(
       `UPDATE aligner_generation_plans
        SET status='approved', approved_by=$1, approved_at=now(), notes=COALESCE($2, notes)
@@ -372,11 +406,19 @@ export class AlignerGenerationService {
     exportPath: string,
   ): Promise<AlignerGenerationPlan> {
     await this.verifyPlan(planId, caseId, orgId);
+    // The stored path is later streamed back verbatim by getStlFile, so a
+    // caller-supplied path outside the uploads sandbox would be an arbitrary
+    // file read. Enforce containment before persisting, and require the file
+    // to exist — "STL ready" must never point at nothing.
+    const safePath = assertPathInUploads(exportPath);
+    if (!fs.existsSync(safePath)) {
+      throw new BadRequestException('exportPath does not exist — cannot mark STL ready');
+    }
     const res = await this.db.query(
       `UPDATE aligner_generation_plans
        SET stl_export_ready=true, stl_export_path=$1, status='manufacturing'
        WHERE plan_id=$2 RETURNING *`,
-      [exportPath, planId],
+      [safePath, planId],
     );
     if (res.rowCount === 0) throw new NotFoundException('No generation plan found');
     return rowToPlan(res.rows[0]);
@@ -956,7 +998,9 @@ export class AlignerGenerationService {
         'Call POST .../stl-ready once a real manufacturing pipeline produces output files.',
       );
     }
-    const filePath = row.stl_export_path as string;
+    // Containment re-check on read: rows written before path validation
+    // existed must not become an arbitrary-file-read primitive.
+    const filePath = assertPathInUploads(row.stl_export_path as string);
     if (!fs.existsSync(filePath)) {
       throw new ServiceUnavailableException(
         'STL file is not accessible at the configured export path. ' +

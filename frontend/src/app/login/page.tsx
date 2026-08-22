@@ -53,8 +53,11 @@ export default function LoginPage() {
       }
     } catch {}
 
-    // If the user hasn't completed onboarding, send them there
-    if (!result.user.isOnboarded) {
+    // If email is not yet verified, require verification before anything else
+    if (!result.user.isEmailVerified) {
+      destination = "/verify-email";
+    } else if (!result.user.isOnboarded) {
+      // If the user hasn't completed onboarding, send them there
       destination = "/onboarding";
     }
 
@@ -126,12 +129,18 @@ export default function LoginPage() {
 
           {/* Password */}
           <div className="space-y-1.5">
-            <label
-              htmlFor="password"
-              className="text-xs font-semibold text-[color:var(--foreground)]"
-            >
-              Password <span className="text-rose-500">*</span>
-            </label>
+            <div className="flex items-center justify-between">
+              <label
+                htmlFor="password"
+                className="text-xs font-semibold text-[color:var(--foreground)]"
+              >
+                Password <span className="text-rose-500">*</span>
+              </label>
+              <Link href="/forgot-password"
+                    className="text-xs text-[color:var(--muted-foreground)] hover:text-[color:var(--primary)] hover:underline">
+                Forgot password?
+              </Link>
+            </div>
             <div className="relative">
               <Lock
                 size={15}

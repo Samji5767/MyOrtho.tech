@@ -8,7 +8,16 @@ const SESSION_COOKIE = 'mo_session';
 const MUTATING_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
 
 // Webhook paths signed by the provider's own secret — no CSRF needed.
-const EXEMPT_PREFIXES = ['/api/billing/webhook', '/api/webhooks'];
+// Public auth endpoints that carry their own cryptographic token (the token in
+// the request body IS the authorization proof, making CSRF redundant and
+// preventing fresh-browser sessions from being blocked on verification/reset).
+const EXEMPT_PREFIXES = [
+  '/api/billing/webhook',
+  '/api/webhooks',
+  '/api/auth/verify-email',
+  '/api/auth/forgot-password',
+  '/api/auth/reset-password',
+];
 
 @Injectable()
 export class CsrfMiddleware implements NestMiddleware {

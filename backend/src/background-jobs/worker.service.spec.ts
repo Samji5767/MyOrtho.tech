@@ -177,14 +177,12 @@ describe('JobHandlerRegistry', () => {
     expect(registry.has('integration.health_check')).toBe(true);
   });
 
-  it('integration.health_check executes with valid payload', async () => {
-    const handler = registry.resolve('integration.health_check');
-    const result = await handler.execute('job-1', { providerId: 'prov-123' });
-    expect((result as Record<string, unknown>).providerId).toBe('prov-123');
-  });
-
-  it('report.generate throws on missing orgId', async () => {
-    const handler = registry.resolve('report.generate');
-    await expect(handler.execute('job-1', {} as Record<string, unknown>)).rejects.toThrow('requires reportType and orgId');
+  it('unwired job types fail honestly with NOT_IMPLEMENTED instead of echoing success', async () => {
+    for (const jobType of registry.listTypes()) {
+      const handler = registry.resolve(jobType);
+      await expect(handler.execute('job-1', {} as Record<string, unknown>))
+        .rejects.toThrow(/NOT_IMPLEMENTED/);
+      expect(handler.isRetryable(new Error('NOT_IMPLEMENTED'))).toBe(false);
+    }
   });
 });

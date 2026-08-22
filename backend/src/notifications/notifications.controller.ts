@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, Post, Query, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, Post, Put, Query, Req, UseGuards } from '@nestjs/common';
 import { AuthGuard } from '../auth/auth.guard';
 import { NotificationsService } from './notifications.service';
 
@@ -43,5 +43,22 @@ export class NotificationsController {
   dismiss(@Req() req: Request, @Param('id') id: string) {
     const { id: userId } = this.user(req);
     return this.svc.dismiss(id, userId);
+  }
+
+  @Get('preferences')
+  async getPrefs(@Req() req: Request) {
+    const { id } = this.user(req);
+    const prefs = await this.svc.getPrefs(id);
+    return { prefs };
+  }
+
+  @Put('preferences')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  async setPrefs(
+    @Req() req: Request,
+    @Body() body: { prefs: Record<string, boolean> },
+  ) {
+    const { id, orgId } = this.user(req);
+    await this.svc.setPrefs(id, orgId, body.prefs ?? {});
   }
 }

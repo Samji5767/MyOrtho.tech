@@ -16,7 +16,6 @@ import {
   Users,
   X,
 } from "lucide-react";
-import NativeSheet from "@/components/NativeSheet";
 import { Button, Card, Input, Select, SkeletonBlock } from "@/components/DesignSystem";
 import { fetchPatients, createPatient, type CreatePatientDto } from "@/lib/api/patients";
 
@@ -514,7 +513,16 @@ export default function PatientsPage() {
       )}
 
       {/* ── Add Patient sheet ── */}
-      <NativeSheet isOpen={sheetOpen} title="Add Patient" onClose={closeSheet}>
+      {sheetOpen && (
+      <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center">
+        <div className="absolute inset-0 bg-black/50" onClick={closeSheet} aria-hidden />
+        <div className="relative z-10 w-full max-w-lg rounded-t-2xl sm:rounded-2xl bg-[color:var(--background)] p-5 shadow-2xl max-h-[90vh] overflow-y-auto">
+          <div className="mb-4 flex items-center justify-between">
+            <h2 className="text-base font-semibold text-[color:var(--foreground)]">Add Patient</h2>
+            <button type="button" onClick={closeSheet} className="rounded-full p-1.5 hover:bg-[color:var(--border)]/40">
+              <X size={16} />
+            </button>
+          </div>
         <form onSubmit={handleSubmit} noValidate className="space-y-4">
 
           {/* Name row */}
@@ -615,7 +623,9 @@ export default function PatientsPage() {
             </Button>
           </div>
         </form>
-      </NativeSheet>
+        </div>
+      </div>
+      )}
     </section>
   );
 }

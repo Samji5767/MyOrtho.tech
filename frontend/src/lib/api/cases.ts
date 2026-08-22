@@ -1,4 +1,4 @@
-import { api, ApiError } from './client';
+import { api } from './client';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -73,85 +73,16 @@ export interface UpdateCaseDto {
   notes?: string;
 }
 
-// ─── Demo fallback data ───────────────────────────────────────────────────────
-// Shown when the backend is not reachable (local dev without a running API).
-
-// Computed at call time (not module load) to avoid server/client Date.now() mismatch.
-function makeDemoCases(): CaseListItem[] {
-  const now = Date.now();
-  return [
-    {
-      id: 'demo-1',
-      status: 'active_treatment',
-      chiefComplaint: 'Class II malocclusion with crowding',
-      malocclusionClass: 'Class II Div 1',
-      notes: null,
-      createdAt: new Date(now - 86400000 * 14).toISOString(),
-      updatedAt: new Date(now - 86400000 * 2).toISOString(),
-      patient: { id: 'p-1', firstName: 'Alex', lastName: 'Chen' },
-      assignedTo: null,
-    },
-    {
-      id: 'demo-2',
-      status: 'scan_review',
-      chiefComplaint: 'Open bite, anterior spacing',
-      malocclusionClass: 'Class I',
-      notes: null,
-      createdAt: new Date(now - 86400000 * 5).toISOString(),
-      updatedAt: new Date(now - 86400000 * 1).toISOString(),
-      patient: { id: 'p-2', firstName: 'Jordan', lastName: 'Lee' },
-      assignedTo: null,
-    },
-    {
-      id: 'demo-3',
-      status: 'draft',
-      chiefComplaint: 'Crowding, referred by GP',
-      malocclusionClass: null,
-      notes: null,
-      createdAt: new Date(now - 86400000 * 1).toISOString(),
-      updatedAt: new Date(now - 86400000 * 1).toISOString(),
-      patient: { id: 'p-3', firstName: 'Morgan', lastName: 'Taylor' },
-      assignedTo: null,
-    },
-  ];
-}
-
 // ─── API client ───────────────────────────────────────────────────────────────
 
-export async function fetchCases(): Promise<{ cases: CaseListItem[]; source: 'api' | 'demo' }> {
-  try {
-    const cases = await api.get<CaseListItem[]>('/api/cases');
-    return { cases, source: 'api' };
-  } catch (err) {
-    if (err instanceof ApiError && err.status !== 0) throw err;
-    return { cases: makeDemoCases(), source: 'demo' };
-  }
+export async function fetchCases(): Promise<{ cases: CaseListItem[]; source: 'api' }> {
+  const cases = await api.get<CaseListItem[]>('/api/cases');
+  return { cases, source: 'api' };
 }
 
-export async function fetchCase(id: string): Promise<{ data: CaseDetail; source: 'api' | 'demo' }> {
-  try {
-    const data = await api.get<CaseDetail>(`/api/cases/${id}`);
-    return { data, source: 'api' };
-  } catch (err) {
-    if (err instanceof ApiError && err.status !== 0) throw err;
-    // Build a stub demo detail from demo list
-    const demoCases = makeDemoCases();
-    const base = demoCases.find((c) => c.id === id) ?? demoCases[0];
-    const data: CaseDetail = {
-      ...base,
-      patient: {
-        id: base.patient.id,
-        firstName: base.patient.firstName,
-        lastName: base.patient.lastName,
-        dateOfBirth: '1992-04-15',
-        gender: 'prefer_not_to_say',
-        clinicalNotes: null,
-      },
-      workflowHistory: [],
-      allowedTransitions: ['scan_review'],
-    };
-    return { data, source: 'demo' };
-  }
+export async function fetchCase(id: string): Promise<{ data: CaseDetail; source: 'api' }> {
+  const data = await api.get<CaseDetail>(`/api/cases/${id}`);
+  return { data, source: 'api' };
 }
 
 export async function createCase(dto: CreateCaseDto): Promise<CaseDetail> {

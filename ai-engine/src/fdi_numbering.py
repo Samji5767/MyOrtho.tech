@@ -40,9 +40,12 @@ class ToothNumberingConverter:
 
     @classmethod
     def get_full_numbering(cls, fdi: int) -> dict:
+        universal = cls.to_universal(fdi)
+        # Mapping is deterministic: 1.0 when FDI is in the known table, None otherwise.
+        confidence = 1.0 if universal != 0 else None
         return {
             "fdi": fdi,
-            "universal": cls.to_universal(fdi),
+            "universal": universal,
             "palmer": cls.to_palmer(fdi),
-            "confidence_score": 0.985
+            "confidence_score": confidence
         }

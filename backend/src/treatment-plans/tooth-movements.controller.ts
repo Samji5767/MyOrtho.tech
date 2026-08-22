@@ -14,8 +14,72 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import type { Request } from 'express';
+import {
+  IsBoolean,
+  IsInt,
+  IsNumber,
+  IsOptional,
+  IsString,
+  Max,
+  MaxLength,
+  Min,
+} from 'class-validator';
 import { AuthGuard } from '../auth/auth.guard';
-import { ToothMovementsService, UpsertToothMovementDto, CreateMeasurementDto } from './tooth-movements.service';
+import { PermissionsGuard } from '../auth/permissions.guard';
+import { RequirePermission } from '../auth/require-permission.decorator';
+import { ToothMovementsService } from './tooth-movements.service';
+
+// Bounds are data-integrity limits (mirrored by DB CHECK constraints in
+// migration 075), not clinical validation. Clinical review remains with the
+// approving doctor.
+class UpsertToothMovementBody {
+  @IsInt() @Min(11) @Max(48)
+  fdiNumber: number;
+
+  @IsOptional() @IsNumber() @Min(-20) @Max(20)
+  mesiodistalMm?: number;
+
+  @IsOptional() @IsNumber() @Min(-20) @Max(20)
+  buccolingualMm?: number;
+
+  @IsOptional() @IsNumber() @Min(-20) @Max(20)
+  occlusogingivalMm?: number;
+
+  @IsOptional() @IsNumber() @Min(-90) @Max(90)
+  rotationDeg?: number;
+
+  @IsOptional() @IsNumber() @Min(-90) @Max(90)
+  tipDeg?: number;
+
+  @IsOptional() @IsNumber() @Min(-90) @Max(90)
+  torqueDeg?: number;
+
+  @IsOptional() @IsBoolean()
+  isLocked?: boolean;
+
+  @IsOptional() @IsString() @MaxLength(2000)
+  notes?: string;
+}
+
+class CreateMeasurementBody {
+  @IsOptional() @IsString() @MaxLength(200)
+  measurementLabel?: string;
+
+  @IsOptional() @IsNumber() @Min(-30) @Max(30)
+  overjetMm?: number;
+
+  @IsOptional() @IsNumber() @Min(-30) @Max(30)
+  overbiteMm?: number;
+
+  @IsOptional() @IsString() @MaxLength(50)
+  angleClass?: string;
+
+  @IsOptional() @IsNumber() @Min(0) @Max(200)
+  distanceMm?: number;
+
+  @IsOptional() @IsString() @MaxLength(2000)
+  notes?: string;
+}
 
 interface AuthUser {
   id: string;
@@ -30,16 +94,17 @@ function auth(req: Request): AuthUser {
 }
 
 /**
- * Tooth movement editor (Phase 15D)
- * Status: Implemented — per-tooth FDI movement storage in tooth_movements table.
- * Automated alignment: Planned. AI movement proposals: Simulated (not available).
+ * Per-tooth movement editor. Stores the canonical signed anatomical movement
+ * components per (stage, FDI tooth) and mirrors them into the stage's
+ * movement_data JSON for the 3D viewer.
  */
 @Controller('api/cases/:caseId/plans/:planId/stages/:stageId/tooth-movements')
-@UseGuards(AuthGuard)
+@UseGuards(AuthGuard, PermissionsGuard)
 export class ToothMovementsController {
   constructor(private readonly service: ToothMovementsService) {}
 
   @Get()
+  @RequirePermission('cases:read')
   list(
     @Req() req: Request,
     @Param('caseId') caseId: string,
@@ -53,12 +118,13 @@ export class ToothMovementsController {
   /** Create or update movement for a tooth (upsert by FDI number). */
   @Put()
   @HttpCode(HttpStatus.OK)
+  @RequirePermission('cases:write')
   upsert(
     @Req() req: Request,
     @Param('caseId') caseId: string,
     @Param('planId') planId: string,
     @Param('stageId') stageId: string,
-    @Body() dto: UpsertToothMovementDto,
+    @Body() dto: UpsertToothMovementBody,
   ) {
     const user = auth(req);
     return this.service.upsert(caseId, planId, stageId, user.orgId!, dto, user.email);
@@ -67,6 +133,7 @@ export class ToothMovementsController {
   /** Remove movement record for a tooth (resets to zero). */
   @Delete(':fdiNumber')
   @HttpCode(HttpStatus.OK)
+  @RequirePermission('cases:write')
   delete(
     @Req() req: Request,
     @Param('caseId') caseId: string,
@@ -81,11 +148,12 @@ export class ToothMovementsController {
 
 /** Clinical measurements (overjet, overbite, angle class, distances). */
 @Controller('api/cases/:caseId/measurements')
-@UseGuards(AuthGuard)
+@UseGuards(AuthGuard, PermissionsGuard)
 export class ClinicalMeasurementsController {
   constructor(private readonly service: ToothMovementsService) {}
 
   @Get()
+  @RequirePermission('cases:read')
   list(@Req() req: Request, @Param('caseId') caseId: string) {
     const user = auth(req);
     return this.service.listMeasurements(caseId, user.orgId!);
@@ -93,10 +161,11 @@ export class ClinicalMeasurementsController {
 
   @Post()
   @HttpCode(HttpStatus.CREATED)
+  @RequirePermission('cases:write')
   create(
     @Req() req: Request,
     @Param('caseId') caseId: string,
-    @Body() dto: CreateMeasurementDto,
+    @Body() dto: CreateMeasurementBody,
   ) {
     const user = auth(req);
     return this.service.createMeasurement(caseId, user.orgId!, user.id, dto, user.email);

@@ -1,596 +1,200 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef, Suspense } from "react";
 import dynamic from "next/dynamic";
 import Link from "next/link";
-import { useSearchParams, useRouter } from "next/navigation";
-import {
-  AlertTriangle,
-  ArrowRight,
-  Box,
-  CheckCircle2,
-  ClipboardList,
-  FolderKanban,
-  Layers3,
-  Loader2,
-  ScanLine,
-  Sparkles,
-  UploadCloud,
-  Wand2,
-  type LucideIcon,
-} from "lucide-react";
-import { Button, Card, SkeletonBlock, StatusBadge } from "@/components/DesignSystem";
-import CADCapabilityMatrix from "@/components/CADCapabilityMatrix";
-import { fetchCase, type CaseDetail } from "@/lib/api/cases";
-import { uploadScan, triggerSegmentation, pollJobStatus } from "@/lib/api/scans";
-import OrthoWorkflowRail from "@/components/OrthoWorkflowRail";
-import OrthoAnalysisTabs from "@/components/OrthoAnalysisTabs";
-import { CasePlanningProvider } from "@/components/CasePlanningContext";
-import { RuntimeErrorBoundary } from "@/components/RuntimeErrorBoundary";
+import { useEffect, useState } from "react";
+import { fetchCases, type CaseListItem } from "@/lib/api/cases";
+import { useAuth } from "@/context/AuthContext";
+import { FolderKanban, Loader2, Search, ScanSearch } from "lucide-react";
 
-// ─── Heavy 3D components — SSR off, load only when tab is active ──────────────
-
-const Viewer3D = dynamic(() => import("@/components/Viewer3D"), {
-  ssr: false,
-  loading: () => (
-    <div className="flex h-[460px] items-center justify-center rounded-xl animate-skeleton">
-      <span className="text-sm text-[color:var(--muted-foreground)]">Initialising 3D renderer…</span>
-    </div>
-  ),
-});
-
-const CADEngine = dynamic(() => import("@/components/CADEngine"), {
-  ssr: false,
-  loading: () => (
-    <div className="flex h-[560px] items-center justify-center rounded-xl animate-skeleton">
-      <span className="text-sm text-[color:var(--muted-foreground)]">Loading CAD engine…</span>
-    </div>
-  ),
-});
-
-// ─── Workbench tab types ──────────────────────────────────────────────────────
-
-type StudioTab = "import" | "viewer" | "cad" | "plan" | "preview";
-
-const TABS: { key: StudioTab; label: string; icon: LucideIcon }[] = [
-  { key: "import",  label: "Scan & Import",  icon: ScanLine       },
-  { key: "viewer",  label: "3D Viewer",      icon: Layers3        },
-  { key: "cad",     label: "CAD Studio",     icon: Box            },
-  { key: "plan",    label: "Plan & Analyse", icon: ClipboardList  },
-  { key: "preview", label: "Preview",        icon: Wand2          },
-];
-
-// ─── No-case-loaded banner ────────────────────────────────────────────────────
-
-function NoCaseBanner() {
-  return (
-    <Card className="flex flex-col items-center gap-3 py-10 text-center">
-      <span className="grid h-12 w-12 place-items-center rounded-3xl bg-[color:var(--primary-glow)] text-[color:var(--primary)]">
-        <FolderKanban size={22} />
-      </span>
-      <div>
-        <p className="text-sm font-semibold text-[color:var(--foreground)]">No case loaded</p>
-        <p className="mt-1 text-sm text-[color:var(--muted-foreground)]">
-          Create or select a case to load scans, run AI segmentation, and start planning.
-        </p>
+const DentalAnatomyViewer = dynamic(
+  () => import("@/components/DentalAnatomyViewer"),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="flex h-full items-center justify-center">
+        <Loader2 size={28} className="animate-spin text-[color:var(--primary)]" />
       </div>
-      <div className="flex flex-wrap justify-center gap-2">
-        <Link
-          href="/cases/new"
-          className="inline-flex h-9 items-center gap-2 rounded-xl bg-[color:var(--primary)] px-4 text-sm font-semibold text-[color:var(--primary-foreground)] transition-transform active:scale-95"
-        >
-          New Case
-        </Link>
-        <Link
-          href="/cases"
-          className="inline-flex h-9 items-center gap-2 rounded-xl border border-[color:var(--border)] px-4 text-sm font-semibold text-[color:var(--foreground)] transition-transform active:scale-95"
-        >
-          Select Case
-          <ArrowRight size={14} />
-        </Link>
-      </div>
-    </Card>
-  );
+    ),
+  },
+);
+
+function statusLabel(s: string): string {
+  return s.replace(/_/g, " ").replace(/^\w/, c => c.toUpperCase());
 }
 
-// ─── Case context banner ──────────────────────────────────────────────────────
-
-function CaseBanner({ caseData }: { caseData: CaseDetail }) {
-  const patientName = `${caseData.patient.firstName} ${caseData.patient.lastName}`;
-  return (
-    <div className="flex items-center gap-3 rounded-2xl border border-[color:var(--border)] bg-[color:var(--card)] px-4 py-3">
-      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[color:var(--primary-glow)] text-sm font-bold text-[color:var(--primary)]">
-        {caseData.patient.firstName[0]}{caseData.patient.lastName[0]}
-      </span>
-      <div className="min-w-0 flex-1">
-        <p className="truncate text-sm font-semibold text-[color:var(--foreground)]">{patientName}</p>
-        <p className="truncate text-xs text-[color:var(--muted-foreground)]">
-          {caseData.chiefComplaint ?? "No chief complaint"} · {caseData.status}
-        </p>
-      </div>
-      <Link href={`/cases?id=${caseData.id}`}>
-        <StatusBadge tone="primary">View Case</StatusBadge>
-      </Link>
-    </div>
-  );
-}
-
-// ─── AI disclaimer ────────────────────────────────────────────────────────────
-
-function AIDisclaimer() {
-  return (
-    <div className="flex items-start gap-2.5 rounded-xl border border-amber-200/60 bg-amber-50/60 px-3 py-2.5 text-xs text-amber-800 dark:border-amber-500/20 dark:bg-amber-500/10 dark:text-amber-300">
-      <AlertTriangle size={13} className="mt-0.5 shrink-0" />
-      <span>
-        <strong>Clinical decision support only.</strong> All AI outputs are automated suggestions and require clinician review and approval before export or manufacturing.
-      </span>
-    </div>
-  );
-}
-
-// ─── Import tab ───────────────────────────────────────────────────────────────
-
-const INITIAL_PIPELINE = [
-  { n: 1,  label: "Upload STL / OBJ / PLY",   done: false },
-  { n: 2,  label: "File validation",           done: false },
-  { n: 3,  label: "Mesh repair",               done: false },
-  { n: 4,  label: "Orientation correction",    done: false },
-  { n: 5,  label: "Tooth detection",           done: false },
-  { n: 6,  label: "AI segmentation",           done: false },
-  { n: 7,  label: "FDI labelling",             done: false },
-  { n: 8,  label: "Root apex estimation",      done: false },
-  { n: 9,  label: "Per-tooth mesh extraction", done: false },
-  { n: 10, label: "Occlusal registration",     done: false },
-  { n: 11, label: "Quality confidence score",  done: false },
-];
-
-function ImportTab({
-  caseData,
-  onFileReady,
-}: {
-  caseData: CaseDetail | null;
-  onFileReady: (file: File) => void;
-}) {
-  const [dragOver,       setDragOver]       = useState(false);
-  const [uploading,      setUploading]      = useState(false);
-  const [uploadError,    setUploadError]    = useState<string | null>(null);
-  const [pipelineSteps,  setPipelineSteps]  = useState(INITIAL_PIPELINE);
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  const pollRef      = useRef<ReturnType<typeof setInterval> | null>(null);
-
-  useEffect(() => () => { if (pollRef.current) clearInterval(pollRef.current); }, []);
-
-  const markDone = (upTo: number) =>
-    setPipelineSteps((prev) => prev.map((s) => ({ ...s, done: s.n <= upTo })));
-
-  const runPipeline = async (file: File) => {
-    if (!caseData) return;
-    setUploading(true);
-    setUploadError(null);
-    setPipelineSteps(INITIAL_PIPELINE);
-    try {
-      const scan = await uploadScan(caseData.id, file, "auto");
-      markDone(2);
-      onFileReady(file);
-      const { jobId } = await triggerSegmentation(caseData.id, scan.id);
-      markDone(3);
-      if (pollRef.current) clearInterval(pollRef.current);
-      pollRef.current = setInterval(async () => {
-        try {
-          const result = await pollJobStatus(jobId);
-          if (result.status === "queued") {
-            markDone(3);
-          } else if (result.status === "processing") {
-            markDone(7);
-          } else if (result.status === "completed") {
-            markDone(11);
-            clearInterval(pollRef.current!);
-            pollRef.current = null;
-            setUploading(false);
-          } else if (result.status === "failed") {
-            clearInterval(pollRef.current!);
-            pollRef.current = null;
-            setUploadError(result.error ?? "Segmentation failed");
-            setUploading(false);
-          }
-        } catch {
-          // transient polling error — keep trying
-        }
-      }, 3000);
-    } catch (err) {
-      setUploadError(err instanceof Error ? err.message : "Upload failed");
-      setUploading(false);
-    }
-  };
-
-  const handleFiles = (files: FileList | null) => {
-    const file = files?.[0];
-    if (!file) return;
-    const ext = file.name.split(".").pop()?.toLowerCase();
-    if (!["stl", "obj", "ply"].includes(ext ?? "")) {
-      setUploadError("Only STL, OBJ, and PLY files are supported.");
-      return;
-    }
-    runPipeline(file);
-  };
-
-  return (
-    <div className="space-y-4">
-      {!caseData ? (
-        <NoCaseBanner />
-      ) : (
-        <Card className="p-5">
-          <div className="mb-4 flex items-center gap-2">
-            <UploadCloud size={17} className="text-[color:var(--primary)]" />
-            <h2 className="text-base font-semibold text-[color:var(--foreground)]">Upload a scan</h2>
-          </div>
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept=".stl,.obj,.ply"
-            className="sr-only"
-            onChange={(e) => handleFiles(e.target.files)}
-          />
-          <div
-            onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
-            onDragLeave={() => setDragOver(false)}
-            onDrop={(e) => { e.preventDefault(); setDragOver(false); handleFiles(e.dataTransfer.files); }}
-            onClick={() => !uploading && fileInputRef.current?.click()}
-            className={[
-              "flex cursor-pointer flex-col items-center gap-4 rounded-2xl border-2 border-dashed p-8 text-center transition-colors",
-              dragOver   ? "border-[color:var(--primary)] bg-[color:var(--primary-glow)]" : "border-[color:var(--border)]",
-              uploading  ? "pointer-events-none opacity-70" : "",
-            ].join(" ")}
-          >
-            <span className="grid h-14 w-14 place-items-center rounded-3xl bg-[color:var(--primary-glow)] text-[color:var(--primary)]">
-              {uploading ? <Loader2 size={24} className="animate-spin" /> : <UploadCloud size={24} />}
-            </span>
-            <div>
-              <p className="text-sm font-semibold text-[color:var(--foreground)]">
-                {uploading ? "Processing…" : dragOver ? "Release to upload" : "Drop STL, OBJ, or PLY"}
-              </p>
-              <p className="mt-1 text-xs text-[color:var(--muted-foreground)]">
-                {uploading
-                  ? "Running AI pipeline — switch to 3D Viewer to see your scan"
-                  : "Max 500 MB · Full arch or individual teeth · Click to browse"}
-              </p>
-            </div>
-          </div>
-          {uploadError && (
-            <div className="mt-3 flex items-center gap-2 rounded-xl border border-rose-300/50 bg-rose-50/60 px-3 py-2 text-xs text-rose-700 dark:border-rose-700/40 dark:bg-rose-900/10 dark:text-rose-400">
-              <AlertTriangle size={12} className="shrink-0" />
-              {uploadError}
-            </div>
-          )}
-        </Card>
-      )}
-
-      <Card className="p-5">
-        <div className="mb-4 flex items-center gap-2">
-          <Sparkles size={17} className="text-[color:var(--primary)]" />
-          <h2 className="text-base font-semibold text-[color:var(--foreground)]">AI pipeline</h2>
-          <span className="ml-auto">
-            <StatusBadge tone="info">11-stage</StatusBadge>
-          </span>
-        </div>
-        <div className="space-y-2">
-          {pipelineSteps.map((step) => (
-            <div
-              key={step.n}
-              className="flex items-center gap-3 rounded-xl border border-[color:var(--border)] bg-[color:var(--card)] px-3 py-2"
-            >
-              <span className={[
-                "grid h-6 w-6 shrink-0 place-items-center rounded-full text-[10px] font-bold",
-                step.done
-                  ? "bg-emerald-100 text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-400"
-                  : "bg-[color-mix(in_srgb,var(--border)_70%,transparent)] text-[color:var(--muted-foreground)]",
-              ].join(" ")}>
-                {step.done ? <CheckCircle2 size={13} /> : step.n}
-              </span>
-              <span className="text-xs text-[color:var(--foreground)]">{step.label}</span>
-            </div>
-          ))}
-        </div>
-      </Card>
-    </div>
-  );
-}
-
-// ─── Viewer tab ───────────────────────────────────────────────────────────────
-
-function ViewerTab({ caseData, file }: { caseData: CaseDetail | null; file: File | null }) {
-  if (!caseData) return <NoCaseBanner />;
-  return (
-    <div className="space-y-4">
-      <AIDisclaimer />
-      <Viewer3D file={file} />
-    </div>
-  );
-}
-
-// ─── CAD tab ──────────────────────────────────────────────────────────────────
-
-function CadTab({ caseData }: { caseData: CaseDetail | null }) {
-  const [snapshotError, setSnapshotError] = useState<string | null>(null);
-
-  if (!caseData) return <NoCaseBanner />;
-
-  function saveSnapshot() {
-    setSnapshotError(null);
-    const canvas = document.querySelector<HTMLCanvasElement>("canvas");
-    if (!canvas) {
-      setSnapshotError("No CAD canvas found — open the CAD Studio view first.");
-      return;
-    }
-    try {
-      const url = canvas.toDataURL("image/png");
-      const a = document.createElement("a");
-      const patientName = `${caseData!.patient.firstName}-${caseData!.patient.lastName}`.replace(/\s+/g, "-");
-      a.download = `myortho-snapshot-${patientName}.png`;
-      a.href = url;
-      a.click();
-    } catch {
-      setSnapshotError("Canvas export failed — ensure hardware acceleration is enabled.");
-    }
-  }
-
-  return (
-    <div className="space-y-4">
-      <AIDisclaimer />
-      {/* Back to case + snapshot row */}
-      <div className="flex flex-wrap items-center gap-2">
-        <Link
-          href={`/cases?id=${caseData.id}`}
-          className="inline-flex h-8 items-center gap-1.5 rounded-xl border border-[color:var(--border)] px-3 text-xs font-semibold text-[color:var(--foreground)] transition-colors hover:border-[color:var(--primary)] hover:text-[color:var(--primary)]"
-        >
-          ← Back to Case
-        </Link>
-        <button
-          type="button"
-          onClick={saveSnapshot}
-          className="inline-flex h-8 items-center gap-1.5 rounded-xl border border-[color:var(--border)] px-3 text-xs font-semibold text-[color:var(--foreground)] transition-colors hover:border-[color:var(--primary)] hover:text-[color:var(--primary)]"
-        >
-          <CheckCircle2 size={12} /> Save Snapshot
-        </button>
-      </div>
-      {snapshotError && (
-        <div className="flex items-center gap-2 rounded-xl border border-rose-300/50 bg-rose-50/60 px-3 py-2 text-xs text-rose-700 dark:border-rose-700/40 dark:bg-rose-900/10 dark:text-rose-400">
-          <AlertTriangle size={12} className="shrink-0" />
-          {snapshotError}
-        </div>
-      )}
-      <CADCapabilityMatrix />
-      <CADEngine />
-    </div>
-  );
-}
-
-// ─── Plan tab ─────────────────────────────────────────────────────────────────
-
-function PlanTab({ caseData, planId }: { caseData: CaseDetail | null; planId: string | null }) {
-  const caseId      = caseData?.id      ?? null;
-  const patientName = caseData
-    ? `${caseData.patient.firstName} ${caseData.patient.lastName}`
-    : "";
-
-  return (
-    <div className="space-y-4">
-      <AIDisclaimer />
-      {!caseData && (
-        <div className="rounded-xl border border-dashed border-[color:var(--border)] bg-[color:var(--card)] px-4 py-3 text-sm text-[color:var(--muted-foreground)]">
-          No case loaded — planning tools show demo data. Select a case to persist progress.
-        </div>
-      )}
-      {/* Pronto-style workflow rail */}
-      <OrthoWorkflowRail caseId={caseId} />
-      {/* Analysis / planning tabs */}
-      <OrthoAnalysisTabs caseId={caseId} patientName={patientName} planId={planId} />
-    </div>
-  );
-}
-
-// ─── Preview tab ──────────────────────────────────────────────────────────────
-
-function PreviewTab({ caseData }: { caseData: CaseDetail | null }) {
-  if (!caseData) return <NoCaseBanner />;
-
-  const FEATURES = [
-    { icon: Layers3,  label: "Stage-by-stage aligner preview",  href: `/cases/${caseData.id}` },
-    { icon: Wand2,    label: "Treatment movement timeline",      href: "/treatment-plan"       },
-    { icon: Box,      label: "Full CAD workspace",               href: "/studio"               },
-    { icon: Sparkles, label: "AI biomechanics validation",       href: "/studio"               },
-  ];
-
-  return (
-    <div className="space-y-4">
-      <AIDisclaimer />
-      <Card className="p-5">
-        <div className="mb-4 flex items-center gap-2">
-          <Wand2 size={17} className="text-[color:var(--primary)]" />
-          <h2 className="text-base font-semibold text-[color:var(--foreground)]">Treatment preview</h2>
-        </div>
-        <div className="space-y-2">
-          {FEATURES.map((f) => {
-            const Icon = f.icon;
-            return (
-              <Link
-                key={f.label}
-                href={f.href}
-                className="ios-chip flex items-center gap-3 px-4 py-3 transition-transform active:scale-[0.99]"
-              >
-                <span className="grid h-9 w-9 shrink-0 place-items-center rounded-2xl bg-[color:var(--primary-glow)] text-[color:var(--primary)]">
-                  <Icon size={16} />
-                </span>
-                <span className="min-w-0 flex-1 text-sm font-semibold text-[color:var(--foreground)]">
-                  {f.label}
-                </span>
-                <ArrowRight size={15} className="shrink-0 text-[color:var(--muted-foreground)]" />
-              </Link>
-            );
-          })}
-        </div>
-      </Card>
-    </div>
-  );
-}
-
-// ─── Studio page ──────────────────────────────────────────────────────────────
-
-const STUDIO_TABS_KEYS: StudioTab[] = ["import", "viewer", "cad", "plan", "preview"];
-
-function StudioPageContent() {
-  const router      = useRouter();
-  const searchParams = useSearchParams();
-  const caseId     = searchParams?.get("caseId")  ?? null;
-  const planIdParam = searchParams?.get("planId") ?? null;
-  const tabParam   = (searchParams?.get("tab") ?? "import") as StudioTab;
-
-  const [activeTab,       setActiveTab]      = useState<StudioTab>(
-    STUDIO_TABS_KEYS.includes(tabParam) ? tabParam : "import",
-  );
-  const [caseData,        setCaseData]       = useState<CaseDetail | null>(null);
-  const [caseLoading,     setCaseLoading]    = useState(false);
-  const [caseError,       setCaseError]      = useState<string | null>(null);
-  const [effectivePlanId, setEffectivePlanId] = useState<string | null>(planIdParam);
-  const [selectedFile,    setSelectedFile]   = useState<File | null>(null);
-
-  const handleTabChange = useCallback((tab: StudioTab) => {
-    setActiveTab(tab);
-    const params = new URLSearchParams(window.location.search);
-    params.set("tab", tab);
-    router.replace(`?${params.toString()}`, { scroll: false });
-  }, [router]);
-
-  // Keyboard shortcuts: 1–5 → switch studio tabs
-  useEffect(() => {
-    const keyMap: Record<string, StudioTab> = {
-      "1": "import", "2": "viewer", "3": "cad", "4": "plan", "5": "preview",
-    };
-    const onKey = (e: KeyboardEvent) => {
-      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
-      if (e.ctrlKey || e.metaKey || e.altKey) return;
-      if (keyMap[e.key]) handleTabChange(keyMap[e.key]);
-    };
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-  }, [handleTabChange]);
-
-  useEffect(() => {
-    if (!caseId) { setCaseData(null); setCaseError(null); return; }
-    setCaseLoading(true);
-    setCaseError(null);
-    fetchCase(caseId)
-      .then(({ data }) => {
-        setCaseData(data);
-        // Resolve planId from URL param first; fall back to the case's active plan
-        setEffectivePlanId(prev => prev ?? data.linkedResources?.planId ?? null);
-        setCaseLoading(false);
-      })
-      .catch((err: unknown) => {
-        setCaseLoading(false);
-        setCaseError(err instanceof Error ? err.message : "Failed to load case");
-      });
-  }, [caseId]);
-
-  return (
-    <CasePlanningProvider caseId={caseId}>
-    <section className="mx-auto flex w-full max-w-5xl flex-col gap-4 px-4 pb-[calc(var(--tab-bar-height)+var(--sa-bottom)+1.5rem)] pt-4 sm:px-5">
-      {/* Header */}
-      <div>
-        <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-[color:var(--muted-foreground)]">
-          Clinical Workbench
-        </p>
-        <h1 className="mt-1 text-2xl font-semibold tracking-tight text-[color:var(--foreground)]">
-          CAD Design Studio
-        </h1>
-        <p className="mt-1 text-sm text-[color:var(--muted-foreground)]">
-          STL import · AI segmentation · 3D viewer · CAD engine
-        </p>
-      </div>
-
-      {/* Case context */}
-      {caseLoading ? (
-        <div className="flex items-center gap-3 rounded-2xl border border-[color:var(--border)] bg-[color:var(--card)] px-4 py-3">
-          <SkeletonBlock className="h-8 w-8 rounded-full" />
-          <div className="flex-1 space-y-1.5">
-            <SkeletonBlock className="h-3.5 w-40" />
-            <SkeletonBlock className="h-3 w-24" />
-          </div>
-        </div>
-      ) : caseError ? (
-        <div className="flex items-center gap-3 rounded-2xl border border-rose-300/50 bg-rose-50/60 px-4 py-3 dark:border-rose-700/40 dark:bg-rose-900/10">
-          <AlertTriangle size={16} className="shrink-0 text-rose-600" />
-          <p className="flex-1 text-sm text-rose-700 dark:text-rose-400">{caseError}</p>
-          <Link href="/cases" className="shrink-0 text-xs font-semibold text-rose-700 hover:underline dark:text-rose-400">
-            Select a different case →
-          </Link>
-        </div>
-      ) : caseData ? (
-        <CaseBanner caseData={caseData} />
-      ) : (
-        <div className="flex items-center justify-between rounded-2xl border border-dashed border-[color:var(--border)] px-4 py-3">
-          <p className="text-sm text-[color:var(--muted-foreground)]">
-            No case loaded — select a case to load scans and segmentation data.
-          </p>
-          <Link href="/cases" className="ml-3 shrink-0 text-xs font-semibold text-[color:var(--primary)] hover:underline">
-            Select Case →
-          </Link>
-        </div>
-      )}
-
-      {/* Workbench tab bar */}
-      <div
-        className="no-scrollbar flex items-stretch gap-1 overflow-x-auto rounded-2xl border border-[color:var(--border)] bg-[color:var(--card)] p-1 shadow-[var(--shadow-sm)]"
-        role="tablist"
-        aria-label="Studio workbench tabs"
-      >
-        {TABS.map(({ key, label, icon: Icon }, i) => (
-          <button
-            key={key}
-            type="button"
-            role="tab"
-            aria-selected={activeTab === key}
-            aria-controls={`studio-panel-${key}`}
-            onClick={() => handleTabChange(key)}
-            title={`${label} (${i + 1})`}
-            className={[
-              "flex flex-1 shrink-0 items-center justify-center gap-2 rounded-xl px-3 py-2.5 text-xs font-semibold transition-all duration-200 active:scale-95",
-              activeTab === key
-                ? "bg-[color:var(--primary)] text-[color:var(--primary-foreground)] shadow-[var(--shadow-sm)]"
-                : "text-[color:var(--muted-foreground)] hover:text-[color:var(--foreground)]",
-            ].join(" ")}
-          >
-            <Icon size={14} />
-            <span className="hidden sm:inline">{label}</span>
-            <span className="sm:hidden">
-              {key === "import" ? "Scan" : key === "viewer" ? "View" : key === "cad" ? "CAD" : key === "plan" ? "Plan" : "Preview"}
-            </span>
-          </button>
-        ))}
-      </div>
-      <p className="text-right text-[10px] text-[color:var(--muted-foreground)] -mt-1 pr-1">
-        Keys 1–5 switch tabs
-      </p>
-
-      {/* Active panel — wrapped in error boundary so one tab crash doesn't kill the workspace */}
-      <RuntimeErrorBoundary>
-        <div className="animate-page-enter" id={`studio-panel-${activeTab}`} role="tabpanel">
-          {activeTab === "import"  && <ImportTab  caseData={caseData} onFileReady={(f) => { setSelectedFile(f); handleTabChange("viewer"); }} />}
-          {activeTab === "viewer"  && <ViewerTab  caseData={caseData} file={selectedFile} />}
-          {activeTab === "cad"     && <CadTab     caseData={caseData} />}
-          {activeTab === "plan"    && <PlanTab    caseData={caseData} planId={effectivePlanId} />}
-          {activeTab === "preview" && <PreviewTab caseData={caseData} />}
-        </div>
-      </RuntimeErrorBoundary>
-    </section>
-    </CasePlanningProvider>
-  );
+function statusDot(s: string): string {
+  if (s === "completed") return "bg-emerald-500";
+  if (s === "active_treatment") return "bg-blue-500";
+  if (s === "approved") return "bg-violet-500";
+  return "bg-[color:var(--muted-foreground)]";
 }
 
 export default function StudioPage() {
+  const { user } = useAuth();
+  const [cases, setCases] = useState<CaseListItem[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [query, setQuery] = useState("");
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+
+  useEffect(() => {
+    fetchCases()
+      .then(r => {
+        setCases(r.cases);
+        const first = r.cases.find(c =>
+          c.status === "active_treatment" ||
+          c.status === "approved" ||
+          c.status === "completed",
+        ) ?? r.cases[0] ?? null;
+        if (first) setSelectedId(first.id);
+      })
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, []);
+
+  const filtered = cases.filter(c => {
+    if (!query) return true;
+    const q = query.toLowerCase();
+    const name = `${c.patient.firstName} ${c.patient.lastName}`.toLowerCase();
+    return name.includes(q) || (c.chiefComplaint ?? "").toLowerCase().includes(q);
+  });
+
+  const selected = cases.find(c => c.id === selectedId) ?? null;
+
   return (
-    <Suspense fallback={<div className="flex min-h-[60vh] items-center justify-center text-sm text-[color:var(--muted-foreground)]">Loading studio…</div>}>
-      <StudioPageContent />
-    </Suspense>
+    <div className="flex h-[calc(100vh-var(--tab-bar-height,0px))] overflow-hidden bg-[color:var(--background)]">
+      {/* ── Case list sidebar ──────────────────────────────────────────────── */}
+      <aside className="hidden md:flex w-72 flex-col border-r border-[color:var(--border)] bg-[color:var(--card)]">
+        <div className="border-b border-[color:var(--border)] px-4 py-4">
+          <h1 className="text-sm font-semibold text-[color:var(--foreground)]">3D Studio</h1>
+          <p className="mt-0.5 text-xs text-[color:var(--muted-foreground)]">Select a case to open the 3D viewer</p>
+        </div>
+
+        <div className="px-3 py-2.5 border-b border-[color:var(--border)]">
+          <div className="relative">
+            <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[color:var(--muted-foreground)]" />
+            <input
+              type="search"
+              placeholder="Search patients…"
+              value={query}
+              onChange={e => setQuery(e.target.value)}
+              className="w-full rounded-lg border border-[color:var(--border)] bg-[color:var(--background)] py-1.5 pl-7 pr-3 text-xs text-[color:var(--foreground)] placeholder:text-[color:var(--muted-foreground)] focus:outline-none focus:ring-1 focus:ring-[color:var(--primary)]"
+            />
+          </div>
+        </div>
+
+        <div className="flex-1 overflow-y-auto py-1">
+          {loading ? (
+            <div className="flex items-center justify-center py-12">
+              <Loader2 size={20} className="animate-spin text-[color:var(--primary)]" />
+            </div>
+          ) : filtered.length === 0 ? (
+            <p className="px-4 py-6 text-center text-xs text-[color:var(--muted-foreground)]">
+              {query ? "No matching cases" : "No cases yet"}
+            </p>
+          ) : (
+            filtered.map(c => {
+              const name = `${c.patient.firstName} ${c.patient.lastName}`;
+              const active = c.id === selectedId;
+              return (
+                <button
+                  key={c.id}
+                  type="button"
+                  onClick={() => setSelectedId(c.id)}
+                  className={[
+                    "w-full text-left px-3 py-2.5 transition-colors",
+                    active
+                      ? "bg-[color:var(--primary)]/10"
+                      : "hover:bg-[color:var(--muted)]/30",
+                  ].join(" ")}
+                >
+                  <div className="flex items-start gap-2.5">
+                    <span
+                      className={["mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full", statusDot(c.status)].join(" ")}
+                      aria-hidden
+                    />
+                    <div className="min-w-0">
+                      <p className={["truncate text-xs font-medium", active ? "text-[color:var(--primary)]" : "text-[color:var(--foreground)]"].join(" ")}>
+                        {name}
+                      </p>
+                      {c.chiefComplaint && (
+                        <p className="truncate text-[10px] text-[color:var(--muted-foreground)]">{c.chiefComplaint}</p>
+                      )}
+                      <p className="mt-0.5 text-[10px] text-[color:var(--muted-foreground)]">{statusLabel(c.status)}</p>
+                    </div>
+                  </div>
+                </button>
+              );
+            })
+          )}
+        </div>
+      </aside>
+
+      {/* ── Main 3D viewport ────────────────────────────────────────────────── */}
+      <main className="flex-1 flex flex-col min-w-0 overflow-hidden">
+        {selected ? (
+          <>
+            {/* Header */}
+            <div className="flex items-center justify-between border-b border-[color:var(--border)] px-4 py-3">
+              <div className="min-w-0">
+                <h2 className="truncate text-sm font-semibold text-[color:var(--foreground)]">
+                  {selected.patient.firstName} {selected.patient.lastName}
+                </h2>
+                {selected.chiefComplaint && (
+                  <p className="truncate text-xs text-[color:var(--muted-foreground)]">{selected.chiefComplaint}</p>
+                )}
+              </div>
+              <div className="flex items-center gap-2 shrink-0 ml-4">
+                <span className={["inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium", statusDot(selected.status), "text-white"].join(" ")}>
+                  {statusLabel(selected.status)}
+                </span>
+                <Link
+                  href={`/cases?case=${selected.id}`}
+                  className="text-xs text-[color:var(--primary)] hover:underline"
+                >
+                  Open case
+                </Link>
+              </div>
+            </div>
+
+            {/* Viewer */}
+            <div className="flex-1 overflow-auto p-4">
+              <DentalAnatomyViewer caseId={selected.id} />
+            </div>
+          </>
+        ) : (
+          <div className="flex flex-1 flex-col items-center justify-center gap-4 p-8 text-center">
+            {loading ? (
+              <Loader2 size={32} className="animate-spin text-[color:var(--primary)]" />
+            ) : cases.length === 0 ? (
+              <>
+                <div className="grid h-14 w-14 place-items-center rounded-2xl bg-[color:var(--muted)]">
+                  <FolderKanban size={24} className="text-[color:var(--muted-foreground)]" />
+                </div>
+                <div>
+                  <p className="text-sm font-medium text-[color:var(--foreground)]">No cases yet</p>
+                  <p className="mt-1 text-xs text-[color:var(--muted-foreground)]">
+                    Create a case and run AI segmentation to view 3D anatomy.
+                  </p>
+                </div>
+                <Link
+                  href="/cases/new"
+                  className="rounded-lg bg-[color:var(--primary)] px-4 py-2 text-sm font-medium text-[color:var(--primary-foreground)] hover:opacity-90"
+                >
+                  New case
+                </Link>
+              </>
+            ) : (
+              <>
+                <div className="grid h-14 w-14 place-items-center rounded-2xl bg-[color:var(--muted)]">
+                  <ScanSearch size={24} className="text-[color:var(--muted-foreground)]" />
+                </div>
+                <p className="text-sm text-[color:var(--muted-foreground)]">Select a case from the sidebar</p>
+              </>
+            )}
+          </div>
+        )}
+      </main>
+    </div>
   );
 }

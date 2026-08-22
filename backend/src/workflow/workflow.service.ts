@@ -46,6 +46,8 @@ export interface TransitionInput {
   actorId: string;
   actorRole: string;
   orgId: string;
+  /** When set, the FOR UPDATE lock and UPDATE are scoped to this workspace. */
+  workspaceId?: string | null;
   actorEmail?: string;
   notes?: string;
   ipAddress?: string;
@@ -68,9 +70,17 @@ export class WorkflowService {
       await client.query('BEGIN');
 
       // Lock the row to prevent concurrent transitions on the same case (TOCTOU guard).
+      // Include org/workspace predicates so the lock is never acquired for a
+      // case outside the actor's scope (closes the cross-workspace TOCTOU gap).
+      const lockParams: unknown[] = [input.caseId, input.orgId];
+      let lockExtra = '';
+      if (input.workspaceId) {
+        lockParams.push(input.workspaceId);
+        lockExtra = ` AND workspace_id = $${lockParams.length}`;
+      }
       const { rows } = await client.query<{ status: string }>(
-        'SELECT status FROM cases WHERE id = $1 FOR UPDATE',
-        [input.caseId],
+        `SELECT status FROM cases WHERE id = $1 AND organization_id = $2${lockExtra} FOR UPDATE`,
+        lockParams,
       );
       fromStatus = rows[0]?.status as CaseStatus | undefined;
       if (!fromStatus) {
@@ -93,9 +103,17 @@ export class WorkflowService {
       }
 
       // Update case status and write workflow event atomically.
+      // Workspace predicate mirrors the FOR UPDATE lock to ensure the same
+      // scope boundary is enforced on the write path.
+      const updateParams: unknown[] = [input.toStatus, input.caseId, input.orgId];
+      let updateExtra = '';
+      if (input.workspaceId) {
+        updateParams.push(input.workspaceId);
+        updateExtra = ` AND workspace_id = $${updateParams.length}`;
+      }
       const updateResult = await client.query(
-        'UPDATE cases SET status = $1, updated_at = now() WHERE id = $2 AND organization_id = $3',
-        [input.toStatus, input.caseId, input.orgId],
+        `UPDATE cases SET status = $1, updated_at = now() WHERE id = $2 AND organization_id = $3${updateExtra}`,
+        updateParams,
       );
       if ((updateResult.rowCount ?? 0) === 0) {
         throw new BadRequestException(`Case ${input.caseId} not found in this organization`);

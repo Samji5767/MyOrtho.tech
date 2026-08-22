@@ -5,6 +5,8 @@ import { TreatmentPlansController } from './treatment-plans.controller';
 import { TreatmentPlansService } from './treatment-plans.service';
 import { ToothMovementsController, ClinicalMeasurementsController } from './tooth-movements.controller';
 import { ToothMovementsService } from './tooth-movements.service';
+import { IprController, AttachmentsController } from './plan-features.controller';
+import { PlanFeaturesService } from './plan-features.service';
 
 @Module({
   imports: [AuthModule, WorkflowModule],
@@ -12,8 +14,10 @@ import { ToothMovementsService } from './tooth-movements.service';
     TreatmentPlansController,
     ToothMovementsController,
     ClinicalMeasurementsController,
+    IprController,
+    AttachmentsController,
   ],
-  providers: [TreatmentPlansService, ToothMovementsService],
+  providers: [TreatmentPlansService, ToothMovementsService, PlanFeaturesService],
   exports: [TreatmentPlansService, ToothMovementsService],
 })
 export class TreatmentPlansModule {}

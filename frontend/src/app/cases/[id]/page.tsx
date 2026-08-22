@@ -1,9 +1,9 @@
 import CaseDetailPageClient from "./CaseDetailPageClient";
 
-// Pre-render known demo IDs for static export; all other IDs are handled
-// client-side — the redirect below sends real case IDs to /cases?id=<id>
-// where CaseDetailClient is embedded in the live split-view.
-
+// Pre-render known demo IDs for fast initial load. All other IDs (real case
+// UUIDs) are handled client-side: Nginx serves /cases/index.html as a fallback,
+// the Next.js router matches the [id] segment, and CaseDetailPageClient renders
+// the case via the live API — no redirect required.
 const STATIC_IDS = ["C-2883", "C-2847", "C-2876", "C-2901", "C-2859", "C-2912", "C-2900"];
 
 export function generateStaticParams() {
@@ -11,5 +11,5 @@ export function generateStaticParams() {
 }
 
 export default function CaseDetailPage({ params }: { params: { id: string } }) {
-  return <CaseDetailPageClient id={params.id} isStatic={STATIC_IDS.includes(params.id)} />;
+  return <CaseDetailPageClient id={params.id} />;
 }

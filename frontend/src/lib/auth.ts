@@ -21,6 +21,7 @@ export interface AuthUser {
   role: string;
   orgId: string | null;
   isOnboarded: boolean;
+  isEmailVerified: boolean;
 }
 
 export async function fetchSession(): Promise<AuthUser | null> {
@@ -71,6 +72,74 @@ export async function register(
     const data = await res.json() as { user?: AuthUser; message?: string; error?: string };
     if (!res.ok) return { error: data.message ?? data.error ?? 'Registration failed' };
     return { user: data.user! };
+  } catch {
+    return { error: 'Network error — could not reach the server' };
+  }
+}
+
+export async function verifyEmail(token: string): Promise<{ ok: true } | { error: string }> {
+  try {
+    // Token is sent in the POST body, not the URL, so it stays out of server access logs.
+    // CSRF is exempt for this endpoint (the token itself is the authorization proof).
+    const res = await fetch(`${BASE}/api/auth/verify-email`, {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token }),
+    });
+    const data = await res.json() as { ok?: boolean; message?: string; error?: string };
+    if (!res.ok) return { error: data.message ?? data.error ?? 'Verification failed' };
+    return { ok: true };
+  } catch {
+    return { error: 'Network error — could not reach the server' };
+  }
+}
+
+export async function resendVerification(): Promise<{ ok: true } | { error: string }> {
+  try {
+    const csrf = getCsrfToken();
+    const res = await fetch(`${BASE}/api/auth/resend-verification`, {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json', ...(csrf ? { 'X-CSRF-Token': csrf } : {}) },
+    });
+    const data = await res.json() as { ok?: boolean; message?: string; error?: string };
+    if (!res.ok) return { error: data.message ?? data.error ?? 'Failed to resend verification email' };
+    return { ok: true };
+  } catch {
+    return { error: 'Network error — could not reach the server' };
+  }
+}
+
+export async function forgotPassword(email: string): Promise<{ ok: true } | { error: string }> {
+  try {
+    const csrf = getCsrfToken();
+    const res = await fetch(`${BASE}/api/auth/forgot-password`, {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json', ...(csrf ? { 'X-CSRF-Token': csrf } : {}) },
+      body: JSON.stringify({ email }),
+    });
+    const data = await res.json() as { ok?: boolean; message?: string; error?: string };
+    if (!res.ok) return { error: data.message ?? data.error ?? 'Request failed' };
+    return { ok: true };
+  } catch {
+    return { error: 'Network error — could not reach the server' };
+  }
+}
+
+export async function resetPassword(token: string, password: string): Promise<{ ok: true } | { error: string }> {
+  try {
+    const csrf = getCsrfToken();
+    const res = await fetch(`${BASE}/api/auth/reset-password`, {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json', ...(csrf ? { 'X-CSRF-Token': csrf } : {}) },
+      body: JSON.stringify({ token, password }),
+    });
+    const data = await res.json() as { ok?: boolean; message?: string; error?: string };
+    if (!res.ok) return { error: data.message ?? data.error ?? 'Password reset failed' };
+    return { ok: true };
   } catch {
     return { error: 'Network error — could not reach the server' };
   }

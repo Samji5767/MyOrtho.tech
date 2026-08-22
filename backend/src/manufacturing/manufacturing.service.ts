@@ -8,7 +8,6 @@ import {
 import type { Pool } from 'pg';
 import { PG_POOL } from '../database/database.module';
 import type { CreatePrintJobDto, JobStatus, CancelJobDto } from './manufacturing.dto';
-import { ConnectorError, getConnector } from '../printers/connectors/printer.connector';
 
 const CONNECTOR_DISCLAIMER =
   'Real-time printer control requires a vendor connector (Formlabs Dashboard / SprintRay Cloud). ' +
@@ -68,28 +67,13 @@ export class ManufacturingService {
       }
     }
 
-    // Check connector state before queuing
+    // Verify printer exists if provided
     if (dto.printerId) {
       const { rows: printerRows } = await this.pool.query(
-        `SELECT brand, connector_status FROM printers WHERE id = $1 AND organization_id = $2`,
+        `SELECT id FROM printers WHERE id = $1 AND organization_id = $2`,
         [dto.printerId, orgId],
       );
       if (!printerRows[0]) throw new NotFoundException('Printer not found');
-      const brand = printerRows[0].brand as string;
-      const connectorStatus = (printerRows[0].connector_status as string) ?? 'not_configured';
-
-      if (connectorStatus === 'not_configured' || connectorStatus === 'connector_required') {
-        const connector = getConnector(brand);
-        try {
-          await connector.sendPrintJob('', { jobId: '', gcodeUrl: '', sliceCount: 0, materialVolumeMl: 0 });
-        } catch (err) {
-          if (err instanceof ConnectorError) {
-            throw new BadRequestException(
-              `${CONNECTOR_DISCLAIMER}\n\nConnector error: ${err.message}`,
-            );
-          }
-        }
-      }
     }
 
     const { rows } = await this.pool.query(

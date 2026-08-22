@@ -1,4 +1,4 @@
-import { Injectable, Logger, Inject } from '@nestjs/common';
+import { Injectable, Logger, Inject, ServiceUnavailableException } from '@nestjs/common';
 import { Pool } from 'pg';
 import { PG_POOL } from '../database/database.module';
 import Stripe from 'stripe';
@@ -117,12 +117,10 @@ export class BillingService {
         : process.env.STRIPE_PRICE_ID_MONTHLY;
 
     if (!priceId) {
-      this.logger.warn(`STRIPE_PRICE_ID_${opts.interval.toUpperCase()} not set — returning mock`);
-      return {
-        mock: true,
-        url: opts.successUrl + '?session_id=mock_' + Date.now(),
-        plan: plan.name,
-      };
+      throw new ServiceUnavailableException(
+        `Stripe price ID for the "${opts.interval}" plan is not configured. ` +
+        `Set STRIPE_PRICE_ID_${opts.interval.toUpperCase()} in the environment.`,
+      );
     }
 
     // Retrieve or create Stripe customer

@@ -1,7 +1,8 @@
 import {
-  Body, Controller, Delete, Get, HttpCode, Param, Patch, Post, Query, Req, UnauthorizedException, UseGuards,
+  BadRequestException, Body, Controller, Delete, Get, HttpCode, NotFoundException, Param, Patch, Post, Query, Req, Res, StreamableFile, UnauthorizedException, UseGuards,
 } from '@nestjs/common';
-import type { Request } from 'express';
+import type { Request, Response } from 'express';
+import * as fs from 'fs';
 import { AuthGuard } from '../auth/auth.guard';
 import {
   SegmentationService,
@@ -187,5 +188,57 @@ export class SegmentationController {
   ) {
     const { id, orgId } = getUser(req);
     return this.autoSvc.repairAll(caseId, orgId, id, jobId);
+  }
+
+  /**
+   * Stream the per-tooth STL mesh file produced by AI segmentation.
+   * Authentication + org scope enforced: the job must belong to a case that
+   * belongs to the authenticated user's organization.
+   *
+   * GET /api/cases/:caseId/segmentation/jobs/:jobId/segments/:toothNumber/mesh
+   */
+  @Get('api/cases/:caseId/segmentation/jobs/:jobId/segments/:toothNumber/mesh')
+  async getToothMesh(
+    @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
+    @Param('caseId') caseId: string,
+    @Param('jobId') jobId: string,
+    @Param('toothNumber') toothNumberStr: string,
+  ): Promise<StreamableFile> {
+    const { orgId } = getUser(req);
+    const toothNumber = parseInt(toothNumberStr, 10);
+    if (!Number.isFinite(toothNumber)) {
+      throw new BadRequestException('Invalid tooth number');
+    }
+    const meshPath = await this.svc.getToothMeshPath(caseId, orgId, jobId, toothNumber);
+    if (!meshPath || !fs.existsSync(meshPath)) {
+      throw new NotFoundException('Tooth mesh not found');
+    }
+    res.setHeader('Content-Type', 'model/stl');
+    res.setHeader('Content-Disposition', `inline; filename="tooth_fdi_${toothNumber}.stl"`);
+    res.setHeader('Cache-Control', 'private, max-age=3600');
+    return new StreamableFile(fs.createReadStream(meshPath));
+  }
+
+  /**
+   * Stream the gingiva STL mesh file from the segmentation output directory.
+   * GET /api/cases/:caseId/segmentation/jobs/:jobId/gingiva/mesh
+   */
+  @Get('api/cases/:caseId/segmentation/jobs/:jobId/gingiva/mesh')
+  async getGingivaMesh(
+    @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
+    @Param('caseId') caseId: string,
+    @Param('jobId') jobId: string,
+  ): Promise<StreamableFile> {
+    const { orgId } = getUser(req);
+    const meshPath = await this.svc.getGingivaMeshPath(caseId, orgId, jobId);
+    if (!meshPath || !fs.existsSync(meshPath)) {
+      throw new NotFoundException('Gingiva mesh not found');
+    }
+    res.setHeader('Content-Type', 'model/stl');
+    res.setHeader('Content-Disposition', `inline; filename="gingiva.stl"`);
+    res.setHeader('Cache-Control', 'private, max-age=3600');
+    return new StreamableFile(fs.createReadStream(meshPath));
   }
 }

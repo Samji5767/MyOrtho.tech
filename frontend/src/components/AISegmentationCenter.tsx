@@ -337,7 +337,7 @@ function SubmitModal({ caseId, onSubmitted, onClose }: {
               ))}
             </select>
             <p className="mt-1 text-[10px] text-[color:var(--muted-foreground)]">
-              GPU models require AI_SEGMENTATION_URL configuration. CPU uses rule-based segmentation.
+              Requires a configured segmentation provider (AI_SEGMENTATION_URL). Jobs without an available provider are marked for manual review.
             </p>
           </div>
           <div>
@@ -421,11 +421,11 @@ export function AISegmentationCenter({ caseId }: Props) {
 
   // Poll processing jobs
   useEffect(() => {
-    const processing = jobs.filter(j => j.status === "pending" || j.status === "processing");
+    const processing = jobs.filter(j => j.status === "pending" || j.status === "queued" || j.status === "processing");
     if (!processing.length) return;
     const interval = setInterval(() => {
       loadJobs();
-      if (activeJob && (activeJob.status === "pending" || activeJob.status === "processing")) {
+      if (activeJob && (activeJob.status === "pending" || activeJob.status === "queued" || activeJob.status === "processing")) {
         loadJob(activeJob.id);
       }
     }, 2500);
@@ -539,12 +539,12 @@ export function AISegmentationCenter({ caseId }: Props) {
                 )}
 
                 {/* Processing state */}
-                {(activeJob.status === "pending" || activeJob.status === "processing") && (
+                {(activeJob.status === "pending" || activeJob.status === "queued" || activeJob.status === "processing") && (
                   <div className="rounded-xl border border-blue-200 bg-blue-50/60 p-4 space-y-3 dark:border-blue-900 dark:bg-blue-900/10">
                     <div className="flex items-center gap-2">
                       <Loader2 size={15} className="animate-spin text-blue-500" />
                       <p className="text-sm font-semibold text-blue-700 dark:text-blue-400">
-                        {activeJob.status === "pending" ? "Queued — waiting to start…" : `Segmenting teeth… ${activeJob.progress}%`}
+                        {activeJob.status === "processing" ? `Segmenting teeth… ${activeJob.progress}%` : "Queued — waiting to start…"}
                       </p>
                     </div>
                     <div className="h-2 rounded-full bg-blue-200 dark:bg-blue-900">
@@ -620,7 +620,7 @@ export function AISegmentationCenter({ caseId }: Props) {
                 )}
 
                 {/* Fallback banner when AI model is unavailable */}
-                {(activeJob.resultSummary as Record<string, unknown>).fallback === true && (
+                {(activeJob.resultSummary as Record<string, unknown> | null)?.fallback === true && (
                   <div className="flex items-start gap-2.5 rounded-xl border border-amber-300/50 bg-amber-50/80 px-3.5 py-2.5 text-xs text-amber-800 dark:border-amber-700/35 dark:bg-amber-900/10 dark:text-amber-300">
                     <span className="mt-0.5 shrink-0 text-amber-600 dark:text-amber-400">⚠</span>
                     <span>

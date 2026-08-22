@@ -18,6 +18,7 @@ function makeUser(role: string) {
     role,
     orgId: 'org-1',
     isOnboarded: true,
+    isEmailVerified: true,
   };
 }
 

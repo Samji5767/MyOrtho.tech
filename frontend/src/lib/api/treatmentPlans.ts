@@ -42,7 +42,7 @@ export function approvePlan(
   doctorSignature: string,
 ): Promise<TreatmentPlanSummary> {
   return api.post<TreatmentPlanSummary>(`/api/cases/${caseId}/plans/${planId}/approve`, {
-    doctorSignature,
+    signature: doctorSignature,
   });
 }
 
@@ -50,11 +50,20 @@ export function listStages(caseId: string, planId: string): Promise<AlignStage[]
   return api.get<AlignStage[]>(`/api/cases/${caseId}/plans/${planId}/stages`);
 }
 
+export interface GenerateStagesResult {
+  generated: number;
+  planId: string;
+  caseId: string;
+  /** True when stages came from the rule-based scaffold, not clinical data. */
+  is_simulated?: boolean;
+  warning?: string;
+}
+
 export function generateStages(
   caseId: string,
   planId: string,
   stageCount?: number,
-): Promise<{ generated: number; planId: string; caseId: string }> {
+): Promise<GenerateStagesResult> {
   return api.post(`/api/cases/${caseId}/plans/${planId}/stages/generate`, {
     ...(stageCount !== undefined ? { stageCount } : {}),
   });
@@ -67,3 +76,4 @@ export function updatePlan(
 ): Promise<TreatmentPlanSummary> {
   return api.patch<TreatmentPlanSummary>(`/api/cases/${caseId}/plans/${planId}`, dto);
 }
+

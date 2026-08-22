@@ -32,7 +32,7 @@ const STATUS_TONE: Record<string, "neutral" | "info" | "success" | "danger" | "w
   running:               "info",
   validating:            "info",
   processing:            "info",
-  manual_review_required:"warning",
+  review_required:      "warning",
   completed:             "success",
   failed:                "danger",
   unavailable:           "danger",
@@ -45,7 +45,7 @@ const STATUS_LABEL: Record<string, string> = {
   running:               "Running inference…",
   validating:            "Validating FDI…",
   processing:            "Processing…",
-  manual_review_required:"Review required",
+  review_required:      "Review required",
   completed:             "Completed",
   failed:                "Failed",
   unavailable:           "Unavailable",
@@ -120,7 +120,7 @@ function JobCard({ job, isLatest }: { job: SegmentationJob; isLatest: boolean })
   const dur = durationStr(job);
   const summary = job.resultSummary as Record<string, unknown> | null;
   const isActive = IN_PROGRESS_STATUSES.has(job.status);
-  const requiresReview = job.status === "manual_review_required"
+  const requiresReview = job.status === "review_required"
     || job.requiresManualReview === true
     || (summary as Record<string, unknown>)?.['requires_manual_review'] === true;
   const warnings = (summary as Record<string, unknown>)?.['warnings'] as string[] | undefined;

@@ -3,6 +3,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import type { Pool } from 'pg';
 import { PG_POOL } from '../database/database.module';
+import { AuditService } from '../audit/audit.service';
 
 // FDI chart: upper right=1x, upper left=2x, lower left=3x, lower right=4x
 const FDI_CHART: { fdi: number; universal: number; label: string; arch: 'upper' | 'lower' }[] = [
@@ -98,6 +99,8 @@ export interface CorrectionDto {
   details?: Record<string, unknown>;
 }
 
+export type ReviewDecision = 'approved' | 'rejected';
+
 // ── STL validation types ─────────────────────────────────────────────────────
 
 // ── Confidence scoring types ──────────────────────────────────────────────────
@@ -126,6 +129,7 @@ export class SegmentationService {
 
   constructor(
     @Inject(PG_POOL) private readonly pool: Pool,
+    private readonly audit: AuditService,
   ) {}
 
   // ── Verify case belongs to org ──────────────────────────────────────────────
@@ -145,9 +149,10 @@ export class SegmentationService {
   async listJobs(caseId: string, orgId: string) {
     await this.verifyCase(caseId, orgId);
     const { rows } = await this.pool.query(
-      `SELECT j.*, u.email AS submitted_by_email
+      `SELECT j.*, u.email AS submitted_by_email, rv.email AS reviewed_by_email
          FROM segmentation_jobs j
          LEFT JOIN auth_users u ON u.id = j.submitted_by
+         LEFT JOIN auth_users rv ON rv.id = j.reviewed_by
          WHERE j.case_id = $1
          ORDER BY j.created_at DESC`,
       [caseId],
@@ -160,9 +165,10 @@ export class SegmentationService {
   async getJob(caseId: string, orgId: string, jobId: string) {
     await this.verifyCase(caseId, orgId);
     const { rows } = await this.pool.query(
-      `SELECT j.*, u.email AS submitted_by_email
+      `SELECT j.*, u.email AS submitted_by_email, rv.email AS reviewed_by_email
          FROM segmentation_jobs j
          LEFT JOIN auth_users u ON u.id = j.submitted_by
+         LEFT JOIN auth_users rv ON rv.id = j.reviewed_by
          WHERE j.id = $1 AND j.case_id = $2`,
       [jobId, caseId],
     );
@@ -267,24 +273,35 @@ export class SegmentationService {
     // for the case. Segmentation without a scan is impossible.
     const { rows: jobRows } = await this.pool.query(
       `SELECT j.case_id, j.scan_id,
+              COALESCE(s.id, latest.id) AS resolved_scan_id,
               COALESCE(s.file_path, latest.file_path) AS file_path,
               COALESCE(s.jaw_type, latest.jaw_type) AS jaw_type
        FROM segmentation_jobs j
        LEFT JOIN scans s ON s.id = j.scan_id
        LEFT JOIN LATERAL (
-         SELECT file_path, jaw_type FROM scans
+         SELECT id, file_path, jaw_type FROM scans
          WHERE case_id = j.case_id ORDER BY created_at DESC LIMIT 1
        ) latest ON true
        WHERE j.id = $1`,
       [jobId],
     );
     const jobRow = jobRows[0] as
-      | { case_id: string; scan_id: string | null; file_path: string | null; jaw_type: string | null }
+      | { case_id: string; scan_id: string | null; resolved_scan_id: string | null; file_path: string | null; jaw_type: string | null }
       | undefined;
     if (!jobRow?.file_path) {
       throw new Error('No scan uploaded for this case — upload a scan before requesting segmentation');
     }
     const caseId = jobRow.case_id;
+    // Record which scan was actually segmented: mesh-path resolution and the
+    // segmentation_results upsert both key on the job's scan_id, so a job
+    // submitted without one must be backfilled with the scan it used.
+    const resolvedScanId = jobRow.scan_id ?? jobRow.resolved_scan_id;
+    if (!jobRow.scan_id && resolvedScanId) {
+      await this.pool.query(
+        `UPDATE segmentation_jobs SET scan_id = $2 WHERE id = $1`,
+        [jobId, resolvedScanId],
+      );
+    }
     const jawType =
       arch === 'both' || jobRow.jaw_type === 'both'
         ? 'combined'
@@ -355,21 +372,47 @@ export class SegmentationService {
       return;
     }
 
+    // Per-tooth mesh files live in the engine's output directory; store the
+    // direct path on each segment so getToothMeshPath resolves without
+    // depending on a segmentation_results row.
+    const meshDir = (aiJob['segmented_mesh_path'] as string | null) ?? null;
+
     for (const fdi of toothIds) {
       const tooth = FDI_CHART.find(t => t.fdi === fdi);
       if (!tooth) {
         this.logger.warn(`AI returned unrecognized FDI ${fdi} for job ${jobId} — skipped`);
         continue;
       }
+      const meshPath = meshDir ? path.join(meshDir, `tooth_fdi_${fdi}.stl`) : null;
       await this.pool.query(
         `INSERT INTO tooth_segments
-           (job_id, case_id, tooth_number, universal_number, label, arch, confidence)
-           VALUES ($1, $2, $3, $4, $5, $6, $7)
-           ON CONFLICT (job_id, tooth_number) DO UPDATE SET confidence = EXCLUDED.confidence`,
+           (job_id, case_id, tooth_number, universal_number, label, arch, confidence, mesh_path)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+           ON CONFLICT (job_id, tooth_number)
+           DO UPDATE SET confidence = EXCLUDED.confidence, mesh_path = EXCLUDED.mesh_path`,
         [jobId, caseId, fdi, tooth.universal, tooth.label, tooth.arch,
-         confidences[String(fdi)] ?? null],
+         confidences[String(fdi)] ?? null, meshPath],
       );
     }
+
+    // Mirror the result into segmentation_results so the gingiva mesh and the
+    // directory fallback resolve for this (case, scan) pair.
+    if (resolvedScanId && meshDir) {
+      const missingTeeth = FDI_CHART
+        .map(t => t.fdi)
+        .filter(fdi => !toothIds.includes(fdi));
+      await this.pool.query(
+        `INSERT INTO segmentation_results
+           (case_id, scan_id, teeth_confidence_scores, missing_teeth, segmented_mesh_path)
+           VALUES ($1, $2, $3, $4, $5)
+           ON CONFLICT (case_id, scan_id)
+           DO UPDATE SET teeth_confidence_scores = EXCLUDED.teeth_confidence_scores,
+                         missing_teeth = EXCLUDED.missing_teeth,
+                         segmented_mesh_path = EXCLUDED.segmented_mesh_path`,
+        [caseId, resolvedScanId, JSON.stringify(confidences), missingTeeth, meshDir],
+      );
+    }
+
     await this.pool.query(
       `UPDATE segmentation_jobs SET status = 'completed', completed_at = NOW(), progress = 100,
          tooth_count = (SELECT COUNT(*) FROM tooth_segments WHERE job_id = $1),
@@ -573,8 +616,16 @@ export class SegmentationService {
   // ── Update a tooth segment (manual refinement) ───────────────────────────────
 
   async updateSegment(caseId: string, orgId: string, jobId: string, toothNumber: number,
-    patch: { isLocked?: boolean; isMissing?: boolean; notes?: string }) {
+    patch: { isLocked?: boolean; isMissing?: boolean; notes?: string; newToothNumber?: number },
+    userId?: string) {
     await this.verifyCase(caseId, orgId);
+
+    // Relabel: reassign the segment to a different FDI number. The mesh
+    // geometry is unchanged — only its dental identity moves.
+    if (patch.newToothNumber !== undefined && patch.newToothNumber !== toothNumber) {
+      return this.relabelSegment(caseId, orgId, jobId, toothNumber, patch.newToothNumber, userId);
+    }
+
     const updates: string[] = [];
     const values: unknown[] = [jobId, toothNumber];
     if (patch.isLocked !== undefined) { values.push(patch.isLocked); updates.push(`is_locked = $${values.length}`); }
@@ -588,6 +639,116 @@ export class SegmentationService {
     );
     if (!rows.length) throw new NotFoundException('Segment not found');
     return this.formatSegment(rows[0]);
+  }
+
+  private async relabelSegment(
+    caseId: string, orgId: string, jobId: string,
+    fromFdi: number, toFdi: number, userId?: string,
+  ) {
+    const target = FDI_CHART.find(t => t.fdi === toFdi);
+    if (!target) {
+      throw new BadRequestException(`${toFdi} is not a valid permanent-dentition FDI tooth number`);
+    }
+    const { rows: existing } = await this.pool.query(
+      `SELECT tooth_number, mesh_path FROM tooth_segments
+         WHERE job_id = $1 AND tooth_number IN ($2, $3)`,
+      [jobId, fromFdi, toFdi],
+    );
+    const source = existing.find(r => (r as { tooth_number: number }).tooth_number === fromFdi);
+    if (!source) throw new NotFoundException('Segment not found');
+    if (existing.some(r => (r as { tooth_number: number }).tooth_number === toFdi)) {
+      throw new BadRequestException(
+        `FDI ${toFdi} already has a segment in this job — clear or relabel it first`,
+      );
+    }
+
+    // The relabeled segment must keep pointing at its original mesh file
+    // (named after the OLD FDI on disk), so pin the resolved path before the
+    // identity changes; otherwise the directory fallback would look up
+    // tooth_fdi_{new}.stl, which does not exist.
+    const pinnedMeshPath = (source as { mesh_path: string | null }).mesh_path
+      ?? await this.getToothMeshPath(caseId, orgId, jobId, fromFdi);
+
+    // Identity change + correction record must land together.
+    const client = await this.pool.connect();
+    let updatedRow: Record<string, unknown>;
+    try {
+      await client.query('BEGIN');
+      const { rows } = await client.query(
+        `UPDATE tooth_segments
+           SET tooth_number = $3, universal_number = $4, label = $5, arch = $6,
+               mesh_path = COALESCE($7, mesh_path), version = version + 1
+           WHERE job_id = $1 AND tooth_number = $2
+           RETURNING *`,
+        [jobId, fromFdi, toFdi, target.universal, target.label, target.arch, pinnedMeshPath],
+      );
+      await client.query(
+        `INSERT INTO segmentation_corrections
+           (job_id, tooth_number, correction_type, details, applied_by)
+           VALUES ($1, $2, $3, $4, $5)`,
+        [jobId, toFdi, 'relabel',
+         JSON.stringify({ fromFdi, toFdi }), userId ?? null],
+      );
+      await client.query('COMMIT');
+      updatedRow = rows[0];
+    } catch (err) {
+      await client.query('ROLLBACK').catch(() => undefined);
+      throw err;
+    } finally {
+      client.release();
+    }
+
+    this.logger.log(`Segment relabeled in job ${jobId}: FDI ${fromFdi} -> ${toFdi}`);
+    return this.formatSegment(updatedRow);
+  }
+
+  // ── Clinical review sign-off ─────────────────────────────────────────────────
+
+  async reviewJob(
+    caseId: string, orgId: string, userId: string, jobId: string,
+    decision: ReviewDecision, note?: string, actorEmail?: string,
+  ) {
+    await this.verifyCase(caseId, orgId);
+    if (decision !== 'approved' && decision !== 'rejected') {
+      throw new BadRequestException(`decision must be 'approved' or 'rejected'`);
+    }
+
+    const { rows } = await this.pool.query(
+      `SELECT status FROM segmentation_jobs WHERE id = $1 AND case_id = $2`,
+      [jobId, caseId],
+    );
+    if (!rows.length) throw new NotFoundException('Job not found');
+    const status = (rows[0] as { status: string }).status;
+    if (status !== 'completed' && status !== 'review_required') {
+      throw new BadRequestException(
+        `Only completed or review_required jobs can be reviewed (current status: '${status}')`,
+      );
+    }
+
+    // An approved review resolves review_required into completed; a rejection
+    // keeps the job's pipeline status but records the clinical verdict.
+    const { rows: updated } = await this.pool.query(
+      `UPDATE segmentation_jobs
+         SET review_decision = $3::varchar, review_note = $4, reviewed_by = $5, reviewed_at = NOW(),
+             status = CASE WHEN $3::varchar = 'approved' AND status = 'review_required'
+                           THEN 'completed' ELSE status END
+         WHERE id = $1 AND case_id = $2
+         RETURNING *`,
+      [jobId, caseId, decision, note ?? null, userId],
+    );
+
+    await this.audit.log({
+      organizationId: orgId,
+      actorId: userId,
+      actorEmail,
+      resourceType: 'segmentation_job',
+      resourceId: jobId,
+      action: `segmentation.review.${decision}`,
+      details: { caseId, note: note ?? null },
+    });
+
+    this.logger.log(`Segmentation job ${jobId} reviewed: ${decision} by ${userId}`);
+    return this.formatJob(updated[0]);
   }
 
   // ── Phase 24: Mask editing ────────────────────────────────────────────────────
@@ -1091,6 +1252,11 @@ export class SegmentationService {
       startedAt:        r.started_at,
       completedAt:      r.completed_at,
       submittedByEmail: r.submitted_by_email,
+      reviewDecision:   r.review_decision ?? null,
+      reviewNote:       r.review_note ?? null,
+      reviewedBy:       r.reviewed_by ?? null,
+      reviewedByEmail:  r.reviewed_by_email ?? null,
+      reviewedAt:       r.reviewed_at ?? null,
       createdAt:        r.created_at,
     };
   }

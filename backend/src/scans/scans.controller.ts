@@ -114,6 +114,7 @@ export class ScansController {
 
   /** Stream the raw scan file (STL/OBJ/PLY) — authenticated, org-scoped. */
   @Get(':scanId/file')
+  @RequirePermission('cases:read')
   async getScanFile(
     @Req() req: Request,
     @Res({ passthrough: true }) res: Response,

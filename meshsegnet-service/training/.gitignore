@@ -1,0 +1,12 @@
+# Never commit data, caches, or weights
+*.npz
+*.pt
+*.pth
+*.pth.sha256
+*.meta.json
+runs/
+cache/
+raw/
+.venv/
+__pycache__/
+eval_report.json

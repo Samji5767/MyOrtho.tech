@@ -1,0 +1,10 @@
+# Training-only dependencies (the inference service has its own requirements).
+# Install inside a fresh venv on the GPU box:
+#   python3 -m venv .venv && . .venv/bin/activate && pip install -r requirements.txt
+#
+# torch: pick the wheel matching your CUDA version, e.g.
+#   pip install torch --index-url https://download.pytorch.org/whl/cu121
+torch>=2.2
+numpy>=1.24
+trimesh>=4.0
+tqdm>=4.66

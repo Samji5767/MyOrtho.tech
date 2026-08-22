@@ -25,9 +25,11 @@ Architecture summary:
 
   Global feature branch:
     pool(gcn4 output)  [512]
-    → linear 512→1024 → BN → ReLU
-    → linear 1024→256 → BN → ReLU   [256]
-    → repeat for each face            [N_faces × 256]
+    → linear 512→1024 → LayerNorm → ReLU
+    → linear 1024→256 → LayerNorm → ReLU   [256]
+    → repeat for each face                   [N_faces × 256]
+    (LayerNorm, not BatchNorm: this branch always sees a batch of one
+     pooled vector per mesh, so batch statistics are undefined in training)
 
   Concatenation + classifier:
     cat(gcn1, gcn2, gcn3, gcn4, global): [N_faces × (64+128+256+512+256)] = [N_faces × 1216]
@@ -105,13 +107,16 @@ class MeshSegNet(nn.Module):
         self.gcn3 = STLocalGCN(128, 256, K)
         self.gcn4 = STLocalGCN(256, 512, K)
 
-        # Global feature branch (after global max-pool of gcn4 output)
+        # Global feature branch (after global max-pool of gcn4 output).
+        # LayerNorm rather than BatchNorm: the input here is a single pooled
+        # vector per mesh ([1, 512]), so batch statistics are undefined when
+        # training with one mesh per forward pass.
         self.global_fc = nn.Sequential(
             nn.Linear(512, 1024, bias=False),
-            nn.BatchNorm1d(1024),
+            nn.LayerNorm(1024),
             nn.ReLU(inplace=True),
             nn.Linear(1024, 256, bias=False),
-            nn.BatchNorm1d(256),
+            nn.LayerNorm(256),
             nn.ReLU(inplace=True),
         )
 

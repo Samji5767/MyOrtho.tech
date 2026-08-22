@@ -118,6 +118,11 @@ echo "[deploy] Waiting for services to become healthy..."
 # The AI engine cold-starts slowly (torch import takes minutes on first boot).
 MAX_WAIT=300
 SERVICES=(backend frontend ai-engine)
+# meshsegnet only runs when the "meshsegnet" compose profile is active
+# (COMPOSE_PROFILES=meshsegnet in .env) — wait for it only if it exists.
+if docker ps -a --format '{{.Names}}' 2>/dev/null | grep -q '^myortho-meshsegnet$'; then
+  SERVICES+=(meshsegnet)
+fi
 for svc in "${SERVICES[@]}"; do
   ELAPSED=0
   echo -n "[deploy] Waiting for ${svc}..."

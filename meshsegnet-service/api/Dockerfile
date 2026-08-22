@@ -31,7 +31,10 @@ USER meshsegnet
 
 EXPOSE 8002
 
+# /health always answers HTTP 200 — probe the state field so a failed
+# checkpoint load ("error") marks the container unhealthy, while the honest
+# weightless "disabled" state stays healthy.
 HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
-    CMD wget -qO- http://localhost:8002/health || exit 1
+    CMD python3 -c "import urllib.request, json, sys; d = json.load(urllib.request.urlopen('http://127.0.0.1:8002/health', timeout=5)); sys.exit(0 if d.get('status') == 'ok' else 1)"
 
 CMD ["uvicorn", "api.main:app", "--host", "0.0.0.0", "--port", "8002", "--workers", "1"]

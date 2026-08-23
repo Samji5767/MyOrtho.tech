@@ -20,6 +20,12 @@ import {
 } from "@/lib/api/toothMovements";
 import { MM_TO_SCENE, SCENE_TO_MM } from "@/lib/meshAnalysis";
 import {
+  computeCollisions,
+  intersectingFdis,
+  CONTACT_MM,
+  type CollisionPair,
+} from "@/lib/collision";
+import {
   AlertTriangle,
   ChevronLeft,
   ChevronRight,
@@ -28,6 +34,8 @@ import {
   Loader2,
   Lock,
   Pencil,
+  Zap,
+  ZapOff,
 } from "lucide-react";
 
 const MAX_CONCURRENT = 4;
@@ -135,6 +143,8 @@ interface SceneProps {
   showTeeth: boolean;
   selectedFdi: number | null;
   stageMvts: StageMvtMap | null;
+  /** Teeth whose meshes intersect a neighbour in the current stage. */
+  collidingFdis: Set<number>;
   onSelect: (fdi: number) => void;
 }
 
@@ -163,7 +173,7 @@ function CameraRig({ view, nonce }: { view: string; nonce: number }) {
   return null;
 }
 
-function Scene({ teeth, gingivaGeom, showGingiva, showTeeth, selectedFdi, stageMvts, onSelect }: SceneProps) {
+function Scene({ teeth, gingivaGeom, showGingiva, showTeeth, selectedFdi, stageMvts, collidingFdis, onSelect }: SceneProps) {
   return (
     <>
       <ambientLight intensity={0.5} />
@@ -192,7 +202,13 @@ function Scene({ teeth, gingivaGeom, showGingiva, showTeeth, selectedFdi, stageM
               onClick={(e: ThreeEvent<MouseEvent>) => { e.stopPropagation(); onSelect(tooth.fdi); }}
             >
               <meshStandardMaterial
-                color={selectedFdi === tooth.fdi ? "#4a9eff" : "#f5efe7"}
+                color={
+                  selectedFdi === tooth.fdi
+                    ? "#4a9eff"
+                    : collidingFdis.has(tooth.fdi)
+                      ? "#e4574f"
+                      : "#f5efe7"
+                }
                 roughness={0.3} metalness={0.04} side={THREE.DoubleSide}
               />
             </mesh>
@@ -203,6 +219,56 @@ function Scene({ teeth, gingivaGeom, showGingiva, showTeeth, selectedFdi, stageM
   );
 }
 
+
+// ── Collision report card ─────────────────────────────────────────────────────
+// Exact closest-point distances between segmented tooth meshes as displayed
+// for the current stage. Pairs farther apart than the query cap are "clear".
+
+function CollisionsCard({ pairs }: { pairs: CollisionPair[] }) {
+  const flagged = pairs.filter(p => p.intersecting || (p.distanceMm !== null && p.distanceMm < CONTACT_MM));
+  return (
+    <div className="rounded-xl border border-[color:var(--border)] bg-[color:var(--card)] p-3">
+      <div className="flex items-center justify-between">
+        <p className="text-[10px] font-medium text-[color:var(--muted-foreground)] uppercase tracking-wide">
+          Collisions & contacts
+        </p>
+        <span className={`text-[10px] font-bold ${flagged.some(p => p.intersecting) ? "text-rose-500" : flagged.length ? "text-amber-500" : "text-emerald-500"}`}>
+          {flagged.some(p => p.intersecting)
+            ? `${flagged.filter(p => p.intersecting).length} overlap${flagged.filter(p => p.intersecting).length > 1 ? "s" : ""}`
+            : flagged.length
+              ? `${flagged.length} tight contact${flagged.length > 1 ? "s" : ""}`
+              : "clear"}
+        </span>
+      </div>
+      {flagged.length === 0 ? (
+        <p className="mt-1.5 text-xs text-[color:var(--muted-foreground)]">
+          No adjacent teeth within {CONTACT_MM.toFixed(1)} mm in this stage.
+        </p>
+      ) : (
+        <div className="mt-1.5 space-y-1">
+          {flagged.map(p => (
+            <div key={`${p.fdiA}-${p.fdiB}`} className="flex items-center justify-between text-xs">
+              <span className="text-[color:var(--foreground)]">
+                {p.fdiA} ↔ {p.fdiB}
+              </span>
+              {p.intersecting ? (
+                <span className="font-bold text-rose-500">meshes overlap</span>
+              ) : (
+                <span className="font-semibold tabular-nums text-amber-500">
+                  {p.distanceMm!.toFixed(2)} mm
+                </span>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+      <p className="mt-2 text-[10px] leading-snug text-[color:var(--muted-foreground)]">
+        Exact mesh distances at the displayed stage positions (arch-frame movement
+        approximation). Verify interproximal contacts clinically before IPR decisions.
+      </p>
+    </div>
+  );
+}
 
 // ── Arch measurements from loaded geometry ────────────────────────────────────
 // Distances between segmented tooth centroids (millimetres). Shown only when
@@ -446,6 +512,7 @@ export default function DentalAnatomyViewer({ caseId }: { caseId: string }) {
   const [gingivaGeom, setGingivaGeom] = useState<THREE.BufferGeometry | null>(null);
   const [showGingiva, setShowGingiva] = useState(true);
   const [showTeeth, setShowTeeth] = useState(true);
+  const [showCollisions, setShowCollisions] = useState(true);
   const [cameraView, setCameraView] = useState<{ view: string; nonce: number }>({ view: "reset", nonce: 0 });
   const [selectedFdi, setSelectedFdi] = useState<number | null>(null);
   const [planId, setPlanId] = useState<string | null>(null);
@@ -471,6 +538,19 @@ export default function DentalAnatomyViewer({ caseId }: { caseId: string }) {
     () => readMovement(selectedFdi !== null ? stageMvts?.[String(selectedFdi)] : undefined),
     [selectedFdi, stageMvts],
   );
+
+  // Exact adjacent-pair mesh distances at the displayed stage positions.
+  // Recomputed only when meshes or the active stage's movements change.
+  const collisionPairs = useMemo<CollisionPair[]>(() => {
+    if (!showCollisions || status !== "ready" || teeth.length < 2) return [];
+    try {
+      return computeCollisions(teeth, fdi => toothTransform(stageMvts, fdi));
+    } catch {
+      return []; // a degenerate mesh must not take down the viewer
+    }
+  }, [showCollisions, status, teeth, stageMvts]);
+
+  const collidingFdis = useMemo(() => intersectingFdis(collisionPairs), [collisionPairs]);
 
   useEffect(() => {
     if (!caseId) return;
@@ -660,6 +740,10 @@ export default function DentalAnatomyViewer({ caseId }: { caseId: string }) {
             className="flex items-center gap-1 rounded-md border border-[color:var(--border)] px-2 py-1 text-xs text-[color:var(--muted-foreground)] hover:text-[color:var(--foreground)]">
             {showTeeth ? <Eye size={11} /> : <EyeOff size={11} />} Teeth
           </button>
+          <button type="button" onClick={() => setShowCollisions(v => !v)}
+            className="flex items-center gap-1 rounded-md border border-[color:var(--border)] px-2 py-1 text-xs text-[color:var(--muted-foreground)] hover:text-[color:var(--foreground)]">
+            {showCollisions ? <Zap size={11} /> : <ZapOff size={11} />} Collisions
+          </button>
         </div>
       </div>
 
@@ -687,6 +771,7 @@ export default function DentalAnatomyViewer({ caseId }: { caseId: string }) {
           <CameraRig view={cameraView.view} nonce={cameraView.nonce} />
           <Scene teeth={teeth} gingivaGeom={gingivaGeom} showGingiva={showGingiva}
             showTeeth={showTeeth} selectedFdi={selectedFdi} stageMvts={stageMvts}
+            collidingFdis={collidingFdis}
             onSelect={fdi => setSelectedFdi(prev => prev === fdi ? null : fdi)} />
         </Canvas>
       </div>
@@ -697,6 +782,8 @@ export default function DentalAnatomyViewer({ caseId }: { caseId: string }) {
           onNext={() => setStageIdx(i => Math.min(stages.length - 1, i + 1))}
           simulated={stageSimulated} />
       )}
+
+      {showCollisions && collisionPairs.length > 0 && <CollisionsCard pairs={collisionPairs} />}
 
       {teeth.length >= 2 && <MeasurementsCard teeth={teeth} />}
 

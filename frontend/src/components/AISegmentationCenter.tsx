@@ -3,12 +3,15 @@
 import { useCallback, useEffect, useState } from "react";
 import {
   AlertTriangle,
+  ArrowRightLeft,
   CheckCircle2,
   ChevronDown,
   ChevronRight,
   ChevronUp,
+  ClipboardCheck,
   Clock,
   Cpu,
+  Eraser,
   Layers3,
   Lock,
   Loader2,
@@ -16,6 +19,8 @@ import {
   RotateCcw,
   Scan,
   Scissors,
+  ShieldCheck,
+  ShieldX,
   Sparkles,
   Unlock,
   Wand2,
@@ -29,6 +34,7 @@ import {
   type CorrectionType,
   type SegmentationModel,
   type SegmentationArch,
+  type ReviewDecision,
   CORRECTION_LABELS,
   MODEL_LABELS,
   listSegmentationJobs,
@@ -36,6 +42,7 @@ import {
   getSegmentationJob,
   applyCorrection,
   updateSegment,
+  reviewSegmentationJob,
 } from "@/lib/api/segmentation";
 
 // ─── Tooth map ────────────────────────────────────────────────────────────────
@@ -108,14 +115,43 @@ function ToothInspector({
   segment,
   caseId,
   jobId,
+  occupiedFdi,
   onCorrected,
 }: {
   segment: ToothSegment;
   caseId: string;
   jobId: string;
+  /** FDI numbers already assigned in this job (relabel targets must be free). */
+  occupiedFdi: Set<number>;
   onCorrected: () => void;
 }) {
   const [busy, setBusy] = useState<string | null>(null);
+  const [relabelTo, setRelabelTo] = useState<number | null>(null);
+  const [relabelError, setRelabelError] = useState("");
+
+  const doRelabel = async () => {
+    if (!relabelTo) return;
+    setBusy("relabel"); setRelabelError("");
+    try {
+      await updateSegment(caseId, jobId, segment.toothNumber, { newToothNumber: relabelTo });
+      setRelabelTo(null);
+      onCorrected();
+    } catch (e: any) {
+      setRelabelError(e.message ?? "Relabel failed");
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const toggleMissing = async () => {
+    setBusy("missing");
+    try {
+      await updateSegment(caseId, jobId, segment.toothNumber, { isMissing: !segment.isMissing });
+      onCorrected();
+    } finally {
+      setBusy(null);
+    }
+  };
 
   const REPAIR_OPS: CorrectionType[] = [
     "fix_geometry", "improve_segmentation", "repair_mesh",
@@ -233,18 +269,145 @@ function ToothInspector({
         </>
       )}
 
-      {/* Lock toggle */}
-      {!segment.isMissing && (
+      {/* Relabel: reassign this segment to a different FDI number */}
+      {!segment.isMissing && !segment.isLocked && (
+        <div>
+          <p className="text-[10px] font-bold uppercase tracking-wider text-[color:var(--muted-foreground)] mb-1.5">Reassign FDI Number</p>
+          <div className="flex items-center gap-2">
+            <select
+              value={relabelTo ?? ""}
+              onChange={e => setRelabelTo(e.target.value ? parseInt(e.target.value, 10) : null)}
+              className="flex-1 rounded-lg border border-[color:var(--border)] bg-[color:var(--background)] px-2 py-1.5 text-xs text-[color:var(--foreground)] outline-none"
+            >
+              <option value="">Select new FDI…</option>
+              {[...FDI_UPPER, ...FDI_LOWER]
+                .filter(fdi => fdi !== segment.toothNumber && !occupiedFdi.has(fdi))
+                .map(fdi => <option key={fdi} value={fdi}>FDI {fdi}</option>)}
+            </select>
+            <button
+              type="button"
+              onClick={doRelabel}
+              disabled={!relabelTo || !!busy}
+              className="flex items-center gap-1 rounded-lg bg-[color:var(--primary)] px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-40"
+            >
+              {busy === "relabel" ? <Loader2 size={11} className="animate-spin" /> : <ArrowRightLeft size={11} />}
+              Relabel
+            </button>
+          </div>
+          {relabelError && <p className="mt-1 text-[10px] text-rose-600">{relabelError}</p>}
+        </div>
+      )}
+
+      {/* Presence + lock toggles */}
+      <div className="flex flex-wrap gap-2">
         <button
           type="button"
-          onClick={toggleLock}
-          disabled={busy === "lock"}
-          className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors disabled:opacity-50 ${segment.isLocked ? "bg-amber-500/10 text-amber-700 hover:bg-amber-500/20" : "border border-[color:var(--border)] text-[color:var(--muted-foreground)] hover:text-[color:var(--foreground)]"}`}
+          onClick={toggleMissing}
+          disabled={busy === "missing"}
+          className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors disabled:opacity-50 ${segment.isMissing ? "bg-emerald-500/10 text-emerald-700 hover:bg-emerald-500/20" : "border border-[color:var(--border)] text-[color:var(--muted-foreground)] hover:text-[color:var(--foreground)]"}`}
         >
-          {segment.isLocked ? <Unlock size={11} /> : <Lock size={11} />}
-          {segment.isLocked ? "Unlock Region" : "Lock Region"}
+          {busy === "missing" ? <Loader2 size={11} className="animate-spin" /> : <Eraser size={11} />}
+          {segment.isMissing ? "Mark Present" : "Mark Missing"}
         </button>
-      )}
+        {!segment.isMissing && (
+          <button
+            type="button"
+            onClick={toggleLock}
+            disabled={busy === "lock"}
+            className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors disabled:opacity-50 ${segment.isLocked ? "bg-amber-500/10 text-amber-700 hover:bg-amber-500/20" : "border border-[color:var(--border)] text-[color:var(--muted-foreground)] hover:text-[color:var(--foreground)]"}`}
+          >
+            {segment.isLocked ? <Unlock size={11} /> : <Lock size={11} />}
+            {segment.isLocked ? "Unlock Region" : "Lock Region"}
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ─── Clinical review sign-off ─────────────────────────────────────────────────
+
+function ReviewPanel({
+  job,
+  caseId,
+  onReviewed,
+}: {
+  job: SegmentationJob;
+  caseId: string;
+  onReviewed: () => void;
+}) {
+  const [note, setNote] = useState("");
+  const [busy, setBusy] = useState<ReviewDecision | null>(null);
+  const [error, setError] = useState("");
+
+  const decide = async (decision: ReviewDecision) => {
+    setBusy(decision); setError("");
+    try {
+      await reviewSegmentationJob(caseId, job.id, { decision, note: note.trim() || undefined });
+      setNote("");
+      onReviewed();
+    } catch (e: any) {
+      setError(e.message ?? "Review failed — approval authority (cases:approve) is required");
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  // Already reviewed: show the verdict, not the buttons.
+  if (job.reviewDecision) {
+    const approved = job.reviewDecision === "approved";
+    return (
+      <div className={`flex items-start gap-2.5 rounded-xl border px-3.5 py-2.5 text-xs ${approved ? "border-emerald-300/50 bg-emerald-50/80 text-emerald-800 dark:border-emerald-700/35 dark:bg-emerald-900/10 dark:text-emerald-300" : "border-rose-300/50 bg-rose-50/80 text-rose-800 dark:border-rose-700/35 dark:bg-rose-900/10 dark:text-rose-300"}`}>
+        {approved ? <ShieldCheck size={14} className="mt-0.5 shrink-0" /> : <ShieldX size={14} className="mt-0.5 shrink-0" />}
+        <span>
+          <span className="font-semibold">
+            Segmentation {approved ? "approved" : "rejected"} by {job.reviewedByEmail ?? "clinician"}
+          </span>
+          {job.reviewedAt ? ` on ${new Date(job.reviewedAt).toLocaleString()}` : ""}.
+          {job.reviewNote ? <> Note: {job.reviewNote}</> : null}
+        </span>
+      </div>
+    );
+  }
+
+  return (
+    <div className="rounded-xl border border-[color:var(--border)] bg-[color:var(--card)] p-4 space-y-3">
+      <div className="flex items-center gap-2">
+        <ClipboardCheck size={14} className="text-[color:var(--primary)]" />
+        <h3 className="text-sm font-bold text-[color:var(--foreground)]">Clinical Review</h3>
+      </div>
+      <p className="text-xs text-[color:var(--muted-foreground)]">
+        Verify the tooth numbering and segment boundaries above, then record your clinical verdict.
+        Sign-off requires approval authority and is written to the audit log.
+      </p>
+      <textarea
+        value={note}
+        onChange={e => setNote(e.target.value)}
+        placeholder="Review note (optional)…"
+        rows={2}
+        className="w-full rounded-lg border border-[color:var(--border)] bg-[color:var(--background)] px-3 py-2 text-xs text-[color:var(--foreground)] outline-none resize-none"
+      />
+      {error && <p className="text-xs text-rose-600">{error}</p>}
+      <div className="flex gap-2">
+        <button
+          type="button"
+          onClick={() => decide("approved")}
+          disabled={!!busy}
+          className="flex items-center gap-1.5 rounded-lg bg-emerald-600 px-4 py-2 text-xs font-semibold text-white hover:bg-emerald-700 disabled:opacity-50"
+        >
+          {busy === "approved" ? <Loader2 size={12} className="animate-spin" /> : <ShieldCheck size={12} />}
+          Approve Segmentation
+        </button>
+        <button
+          type="button"
+          onClick={() => decide("rejected")}
+          disabled={!!busy}
+          className="flex items-center gap-1.5 rounded-lg border border-rose-300 px-4 py-2 text-xs font-semibold text-rose-600 hover:bg-rose-50 disabled:opacity-50 dark:hover:bg-rose-900/10"
+        >
+          {busy === "rejected" ? <Loader2 size={12} className="animate-spin" /> : <ShieldX size={12} />}
+          Reject
+        </button>
+      </div>
     </div>
   );
 }
@@ -260,13 +423,19 @@ function JobCard({
   isActive: boolean;
   onSelect: () => void;
 }) {
-  const statusIcon = job.status === "completed"
-    ? <CheckCircle2 size={13} className="text-emerald-500" />
-    : job.status === "failed"
-      ? <X size={13} className="text-rose-500" />
-      : job.status === "processing"
-        ? <Loader2 size={13} className="animate-spin text-blue-500" />
-        : <Clock size={13} className="text-slate-400" />;
+  const statusIcon = job.reviewDecision === "approved"
+    ? <ShieldCheck size={13} className="text-emerald-600" />
+    : job.reviewDecision === "rejected"
+      ? <ShieldX size={13} className="text-rose-500" />
+      : job.status === "completed"
+        ? <CheckCircle2 size={13} className="text-emerald-500" />
+        : job.status === "review_required"
+          ? <AlertTriangle size={13} className="text-amber-500" />
+          : job.status === "failed"
+            ? <X size={13} className="text-rose-500" />
+            : job.status === "processing"
+              ? <Loader2 size={13} className="animate-spin text-blue-500" />
+              : <Clock size={13} className="text-slate-400" />;
 
   return (
     <button
@@ -405,9 +574,9 @@ export function AISegmentationCenter({ caseId }: Props) {
     try {
       const list = await listSegmentationJobs(caseId);
       setJobs(list);
-      // Auto-select first completed job
+      // Auto-select the first job with results (or one awaiting review)
       if (!activeJob) {
-        const completed = list.find(j => j.status === "completed");
+        const completed = list.find(j => j.status === "completed" || j.status === "review_required");
         if (completed) loadJob(completed.id);
       }
     } catch (e: any) {
@@ -586,9 +755,19 @@ export function AISegmentationCenter({ caseId }: Props) {
                       segment={selectedSegment}
                       caseId={caseId}
                       jobId={activeJob.id}
+                      occupiedFdi={new Set(segments.map(s => s.toothNumber))}
                       onCorrected={() => loadJob(activeJob.id)}
                     />
                   </div>
+                )}
+
+                {/* Clinical review sign-off */}
+                {(activeJob.status === "completed" || activeJob.status === "review_required") && (
+                  <ReviewPanel
+                    job={activeJob}
+                    caseId={caseId}
+                    onReviewed={() => loadJob(activeJob.id)}
+                  />
                 )}
 
                 {/* Corrections history */}

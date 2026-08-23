@@ -6,8 +6,14 @@ STL files, so this module carves the original scan into labelled submeshes.
 
 Vertices are re-indexed from the ORIGINAL scan mesh — no re-centering, no
 normalization — so every exported submesh shares the source coordinate frame.
+
+The raw per-vertex labels are also persisted as vertex_labels.json in the
+output directory: the job payload does not carry them and they are otherwise
+unrecoverable once the job's Redis record expires, which would leave nothing
+for vertex-level segmentation editing to correct against.
 """
 
+import json
 import logging
 import os
 from typing import Dict, List, Optional
@@ -92,6 +98,19 @@ def extract_labeled_meshes(
         if not teeth_written:
             logger.warning("Mesh extraction produced no tooth submeshes (%s)", file_path)
             return None
+
+        # Persist the raw labels next to the submeshes so vertex-level
+        # corrections have a baseline after the job record expires.
+        try:
+            with open(os.path.join(output_dir, "vertex_labels.json"), "w", encoding="utf-8") as fh:
+                json.dump(
+                    {"source_file": os.path.basename(file_path),
+                     "vertex_count": int(len(labels)),
+                     "labels": [int(v) for v in labels]},
+                    fh,
+                )
+        except OSError as exc:
+            logger.warning("Could not persist vertex_labels.json: %s", exc)
 
         logger.info(
             "Extracted %d tooth meshes (gingiva=%s) to %s",

@@ -20,8 +20,11 @@ export type JobStatus =
   | 'processing'
   | 'completed'
   | 'failed'
-  | 'manual_review_required'
+  | 'review_required'
+  | 'cancelled'
   | 'unavailable';
+
+export type ReviewDecision = 'approved' | 'rejected';
 export type CorrectionType =
   | 'fix_geometry' | 'improve_segmentation' | 'repair_mesh'
   | 'recalculate_landmarks' | 'rebuild_tooth' | 'merge_teeth'
@@ -77,6 +80,11 @@ export interface SegmentationJob {
   startedAt: string | null;
   completedAt: string | null;
   submittedByEmail: string | null;
+  reviewDecision: ReviewDecision | null;
+  reviewNote: string | null;
+  reviewedBy: string | null;
+  reviewedByEmail: string | null;
+  reviewedAt: string | null;
   createdAt: string;
   engine?: string;
   engineVersion?: string;
@@ -145,7 +153,15 @@ export const applyCorrection = (caseId: string, jobId: string, dto: {
 export const updateSegment = (caseId: string, jobId: string, toothNumber: number, patch: {
   isLocked?: boolean;
   isMissing?: boolean;
+  /** Reassign the segment to a different FDI number (relabel). */
+  newToothNumber?: number;
 }) => api.patch<ToothSegment>(`/api/cases/${caseId}/segmentation/jobs/${jobId}/segments/${toothNumber}`, patch);
+
+/** Clinical sign-off: approve or reject a segmentation result (cases:approve). */
+export const reviewSegmentationJob = (caseId: string, jobId: string, dto: {
+  decision: ReviewDecision;
+  note?: string;
+}) => api.post<SegmentationJob>(`/api/cases/${caseId}/segmentation/jobs/${jobId}/review`, dto);
 
 // ─── Phase 24: Mask editing ───────────────────────────────────────────────────
 

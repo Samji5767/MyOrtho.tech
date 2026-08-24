@@ -857,6 +857,7 @@ def _build_aligner_shells(stage_dir: str, req: "GenerateAlignerShellsRequest") -
         report = mesh_processor.validate_mesh(result["output_path"])
         validations.append({
             "file": os.path.basename(result["output_path"]),
+            "trim_mode": result.get("trim_mode"),
             "valid": bool(report.get("valid")),
             "watertight": bool(report.get("watertight")),
             "hole_count": report.get("hole_count"),

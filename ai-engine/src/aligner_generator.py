@@ -14,6 +14,7 @@ class AlignerGenerationEngine:
         trim_line_height_mm: float = 1.2,
         voxel_pitch_mm: float = 0.4,
         gap_bridge_mm: float = 1.0,
+        trim_offset_mm: float = 0.5,
     ) -> dict:
         """
         Create a watertight aligner shell from a staged dental model mesh.
@@ -32,9 +33,17 @@ class AlignerGenerationEngine:
              set of outside voxels within ``thickness_mm`` of the model —
              i.e. a uniform-thickness drape over the model, the geometric
              idealization of a thermoformed foil.
-          4. Gingival trim: shell voxels below ``z_min + trim_line_height_mm``
-             are removed from the voxel grid BEFORE meshing, so the cut edge
-             is closed by the surfacing step rather than leaving an open rim.
+          4. Gingival trim. Per-tooth meshes carved from segmentation are open
+             exactly at the cervical margin, so the staged arch mesh's boundary
+             edges ARE the gingival margin curves.  When boundary edges exist,
+             the trim surface is a nearest-neighbour heightmap over those
+             margin points, offset ``trim_offset_mm`` below them — a true
+             scalloped cut following each tooth's contour.  Closed meshes have
+             no boundary, so the cut falls back to the planar
+             ``z_min + trim_line_height_mm`` (reported as
+             ``trim_mode: planar_fallback``).  Either way the cut happens in
+             voxel space BEFORE meshing, so the cut edge is closed by the
+             surfacing step rather than leaving an open rim.
           5. Marching cubes over the zero-padded shell grid yields a closed,
              watertight triangle mesh; light Taubin smoothing reduces voxel
              staircase artifacts without changing topology.
@@ -43,13 +52,13 @@ class AlignerGenerationEngine:
         Coordinate convention: Z+ = occlusal (teeth protrude upward).
 
         Accuracy bounds: surfaces are quantized at ``voxel_pitch_mm``, so wall
-        thickness is ``thickness_mm`` ± one pitch; the trim line is planar,
-        not scalloped to the gingival contour.
+        thickness is ``thickness_mm`` ± one pitch and the scalloped trim
+        follows the margin with the same quantization.
 
         Clinical disclaimer: geometric approximation only — uniform-thickness
-        drape, filled undercuts, linear trim.  Not clinically validated.  Do
-        not use outputs for clinical or manufacturing purposes without a
-        licensed clinician's review.
+        drape, filled undercuts, margin-derived (or fallback planar) trim.
+        Not clinically validated.  Do not use outputs for clinical or
+        manufacturing purposes without a licensed clinician's review.
         """
         try:
             import trimesh  # type: ignore
@@ -113,16 +122,52 @@ class AlignerGenerationEngine:
             shell = outside & (dist <= (thickness_mm + pitch * 0.5))
 
             # ── Step 4: gingival trim in voxel space ─────────────────────────
+            # Boundary edges (edges used by exactly one face) trace the open
+            # cervical margins of segmentation-carved tooth meshes.
+            edges = mesh.edges_sorted
+            _uniq, counts = np.unique(edges, axis=0, return_counts=True)
+            boundary_edges = _uniq[counts == 1]
+            boundary_vertex_ids = np.unique(boundary_edges)
+            margin_points = mesh.vertices[boundary_vertex_ids]
+
+            trim_mode = "none"
             z_min_world = float(mesh.vertices[:, 2].min())
             z_max_world = float(mesh.vertices[:, 2].max())
-            if (z_max_world - z_min_world) > 1.0:
+
+            if margin_points.shape[0] >= 30:
+                # Scalloped trim: per-column cut height = z of the nearest
+                # margin point (in XY), lowered by trim_offset_mm so the shell
+                # retains a small skirt past the margin.
+                from scipy.spatial import cKDTree
+
+                nx, ny, nz = shell.shape
+                gx = origin[0] + (np.arange(nx) + 0.5) * pitch
+                gy = origin[1] + (np.arange(ny) + 0.5) * pitch
+                cols = np.stack(np.meshgrid(gx, gy, indexing="ij"), axis=-1).reshape(-1, 2)
+                _d, idx = cKDTree(margin_points[:, :2]).query(cols)
+                trim_z_col = (margin_points[idx, 2] - float(trim_offset_mm)).reshape(nx, ny)
+
+                world_z = origin[2] + (np.arange(nz) + 0.5) * pitch
+                below = world_z[None, None, :] < trim_z_col[:, :, None]
+                trimmed = shell & ~below
+                if trimmed.sum() > 100:  # sanity: shell must survive the cut
+                    shell = trimmed
+                    trim_mode = "scalloped"
+                else:
+                    logger.warning(
+                        "Scalloped trim would remove almost the whole shell; "
+                        "falling back to planar trim"
+                    )
+
+            if trim_mode == "none" and (z_max_world - z_min_world) > 1.0:
                 trim_z_world = z_min_world + float(trim_line_height_mm)
                 trim_k = int(np.floor((trim_z_world - origin[2]) / pitch))
                 if 0 < trim_k < shell.shape[2] - 1:
                     trimmed = shell.copy()
                     trimmed[:, :, :trim_k] = False
-                    if trimmed.sum() > 100:  # sanity: shell must survive the cut
+                    if trimmed.sum() > 100:
                         shell = trimmed
+                        trim_mode = "planar_fallback"
                     else:
                         logger.warning(
                             "Gingival trim would remove almost the whole shell "
@@ -158,6 +203,14 @@ class AlignerGenerationEngine:
                 f"({len(out.vertices)} verts, {len(out.faces)} faces, "
                 f"watertight={watertight}, pitch={pitch}mm)"
             )
+            trim_desc = {
+                "scalloped": (
+                    "scalloped gingival trim derived from the segmented cervical "
+                    f"margin, offset {trim_offset_mm} mm past it"
+                ),
+                "planar_fallback": "planar gingival trim (mesh had no margin boundary to scallop along)",
+                "none": "no gingival trim applied",
+            }[trim_mode]
             return {
                 "success": True,
                 "output_path": output_path,
@@ -165,13 +218,15 @@ class AlignerGenerationEngine:
                 "face_count": len(out.faces),
                 "watertight": watertight,
                 "thickness_mm": thickness_mm,
+                "trim_mode": trim_mode,
+                "trim_offset_mm": trim_offset_mm,
                 "trim_line_height_mm": trim_line_height_mm,
                 "voxel_pitch_mm": pitch,
                 "method": "voxel_sdf_offset_marching_cubes",
                 "disclaimer": (
                     "Aligner shell is a geometric approximation: uniform-thickness "
                     f"drape quantized at {pitch} mm voxels, undercuts filled by the "
-                    "solid-model abstraction, linear (not scalloped) gingival trim. "
+                    f"solid-model abstraction, {trim_desc}. "
                     "Not clinically validated. Requires review by a licensed clinician."
                 ),
             }

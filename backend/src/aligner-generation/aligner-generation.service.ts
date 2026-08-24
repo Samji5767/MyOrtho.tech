@@ -594,7 +594,8 @@ export class AlignerGenerationService {
         passed: plan.stlExportReady,
         details: plan.stlExportReady
           ? 'STL files are ready for manufacturing'
-          : 'Per-tooth mesh extraction is not yet implemented. Aligner shells cannot be generated until the segmentation pipeline produces individual tooth mesh files.',
+          : 'Stage STL files have not been generated yet. Run POST .../aligner-generation/generate-stl ' +
+            '(requires a completed AI segmentation with per-tooth meshes for this case).',
       },
       {
         name: 'Stage Count',
@@ -992,10 +993,9 @@ export class AlignerGenerationService {
     const row = rows[0];
     if (!row.stl_export_ready || !row.stl_export_path) {
       throw new ServiceUnavailableException(
-        'STL export is not ready. ' +
-        'Aligner shell generation requires per-tooth mesh files produced by the AI segmentation pipeline. ' +
-        'The segmentation pipeline is not operational (MODEL_CHECKPOINT not loaded). ' +
-        'Call POST .../stl-ready once a real manufacturing pipeline produces output files.',
+        'STL export is not ready. Generate the per-stage meshes first with ' +
+        'POST .../aligner-generation/generate-stl — this requires a completed ' +
+        'AI segmentation with per-tooth mesh files for the case.',
       );
     }
     // Containment re-check on read: rows written before path validation

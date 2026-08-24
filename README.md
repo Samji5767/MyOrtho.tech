@@ -45,7 +45,7 @@ AI Engine (FastAPI)      PostgreSQL 15   Redis 7
 8. **3D Viewer** — React Three Fiber STL viewer with FDI tooth labelling
 9. **Treatment Planning** — aligner stage authoring, per-tooth movement records
 10. **Approval** — doctor approval gate before any export is possible
-11. **Manufacturing Export** — G-code / zip export with aligner-stage metadata
+11. **Manufacturing Export** — validated STL/ZIP export of stage models and aligner shells with per-shell mesh-validation reports
 12. **Settings** — profile management, theme, keyboard shortcuts, feature flags
 
 ---

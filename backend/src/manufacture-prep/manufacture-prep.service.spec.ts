@@ -113,7 +113,8 @@ describe('ManufacturePrepService.createExport', () => {
     const params = insert[1] as unknown[];
     expect(params[7]).toBe('completed');
     expect(params[9]).toBe(ZIP_PATH);
-    const manifest = JSON.parse(params[10] as string) as { file?: { sizeBytes: number } };
+    expect(params[10]).toBe(12345); // file_size_bytes column
+    const manifest = JSON.parse(params[11] as string) as { file?: { sizeBytes: number } };
     expect(manifest.file?.sizeBytes).toBe(12345);
   });
 

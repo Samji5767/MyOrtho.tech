@@ -28,7 +28,7 @@ import {
   StatusBadge,
 } from "@/components/DesignSystem";
 import { fetchCases, fetchCase, type CaseListItem } from "@/lib/api/cases";
-import dynamic from "next/dynamic";
+import ManufacturingExportPanel from "@/components/ManufacturingExportPanel";
 
 
 // ─── Export format catalogue ─────────────────────────────────────────────────
@@ -236,12 +236,7 @@ function ExportPanelWrapper({ caseId }: { caseId: string }) {
     );
   }
 
-  return (
-    <div className="rounded-xl border border-[color:var(--border)] bg-[color:var(--card)] p-6 text-center text-sm text-[color:var(--muted-foreground)]">
-      <p>Case <span className="font-mono font-semibold">{caseId}</span> is approved and ready for manufacturing export.</p>
-      <p className="mt-2">Use the case detail page to download the STL package.</p>
-    </div>
-  );
+  return <ManufacturingExportPanel caseId={caseId} planId={planId} />;
 }
 
 // ─── Printer compatibility ────────────────────────────────────────────────────

@@ -66,8 +66,10 @@ export class AlignerGenerationController {
     @Res({ passthrough: true }) res: Response,
   ): Promise<StreamableFile> {
     const { filePath, planId: pid } = await this.svc.getStlFile(planId, req.user.orgId);
-    res.setHeader('Content-Disposition', `attachment; filename="aligner-plan-${pid}.stl"`);
-    res.setHeader('Content-Type', 'model/stl');
+    // The deliverable is a ZIP of per-stage STL files — label it as such.
+    const ext = filePath.toLowerCase().endsWith('.zip') ? 'zip' : 'stl';
+    res.setHeader('Content-Disposition', `attachment; filename="aligner-plan-${pid}.${ext}"`);
+    res.setHeader('Content-Type', ext === 'zip' ? 'application/zip' : 'model/stl');
     res.setHeader('Cache-Control', 'private, no-cache');
     return new StreamableFile(fs.createReadStream(filePath));
   }

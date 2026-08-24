@@ -6,6 +6,18 @@ export type ExportType =
   | 'ibt' | 'surgical_guide' | 'full_case' | 'qa_report';
 export type ExportStatus = 'pending' | 'processing' | 'completed' | 'failed';
 
+export interface ShellValidationEntry {
+  file: string;
+  valid: boolean;
+  watertight?: boolean;
+  hole_count?: number;
+  non_manifold_edge_ratio?: number;
+  connected_component_count?: number;
+  issues: string[];
+}
+
+/** Matches the backend's format(): storage paths stay server-side; clients
+ *  get fileName/size and download via GET .../exports/:exportId/download. */
 export interface ManufactureExport {
   id: string;
   caseId: string;
@@ -15,15 +27,16 @@ export interface ManufactureExport {
   stageRangeFrom: number | null;
   stageRangeTo: number | null;
   status: ExportStatus;
-  filePath: string | null;
+  fileName: string | null;
   fileSizeBytes: number | null;
+  hasFile: boolean;
   manifest: {
-    fileCount: number;
-    files: string[];
-    format: string;
-    exportType: string;
-    generatedAt: string;
-    estimatedSizeBytes: number;
+    deliverable?: 'file' | 'inline_json';
+    file?: { name: string; sizeBytes: number; verifiedAt: string };
+    qaData?: Record<string, unknown>;
+    meshValidation?: Record<string, unknown>;
+    shellValidation?: ShellValidationEntry[];
+    [key: string]: unknown;
   };
   errorMessage: string | null;
   generatedByEmail: string | null;
@@ -41,6 +54,15 @@ export const EXPORT_TYPE_LABELS: Record<ExportType, string> = {
   full_case:         'Full Case Package',
   qa_report:         'QA Report Only',
 };
+
+/** Types the backend can actually fulfill today. attachment_models, ibt and
+ *  surgical_guide are refused with a 400 — no geometry pipeline exists yet. */
+export const AVAILABLE_EXPORT_TYPES: ExportType[] = [
+  'stage_models', 'aligner_models', 'full_case', 'qa_report',
+];
+
+export const exportDownloadUrl = (caseId: string, exportId: string) =>
+  `/api/cases/${caseId}/manufacture/exports/${exportId}/download`;
 
 export const FORMAT_LABELS: Record<ExportFormat, string> = {
   stl: 'STL',

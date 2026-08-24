@@ -173,6 +173,7 @@ export class ManufacturePrepService {
     let status: 'completed' | 'processing' | 'failed' = 'failed';
     let filePath: string | null = null;
     let errorMsg: string | null = null;
+    let fileSizeBytes: number | null = null;
 
     if (!needsStageStls) {
       // qa_report: the deliverable is the QA data itself, assembled below
@@ -235,9 +236,27 @@ export class ManufacturePrepService {
             signal: AbortSignal.timeout(300_000),
           });
           if (res.ok) {
-            const body = (await res.json()) as { zip_path: string };
-            filePath = body.zip_path;
-            status = 'completed';
+            const body = (await res.json()) as {
+              zip_path: string;
+              shells_generated?: number;
+              errors?: Array<{ file: string; error: string }>;
+              validations?: Array<{ file: string; valid: boolean; issues: string[] }>;
+            };
+            // The AI engine geometrically validates every shell it produces
+            // (watertightness, manifoldness, bounds). Record the per-shell
+            // reports, and refuse the export if any stage failed — a set
+            // with missing stages is not a manufacturable deliverable.
+            manifest['shellValidation'] = body.validations ?? [];
+            if ((body.errors ?? []).length > 0) {
+              status = 'failed';
+              errorMsg =
+                'Export blocked: one or more aligner shells failed generation or ' +
+                'mesh validation — ' +
+                body.errors!.map(e => `${e.file}: ${e.error}`).join('; ');
+            } else {
+              filePath = body.zip_path;
+              status = 'completed';
+            }
           } else {
             const errBody = await res.text().catch(() => '');
             errorMsg = `AI engine returned ${res.status}: ${errBody}`;
@@ -288,6 +307,7 @@ export class ManufacturePrepService {
         filePath = null;
       } else {
         filePath = safe;
+        fileSizeBytes = stat.size;
         manifest['deliverable'] = 'file';
         manifest['file'] = {
           name: path.basename(safe),
@@ -322,8 +342,21 @@ export class ManufacturePrepService {
           } catch {
             manifest['meshValidation'] = { status: 'unavailable' };
           }
+        } else if (dto.exportType === 'aligner_models') {
+          // The zip's STL members were each validated at generation time;
+          // the per-shell reports live in manifest.shellValidation.
+          manifest['meshValidation'] = {
+            status: 'validated_per_shell_at_generation',
+            reason: 'see shellValidation for the per-stage reports',
+          };
         } else {
-          manifest['meshValidation'] = { status: 'not_applicable', reason: 'non-STL deliverable' };
+          // stage_models / full_case zips contain reference arch meshes
+          // (concatenated per-tooth submeshes) — they are previews of tooth
+          // positions, not print solids, so solid-mesh checks do not apply.
+          manifest['meshValidation'] = {
+            status: 'not_applicable',
+            reason: 'reference stage meshes, not print solids; aligner_models exports carry per-shell validation',
+          };
         }
       }
     }
@@ -332,8 +365,8 @@ export class ManufacturePrepService {
       `INSERT INTO manufacture_exports
          (case_id, treatment_plan_id, organization_id, export_format, export_type,
           stage_range_from, stage_range_to, status, error_message, file_path,
-          manifest, generated_by, generated_at, completed_at)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,NOW(),
+          file_size_bytes, manifest, generated_by, generated_at, completed_at)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,NOW(),
            CASE WHEN $8 = 'completed' THEN NOW() ELSE NULL END)
          RETURNING *`,
       [
@@ -347,6 +380,7 @@ export class ManufacturePrepService {
         status,
         errorMsg,
         filePath,
+        fileSizeBytes,
         JSON.stringify(manifest),
         userId,
       ],

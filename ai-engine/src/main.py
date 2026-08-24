@@ -749,21 +749,31 @@ def _build_stage_stls(seg_dir: str, req: "GenerateStageStlsRequest") -> dict:
             tz = (presc.extrusion_mm - presc.intrusion_mm) * frac
             translation = np.array([tx, ty, tz])
 
-            # Rotation around Z through tooth centroid (long-axis rotation)
-            rot_deg = presc.rotation_deg * frac
-            rot_rad = math.radians(rot_deg)
+            # Rotations about the tooth centroid, in the same arch-frame
+            # approximation as the translations: rotation (long-axis) about Z,
+            # torque about X (the mesiodistal axis). Torque was previously
+            # accepted in the prescription but silently dropped here.
+            rot_rad = math.radians(presc.rotation_deg * frac)
+            torque_rad = math.radians(presc.torque_deg * frac)
             centroid = base_mesh.centroid
 
             moved = base_mesh.copy()
-            moved.vertices = moved.vertices + translation
+            verts = moved.vertices - centroid
+            if abs(torque_rad) > 1e-6:
+                cos_t, sin_t = math.cos(torque_rad), math.sin(torque_rad)
+                y_rot = verts[:, 1] * cos_t - verts[:, 2] * sin_t
+                z_rot = verts[:, 1] * sin_t + verts[:, 2] * cos_t
+                verts = verts.copy()
+                verts[:, 1] = y_rot
+                verts[:, 2] = z_rot
             if abs(rot_rad) > 1e-6:
                 cos_r, sin_r = math.cos(rot_rad), math.sin(rot_rad)
-                verts = moved.vertices - centroid
                 x_rot = verts[:, 0] * cos_r - verts[:, 1] * sin_r
                 y_rot = verts[:, 0] * sin_r + verts[:, 1] * cos_r
+                verts = verts.copy()
                 verts[:, 0] = x_rot
                 verts[:, 1] = y_rot
-                moved.vertices = verts + centroid
+            moved.vertices = verts + centroid + translation
 
             stage_meshes.append(moved)
 
@@ -829,6 +839,7 @@ def _build_aligner_shells(stage_dir: str, req: "GenerateAlignerShellsRequest") -
 
     aligner_paths = []
     errors = []
+    validations = []
     for fname in stage_files:
         stage_path = os.path.join(stage_dir, fname)
         result = aligner_generator.generate_aligner_shell(
@@ -836,10 +847,30 @@ def _build_aligner_shells(stage_dir: str, req: "GenerateAlignerShellsRequest") -
             thickness_mm=req.thickness_mm,
             trim_line_height_mm=req.trim_line_height_mm,
         )
-        if result.get("success"):
+        if not result.get("success"):
+            errors.append({"file": fname, "error": result.get("detail", result.get("error"))})
+            continue
+
+        # Every shell is geometrically validated before it can ship: a shell
+        # that fails the same gate we apply to uploaded scans is an error,
+        # not a deliverable.
+        report = mesh_processor.validate_mesh(result["output_path"])
+        validations.append({
+            "file": os.path.basename(result["output_path"]),
+            "valid": bool(report.get("valid")),
+            "watertight": bool(report.get("watertight")),
+            "hole_count": report.get("hole_count"),
+            "non_manifold_edge_ratio": report.get("non_manifold_edge_ratio"),
+            "connected_component_count": report.get("connected_component_count"),
+            "issues": report.get("issues", []),
+        })
+        if report.get("valid"):
             aligner_paths.append(result["output_path"])
         else:
-            errors.append({"file": fname, "error": result.get("detail", result.get("error"))})
+            errors.append({
+                "file": fname,
+                "error": f"generated shell failed mesh validation: {'; '.join(report.get('issues', []))}",
+            })
 
     if not aligner_paths:
         raise ValueError(f"All {len(stage_files)} stage files failed: {errors[0]['error']}")
@@ -855,6 +886,7 @@ def _build_aligner_shells(stage_dir: str, req: "GenerateAlignerShellsRequest") -
         "plan_id": req.plan_id,
         "shells_generated": len(aligner_paths),
         "errors": errors,
+        "validations": validations,
         "zip_path": zip_path,
     }
 

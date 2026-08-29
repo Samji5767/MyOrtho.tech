@@ -29,6 +29,7 @@ import {
 } from "@/components/DesignSystem";
 import { fetchCases, fetchCase, type CaseListItem } from "@/lib/api/cases";
 import ManufacturingExportPanel from "@/components/ManufacturingExportPanel";
+import AlignerGenerationPanel from "@/components/AlignerGenerationPanel";
 
 
 // ─── Export format catalogue ─────────────────────────────────────────────────
@@ -236,7 +237,12 @@ function ExportPanelWrapper({ caseId }: { caseId: string }) {
     );
   }
 
-  return <ManufacturingExportPanel caseId={caseId} planId={planId} />;
+  return (
+    <div className="space-y-4">
+      <AlignerGenerationPanel caseId={caseId} planId={planId} />
+      <ManufacturingExportPanel caseId={caseId} planId={planId} />
+    </div>
+  );
 }
 
 // ─── Printer compatibility ────────────────────────────────────────────────────

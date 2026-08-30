@@ -7,7 +7,9 @@
 set -euo pipefail
 
 APP_DIR="/opt/myortho"
-BRANCH="${1:-claude/myortho-production-validation-dlmvsi}"
+# Production deploys come from main; pass a branch argument only for a
+# deliberate pre-release test of an unmerged branch.
+BRANCH="${1:-main}"
 REPO_URL="https://github.com/samji5767/myortho.tech.git"
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
 BACKUP_DIR="${APP_DIR}/backups/${TIMESTAMP}"

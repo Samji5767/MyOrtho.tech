@@ -34,7 +34,8 @@ export interface ToothForCollision {
 
 export interface ToothSceneTransform {
   position: [number, number, number];
-  rotation: [number, number, number];
+  /** Rotation quaternion [x, y, z, w] applied about the tooth centroid. */
+  quaternion: [number, number, number, number];
 }
 
 /** Interproximal contact flag threshold (mm). */
@@ -64,16 +65,14 @@ function getBVH(geometry: THREE.BufferGeometry): MeshBVH {
 }
 
 function sceneMatrix(tooth: ToothForCollision, t: ToothSceneTransform): THREE.Matrix4 {
-  // Mirror of the viewer's <group position={centroid + t.position} rotation={t.rotation}>:
+  // Mirror of the viewer's <group position={centroid + t.position} quaternion={...}>:
   // translation to (centroid + stage offset), rotation about the centroid pivot.
   const pos = new THREE.Vector3(
     tooth.centroid[0] + t.position[0],
     tooth.centroid[1] + t.position[1],
     tooth.centroid[2] + t.position[2],
   );
-  const quat = new THREE.Quaternion().setFromEuler(
-    new THREE.Euler(t.rotation[0], t.rotation[1], t.rotation[2], "XYZ"),
-  );
+  const quat = new THREE.Quaternion(t.quaternion[0], t.quaternion[1], t.quaternion[2], t.quaternion[3]);
   return new THREE.Matrix4().compose(pos, quat, new THREE.Vector3(1, 1, 1));
 }
 

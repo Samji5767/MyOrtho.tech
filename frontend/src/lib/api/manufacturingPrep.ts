@@ -55,10 +55,10 @@ export const EXPORT_TYPE_LABELS: Record<ExportType, string> = {
   qa_report:         'QA Report Only',
 };
 
-/** Types the backend can actually fulfill today. attachment_models, ibt and
- *  surgical_guide are refused with a 400 — no geometry pipeline exists yet. */
+/** Types the backend can actually fulfill today. ibt and surgical_guide are
+ *  refused with a 400 — no geometry pipeline exists for them yet. */
 export const AVAILABLE_EXPORT_TYPES: ExportType[] = [
-  'stage_models', 'aligner_models', 'full_case', 'qa_report',
+  'stage_models', 'aligner_models', 'attachment_models', 'full_case', 'qa_report',
 ];
 
 export const exportDownloadUrl = (caseId: string, exportId: string) =>

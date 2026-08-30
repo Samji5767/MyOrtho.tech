@@ -299,6 +299,21 @@ class GenerateAlignerShellsRequest(BaseModel):
     trim_line_height_mm: float = 1.2
 
 
+class AttachmentSpec(BaseModel):
+    fdi_number: int
+    attachment_type: str
+    width_mm: float = 3.0
+    height_mm: float = 2.0
+    depth_mm: float = 0.5
+    surface: str = "buccal"          # buccal | lingual | occlusal
+
+
+class GenerateAttachmentModelsRequest(BaseModel):
+    plan_id: str
+    segmented_mesh_dir: str          # directory containing tooth_fdi_{N}.stl files
+    attachments: list[AttachmentSpec]
+
+
 # ── Background segmentation task (async, with timeout) ───────────────────────
 
 async def run_segmentation_task(job_id: str, req: SegmentationRequest) -> None:
@@ -884,6 +899,65 @@ def _build_aligner_shells(stage_dir: str, req: "GenerateAlignerShellsRequest") -
         "validations": validations,
         "zip_path": zip_path,
     }
+
+
+@app.post(
+    "/ai/generate-attachment-models",
+    dependencies=[Depends(require_auth)],
+)
+async def generate_attachment_models_endpoint(req: GenerateAttachmentModelsRequest):
+    """
+    Build watertight attachment bodies on the segmented tooth surfaces from
+    the plan's attachment prescriptions and zip them. Bodies are separate
+    solids for bonding templates — see attachment_generator for the honest
+    shape-mapping and placement notes carried in the response.
+    """
+    safe_dir = _assert_safe_path(req.segmented_mesh_dir)
+    if not os.path.isdir(safe_dir):
+        raise HTTPException(status_code=400, detail="segmented_mesh_dir does not exist")
+    if not req.attachments:
+        raise HTTPException(status_code=400, detail="No attachments supplied")
+
+    try:
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(
+            _executor, lambda: _build_attachment_models(safe_dir, req)
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except Exception as exc:
+        logger.error("generate_attachment_models error: %s", exc)
+        raise HTTPException(status_code=500, detail="Internal processing error") from exc
+
+
+def _build_attachment_models(seg_dir: str, req: "GenerateAttachmentModelsRequest") -> dict:
+    """Synchronous worker: load tooth meshes + frames, delegate to generator."""
+    from src.attachment_generator import generate_attachment_models
+    from src.tooth_frames import compute_tooth_frames
+
+    tooth_meshes: dict[int, "trimesh.Trimesh"] = {}
+    for p in os.listdir(seg_dir):
+        if p.startswith("tooth_fdi_") and p.endswith(".stl"):
+            try:
+                fdi = int(p[len("tooth_fdi_"):-len(".stl")])
+                tooth_meshes[fdi] = trimesh.load(os.path.join(seg_dir, p), force="mesh")
+            except Exception:
+                continue
+    if not tooth_meshes:
+        raise ValueError("No tooth STL files found in segmented_mesh_dir")
+
+    centroids = {
+        fdi: tuple(float(v) for v in m.centroid) for fdi, m in tooth_meshes.items()
+    }
+    frames = compute_tooth_frames(centroids, up_hint=(0.0, 0.0, 1.0))
+
+    return generate_attachment_models(
+        seg_dir,
+        req.plan_id,
+        [a.model_dump() for a in req.attachments],
+        frames,
+        tooth_meshes,
+    )
 
 
 @app.get(

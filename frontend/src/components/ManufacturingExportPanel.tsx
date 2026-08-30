@@ -236,10 +236,11 @@ export function ManufacturingExportPanel({ caseId, planId }: { caseId: string; p
           </button>
         </div>
         <p className="text-[11px] leading-snug text-[color:var(--muted-foreground)]">
-          Aligner shell exports generate watertight offset shells from the per-stage meshes and
-          validate every shell geometrically before packaging; exports with any invalid shell are
-          refused. Attachment templates, bonding trays, and surgical guides have no geometry
-          pipeline yet and cannot be exported.
+          Aligner shell exports generate watertight offset shells from the per-stage meshes;
+          attachment exports build watertight bodies on the segmented tooth surfaces from the
+          plan&apos;s prescriptions. Every solid is geometrically validated before packaging and
+          exports with any invalid or missing body are refused. Bonding trays and surgical
+          guides have no geometry pipeline yet and cannot be exported.
         </p>
         {error && <p className="text-xs text-rose-600">{error}</p>}
       </div>

@@ -125,11 +125,7 @@ export class ManufacturePrepService {
 
     // No geometry pipeline exists for these appliance types. Refuse honestly
     // instead of recording a "completed" export with no file.
-    if (
-      dto.exportType === 'attachment_models' ||
-      dto.exportType === 'ibt' ||
-      dto.exportType === 'surgical_guide'
-    ) {
+    if (dto.exportType === 'ibt' || dto.exportType === 'surgical_guide') {
       throw new BadRequestException(
         `Export type "${dto.exportType}" is not available: no geometry pipeline ` +
         'is implemented for this appliance type yet.',
@@ -175,7 +171,84 @@ export class ManufacturePrepService {
     let errorMsg: string | null = null;
     let fileSizeBytes: number | null = null;
 
-    if (!needsStageStls) {
+    if (dto.exportType === 'attachment_models') {
+      // Attachment bodies are generated from the plan's attachment
+      // prescriptions on the segmented tooth surfaces — needs segmentation
+      // output but not stage STLs.
+      const attPlanId = dto.treatmentPlanId ?? genPlan?.plan_id ?? null;
+      const { rows: attRows } = attPlanId
+        ? await this.pool.query(
+            `SELECT fdi_number, attachment_type, width_mm, height_mm, depth_mm, surface
+               FROM treatment_attachments WHERE treatment_plan_id = $1
+               ORDER BY fdi_number`,
+            [attPlanId],
+          )
+        : { rows: [] as Record<string, unknown>[] };
+      const { rows: segRows } = await this.pool.query(
+        `SELECT segmented_mesh_path FROM segmentation_results
+          WHERE case_id = $1 AND segmented_mesh_path IS NOT NULL
+          ORDER BY created_at DESC LIMIT 1`,
+        [caseId],
+      );
+
+      if (!attRows.length) {
+        errorMsg =
+          'No attachments are prescribed on this treatment plan. ' +
+          'Add attachments in the planning panel before exporting attachment templates.';
+      } else if (!segRows.length) {
+        errorMsg =
+          'No segmented tooth meshes available. Complete AI segmentation for this case first.';
+      } else {
+        try {
+          const res = await fetch(`${AI_ENGINE_URL}/ai/generate-attachment-models`, {
+            method: 'POST',
+            headers: AI_ENGINE_HEADERS(),
+            body: JSON.stringify({
+              plan_id: attPlanId,
+              segmented_mesh_dir: segRows[0].segmented_mesh_path,
+              attachments: attRows.map(r => ({
+                fdi_number: r.fdi_number,
+                attachment_type: r.attachment_type,
+                width_mm: Number(r.width_mm),
+                height_mm: Number(r.height_mm),
+                depth_mm: Number(r.depth_mm),
+                surface: r.surface,
+              })),
+            }),
+            signal: AbortSignal.timeout(120_000),
+          });
+          if (res.ok) {
+            const body = (await res.json()) as {
+              zip_path: string;
+              bodies?: unknown[];
+              errors?: Array<{ fdi: number; type: string; error: string }>;
+              note?: string;
+            };
+            manifest['attachmentBodies'] = body.bodies ?? [];
+            manifest['attachmentNote'] = body.note ?? null;
+            if ((body.errors ?? []).length > 0) {
+              // A template missing prescribed attachments is not a deliverable.
+              status = 'failed';
+              errorMsg =
+                'Export blocked: one or more attachment bodies could not be generated — ' +
+                body.errors!.map(e => `FDI ${e.fdi} (${e.type}): ${e.error}`).join('; ');
+            } else {
+              filePath = body.zip_path;
+              status = 'completed';
+              manifest['meshValidation'] = {
+                status: 'validated_per_body_at_generation',
+                reason: 'every attachment body watertight-checked; see attachmentBodies',
+              };
+            }
+          } else {
+            const errBody = await res.text().catch(() => '');
+            errorMsg = `AI engine returned ${res.status}: ${errBody.slice(0, 300)}`;
+          }
+        } catch (err) {
+          errorMsg = `Attachment generation failed: ${String(err)}`;
+        }
+      }
+    } else if (!needsStageStls) {
       // qa_report: the deliverable is the QA data itself, assembled below
       // from real database rows and returned inline in the manifest.
       status = 'completed';
@@ -348,6 +421,11 @@ export class ManufacturePrepService {
           manifest['meshValidation'] = {
             status: 'validated_per_shell_at_generation',
             reason: 'see shellValidation for the per-stage reports',
+          };
+        } else if (dto.exportType === 'attachment_models') {
+          manifest['meshValidation'] = {
+            status: 'validated_per_body_at_generation',
+            reason: 'every attachment body watertight-checked; see attachmentBodies',
           };
         } else {
           // stage_models / full_case zips contain reference arch meshes

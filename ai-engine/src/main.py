@@ -708,7 +708,8 @@ async def generate_stage_stls(req: GenerateStageStlsRequest):
 def _build_stage_stls(seg_dir: str, req: "GenerateStageStlsRequest") -> dict:
     """Synchronous worker: build per-stage STL files and zip them."""
     import zipfile
-    import math
+
+    from src.tooth_frames import compute_tooth_frames, movement_transform
 
     # Load all available tooth meshes
     tooth_meshes: dict[int, "trimesh.Trimesh"] = {}
@@ -725,6 +726,15 @@ def _build_stage_stls(seg_dir: str, req: "GenerateStageStlsRequest") -> dict:
     if not tooth_meshes:
         raise ValueError("No tooth STL files found in segmented_mesh_dir")
 
+    # Per-tooth anatomical frames derived from the arch geometry (mesial =
+    # arch tangent toward the midline, buccal = outward, occlusal = arch
+    # normal). Replaces the former global arch-frame approximation, under
+    # which a molar's "mesial" pointed the same way as an incisor's.
+    centroids = {
+        fdi: tuple(float(v) for v in m.centroid) for fdi, m in tooth_meshes.items()
+    }
+    frames = compute_tooth_frames(centroids, up_hint=(0.0, 0.0, 1.0))
+
     presc_by_tooth = {p.tooth_number: p for p in req.prescriptions}
     output_dir = os.path.join(seg_dir, f"stages_{req.plan_id}")
     os.makedirs(output_dir, exist_ok=True)
@@ -733,7 +743,8 @@ def _build_stage_stls(seg_dir: str, req: "GenerateStageStlsRequest") -> dict:
         stage_meshes = []
         for fdi, base_mesh in tooth_meshes.items():
             presc = presc_by_tooth.get(fdi)
-            if presc is None:
+            frame = frames.get(fdi)
+            if presc is None or frame is None:
                 stage_meshes.append(base_mesh.copy())
                 continue
 
@@ -741,39 +752,22 @@ def _build_stage_stls(seg_dir: str, req: "GenerateStageStlsRequest") -> dict:
             # Linear interpolation fraction at this stage
             frac = min(1.0, stage / total_s)
 
-            # Cumulative translation vector (arch-frame approximation)
-            tx = (presc.translation_mesial_mm - presc.translation_distal_mm
-                  + presc.mesialization_mm - presc.distalization_mm) * frac
-            ty = (presc.translation_buccal_mm - presc.translation_lingual_mm
-                  + presc.expansion_mm - presc.constriction_mm) * frac
-            tz = (presc.extrusion_mm - presc.intrusion_mm) * frac
-            translation = np.array([tx, ty, tz])
+            rot_mat, translation = movement_transform(
+                frame,
+                mesiodistal_mm=(presc.translation_mesial_mm - presc.translation_distal_mm
+                                + presc.mesialization_mm - presc.distalization_mm) * frac,
+                buccolingual_mm=(presc.translation_buccal_mm - presc.translation_lingual_mm
+                                 + presc.expansion_mm - presc.constriction_mm) * frac,
+                occlusogingival_mm=(presc.extrusion_mm - presc.intrusion_mm) * frac,
+                rotation_deg=presc.rotation_deg * frac,
+                torque_deg=presc.torque_deg * frac,
+                tip_deg=0.0,  # not carried by ToothPrescription
+            )
 
-            # Rotations about the tooth centroid, in the same arch-frame
-            # approximation as the translations: rotation (long-axis) about Z,
-            # torque about X (the mesiodistal axis). Torque was previously
-            # accepted in the prescription but silently dropped here.
-            rot_rad = math.radians(presc.rotation_deg * frac)
-            torque_rad = math.radians(presc.torque_deg * frac)
             centroid = base_mesh.centroid
-
             moved = base_mesh.copy()
-            verts = moved.vertices - centroid
-            if abs(torque_rad) > 1e-6:
-                cos_t, sin_t = math.cos(torque_rad), math.sin(torque_rad)
-                y_rot = verts[:, 1] * cos_t - verts[:, 2] * sin_t
-                z_rot = verts[:, 1] * sin_t + verts[:, 2] * cos_t
-                verts = verts.copy()
-                verts[:, 1] = y_rot
-                verts[:, 2] = z_rot
-            if abs(rot_rad) > 1e-6:
-                cos_r, sin_r = math.cos(rot_rad), math.sin(rot_rad)
-                x_rot = verts[:, 0] * cos_r - verts[:, 1] * sin_r
-                y_rot = verts[:, 0] * sin_r + verts[:, 1] * cos_r
-                verts = verts.copy()
-                verts[:, 0] = x_rot
-                verts[:, 1] = y_rot
-            moved.vertices = verts + centroid + translation
+            r = np.asarray(rot_mat)
+            moved.vertices = (base_mesh.vertices - centroid) @ r.T + centroid + np.asarray(translation)
 
             stage_meshes.append(moved)
 

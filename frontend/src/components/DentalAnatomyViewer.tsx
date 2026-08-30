@@ -20,6 +20,12 @@ import {
 } from "@/lib/api/toothMovements";
 import { MM_TO_SCENE, SCENE_TO_MM } from "@/lib/meshAnalysis";
 import {
+  computeToothFrames,
+  movementTransform,
+  matToQuat,
+  type ToothFrame,
+} from "@/lib/toothFrames";
+import {
   computeCollisions,
   intersectingFdis,
   CONTACT_MM,
@@ -96,36 +102,41 @@ function readMovement(m: Record<string, number> | undefined): ToothMovementValue
   };
 }
 
-const DEG = Math.PI / 180;
-
 /**
- * Map anatomical movement components onto scene axes.
- *
- * Arch-frame approximation (same convention as the AI engine's stage builder):
- * scene X ≈ mesiodistal axis, scene Y ≈ occlusal axis, scene Z ≈ buccolingual
- * axis, with quadrant/arch sign flips. A future per-tooth local frame derived
- * from segmentation geometry will replace this mapping.
+ * Map anatomical movement components onto per-tooth frames derived from the
+ * arch geometry (mesial = arch tangent toward the midline, buccal = outward,
+ * occlusal = arch-plane normal aligned with scene +Y). Shares its algorithm
+ * with the AI engine's stage builder via lib/toothFrames — what is displayed
+ * here matches what gets manufactured. Falls back to identity when no frame
+ * or movement exists.
  */
-function toothTransform(
+const IDENTITY_TRANSFORM: { position: [number, number, number]; quaternion: THREE.Quaternion } =
+  { position: [0, 0, 0], quaternion: new THREE.Quaternion() };
+
+function toothFrameTransform(
+  frames: Map<number, ToothFrame>,
   mvts: StageMvtMap | null,
   fdi: number,
-): { position: [number, number, number]; rotation: [number, number, number] } {
-  const zero: { position: [number, number, number]; rotation: [number, number, number] } =
-    { position: [0, 0, 0], rotation: [0, 0, 0] };
-  if (!mvts) return zero;
+): { position: [number, number, number]; quaternion: THREE.Quaternion } {
+  if (!mvts) return IDENTITY_TRANSFORM;
   const m = mvts[String(fdi)];
-  if (!m || typeof m !== "object") return zero;
+  const frame = frames.get(fdi);
+  if (!m || typeof m !== "object" || !frame) return IDENTITY_TRANSFORM;
   const v = readMovement(m);
-  const isRight = (fdi >= 11 && fdi <= 18) || (fdi >= 41 && fdi <= 48);
-  const mesialSign = isRight ? 1 : -1;
-  const isUpper = fdi < 30;
-  const dx = v.mesiodistalMm * mesialSign * MM_TO_SCENE;
-  const dy = -v.occlusogingivalMm * (isUpper ? 1 : -1) * MM_TO_SCENE;
-  const dz = v.buccolingualMm * MM_TO_SCENE;
-  const rx = v.torqueDeg * (isUpper ? 1 : -1) * DEG; // torque about mesiodistal axis
-  const ry = v.rotationDeg * mesialSign * DEG;       // rotation about long (occlusal) axis
-  const rz = v.tipDeg * mesialSign * DEG;            // tip about buccolingual axis
-  return { position: [dx, dy, dz], rotation: [rx, ry, rz] };
+  const { r, t } = movementTransform(frame, {
+    mesiodistalMm: v.mesiodistalMm,
+    buccolingualMm: v.buccolingualMm,
+    occlusogingivalMm: v.occlusogingivalMm,
+    rotationDeg: v.rotationDeg,
+    torqueDeg: v.torqueDeg,
+    tipDeg: v.tipDeg,
+  });
+  const [qx, qy, qz, qw] = matToQuat(r);
+  return {
+    // Movements are authored in mm; positions in the scene are scaled.
+    position: [t[0] * MM_TO_SCENE, t[1] * MM_TO_SCENE, t[2] * MM_TO_SCENE],
+    quaternion: new THREE.Quaternion(qx, qy, qz, qw),
+  };
 }
 
 interface ToothMesh {
@@ -143,6 +154,8 @@ interface SceneProps {
   showTeeth: boolean;
   selectedFdi: number | null;
   stageMvts: StageMvtMap | null;
+  /** Per-tooth anatomical frames derived from the loaded arch geometry. */
+  frames: Map<number, ToothFrame>;
   /** Teeth whose meshes intersect a neighbour in the current stage. */
   collidingFdis: Set<number>;
   onSelect: (fdi: number) => void;
@@ -173,7 +186,7 @@ function CameraRig({ view, nonce }: { view: string; nonce: number }) {
   return null;
 }
 
-function Scene({ teeth, gingivaGeom, showGingiva, showTeeth, selectedFdi, stageMvts, collidingFdis, onSelect }: SceneProps) {
+function Scene({ teeth, gingivaGeom, showGingiva, showTeeth, selectedFdi, stageMvts, frames, collidingFdis, onSelect }: SceneProps) {
   return (
     <>
       <ambientLight intensity={0.5} />
@@ -186,7 +199,7 @@ function Scene({ teeth, gingivaGeom, showGingiva, showTeeth, selectedFdi, stageM
         </mesh>
       )}
       {showTeeth && teeth.map(tooth => {
-        const t = toothTransform(stageMvts, tooth.fdi);
+        const t = toothFrameTransform(frames, stageMvts, tooth.fdi);
         return (
           <group
             key={tooth.fdi}
@@ -195,7 +208,7 @@ function Scene({ teeth, gingivaGeom, showGingiva, showTeeth, selectedFdi, stageM
               tooth.centroid[1] + t.position[1],
               tooth.centroid[2] + t.position[2],
             ]}
-            rotation={t.rotation}
+            quaternion={t.quaternion}
           >
             <mesh
               geometry={tooth.geometry}
@@ -539,16 +552,32 @@ export default function DentalAnatomyViewer({ caseId }: { caseId: string }) {
     [selectedFdi, stageMvts],
   );
 
+  // Per-tooth anatomical frames from the loaded arch (scene units; directions
+  // are scale-invariant). Scene +Y is the viewer's up convention.
+  const frames = useMemo(
+    () => computeToothFrames(
+      new Map(teeth.map(t => [t.fdi, t.centroid as [number, number, number]])),
+      [0, 1, 0],
+    ),
+    [teeth],
+  );
+
   // Exact adjacent-pair mesh distances at the displayed stage positions.
   // Recomputed only when meshes or the active stage's movements change.
   const collisionPairs = useMemo<CollisionPair[]>(() => {
     if (!showCollisions || status !== "ready" || teeth.length < 2) return [];
     try {
-      return computeCollisions(teeth, fdi => toothTransform(stageMvts, fdi));
+      return computeCollisions(teeth, fdi => {
+        const t = toothFrameTransform(frames, stageMvts, fdi);
+        return {
+          position: t.position,
+          quaternion: [t.quaternion.x, t.quaternion.y, t.quaternion.z, t.quaternion.w],
+        };
+      });
     } catch {
       return []; // a degenerate mesh must not take down the viewer
     }
-  }, [showCollisions, status, teeth, stageMvts]);
+  }, [showCollisions, status, teeth, frames, stageMvts]);
 
   const collidingFdis = useMemo(() => intersectingFdis(collisionPairs), [collisionPairs]);
 
@@ -771,7 +800,7 @@ export default function DentalAnatomyViewer({ caseId }: { caseId: string }) {
           <CameraRig view={cameraView.view} nonce={cameraView.nonce} />
           <Scene teeth={teeth} gingivaGeom={gingivaGeom} showGingiva={showGingiva}
             showTeeth={showTeeth} selectedFdi={selectedFdi} stageMvts={stageMvts}
-            collidingFdis={collidingFdis}
+            frames={frames} collidingFdis={collidingFdis}
             onSelect={fdi => setSelectedFdi(prev => prev === fdi ? null : fdi)} />
         </Canvas>
       </div>
